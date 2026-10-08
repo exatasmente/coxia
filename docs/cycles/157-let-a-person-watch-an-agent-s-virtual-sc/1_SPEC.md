@@ -1,6 +1,6 @@
 # Let a person watch an agent's virtual screen live, in the app and in the paired browser
 
-Gate 1: this spec waits for the maintainer's approval. Nothing here is built yet, and the plan (`2_PLAN.md`) is not written until the spec is approved.
+Gate 1: approved by the maintainer on 2026-10-08, with the answers recorded in "Gate 1 decisions" at the end. Nothing here is built yet; the plan (`2_PLAN.md`) follows.
 
 Marks used below: **decided** is a maintainer decision taken in chat on 2026-10-08; **proposed — confirm at gate 1** is a product choice this spec makes and the maintainer may change; **verified 2026-10-08** is a fact checked on that day, in the code or on a throwaway Xvfb (nothing touched real data).
 
@@ -93,11 +93,11 @@ What was verified on 2026-10-08, by a throwaway Xvfb and a throwaway bwrap run (
 
 ### 3. Recording the screen as evidence of the stage
 
-14. **Recording is the one thing that reads without a watcher.** The recording needs frames even when nobody watches, which is the exception to "nobody watching costs nothing". To keep it small: while the display is on, the app takes a frame at most once every N seconds, keeps it only if the screen changed since the last kept frame, and stops at the stage's end. A frame read for a viewer also counts for the recording and is not read twice. (proposed — confirm at gate 1: N = 5 s; at most about 120 frames; the total under the 8 MiB limit of a piece)
-15. **One piece of evidence, not one per frame.** At the end of the stage, before the sandbox removes the stage folder (the same place the app already keeps what the agent looked at, before `session.close()` at `executor.ts:904`), the recording becomes one piece of evidence of that stage: one run revision and one post in the run's conversation, titled so that it says the app recorded it. The app, not the agent, owns it; the agent cannot cite it or delete it. (proposed — confirm at gate 1)
-16. **The format is an open question.** The options and the recommendation are in "Open questions" (question 1).
+14. **Recording is the one thing that reads without a watcher.** The recording needs frames even when nobody watches, which is the exception to "nobody watching costs nothing". To keep it small: while the display is on, the app reads the screen at a low rate (about one frame per second), feeds the video only when the screen changed, and stops at the stage's end. A frame read for a viewer also counts for the recording and is not read twice. The video is capped in length and size; past the cap the recording stops and says so. (decided at gate 1: video; the rate and the caps are the plan's, set from measured sizes)
+15. **One piece of evidence, not one video per frame.** At the end of the stage, before the sandbox removes the stage folder (the same place the app already keeps what the agent looked at, before `session.close()` at `executor.ts:904`), the recording becomes one piece of evidence of that stage: one run revision and one post in the run's conversation, titled so that it says the app recorded it. The app, not the agent, owns it; the agent cannot cite it or delete it. (proposed — confirm at gate 1)
+16. **The recording is a video.** (decided at gate 1) A WebM video encoded by the app's own Chromium (the media encoder the renderer already uses for voice recording), so no program is installed or shipped and nothing new is downloaded. The time between frames is kept, so an idle stretch plays as a still picture rather than being cut. The evidence type check accepts a WebM video **only for the app's own recording**; a file the agent saves with `SaveEvidence` that is a video is still refused, as today. The 8 MiB limit of a piece does not fit a video; the recording has its own cap, set in the plan.
 17. **The person's interval is marked.** The recording marks the intervals in which the person used the screen, so the evidence never credits the agent with what the person did (rule 22).
-18. **The viewer shows it after the stage.** When the stage is over the Live screen button gives way to the recording in the stage's evidence block, with a way to open and download it like any other piece.
+18. **The viewer shows it after the stage.** When the stage is over the Live screen button gives way to the recording in the stage's evidence block, played in a video player (the content security policy of both the desktop and the web already allows `media-src 'self' blob:`), with a way to download it like any other piece. The intervals in which the person used the screen show as marks on the player's timeline.
 19. **Failure is said, not hidden.** A recording that cannot be kept (no frame was ever read, over the limit, the evidence store refused it) is said in the run's conversation with the reason, as `keepLooked` does for an image it could not keep. It never fails the stage.
 20. **Cycle folder.** The existing evidence switch that copies pieces into the cycle folder does not copy a screen recording: it is bulky, and a deliverable is not what it is for. (proposed — confirm at gate 1)
 
@@ -137,7 +137,8 @@ What was verified on 2026-10-08, by a throwaway Xvfb and a throwaway bwrap run (
 - Several people sending input at once, and any arbitration beyond "only the desktop window can send".
 - Remote control from the phone: the paired browser watches only.
 - Paste, file transfer and clipboard between the viewer and the screen.
-- Video encoding in a container (mp4, webm): the evidence type check refuses video and that stays.
+- Video from the agent: `SaveEvidence` keeps refusing video; only the app's own recording is a video.
+- Other video formats (mp4 and the rest): the recording is WebM only.
 - Retention for evidence other than screen recordings, and wiring `dropRunEvidence` to run removal.
 - Fixing a very low `fileMb` that already breaks Xvfb (named in Risks, not changed here).
 - A new kind of schedule or notification when a stage opens its screen.
@@ -152,11 +153,11 @@ Verifiable on screen or by test.
 4. Policy tests: the frame channel answers `allow` for a paired browser and is listed with the other run reads in `test/runs-policy.test.ts`; the input channel answers `deny` through the pattern, and a made-up channel under the same prefix is denied too.
 5. A test shows that input is not queued behind a running agent command, does not spend the stage budget, and is not reported as a command of the agent. It is recorded in the run's conversation as one entry per burst, with the interval.
 6. A test of the XTEST client against a fake X server covers the connection setup, a pointer move, a button press and release, a key press and release, and a reply that does not parse (the client closes and reports "not delivered" without throwing).
-7. A test shows that the recording is kept as one piece of evidence of the stage, before the stage folder is removed (the file exists when the evidence store copies it), with one run revision and one post, and that a recording that cannot be kept is said in the conversation without failing the stage.
-8. A test shows the recording's size and frame count stay under the caps, and that frames taken during the person's interval are marked.
+7. A test shows that the recording is kept as one WebM video, one piece of evidence of the stage, before the stage folder is removed (the file exists when the evidence store copies it), with one run revision and one post, and that a recording that cannot be kept is said in the conversation without failing the stage.
+8. A test shows the recording's length and size stay under the caps (and that hitting a cap stops the recording and says so), that the person's intervals are marked, and that the type check accepts the app's WebM recording while `SaveEvidence` still refuses a video from the agent.
 9. A retention test shows the group lists and removes only screen recordings, leaves the record marked, and leaves other evidence and any cycle-folder copy alone.
 10. A prompt test shows the headed-browser text with the display on, in both languages, and its absence when the display is missing or failed; the sandbox and host tests (`test/sandbox-gui.test.ts`, `test/host-gui.test.ts`) are updated for the new bind and the new display argument.
-11. On screen, on a Linux machine with Xvfb: a QA stage with the display on shows Live screen on its card; opening it shows the agent's headed browser, updating; on the desktop, Take control lets a click and a typed key reach the page; in the paired browser the same viewer opens with a smaller image and no Take control; after the stage ends there is one recording in the stage's evidence block.
+11. On screen, on a Linux machine with Xvfb: a QA stage with the display on shows Live screen on its card; opening it shows the agent's headed browser, updating; on the desktop, Take control lets a click and a typed key reach the page; in the paired browser the same viewer opens with a smaller image and no Take control; after the stage ends there is one video in the stage's evidence block that plays, with the person's intervals marked.
 12. On screen: a stage without a display, a failed display, or a non-QA stage shows no button; the viewer says so when the stage ends while it is open.
 13. Every new string is in both catalogs (`npm run i18n:lint` passes); the viewer, the switch, the marks and the recording use theme tokens and `node scripts/theme-audit.mjs` passes; `node scripts/public-audit.mjs` passes.
 14. The picture displays in the real desktop renderer and in the paired browser under their content security policies (checked, not assumed).
@@ -200,3 +201,15 @@ Each with the recommended answer, for the maintainer at gate 1.
 5. **Does the host display (`shell: host`) get interaction too?** The agent there already runs as the person. **Recommended:** yes, the same viewer and the same switch, because the protocol and the person's role are the same, and the screen is the stage's own virtual one, never the person's.
 6. **Are frames paused while the person controls the screen?** To lower the chance of recording a typed secret. **Recommended:** no, keep and mark them, and show a clear recording indicator while control is on; a pause would hide what the person did from the evidence.
 7. **Is a recording copied to the cycle folder** when `runner.evidence` is `cycle`? **Recommended:** no (rule 20).
+
+## Gate 1 decisions
+
+Answers of the maintainer on 2026-10-08, closing gate 1:
+
+1. **Format of the recording: video** (none of the options listed above). The spec now says a WebM video from the app's own encoder (rules 14, 16, 18); the encoder's placement and the caps are for the plan.
+2. **Retention:** as recommended, recordings join the existing switch and days.
+3. **Phone frame size and rate:** as recommended.
+4. **Take control warns, does not pause** the agent.
+5. **`shell: host` gets interaction too**, with the same viewer and switch.
+6. **Frames are not paused while the person controls**; they are kept and marked, with a clear recording indicator.
+7. **The recording is not copied to the cycle folder.**
