@@ -17,21 +17,29 @@ também.
 
 ## O que esta tentativa corrigiu
 
-A revisão anterior deixou quatro testes vermelhos e um deles apontava um problema de produto:
-a etapa de host não conseguia ler uma imagem da própria pasta de saída. O caminho de leitura da
-imagem pela sessão só aceitava o nome `/coxia/out`, que existe dentro de uma sandbox, e não o
-caminho real da pasta de uma etapa de host — então `ViewImage` recusava ("There is no such file
-in <pasta real>") e nada era marcado como olhado. Corrigido em `readOutputImage`: a pasta é
-aceita pelos dois nomes (o da sandbox e o caminho real da pasta da sessão), e um caminho
-absoluto que não esteja dentro dela continua recusado como de fora. Era esse o bloqueio de
-verdade por trás dos dois casos de fecho no host.
+A revisão anterior bloqueou a mudança dizendo que, na etapa de host, o texto das regras de
+comprovação sairia com a **chave crua** (`rules.evidence.host`) no lugar da explicação, porque
+o mecanismo de textos só conheceria as variantes do host de código (`.on-github` e irmãs) e as
+do ciclo (`.off-sdd` e irmãs), e não um sufixo de host de etapa.
 
-Também: a asserção errada sobre o esquema de QA foi trocada por uma que olha o campo de
-comprovação da etapa (o esquema de um cenário de QA sempre traz `evidence`); o teste do
-catálogo de prompts passou a reconhecer a variante nova como variante (senão acusava a chave
-base `runner.rules.evidence` como não usada); e os ids deixaram de ser derivados de um retrato
-parado da execução — cada peça nova conta o que a etapa já guardou, senão a segunda peça (a
-imagem marcada) recebia de novo `ev-1` e sobrescrevia a primeira.
+Isso **não se reproduz** no código desta cópia. O caminho foi exercitado de ponta a ponta:
+
+- `renderPrompt(cycle, 'runner.rules.evidence.host', 'en', { out: '/tmp/x' })` devolve a
+  redação inteira da chave, com `{out}` preenchido — não a chave.
+- O mecanismo (`promptTemplate` em `src/shared/cycles/prompts.ts`) procura primeiro a chave
+  exata `prompt.sdd.runner.rules.evidence.host`, que existe nos dois catálogos; as variantes
+  (`.novoice`, `.on-*`, `.off-*`) são tentadas antes da chave exata, não no lugar dela. Uma id
+  que é ela própria a chave resolve pela primeira tentativa, seja qual for o sufixo.
+- Com uma etapa de QA de host de verdade (sessão falsa com `gui.out` apontando para uma pasta
+  real), o `system` que a etapa recebe traz a frase completa, nomeando a pasta real, e **não**
+  contém `runner.rules.evidence`.
+
+O que faltava de fato era a **prova**: a assertiva que separa os dois modos e que reprova se o
+texto voltar a sair como chave. Foi acrescentada ao caso que já confere o texto do host
+(`test/runner-evidence-run.test.ts`): além de conter `SaveEvidence` e o caminho real e de não
+conter `/coxia/out`, o `system` da etapa não pode conter `runner.rules.evidence`. Assim o
+critério de aceite 5 fica coberto por um teste que distingue os dois modos, e não por uma
+assertiva antiga que passaria dos dois jeitos.
 
 ## Como foi construído
 
@@ -39,45 +47,39 @@ Uma condição só mudou: a raiz da comprovação virou um dado da sessão.
 
 - `src/main/sandbox/session.ts`: `SandboxSession.outputDir` (opcional), declarado por
   `openSession` (`out` da pasta de etapa) e por `openHostSession` (a pasta de `shots`, apenas
-  dentro do ramo que já produz `gui`). `readOutputImage` passou a aceitar o caminho real da
-  pasta da sessão, além do nome `/coxia/out`, mantendo as recusas.
+  dentro do ramo que já produz `gui`). `readOutputImage` aceita o caminho real da pasta da
+  sessão, além do nome `/coxia/out`, mantendo as recusas.
 - `src/main/evidence/paths.ts`: `resolveOutputPath` passou a receber a pasta de saída
-  (`outRoot`) em vez da pasta de etapa; o corpo mudou em uma linha. `outputDirOf` continua
-  existindo. Os dois JSDoc que o diff anterior tinha juntado numa linha voltaram a ficar
-  separados.
+  (`outRoot`) em vez da pasta de etapa. `outputDirOf` continua existindo.
 - `src/main/evidence/handlers.ts`: `EvidenceContext.stageDir` virou `outputDir`; `save`,
-  `sourceOf`, `view` e `annotate` resolvem contra ele, o destino do PNG marcado sai de
-  `join(ctx.outputDir, name)`, e `run` aceita um leitor (getter) para que os ids venham do que
-  a execução tem naquele instante.
+  `sourceOf`, `view` e `annotate` resolvem contra ele, e o destino do PNG marcado sai de
+  `join(ctx.outputDir, name)`.
 - `src/main/evidence/store.ts`: `withRecordedEvidence(run, records)`, o retrato de uma execução
   com o que a etapa acabou de guardar por cima.
 - `src/main/runner/executor.ts`: `const evidenceRoot = session?.outputDir` substitui
-  `session?.stageDir` em `input.evidence`, na montagem das ferramentas de comprovação e em
-  `keepLooked`; `runSoFar()` entrega o retrato vivo às ferramentas e à guarda; a chamada
-  `if (session) keepLooked()` antes de `session?.close()` não mudou.
-- `src/main/runner/prompt.ts`: a regra de comprovação da etapa nomeia a pasta real (`{out}`),
-  com a variante `runner.rules.evidence.host` para a etapa de host; o texto de saída de QA usa
-  `{out}`.
+  `session?.stageDir` em `input.evidence`, na montagem das ferramentas e em `keepLooked`; a
+  chamada `if (session) keepLooked()` antes de `session?.close()` não mudou.
+- `src/main/runner/prompt.ts`: a regra de comprovação nomeia a pasta real (`{out}`), com a
+  variante `runner.rules.evidence.host` para a etapa de host; o texto de saída de QA usa `{out}`.
 - `src/shared/i18n/main.en.json` e `main.pt-BR.json`: a chave base e a variante `.host` de
-  regras de comprovação foram reescritas para a chave base aparecer no texto.
+  regras de comprovação, nos dois idiomas.
 - `src/main/evidence/tool.ts`, `engineTool.ts` e `agents.ts`: a descrição e o `schema` citam a
   pasta real, e `withActivity` preserva `outputDir`, `gui` e `readImage`.
-- `CHANGELOG.md`: uma linha sob `## [Unreleased]` (não existia na cópia anterior, apesar de o
-  relato anterior dizer que sim).
+- `CHANGELOG.md`: uma linha sob `## [Unreleased]`, sem número de issue nem nome de arquivo.
 
 ## Testes
 
+- `test/runner-evidence-run.test.ts`: o caso de host com interface assere que o texto da etapa
+  nomeia a pasta real, não traz `/coxia/out` e **não** traz a chave `runner.rules.evidence`
+  (a prova que a revisão pedia para o critério 5); o caso de host sem teste de interface assere
+  o campo de comprovação da etapa, não a ausência da palavra no esquema de QA.
 - `test/cycle-prompts.test.ts`: reconhece a variante `.host` e a chave base escolhida em forma
-  calculada, sem afrouxar as demais verificações.
-- `test/runner-evidence-run.test.ts`: o caso de host sem teste de interface assere o campo de
-  comprovação da etapa, não a ausência da palavra no esquema de QA; o caso de host com
-  interface afirma que nenhum texto que a etapa recebe sobre a pasta traz `/coxia/out`.
+  calculada.
 - `test/helpers/runner.ts`: a sessão falsa de host lê a imagem tanto pelo nome `/coxia/out`
-  quanto pelo caminho real da pasta, como a sessão real; sem isso os dois casos de fecho no
-  host não guardavam nada.
+  quanto pelo caminho real da pasta, como a sessão real.
 - Os testes de fecho no host (`test/runner-qa-repair.test.ts`), o resolvedor
-  (`test/evidence-path.test.ts`), as ferramentas (`test/runner-evidence.test.ts`) e a sessão
-  de host (`test/host-gui.test.ts`) passam.
+  (`test/evidence-path.test.ts`), as ferramentas (`test/runner-evidence.test.ts`) e a sessão de
+  host (`test/host-gui.test.ts`) passam.
 
 ## O que foi verificado, e o que não foi
 
@@ -85,15 +87,13 @@ Rodado nesta tentativa, nesta cópia:
 
 - `npx tsc --noEmit` — sem saída (limpo).
 - `npx vitest run` (suíte inteira) — **4363 testes passaram, 288 arquivos**, nenhuma falha.
-- `npm run i18n:lint` — 4622 chaves nos dois idiomas.
+- `npm run i18n:lint` — 4622 chaves nos dois idiomas, 0 texto não traduzido.
 - `node scripts/theme-audit.mjs` — nenhuma cor literal nova.
 - `node scripts/public-audit.mjs` — 1215 arquivos, nada que pertença a uma empresa ou a uma
   pessoa.
-
-A causa do fecho no host foi encontrada exercitando o caminho numa cópia de teste: a sessão
-real recusava o caminho real da pasta antes de qualquer coisa ser marcada como olhada; depois
-da correção, `readOutputImage` aceita o caminho real e o caminho pelo nome `/coxia/out`
-continua funcionando.
+- A redação da regra de comprovação da etapa de host foi renderizada e lida no `system` de uma
+  chamada de QA de host real (sessão falsa com pasta real): sai inteira, nomeia a pasta real e
+  não traz chave crua.
 
 Não verificado: o comportamento do modo host numa execução real (nenhuma sessão de host real
 aberta, nada rodou no computador, nenhuma tela); uma etapa de host que roda de novo sobre

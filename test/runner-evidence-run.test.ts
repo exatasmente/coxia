@@ -198,5 +198,7 @@ describe('evidence of a stage whose commands run on the computer', () => {
     // No `/coxia/out` in any of the texts the stage is given about its output folder: the sandbox path does not exist on this computer, so reading it there
     // sends the agent nowhere. The real folder is named by both the rules of the stage and the tool's own description.
     expect(qa.system).not.toContain('/coxia/out');
+    // The wording is resolved, not left as a catalog key: a stage that was asked to keep evidence is told how, in the words of the catalog.
+    expect(qa.system).not.toContain('runner.rules.evidence');
   });
 });
