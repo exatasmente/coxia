@@ -60,6 +60,24 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
   };
 }
 
+/** A lowercase id from a name: letters and digits kept (accents folded), anything else a dash. */
+export function slugOf(text: string): string {
+  const folded = text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const slug = folded.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '');
+  return slug;
+}
+
+/** `base`, or `base-2`, `base-3`... the first one `taken` does not hold. */
+export function uniqueId(base: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  const root = base || 'item';
+  if (!used.has(root)) return root;
+  for (let n = 2; ; n++) {
+    const candidate = `${root.slice(0, 44)}-${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+}
+
 /** Whether the agent is a draft the AI assistant saved to be tested: it takes no part in the cycle. */
 export const isDraft = (a: Pick<AgentDef, 'draft'>): boolean => a.draft === true;
 

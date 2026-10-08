@@ -8,6 +8,9 @@ import { shown } from './text';
 
 // The agent editor, as pure functions: the draft a person types into, the checks shown while typing, and the config the draft makes.
 
+// The id helpers live in shared/ so the main process derives the id of an assistant's draft the same way; the editor and its tests keep importing them from here.
+export { slugOf, uniqueId } from '../../../../shared/config/team';
+
 const ID_RE = new RegExp(ID);
 
 export interface AgentDraft {
@@ -60,24 +63,6 @@ export function draftOf(a: AgentDef): AgentDraft {
 
 export function blankAgent(): AgentDraft {
   return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, stages: [] };
-}
-
-/** A lowercase id from a name: letters and digits kept (accents folded), anything else a dash. */
-export function slugOf(text: string): string {
-  const folded = text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const slug = folded.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '');
-  return slug;
-}
-
-/** `base`, or `base-2`, `base-3`... the first one `taken` does not hold. */
-export function uniqueId(base: string, taken: Iterable<string>): string {
-  const used = new Set(taken);
-  const root = base || 'item';
-  if (!used.has(root)) return root;
-  for (let n = 2; ; n++) {
-    const candidate = `${root.slice(0, 44)}-${n}`;
-    if (!used.has(candidate)) return candidate;
-  }
 }
 
 /** What is wrong with the draft on its own (the checks that need the whole team come from `teamIssues`). */
