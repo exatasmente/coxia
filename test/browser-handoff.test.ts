@@ -2,13 +2,14 @@
 // every page the app returns has what the person typed taken out, in the plain, URL-encoded and JSON-escaped forms, on the first read and the later ones, until the call ends; a
 // value under 4 characters is not hidden; a picture of a page that shows a typed value is refused and one that does not is returned; and no step holds a typed value. The server
 // is the scripted fake, the hand-off service is the real one over a hub that only lists what it was asked, and no display is involved.
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { HeldAnswer } from '../src/shared/browser';
 import { HANDOFF_HELD_TEXT } from '../src/shared/handoff';
 import { setLanguage, t } from '../src/shared/i18n';
 import { toolsFor } from '../src/main/browser/allowlist';
 import { type ScreenToolset, CONFIRM_TOOL_NAME, HANDOFF_TOOL_NAME, screenToolImpls } from '../src/main/browser/engineTool';
 import { createHostsTally } from '../src/main/browser/hosts';
-import { createIntermediary } from '../src/main/browser/intermediary';
+import { type HoldGate, type HoldRequest, createIntermediary } from '../src/main/browser/intermediary';
 import { createMaskSet } from '../src/main/browser/mask';
 import { createStepLog } from '../src/main/browser/stepLog';
 import type { ToolContext } from '../src/main/engine/open/tools/types';
@@ -23,7 +24,7 @@ const URL_FORM = encodeURIComponent(VALUE);
 const JSON_FORM = JSON.stringify(VALUE).slice(1, -1);
 const ctx = (): ToolContext => ({ cwd: '', roots: [], isSecret: () => false, secretGlobs: [], outputMax: 100_000, env: {}, bashPrefixes: [], ripgrep: 'off' });
 
-function world() {
+function world(gate: HoldGate = { hold: async () => 'yes', passed: () => false }) {
   const server = fakeServer();
   const masks = createMaskSet();
   const log = createStepLog();
@@ -34,7 +35,7 @@ function world() {
     hosts: createHostsTally(),
     masks,
     log,
-    gate: { hold: async () => 'yes', passed: () => false },
+    gate,
     seesImages: true,
   });
   const call = fh.service.begin({ key: KEY, thread: 'general', place: 'conversation', stage: '', agent: 'web', agentName: 'Web', about: '', paths: { browser: true, shell: 'none' }, pause: () => () => undefined, signal: new AbortController().signal });
@@ -272,5 +273,83 @@ describe('after the person gave the screen back', () => {
     expect(w.call.typed.had).toBe(true);
     expect(w.call.typed.hits(VALUE)).toBe(false);
     expect(forms((await w.inter.call('browser_snapshot', {})).text).length).toBeGreaterThan(0);
+  });
+});
+
+describe('a step held for the person when the person takes the screen', () => {
+  /** A gate whose question waits until the test answers it. */
+  function waitingGate() {
+    const asked: HoldRequest[] = [];
+    let answer: (a: HeldAnswer) => void = () => undefined;
+    const gate: HoldGate = {
+      hold: (r) => {
+        asked.push(r);
+        return new Promise<HeldAnswer>((resolve) => (answer = resolve));
+      },
+      passed: () => false,
+    };
+    return { gate, asked, answer: (a: HeldAnswer) => answer(a) };
+  }
+
+  // The keys #177 holds: Enter and its aliases in a text area, Space on a button, Enter in a field with no form, and a single-key shortcut of the page.
+  const rows: { name: string; focus: string; key: string }[] = [
+    { name: 'Enter in a text area', focus: 'notes', key: 'Enter' },
+    { name: 'a line break for Enter in a text area', focus: 'notes', key: '\n' },
+    { name: 'the numpad Enter in a field with no form', focus: 'search', key: 'NumpadEnter' },
+    { name: 'a space on the submit button', focus: 'send', key: ' ' },
+    { name: 'a single-key shortcut with the focus on the page', focus: 'body', key: 'e' },
+  ];
+
+  for (const row of rows) {
+    it(`refuses ${row.name} that is answered yes while the person has the screen, and sends it neither then nor after the give-back`, async () => {
+      const q = waitingGate();
+      const w = world(q.gate);
+      w.server.state.focus = row.focus;
+      const pending = w.inter.call('browser_press_key', { key: row.key }, w.options);
+      await vi.waitFor(() => expect(q.asked).toHaveLength(1));
+      expect(w.server.acts()).toEqual([]);
+      w.call.request({ what: 'Log in to the site' });
+      await w.fh.take(KEY);
+      const reads = w.server.calls.length;
+      q.answer('yes');
+      expect(await pending).toEqual({ text: HANDOFF_HELD_TEXT, images: [], isError: true });
+      // Nothing was read of the page on the person's time either, and nothing reached the browser.
+      expect(w.server.calls.length).toBe(reads);
+      w.fh.give(KEY);
+      await new Promise((r) => setTimeout(r, 20));
+      expect(w.server.acts()).toEqual([]);
+      expect(w.log.entries().filter((e) => e.tool === 'browser_press_key').map((e) => [e.outcome, e.held?.answer])).toEqual([['not-run', 'yes']]);
+    });
+  }
+
+  it('refuses a click held for its name that is answered yes during the interval without reading the page again', async () => {
+    const q = waitingGate();
+    const w = world(q.gate);
+    const pending = w.inter.call('browser_click', { target: 'e22' }, w.options);
+    await vi.waitFor(() => expect(q.asked).toHaveLength(1));
+    w.call.request({ what: 'Log in to the site' });
+    await w.fh.take(KEY);
+    const reads = w.server.calls.length;
+    q.answer('yes');
+    expect(await pending).toEqual({ text: HANDOFF_HELD_TEXT, images: [], isError: true });
+    expect(w.server.calls.length).toBe(reads);
+    expect(w.server.acts()).toEqual([]);
+  });
+
+  it('does not send a held key that the person answered yes after taking the screen and giving it back with the focus moved', async () => {
+    const q = waitingGate();
+    const w = world(q.gate);
+    w.server.state.focus = 'notes';
+    const pending = w.inter.call('browser_press_key', { key: 'Enter' }, w.options);
+    await vi.waitFor(() => expect(q.asked).toHaveLength(1));
+    w.call.request({ what: 'Log in to the site' });
+    await w.fh.take(KEY);
+    // The person clicks into another field on their time; the question the app asked was about the text area.
+    w.server.state.focus = 'send';
+    w.fh.give(KEY);
+    q.answer('yes');
+    const r = await pending;
+    expect(r.isError).toBe(true);
+    expect(w.server.acts()).toEqual([]);
   });
 });

@@ -118,6 +118,15 @@ export function checkAddress(raw: string, network: Pick<EffectiveNetwork, 'mode'
   return { ok: true, url };
 }
 
+/** Whether the focus is on the element the person was asked about: the same node, and the same kind of element (the text typed in it does not count). */
+function sameFocus(was: TargetInfo, now: TargetInfo): boolean {
+  if (was.ref !== now.ref || was.role !== now.role || was.name !== now.name) return false;
+  const a = was.probe;
+  const b = now.probe;
+  if (!a || !b) return a === b;
+  return a.tag === b.tag && a.type === b.type && a.form === b.form && a.submit === b.submit && a.editable === b.editable && a.frame === b.frame && a.origin === b.origin;
+}
+
 /** Only a host name as DNS writes it reaches the agent's eyes outside the data fence: what a page made the browser ask for is not the app's text. */
 const safeHost = (h: string): string | null => (/^[a-z0-9]([a-z0-9.-]{0,78}[a-z0-9])?$/.test(h) ? h : null);
 
@@ -245,11 +254,18 @@ export function createIntermediary(d: IntermediaryDeps): Intermediary {
             const key = answer === 'timeout' ? 'timeout' : answer === 'closed' ? 'closed' : 'declined';
             return finish(refusal(t(`main.browser.reason.${key}`)), 'declined');
           }
+          // Answered while the person has the screen (a hand-off, #178): nothing more is read of the page on their time, and the step is not sent.
+          if (held?.()) return finish(refusal(HANDOFF_HELD_TEXT), 'not-run');
           // The page may have changed while the person thought it over: the step is done only on the element the person was asked about.
           if (need === 'target' && target) {
             const fresh = await readPage(d.client, signal);
             const again = fresh ? await readTarget(d.client, fresh, target.ref, signal) : 'stale';
             if (again === 'stale' || again.role !== target.role || again.name !== target.name) return finish(refusal(t('main.browser.reason.changed')), 'not-run');
+          } else if (need === 'focus' && focus) {
+            // A key goes to whatever has the focus: the person may have moved it, for instance while they had the screen.
+            const fresh = await readPage(d.client, signal);
+            const again = fresh ? await readFocus(d.client, fresh, signal) : null;
+            if (!again || !sameFocus(focus, again)) return finish(refusal(t('main.browser.reason.changed')), 'not-run');
           }
         }
       }
