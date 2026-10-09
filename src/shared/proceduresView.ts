@@ -1,4 +1,4 @@
-import { PROCEDURE_KINDS, awaitsReview, compareAll, isOld, type ProcedureKind, type ProcedureRecord, type ProcedureState, type ProcedureSurface, FAILING_OUT_OF_LIST } from './procedures';
+import { PROCEDURE_KINDS, awaitsReview, compareAll, isOld, type ProcedureKind, type ProcedureRecord, type ProcedureState, type ProcedureStep, type ProcedureSurface, type StepsFrom, FAILING_OUT_OF_LIST } from './procedures';
 
 // What the Procedures view reads from the app: a line per record for the list, one record in full, and the workspace's figures. The same shapes serve the desktop window and
 // a paired browser (both read); the writes answer with `ProcedureWrite`. Pure: the main side builds them from the store, the renderer filters and sorts what it got.
@@ -60,6 +60,35 @@ export type ProcedureWrite =
   | { ok: false; code: string; text: string; refusals?: { field: string; code: string; text: string }[]; id?: string };
 
 export type ProcedureDelete = { ok: true } | { ok: false; code: 'not-found' | 'newer' | 'io' };
+
+/**
+ * An offer to keep a procedure, as the card in a thread shows it (#187): the text the app drafted and would save, and what the person needs to judge it. The work's usage and
+ * the reference of the run stay on the main side.
+ */
+export interface OfferView {
+  offerId: string;
+  thread: string;
+  /** The agent whose work this is. */
+  agent: string;
+  kind: 'gui' | 'repo' | 'tool';
+  key: string;
+  /** A title to start from; the person may change it before saying yes. */
+  title: string;
+  steps: ProcedureStep[];
+  pitfalls: string[];
+  waits: string[];
+  /** Commands the app left out of the draft for safety, by count. */
+  leftOut: number;
+  /** The person used the agent's screen in this work: a yes is still reviewed, and the card says what they typed may be in the text. */
+  handoff: boolean;
+  stepsFrom: StepsFrom;
+  /** The draft is of a screen (a yes or a no moves the screen's draft mark). */
+  screen: boolean;
+  stage?: string;
+  /** When it was raised, and when it goes away unanswered (ISO). */
+  at: string;
+  expiresAt: string;
+}
 
 export function summarize(r: ProcedureRecord, now: number): ProcedureSummary {
   return {
