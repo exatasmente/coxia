@@ -48,3 +48,45 @@ export interface StepEntry {
   /** How long the call took, waiting for the person included. */
   ms: number;
 }
+
+/** The step in a form the card and the audit can word in the app's language, read from the page and never carrying a value the agent typed. */
+export interface StepWords {
+  action: 'click' | 'type' | 'press' | 'dialog' | 'drag' | 'select' | 'fill' | 'hover' | 'navigate' | 'tabs' | 'read' | 'wait' | 'other';
+  role?: string;
+  /** The control's accessible name, cut to 80 characters. */
+  name?: string;
+  /** The key or chord of a key press (a named key only). */
+  key?: string;
+  /** The control submits its form. */
+  submit?: boolean;
+  /** The word of the list the name matched. */
+  word?: string;
+}
+
+/** What the agent says it is about to do, when it asks to confirm a step of its own. */
+export const CONFIRM_KINDS = ['send', 'save', 'delete', 'publish', 'pay', 'other'] as const;
+export type ConfirmKind = (typeof CONFIRM_KINDS)[number];
+
+/** What the person can answer: yes, no, or "yes for the rest of this screen on this site" (only for a step the app could not read). */
+export type AskDecision = 'yes' | 'no' | 'site';
+export const ASK_DECISIONS: readonly AskDecision[] = ['yes', 'no', 'site'];
+
+/** A step held for the person, or a confirmation the agent asked for, waiting for an answer. */
+export interface PendingAsk {
+  id: string;
+  /** The screen it belongs to (`run:<id>` or `call:<thread>:<agent>`). */
+  key: string;
+  agent: string;
+  kind: 'hold' | 'confirm';
+  /** Why a step is held; `agent` for a confirmation the agent asked for. */
+  why: HoldWhy | 'agent';
+  /** The step in the app's words; null for a confirmation (the agent's own sentence is `agentWords`). */
+  step: StepWords | null;
+  /** The host of the page it is about; empty when the agent did not say. */
+  site: string;
+  /** What the agent wrote about the step, as its own words. */
+  agentWords?: string;
+  confirmKind?: ConfirmKind;
+  /** ISO time it started waiting. */
+  since: string;
+}

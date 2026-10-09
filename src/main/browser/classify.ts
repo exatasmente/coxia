@@ -1,26 +1,12 @@
-import type { HoldWhy, StepClass } from '../../shared/browser';
+import type { HoldWhy, StepClass, StepWords } from '../../shared/browser';
 import type { Probe, TargetInfo } from './probe';
 
-export type { HoldWhy, StepClass };
+export type { HoldWhy, StepClass, StepWords };
 
 // Which steps of the app's browser the app holds for the person. Pure: the tool, what the agent asked, and what the app read of the page itself (`probe.ts`), never what the
 // agent said about the element. The word list is in code and is not configurable; it is a heuristic over names and forms, and the docs say so: a control named "Go" that deletes
 // is not caught, and neither is a word in a language the list lacks. What the app cannot read is held too (fail closed), and the person may answer "yes for the rest of this
 // screen on this site" to those, never to a step this module calls irreversible.
-
-/** The step in a form the card and the audit can word (in the app's language), never with a value the agent typed. */
-export interface StepWords {
-  action: 'click' | 'type' | 'press' | 'dialog' | 'drag' | 'select' | 'fill' | 'hover' | 'navigate' | 'tabs' | 'read' | 'wait' | 'other';
-  role?: string;
-  /** The control's accessible name, cut to 80 characters. */
-  name?: string;
-  /** The key or chord of a key press (a named key only, see `stepKey`). */
-  key?: string;
-  /** The control submits its form. */
-  submit?: boolean;
-  /** The word of the list the name matched. */
-  word?: string;
-}
 
 export interface Classification {
   class: StepClass;
