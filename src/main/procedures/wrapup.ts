@@ -119,6 +119,8 @@ async function give(deps: WrapUpDeps, run: WrapUpRun): Promise<void> {
   const stop = (): void => child.abort();
   run.abort?.addEventListener('abort', stop, { once: true });
   let tokens = 0;
+  // Whether the engine ran the turn to its end: a turn that was refused, failed before it began or ran out of time with nothing to show spent nothing and is not a turn "had".
+  let answered = false;
   const onUsage = (u: UsageReport): void => {
     tokens += Math.max(0, Math.round(u.promptTokens || 0)) + Math.max(0, Math.round(u.completionTokens || 0));
     try {
@@ -145,15 +147,18 @@ async function give(deps: WrapUpDeps, run: WrapUpRun): Promise<void> {
     // A turn that is abandoned at its limit may still reject later: that rejection is not an error of anyone.
     work.catch(() => undefined);
     await Promise.race([work, late, stopped]);
+    answered = true;
   } catch (e) {
     console.error('[procedures] the last turn ended without an answer', redact(e instanceof Error ? e.message : String(e)).slice(0, 300));
   } finally {
     clearTimeout(timer);
     run.abort?.removeEventListener('abort', stop);
-    try {
-      deps.note('runner.procedures.wrapUp', { agent: run.agent.id, tokens });
-    } catch {
-      // see WrapUpDeps.note
+    if (answered || tokens > 0) {
+      try {
+        deps.note('runner.procedures.wrapUp', { agent: run.agent.id, tokens });
+      } catch {
+        // see WrapUpDeps.note
+      }
     }
   }
 }

@@ -273,7 +273,7 @@ describe('what the turn never does', () => {
       });
       const run = await drive(b);
       expect(b.runs.get(run.id)!.stages.find((s) => s.stage === 'qa')?.status).toBe('done');
-      expect(b.thread(run).some((m) => m.code === 'runner.procedures.wrapUp')).toBe(true);
+      expect(b.thread(run).some((m) => m.code === 'runner.procedures.wrapUp')).toBe(false);
       expect(offers.list()).toHaveLength(1);
     } finally {
       log.mockRestore();

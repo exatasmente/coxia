@@ -212,18 +212,31 @@ describe('what it never does', () => {
     try {
       const { session } = make({ commands: shellOf(FOUGHT) });
       await expect(runWrapUp(deps(async () => Promise.reject(new Error('the provider fell over'))), run(session))).resolves.toBeUndefined();
-      expect(lines).toEqual([{ code: 'runner.procedures.wrapUp', params: { agent: 'builder', tokens: 0 } }]);
+      // the engine never ran the turn: no "had one last turn" line, and the card is still offered
+      expect(lines).toEqual([]);
       expect(raised).toHaveLength(1);
     } finally {
       log.mockRestore();
     }
   });
 
-  it('a refused budget is swallowed like any other failure', async () => {
+  it('an engine that fails after it spent tokens still says the turn was had, with the tokens', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const { session } = make({ commands: shellOf(FOUGHT) });
+      await runWrapUp(deps(async (c) => { c.onUsage?.(report(300)); throw new Error('cut off'); }), run(session));
+      expect(lines).toEqual([{ code: 'runner.procedures.wrapUp', params: { agent: 'builder', tokens: 450 } }]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('a refused budget is swallowed like any other failure, and says no turn was had', async () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     try {
       const { session } = make({ commands: shellOf(FOUGHT) });
       await expect(runWrapUp(deps(async () => Promise.reject(new ProviderBudgetError('p', 'claude-sdk', 'limit reached'))), run(session))).resolves.toBeUndefined();
+      expect(lines).toEqual([]);
       expect(raised).toHaveLength(1);
     } finally {
       log.mockRestore();
@@ -243,7 +256,7 @@ describe('what it never does', () => {
       expect(signal?.aborted).toBe(true);
       expect(WRAPUP_MS).toBe(120_000);
       expect(raised).toHaveLength(1);
-      expect(lines).toHaveLength(1);
+      expect(lines).toEqual([]);
     } finally {
       log.mockRestore();
     }
@@ -273,7 +286,7 @@ describe('what it never does', () => {
     setTimeout(() => stage.abort(), 5);
     await done;
     expect(raised).toEqual([]);
-    expect(lines).toHaveLength(1);
+    expect(lines).toEqual([]);
   });
 
   it('does not begin when the work was cancelled already', async () => {
