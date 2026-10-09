@@ -299,6 +299,7 @@
 .cy-live-stage.controlled { border-color: var(--red-solid); cursor: crosshair; touch-action: none; }
 .cy-live-image { display: block; width: 100%; height: auto; max-height: 62vh; max-height: 62dvh; object-fit: contain; user-select: none; -webkit-user-drag: none; }
 .cy-live-wait { margin: 0; }
+.cy-live-held { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber-ink); }
 .cy-live-ended { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--chip-quiet-bg); color: var(--muted); }
 
 /* the app's recording of an agent's screen: the video, and the strip that marks where a person used the screen */
@@ -333,6 +334,7 @@
 .cy-ask-line { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
 .cy-ask-words { margin: 0; padding: 6px 10px; border-left: 3px solid var(--line); background: var(--surface-2); border-radius: 0 8px 8px 0; }
 .cy-ask-words blockquote { margin: 2px 0 0; overflow-wrap: anywhere; font-style: italic; }
+.cy-ask-more { display: block; margin-top: 4px; }
 .cy-ask-note { display: flex; flex-direction: column; gap: 4px; }
 .cy-ask-actions { gap: 8px; flex-wrap: wrap; }
 .cy-ask-computer { margin: 0; }

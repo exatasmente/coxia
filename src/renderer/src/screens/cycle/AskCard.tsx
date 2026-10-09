@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
 import { ASK_TIMEOUT_MS, type AskDecision, type PendingAsk } from '../../../../shared/browser';
+import { HANDOFF_ASK_MS } from '../../../../shared/handoff';
 import { describeStep } from '../../../../shared/stepWords';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import { useExternalEffects } from '../../useExternalEffects';
+import { AgentWords } from './AgentWords';
 import { CONFIRM_KIND_KEY, WHY_KEY, choicesOf } from './askView';
+import { HandoffActions, HandoffBody } from './HandoffCard';
 import { agentName } from './names';
 import { screenApi } from './screenApi';
 
@@ -41,19 +44,8 @@ function AskBody({ ask, team }: { ask: PendingAsk; team: readonly AgentDef[] | u
       </>
     );
   }
+  if (ask.kind === 'handoff') return <HandoffBody ask={ask} team={team} />;
   return null;
-}
-
-/** What the agent wrote about its step, set apart and named as the agent's: it is the agent's claim, and the app's description above is what the app read from the page. */
-function AgentWords({ words }: { words: string | undefined }) {
-  const t = useT();
-  if (!words) return null;
-  return (
-    <figure className="cy-ask-words">
-      <figcaption className="faint small">{t('ui.screen.ask.agentWords')}</figcaption>
-      <blockquote>{words}</blockquote>
-    </figure>
-  );
 }
 
 /** `answerable` false: the card shows the question and says where to answer it; null: the switch is not known yet, and nothing is offered. */
@@ -85,8 +77,14 @@ export function AskCard({ ask, team, answerable, onWatch }: { ask: PendingAsk; t
     <section className="cy-ask" role="group" aria-label={t('ui.screen.ask.label', { agent })} data-kind={ask.kind}>
       <h3 className="cy-ask-title">{t('ui.screen.ask.title', { agent })}</h3>
       <AskBody ask={ask} team={team} />
-      <p className="faint small">{t('ui.screen.ask.since', { time: since, minutes: Math.round(ASK_TIMEOUT_MS / 60_000) })}</p>
-      {sent ? (
+      {/* A taken hand-off has no wait left to count: the person has the screen. */}
+      {!(ask.kind === 'handoff' && ask.handoff?.taken) && (
+        <p className="faint small">{ask.kind === 'handoff' ? t('ui.screen.handoff.since', { time: since, minutes: Math.round(HANDOFF_ASK_MS / 60_000) }) : t('ui.screen.ask.since', { time: since, minutes: Math.round(ASK_TIMEOUT_MS / 60_000) })}</p>
+      )}
+      {ask.kind === 'handoff' ? (
+        // Declining is open to a paired browser and needs no switch; taking and giving back are the computer's.
+        <HandoffActions ask={ask} team={team} onWatch={onWatch} />
+      ) : sent ? (
         <p className="small" role="status">{t('ui.screen.ask.sent')}</p>
       ) : answerable ? (
         <>

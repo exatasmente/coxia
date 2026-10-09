@@ -19,7 +19,7 @@ import { LiveScreen } from './LiveScreen';
 import { ScreenStrip } from './ScreenStrip';
 import { agentName, agentRole, authorName } from './names';
 import { forumApi, forgetNow, markThreadSeen, useThread } from './forumApi';
-import { asksOf } from './askView';
+import { asksOf, isHandoff } from './askView';
 import { screenApi } from './screenApi';
 import { screenOfCall } from './screens';
 import { useScreens } from './useScreens';
@@ -78,6 +78,7 @@ export function CallLine({ group, team, screen, onWatch }: { group: CallGroup; t
       <span className="spinner" aria-hidden="true" />
       <strong className="cy-call-agent">{name}</strong>
       <span className="cy-call-step">{label}</span>
+      {screen?.pending.some(isHandoff) && <span className="badge cy-tone-person">{t('ui.screen.handoff.callBadge')}</span>}
       <span className="cy-call-actions">
         {screen && <button type="button" className="btn cy-mini" onClick={() => onWatch(screen.key)}>{t('ui.screen.watch')}</button>}
         {!queued && <button type="button" className="btn cy-mini" disabled={stopping} aria-label={t('ui.screen.stopAria', { agent: name })} onClick={stop}>{t('ui.screen.stop')}</button>}
@@ -512,10 +513,12 @@ interface Props {
   title?: string;
   /** Opens the form that sends the run back to a stage (the run screen's): offered next to the box while a mention is typed and the run can be sent back. */
   onSendBack?: () => void;
+  /** The run screen shows the requests to hand a screen over at its top (RunHandoff), so this thread leaves them out of its list of questions. */
+  handoffAbove?: boolean;
 }
 
 /** A thread read and written: messages by kind with their author and where they stand, the chain of each question, live, and the box to write in. */
-export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
+export function Thread({ thread, run = null, team, title, onSendBack, handoffAbove = false }: Props) {
   const t = useT();
   const live = useThread(thread);
   const runId = run?.id ?? null;
@@ -584,7 +587,7 @@ export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
           ),
         )}
       </ol>
-      <AskCards asks={asks} team={team} onWatch={setWatching} />
+      <AskCards asks={handoffAbove ? asks.filter((a) => !isHandoff(a)) : asks} team={team} onWatch={setWatching} />
       <ScreenStrip screens={screens} team={team} onWatch={setWatching} />
       <Composer
         thread={thread}

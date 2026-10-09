@@ -1,4 +1,5 @@
 import { bytesToBase64 } from '../../../../shared/wire';
+import type { HandoffAnswer } from '../../../../shared/handoff';
 import type { ScreenControlAnswer, ScreenFrameAnswer, ScreenInput, ScreenInputAnswer } from '../../../../shared/screen';
 import type { AskDecision, OpenScreenInfo } from '../../../../shared/browser';
 import { api } from '../../api';
@@ -18,6 +19,12 @@ export const screenApi = {
   stop: (thread: string, agent: string) => api.invoke<boolean>('runs:callStop', thread, agent),
   // The person's answer to a step the app holds or a confirmation an agent asked for: an external effect, so a paired browser needs the switch.
   answer: (ask: string, decision: AskDecision, note?: string) => api.invoke<AskAnswer>('runs:screenAnswer', ask, decision, note),
+  // The hand-off of the screen (#178). Taking it (after the warning), giving it back and the picture of the screen the person holds are the desktop's alone; declining is open to a
+  // paired browser, since a person away from the computer would otherwise leave the agent waiting.
+  handoffTake: (key: string, ask: string) => api.invoke<HandoffAnswer>('screen:handoffTake', key, ask),
+  handoffGive: (key: string) => api.invoke<HandoffAnswer>('screen:handoffGive', key),
+  handoffFrame: (key: string, since: number, width: number) => api.invoke<ScreenFrameAnswer>('screen:handoffFrame', key, since, width),
+  handoffDecline: (ask: string) => api.invoke<HandoffAnswer>('runs:handoffDecline', ask),
   input: (key: string, events: readonly ScreenInput[]) => api.invoke<ScreenInputAnswer>('screen:input', key, events),
 };
 

@@ -7,7 +7,8 @@ import { isWeb } from '../../platform';
 import { useIsPhone } from '../../useIsPhone';
 import { Sheet } from '../Sheet';
 import { AskCards } from './AskCard';
-import { jpegSrc, screenApi } from './screenApi';
+import { NO_FRAMES, type Frames, framesFrom } from './frames';
+import { screenApi } from './screenApi';
 import { type Size, FLUSH_MS, batchesOf, buttonOf, createHeld, isSentKey, pointerToScreen, pollDelay, takeControl, wheelNotches } from './screenKeys';
 
 // The live screen of an agent: a working stage's, or the one an agent has in a conversation. The viewer is given the screen's key (`run:<id>` or `call:<thread>:<agent>`), never a run.
@@ -15,24 +16,11 @@ import { type Size, FLUSH_MS, batchesOf, buttonOf, createHeld, isSentKey, pointe
 // alike. On the desktop alone, "Take control" sends the person's clicks, wheel and keys to that screen; the viewer then says plainly that it is on and that it is being
 // recorded, and the chord Ctrl+Alt+Shift+Escape (never sent) gives control back. Frames are asked for, never pushed: closing the viewer stops the asking.
 
-interface Frames {
-  /** The latest picture as an address the page may show (a `data:` URL: the desktop's policy has no `blob:` for images). */
-  src: string | null;
-  /** The display's own size, which the pointer is mapped to. */
-  screen: Size | null;
-  /** Someone controls the screen (read from the answer, so the paired browser sees it too). */
-  remote: boolean;
-  /** The stage ended: the answer was `none`. */
-  ended: boolean;
-  /** The last ask failed; it is tried again. */
-  failed: boolean;
-}
-
 const NOTE_MS = 3000;
 
 /** Asks for the latest frame of the screen over and over: not while the document is hidden, never overlapping, slower after a slow answer, and no more once the stage ended. */
 function useFrames(screenKey: string, width: number): Frames {
-  const [frames, setFrames] = useState<Frames>({ src: null, screen: null, remote: false, ended: false, failed: false });
+  const [frames, setFrames] = useState<Frames>(NO_FRAMES);
   useEffect(() => {
     let live = true;
     let busy = false;
@@ -47,19 +35,10 @@ function useFrames(screenKey: string, width: number): Frames {
       try {
         const answer = await screenApi.frame(screenKey, since, width);
         if (!live) return;
-        if (answer.state === 'none') {
-          next = { ended: true, remote: false, failed: false };
-          again = false;
-        } else if (answer.state === 'held') {
-          // A hand-off (#178): the person holds the screen on the computer, and no picture of it is served here.
-          since = 0;
-          next = { src: null, screen: null, failed: false };
-        } else if (answer.state === 'same') {
-          next = { remote: answer.control, failed: false };
-        } else {
-          since = answer.seq;
-          next = { src: jpegSrc(answer.jpeg), screen: answer.screen, remote: answer.control, failed: false };
-        }
+        const got = framesFrom(answer);
+        next = got.next;
+        again = got.again;
+        if (got.since !== null) since = got.since;
       } catch {
         next = { failed: true };
       } finally {
@@ -305,7 +284,7 @@ export function LiveScreen({ screenKey, state, canClose = false, asks = [], team
           {frames.src ? (
             <img ref={image} className="cy-live-image" src={frames.src} alt={t('ui.cycle.live.alt')} draggable={false} />
           ) : (
-            !ended && <p className="small faint cy-live-wait"><span className="spinner" aria-hidden="true" /> {t('ui.cycle.live.waiting')}</p>
+            !ended && (frames.held ? <p className="small cy-live-held" role="status">{t('ui.cycle.live.held')}</p> : <p className="small faint cy-live-wait"><span className="spinner" aria-hidden="true" /> {t('ui.cycle.live.waiting')}</p>)
           )}
         </div>
         {frames.failed && !ended && <p className="small faint" role="status">{t('ui.cycle.live.failed')}</p>}

@@ -21,6 +21,7 @@ import { CommandsSection } from './CommandsSection';
 import { AutonomyNote } from './AutonomyNote';
 import { CommandApproval } from './CommandApproval';
 import { RunActions } from './RunActions';
+import { RunHandoff } from './RunHandoff';
 import { RunBadge } from './RunBadge';
 import { StageTimeline } from './StageTimeline';
 import { Thread } from './Thread';
@@ -165,6 +166,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
           ) : null}
         </dl>
         <FlowNote run={run} current={currentHash} />
+        <RunHandoff run={run} team={config?.agents.team} />
         {narrow && (
           <div className="cy-tabs" role="tablist" aria-label={t('ui.cycle.tabs')}>
             <button type="button" role="tab" id="cy-tab-cycle" aria-selected={tab === 'cycle'} aria-controls="cy-panel-cycle" className={`cy-tab ${tab === 'cycle' ? 'on' : ''}`} onClick={() => setTab('cycle')}>{t('ui.cycle.tab.cycle')}</button>
@@ -191,6 +193,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
           {(!narrow || tab === 'forum') && (
             <div className="cy-side" id="cy-panel-forum" role={narrow ? 'tabpanel' : undefined} aria-labelledby={narrow ? 'cy-tab-forum' : undefined}>
               <Thread
+                handoffAbove
                 thread={runThreadId(run.id)}
                 run={run}
                 team={config?.agents.team}
