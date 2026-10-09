@@ -93,6 +93,8 @@ export interface ProcedureSession {
    * an abort): nothing is inferred. Once only; a second call returns none.
    */
   finish(outcome: 'done' | 'failed'): ProcedureUse[];
+  /** The last turn is over: a record it created gets the baseline of the work (what finding it cost). The turn's reads are not uses of the work. */
+  finishTurn(): void;
 }
 
 /** What `procedures_list` returns at most: the rest is named in a closing line. */
@@ -669,6 +671,14 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     },
     usage: () => used,
     readIds: () => [...read],
+    finishTurn() {
+      if (!created.size) return;
+      try {
+        deps.store.finishUse({ at: iso(), ref: ctx.writer.ref ?? '', usage: used, read: [], stale: [], replaced: [], created: [...created] });
+      } catch (e) {
+        console.error('[procedures] could not close the last turn', e instanceof Error ? e.message : e);
+      }
+    },
     finish(outcome) {
       if (finished) return [];
       finished = true;

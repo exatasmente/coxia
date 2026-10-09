@@ -156,6 +156,7 @@ describe('a stage that fought a command and kept nothing', () => {
     expect(thread.some((m) => m.code === 'runner.procedures.offered')).toBe(false);
     // the record the turn created has the work as its baseline
     expect(createProcedureStore(dir).list().records[0].origin).toMatchObject({ by: 'qa', surface: 'stage', stage: 'qa' });
+    expect(createProcedureStore(dir).list().records[0].stats.baseline).toBeTruthy();
   });
 });
 
@@ -220,6 +221,22 @@ describe('a work that did not earn it', () => {
     expect(b.runs.get(run.id)!.status).not.toBe('done');
     expect(turn(b)).toEqual([]);
     expect(offers.list()).toEqual([]);
+  });
+
+  it.each([
+    ['a document the stage owes is missing', () => work('Checked.', { artifacts: [], scenarios: [] })],
+    ['the answer is empty', () => work('', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [] })],
+  ])('a stage that fought a command and then failed its own checks gets no turn and no card: %s', async (_name, answer) => {
+    const b = await start();
+    script(b, async (call) => {
+      await fight(call);
+      return answer();
+    });
+    const run = await drive(b);
+    expect(b.runs.get(run.id)!.stages.find((x) => x.stage === 'qa')?.status).not.toBe('done');
+    expect(turn(b)).toEqual([]);
+    expect(offers.list()).toEqual([]);
+    expect(b.thread(run).some((m) => m.code === 'runner.procedures.wrapUp')).toBe(false);
   });
 
   it('with the workspace\'s switch off, nothing is offered or called', async () => {

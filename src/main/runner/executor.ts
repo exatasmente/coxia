@@ -44,6 +44,7 @@ import { type RunnerTools, runnerTools } from './tools';
 import type { ProcedureUse } from '../../shared/procedures';
 import type { ProceduresPort } from '../procedures/port';
 import { procedureScreen } from '../procedures/screen';
+import type { WrapUpPlan } from '../procedures/session';
 import { runWrapUp, type WrapUpDeps } from '../procedures/wrapup';
 import { callRefusal, countOpen, openedIn, runConversation, resetOpened } from './conversation';
 import { releaseSection, releaseStateOf } from './release';
@@ -1095,6 +1096,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   let data: unknown;
   // Whether the agent's call ended in an answer: what a failed or aborted call read is no use of a procedure.
   let called = false;
+  // The last turn's plan, when the work earned one: given after the attempt is accepted.
+  let wrapPlan: WrapUpPlan | null = null;
   // The session the last answer was given in, and the engine that holds it: what a repair round continues from.
   let answered: Answered = { sessionId: null, engine: 'claude-sdk' };
   try {
@@ -1136,20 +1139,11 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     }
     // What the stage looked at and did not keep is kept as evidence of the stage here, before the sandbox takes the folder away; what cannot be kept is said.
     if (session) keepLooked();
-    // A concluding answer whose work had trial and error and kept no procedure gets one last turn, awaited here so a record it creates gets its baseline and the stage's
-    // usage counts it; the shell and the screen are still open for the drafts. An answer that ends in a question resumes and is not the end of the work. Never fails the stage.
+    // A concluding answer whose work had trial and error and kept no procedure is planned a last turn here, while the shell and the screen are open: the plan copies the
+    // drafts. The turn itself is given at the end, once the attempt is accepted (a turn belongs to a concluding attempt, not a failed one). An answer that ends in a
+    // question resumes and is not the end of the work.
     const closing = readOutput(data, kind);
-    if (procedures && d.offers && !closing.question && !closing.reporterQuestion) {
-      const plan = procedures.plan({ words: closing.summary });
-      if (plan) {
-        await runWrapUp(
-          { engine: d.engine, offers: d.offers, note: noteInThread },
-          { agent, session: procedures, plan, ref: about, thread: threadId, stage: stage.id, cwd: wt, abort: abort.signal, onUsage: usage, ...(d.procedureTurnMs !== undefined ? { ms: d.procedureTurnMs } : {}) },
-        );
-        // The turn ends quietly when the stage is cancelled; the stage does too.
-        if (abort.signal.aborted) throw new StageError('cancelled');
-      }
-    }
+    if (procedures && d.offers && !closing.question && !closing.reporterQuestion) wrapPlan = procedures.plan({ words: closing.summary });
     called = true;
   } catch (e) {
     if (e instanceof MaxTurnsError) throw new StageError('turns');
@@ -1268,5 +1262,17 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   if (docs && (docs.paths || docs.secrets)) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.checked', params: { paths: docs.paths, secrets: docs.secrets, files: docs.rewritten.map((f) => t('main.runner.docs.checked.file', { file: f.file, paths: f.paths, secrets: f.secrets })).join('; ') }, stage: stage.id });
   if (docs?.skipped.length) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.notAFile', params: { files: docs.skipped.join(', ') }, stage: stage.id });
   const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, code ? commitSummary(output.commit, fallback) : fallback, run.issue.iid), identity);
-  return { kind, output, written, commit, head: writes ? await headSha(wt) : looked, ...(noCodeChange ? { noCodeChange } : {}), ...(keptRecords.length ? { keptEvidence: keptRecords } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
+  const head = writes ? await headSha(wt) : looked;
+  // The attempt is accepted: only now the last turn is given, awaited so the stage's usage counts it and a record it creates gets its baseline. The shell and the screen are
+  // gone by now and the mailbox is closed; the turn has the procedure tools and the drafts the plan copied. Never fails the stage.
+  if (wrapPlan && procedures && d.offers) {
+    await runWrapUp(
+      { engine: d.engine, offers: d.offers, note: noteInThread },
+      { agent, session: procedures, plan: wrapPlan, ref: about, thread: threadId, stage: stage.id, cwd: wt, abort: abort.signal, onUsage: usage, ...(d.procedureTurnMs !== undefined ? { ms: d.procedureTurnMs } : {}) },
+    );
+    procedures.finishTurn();
+    // The turn ends quietly when the stage is cancelled; the stage does too.
+    if (abort.signal.aborted) throw new StageError('cancelled');
+  }
+  return { kind, output, written, commit, head, ...(noCodeChange ? { noCodeChange } : {}), ...(keptRecords.length ? { keptEvidence: keptRecords } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };
 }
