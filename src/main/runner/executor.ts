@@ -731,7 +731,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     };
     try {
       if (!outcome.ok) return notKept(outcome.reason);
-      const put = putRecording(d.dataDir(), withKept(), { bytes: outcome.bytes, stage: stage.id, by: agent.id, title: t('main.evidence.screenRecording'), meta: outcome.meta, at: new Date().toISOString() });
+      const put = putRecording(d.dataDir(), runSoFar(), { bytes: outcome.bytes, stage: stage.id, by: agent.id, title: t('main.evidence.screenRecording'), meta: outcome.meta, at: new Date().toISOString() });
       if (!put.ok) return notKept(put.problem);
       d.keepEvidence(run.id, put.record);
     } catch (e) {
