@@ -461,6 +461,32 @@ function hostApproval(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentD
 }
 
 /**
+ * Keeps the app's own recording of the stage's screen, if it made one: one piece of evidence, one run revision and one post of the app. It is not among what the stage
+ * kept (the agent cannot cite it) and not copied to the cycle folder. What cannot be kept is said in the conversation with the reason; it never fails the stage, which
+ * has ended already one way or another. `current` is the run with the evidence the stage kept so far, so the recording takes the next id.
+ */
+function keepScreenRecording(d: ExecutorDeps, current: Run, stage: FlowStage, agent: AgentDef, outcome: RecordingOutcome | null): void {
+  if (!outcome || !d.keepEvidence) return;
+  const threadId = runThreadId(current.id);
+  const notKept = (why: Parameters<typeof notKeptText>[0]): void => {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.screen.notKept', params: { agent: agent.id, reason: notKeptText(why) }, stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not say a recording was not kept', e instanceof Error ? e.message : e);
+    }
+  };
+  try {
+    if (!outcome.ok) return notKept(outcome.reason);
+    const put = putRecording(d.dataDir(), current, { bytes: outcome.bytes, stage: stage.id, by: agent.id, title: t('main.evidence.screenRecording'), meta: outcome.meta, at: new Date().toISOString() });
+    if (!put.ok) return notKept(put.problem);
+    d.keepEvidence(current.id, put.record);
+  } catch (e) {
+    console.error('[runner] could not keep the screen recording', e instanceof Error ? e.message : e);
+    notKept('write');
+  }
+}
+
+/**
  * @param usage Told what every model call of the attempt used, as it happens: a stage that fails or is stopped part-way has used it all the same.
  * @param carried The files the message that resumes the stage carries (the person's answer): the run file does not keep them, so they come from the turn that recorded the move.
  */
@@ -482,7 +508,9 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   try {
     return await runStage(d, run, flow, abort, usage, carried, session, clock);
   } finally {
-    // The live screen goes first, whatever way the stage ended: nothing reads the display once its sandbox is closing.
+    // The live screen goes first, whatever way the stage ended: nothing reads the display once its sandbox is closing. A stage that failed before it could build the
+    // recording itself still keeps what was recorded (nothing then, when `runStage` ended the screen already).
+    keepScreenRecording(d, run, stage, agent, await d.screens?.finish(run.id).catch(() => null) ?? null);
     d.screens?.end(run.id);
     // Whatever happened, nothing the stage started outlives it. Closing never throws, and a finished stage is not turned into a failed one by it.
     await session?.close().catch(() => undefined);
@@ -716,30 +744,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     }
     if (keptCount) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookKept', params: { agent: agent.id, count: keptCount }, stage: stage.id });
   };
-  /**
-   * Keeps the app's own recording of the stage's screen, if it made one: one piece of evidence, one run revision and one post of the app. It is not among what the stage
-   * kept (the agent cannot cite it) and not copied to the cycle folder. What cannot be kept is said in the conversation with the reason; it never fails the stage, which
-   * has ended already one way or another.
-   */
-  const keepRecording = (outcome: RecordingOutcome | null): void => {
-    if (!outcome || !d.keepEvidence) return;
-    const notKept = (why: Parameters<typeof notKeptText>[0]): void => {
-      try {
-        d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.screen.notKept', params: { agent: agent.id, reason: notKeptText(why) }, stage: stage.id });
-      } catch (e) {
-        console.error('[runner] could not say a recording was not kept', e instanceof Error ? e.message : e);
-      }
-    };
-    try {
-      if (!outcome.ok) return notKept(outcome.reason);
-      const put = putRecording(d.dataDir(), runSoFar(), { bytes: outcome.bytes, stage: stage.id, by: agent.id, title: t('main.evidence.screenRecording'), meta: outcome.meta, at: new Date().toISOString() });
-      if (!put.ok) return notKept(put.problem);
-      d.keepEvidence(run.id, put.record);
-    } catch (e) {
-      console.error('[runner] could not keep the screen recording', e instanceof Error ? e.message : e);
-      notKept('write');
-    }
-  };
+  const keepRecording = (outcome: RecordingOutcome | null): void => keepScreenRecording(d, runSoFar(), stage, agent, outcome);
   const evidence =
     evidenceRoot && d.keepEvidence
       ? evidenceToolsOf({

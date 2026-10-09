@@ -223,6 +223,47 @@ describe('the recording of a QA stage', () => {
     expect(w.b.thread(run).filter((m) => (m.evidence ?? []).some((e) => e.media === 'video/webm'))).toHaveLength(1);
   });
 
+  it('is kept when the stage fails before the part that builds it, by the stage\'s safety net', async () => {
+    let b!: Boot;
+    const sink = fakeSink();
+    const s = screens(() => b.forum, sink);
+    const sandbox = fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/stage/x11/X99', kind: 'sandbox' } });
+    // The app's commands before QA run in the sandbox: the first of them waits until the screen was recorded, so the failure that follows has a video to keep.
+    const open = sandbox.open.bind(sandbox);
+    sandbox.open = async (options) => {
+      const session = await open(options);
+      const exec = session.exec.bind(session);
+      session.exec = async (command) => {
+        await vi.waitFor(() => expect(sink.fed.length).toBeGreaterThan(0));
+        return exec(command);
+      };
+      return session;
+    };
+    b = await boot({
+      sandbox,
+      screens: s.hub,
+      // The stage cannot go on once the sandbox is open: this comes before the agent's call, outside the part of the stage that builds the recording.
+      pluginNotes: () => {
+        if (sandbox.opened.length) throw new Error('the notes could not be read');
+        return [];
+      },
+      configure: (c) => {
+        c.language = 'en';
+        shellOf(c, 'qa', 'sandbox');
+        c.runner.commands = ['npm test'];
+      },
+    });
+    easy(b, passes);
+    const run = await reach(b, await b.runner.start('app#101'), 'qa');
+    expect(run.status).toBe('failed');
+    expect(b.engine.calls.some((c) => c.agent.id === 'qa')).toBe(false);
+    expect(recordingsOf(run)).toHaveLength(1);
+    expect(b.thread(run).filter((m) => (m.evidence ?? []).some((e) => e.media === 'video/webm'))).toHaveLength(1);
+    expect(s.conn.closed).toBe(true);
+    expect(sink.closed).toBe(1);
+    expect(sink.aborted).toBe(0);
+  });
+
   it('is kept when the stage is cancelled', async () => {
     let started = false;
     const w = await qaStage({
