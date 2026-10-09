@@ -500,6 +500,19 @@ describe('closing a screen', () => {
     expect(s.sessions.markOf(callKey('run-r1', 'web'))).toBe(0);
   });
 
+  it('tells two openings of the same key apart: a screen opened again is another instance, and a closed key has none', async () => {
+    const s = setup();
+    const key = callKey('run-r1', 'web');
+    expect(s.sessions.instanceOf(key)).toBe(0);
+    await s.lease({ thread: 'run-r1', key });
+    const first = s.sessions.instanceOf(key);
+    expect(first).toBeGreaterThan(0);
+    await s.sessions.close(key, 'stage');
+    expect(s.sessions.instanceOf(key)).toBe(0);
+    await s.lease({ thread: 'run-r1', key });
+    expect(s.sessions.instanceOf(key)).toBeGreaterThan(first);
+  });
+
   it('throws the recording away when nothing keeps it, and says "none" in the audit', async () => {
     const s = setup({ noKeep: true });
     await s.lease();

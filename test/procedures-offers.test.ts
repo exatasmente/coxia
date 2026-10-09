@@ -45,15 +45,17 @@ const input = (over: Partial<OfferInput> = {}): OfferInput => ({
   ...over,
 });
 const screen = (over: Partial<OfferInput> = {}): OfferInput =>
-  input({ id: 'd-1', kind: 'gui', key: 'example.com', title: 'Close the month', steps: [{ text: 'Open the page' }, { text: 'Press "Close"' }], keyedBy: 'app', screen: 'call:t-1:writer', upTo: 12, thread: 't-1', writer: { ...writer, surface: 'forum', ref: 't-1' }, ...over });
+  input({ id: 'd-1', kind: 'gui', key: 'example.com', title: 'Close the month', steps: [{ text: 'Open the page' }, { text: 'Press "Close"' }], keyedBy: 'app', screen: 'call:t-1:writer', upTo: 12, instance: 1, thread: 't-1', writer: { ...writer, surface: 'forum', ref: 't-1' }, ...over });
 
-const fakeSessions = () => ({ markOf: (k: string) => marks.get(k) ?? 0, mark: (k: string, n: number) => void marks.set(k, n) });
+let instances: Map<string, number>;
+const fakeSessions = () => ({ markOf: (k: string) => marks.get(k) ?? 0, mark: (k: string, n: number) => void marks.set(k, n), instanceOf: (k: string) => instances.get(k) ?? 0 });
 
 beforeEach(() => {
   ws = mkdtempSync(join(tmpdir(), 'coxia-offers-'));
   clock = T0;
   counter = 0;
   marks = new Map();
+  instances = new Map([['call:t-1:writer', 1]]);
   audits = [];
   changes = 0;
   notes = [];
@@ -144,6 +146,22 @@ describe('a yes', () => {
     expect(r.ok && r.record.origin).toMatchObject({ by: 'person', createdBy: 'writer', surface: 'forum', ref: 't-1' });
     expect(r.ok && r.record.origin.handoff).toBeUndefined();
     expect(marks.get('call:t-1:writer')).toBe(12);
+  });
+
+  it('moves no mark of a screen opened again under the same key, whichever the answer', () => {
+    const yes = offers.raise(screen({ key: 'a.example.com' })).offerId;
+    const no = offers.raise(screen({ key: 'b.example.com' })).offerId;
+    // The screen closed and a newer one opened under the key: its steps start from 1, and it has its own mark.
+    instances.set('call:t-1:writer', 2);
+    marks.set('call:t-1:writer', 1);
+    expect(offers.keep(yes, 'Close the month').ok).toBe(true);
+    expect(marks.get('call:t-1:writer')).toBe(1);
+    expect(offers.decline(no)).toEqual({ ok: true });
+    expect(marks.get('call:t-1:writer')).toBe(1);
+    // And none while the screen is closed.
+    instances.delete('call:t-1:writer');
+    offers.decline(offers.raise(screen({ key: 'c.example.com' })).offerId);
+    expect(marks.get('call:t-1:writer')).toBe(1);
   });
 
   it('never moves a mark back', () => {

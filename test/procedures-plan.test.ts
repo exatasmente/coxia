@@ -239,6 +239,7 @@ describe('the screen', () => {
     expect(offers).toHaveLength(1);
     expect(offers[0]).toMatchObject({ id: 'd-1', kind: 'gui', key: 'docs.example.com', title: 'Steps on docs.example.com', keyedBy: 'app', screen: KEY, stepsFrom: 'recording', leftOut: 0, handoff: false });
     expect(offers[0].upTo).toBe(5);
+    expect(offers[0].instance).toBe(1);
     expect(offers[0].steps).toHaveLength(5);
     expect(offers[0].steps.every((x) => x.run === undefined)).toBe(true);
   });

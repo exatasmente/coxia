@@ -7,7 +7,7 @@ import { type StepLog, createStepLog } from '../../src/main/browser/stepLog';
 export interface FakeSteps {
   log: StepLog;
   /** The sessions' view of the log and its draft mark, by key: only the key it was made for has steps. */
-  sessions: { stepsOf(key: string): readonly StepEntry[]; markOf(key: string): number; mark(key: string, n: number): void };
+  sessions: { stepsOf(key: string): readonly StepEntry[]; markOf(key: string): number; mark(key: string, n: number): void; instanceOf(key: string): number };
   navigate(url: string, over?: Partial<Pick<StepEntry, 'outcome' | 'ms'>>): StepEntry;
   back(): StepEntry;
   click(role: string, name: string, over?: Partial<Pick<StepEntry, 'outcome' | 'ms' | 'site' | 'path' | 'class' | 'held'>>): StepEntry;
@@ -33,6 +33,7 @@ export function fakeSteps(key = 'call:t-1:agent', start = 'https://docs.example.
       stepsOf: (k) => (k === key ? log.entries() : []),
       markOf: (k) => (k === key ? marked : 0),
       mark: (k, n) => void (k === key && (marked = n)),
+      instanceOf: (k) => (k === key ? 1 : 0),
     },
     navigate(url, over = {}) {
       const target = new URL(url, page);

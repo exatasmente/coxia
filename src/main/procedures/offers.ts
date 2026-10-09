@@ -35,6 +35,8 @@ export interface OfferDraft {
   upTo?: number;
   /** A screen draft: the screen's key, for that mark. */
   screen?: string;
+  /** A screen draft: which opening of that key the screen was. A key is shared by the stages of a run and the screens of a thread, and step numbers start over with each screen. */
+  instance?: number;
 }
 
 /** What raising an offer takes: the draft and where it comes from. */
@@ -142,7 +144,8 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
     if (!o.screen || o.upTo === undefined) return;
     try {
       const sessions = deps.sessions?.();
-      if (sessions) sessions.mark(o.screen, Math.max(o.upTo, sessions.markOf(o.screen)));
+      // Only the screen the draft was made on: a newer one under the same key has its own steps, numbered from 1.
+      if (sessions && sessions.instanceOf(o.screen) === (o.instance ?? 0)) sessions.mark(o.screen, Math.max(o.upTo, sessions.markOf(o.screen)));
     } catch {
       // a screen that is gone has no mark to move
     }

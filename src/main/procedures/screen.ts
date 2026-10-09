@@ -7,14 +7,14 @@ import type { TypedValues } from '../screen/typedValues';
 // rename on the browser's side is a fix here and nowhere else. Types only are imported: nothing here starts a browser or reads a display.
 
 /** What the offers need of the screens: the draft mark of an open screen, read and moved. */
-export type ScreenMarks = Pick<ScreenSessions, 'markOf' | 'mark'>;
+export type ScreenMarks = Pick<ScreenSessions, 'markOf' | 'mark' | 'instanceOf'>;
 
 /** What the procedure memory is given of a call's screen: where its steps are, whether the call has the app's browser, and the hand-off's two seams. */
 export interface ScreenSource {
   /** The screen's key: `run:<id>` for a stage, `call:<thread>:<agent>` for an agent in a conversation. */
   key: string;
   /** Where the steps of an open screen are; absent: the call has no log (a build or a test with no screens). */
-  sessions?: Pick<ScreenSessions, 'stepsOf' | 'markOf' | 'mark'> | null;
+  sessions?: (Pick<ScreenSessions, 'stepsOf' | 'markOf' | 'mark'> & Partial<Pick<ScreenSessions, 'instanceOf'>>) | null;
   /** What the person typed in this call's hand-offs, in memory. Present when the call is offered the hand-off. */
   typed?: TypedValues;
   /** The hand-off service, for a hand-off that took place in an earlier call on the same screen. */
@@ -31,6 +31,8 @@ export interface ProcedureScreen {
   readonly browser: boolean;
   /** The steps of the whole screen since its draft mark (0 when the screen opened), across the answers that took them, oldest first. */
   steps(): StepEntry[];
+  /** Which opening of the key the screen is now (0 when it is not open): an offer of this screen moves a mark only while it is still this one. */
+  instance(): number;
   /** The number of the screen's last step, 0 when it has none: what a draft is made up to. */
   lastStep(): number;
   /** Moves the screen's draft mark forward to a step number (never back): the steps up to it are not drafted again. */
@@ -71,6 +73,13 @@ export function procedureScreen(source: ScreenSource): ProcedureScreen {
     key,
     browser: source.browser,
     steps,
+    instance() {
+      try {
+        return sessions?.instanceOf?.(key) ?? 0;
+      } catch {
+        return 0;
+      }
+    },
     lastStep: () => entries().reduce((top, e) => Math.max(top, e.n), 0),
     advance(n) {
       try {

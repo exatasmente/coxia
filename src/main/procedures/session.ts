@@ -566,6 +566,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
       keyedBy: 'app',
       upTo: made.upTo,
       screen: screen.key,
+      instance: screen.instance(),
     };
   }
 
