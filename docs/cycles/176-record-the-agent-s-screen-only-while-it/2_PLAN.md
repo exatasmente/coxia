@@ -77,7 +77,7 @@ Two clocks: the **real** clock (the stage's) and the **media** clock (the video'
 ## 3. Data
 
 - `RecordingMeta` (`src/shared/screen.ts`): `realMs?: number`, `cuts?: { atMs: number; skippedMs: number }[]`. Optional, so a run written by 0.9.0-beta.4 reads as it was.
-- The run file's schema (`src/shared/runs/schema.ts`, the `recording` object) lists the two new properties, with `maxItems: RECORDING_CUTS_MAX`. The format version of the run file does not change (a run with a recording is already format 2). **Consequence:** a run holding a recording with cuts, opened by 0.9.0-beta.4, would be refused as invalid, because the object allows no other property. That matters only to someone who goes back to that pre-release.
+- The run file's schema (`src/shared/runs/schema.ts`, the `recording` object) lists the two new properties, with `maxItems: RECORDING_CUTS_MAX`. The format version of the run file goes from 2 to 3 for a run whose recording holds cuts (`RUN_VERSION` 3, `runVersionOf`: 3 when a `webm` record has a non-empty `cuts`, 2 for a recording without, else 1; the version enum of the schema is `[1, 2, 3]`). **Consequence:** the schema of 0.9.0-beta.4 and beta.5 allows no other property in `recording`, so it would have refused such a run as *invalid* if it were still stamped 2. Stamped 3, those apps say "written by a newer app" (the file is left alone, not lost) and every run without cuts stays readable by them. That matters only to someone who goes back to those pre-releases.
 - `RecordingOutcome` gets the reason `'unused'`. `NotKept` includes it.
 - No config field, no `defaults.ts`, no migration.
 

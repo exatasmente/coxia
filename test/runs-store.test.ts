@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createRunStore } from '../src/main/runs-core';
-import { RunError, cancel, deleteEvidence, gateApprove, parseRun, recordEvidence, resumeAfterRestart, stageDone, startRun } from '../src/shared/runs';
+import { RunError, cancel, deleteEvidence, gateApprove, parseRun, recordEvidence, resumeAfterRestart, runVersionOf, stageDone, startRun } from '../src/shared/runs';
 import type { EvidenceRecord } from '../src/shared/evidence';
 import { agentFlowStages, at, startInput } from './helpers/runs';
 
@@ -69,7 +69,7 @@ describe('the run store', () => {
     const store = createRunStore(dir);
     const run = store.create(fresh());
     const path = join(dir, `${run.id}.json`);
-    const newer = JSON.stringify({ ...run, version: 3, somethingNew: true });
+    const newer = JSON.stringify({ ...run, version: 4, somethingNew: true });
     writeFileSync(path, newer);
     expect(store.get(run.id)).toBeNull();
     expect(store.list()).toEqual([]);
@@ -184,8 +184,8 @@ describe('the record of a screen recording', () => {
   });
 });
 
-// The run file format (#157): written as 2 only while the run holds a screen recording, so an app that does not know recordings refuses just those runs as written by a
-// newer app, and every other run stays readable by it.
+// The run file format (#157, #176): written as 2 only while the run holds a screen recording and as 3 once that recording holds cuts, so an app that does not know
+// them refuses just those runs as written by a newer app, and every other run stays readable by it.
 describe('the version of a run file', () => {
   const recording: EvidenceRecord = { id: 'ev-1', stage: 'qa', by: 'qa', title: 'Screen recording', description: '', name: 'screen-recording.webm', kind: 'webm', bytes: 100, at: at(2), from: null, message: null, recording: { durationMs: 9000, width: 8, height: 4, marks: [] } };
   const shot: EvidenceRecord = { id: 'ev-2', stage: 'qa', by: 'qa', title: 'A shot', description: '', name: 'a.png', kind: 'png', bytes: 10, at: at(2), from: null, message: null };
@@ -213,6 +213,32 @@ describe('the version of a run file', () => {
     expect(onDisk(run.id).version).toBe(2);
   });
 
+  it('is 3 once a recording holds cuts (#176): an older app refuses it as written by a newer one, not as invalid', () => {
+    const store = createRunStore(dir);
+    const run = store.create(fresh());
+    const cut = { ...recording, recording: { ...recording.recording!, durationMs: 4000, realMs: 34_000, cuts: [{ atMs: 2000, skippedMs: 30_000 }] } };
+    store.update(run.id, (r) => recordEvidence(r, cut, at(2)));
+    expect(onDisk(run.id).version).toBe(3);
+    expect(store.get(run.id)?.version).toBe(3);
+    expect(store.get(run.id)?.evidence?.['ev-1']).toEqual(cut);
+    // It stays 3 through the moves that follow.
+    store.update(run.id, (r) => recordEvidence(r, shot, at(3)));
+    expect(onDisk(run.id).version).toBe(3);
+    // A recording without cuts, or with an empty list, stays 2.
+    const plain = store.create(fresh({ id: 'r-plain1-aa11', issue: { ref: '2', iid: 2, title: 'b', url: null } }));
+    store.update(plain.id, (r) => recordEvidence(r, { ...recording, recording: { ...recording.recording!, cuts: [] } }, at(2)));
+    expect(onDisk(plain.id).version).toBe(2);
+    // The recording going away takes the run back down.
+    store.update(run.id, (r) => deleteEvidence(r, 'ev-1', at(4)));
+    expect(onDisk(run.id).version).toBe(1);
+  });
+
+  it('reads the version from the content: 1 without a recording, 2 with one, 3 with one that holds cuts', () => {
+    expect(runVersionOf({ evidence: { 'ev-1': recording } })).toBe(2);
+    expect(runVersionOf({ evidence: { 'ev-1': { ...recording, recording: { ...recording.recording!, cuts: [{ atMs: 1, skippedMs: 2 }] } } } })).toBe(3);
+    expect(runVersionOf({ evidence: { 'ev-1': shot } })).toBe(1);
+  });
+
   it('goes back to 1 when the person deletes the only recording', () => {
     const store = createRunStore(dir);
     const run = store.create(fresh());
@@ -234,9 +260,9 @@ describe('the version of a run file', () => {
     expect(onDisk(run.id).version).toBe(1);
   });
 
-  it('refuses a 3 as written by a newer app and anything else that is not a version', () => {
+  it('refuses a 4 as written by a newer app and anything else that is not a version', () => {
     const run = JSON.parse(JSON.stringify(fresh()));
-    expect(parseRun({ ...run, version: 3 })).toMatchObject({ ok: false, reason: 'newer' });
+    expect(parseRun({ ...run, version: 4 })).toMatchObject({ ok: false, reason: 'newer' });
     expect(parseRun({ ...run, version: 0 })).toMatchObject({ ok: false, reason: 'invalid' });
     expect(parseRun({ ...run, version: 1.5 })).toMatchObject({ ok: false, reason: 'invalid' });
     expect(parseRun({ ...run, version: '1' })).toMatchObject({ ok: false, reason: 'invalid' });
