@@ -50,6 +50,24 @@ export class ProviderBudgetError extends Error {
   }
 }
 
+/**
+ * Thrown when every model of a role's pool refused the call for being busy (rate limit, overload or a server error, after the retries of the client). It is a
+ * failure of the stage like any other, with a text that names the pool: the models and when the first one is back (epoch ms; null when none is known).
+ */
+export class ProviderBusyError extends Error {
+  constructor(
+    readonly pool: string,
+    readonly engine: 'claude-sdk' | 'open',
+    readonly models: string[],
+    readonly until: number | null,
+    readonly detail: string,
+  ) {
+    // i18n-ignore-next-line: error text the caller reads and the engines compare
+    super(`model pool busy: ${pool}`);
+    this.name = 'ProviderBusyError';
+  }
+}
+
 /** The read-only shell the agent may use: SDK permission rules plus the allow-list the hook enforces (see agents.ts). */
 export interface ShellPolicy {
   rules: string[];
