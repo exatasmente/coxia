@@ -6,7 +6,7 @@ import { moduleEvents } from '../../api';
 import { useT } from '../../i18n';
 import { ERROR_KEY } from '../procedures/editModel';
 import { KIND_LABEL } from '../procedures/labels';
-import { OFFER_REFRESH_MS, declineOffer, keepOffer, readOffers, type OfferOutcome } from '../procedures/offerModel';
+import { OFFER_REFRESH_MS, declineOffer, keepOffer, offersHere, readOffers, type OfferOutcome } from '../procedures/offerModel';
 import { Refusals } from '../procedures/RecordEditor';
 import { proceduresApi } from '../procedures/proceduresApi';
 import { agentName } from './names';
@@ -97,12 +97,13 @@ export function OfferCards({ thread, team }: { thread: string; team: readonly Ag
   const [offers, setOffers] = useState<OfferView[]>([]);
   const live = useRef(true);
   const read = useCallback((): void => {
-    // A paired browser is refused the channel, and a refused read is no offers: the card needs no check of where it runs.
     void readOffers(() => proceduresApi.offers(thread)).then((v) => live.current && setOffers(v));
   }, [thread]);
 
   useEffect(() => {
     live.current = true;
+    // A paired browser is refused the channels: it does not ask, listen or poll.
+    if (!offersHere()) return;
     read();
     const visible = (): void => {
       if (document.visibilityState === 'visible') read();

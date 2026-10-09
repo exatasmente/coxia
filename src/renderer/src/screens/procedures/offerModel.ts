@@ -1,4 +1,5 @@
 import type { OfferView, ProcedureWrite } from '../../../../shared/proceduresView';
+import { isWeb } from '../../platform';
 
 // What the card of an offer to keep a procedure does with the answers of the app, kept out of the component so it is tested without a window. The card is the computer's: a
 // paired browser is refused the three channels, and that refusal is the card staying away, not an error to show.
@@ -10,8 +11,12 @@ type Failure = Extract<ProcedureWrite, { ok: false }>;
 
 export type OfferOutcome = { ok: true } | { ok: false; gone: true } | { ok: false; gone: false; failure: Failure };
 
-/** The offers of a thread, or none when the app refuses the call (a paired browser) or cannot answer. */
+/** Whether this window asks for offers at all: a paired browser is refused the channels, so it does not poll them. Kept here, out of the cycle screens, which do not read the platform. */
+export const offersHere = (): boolean => !isWeb();
+
+/** The offers of a thread, or none when this is a paired browser (the channel is not called) or the app cannot answer. */
 export async function readOffers(read: () => Promise<OfferView[]>): Promise<OfferView[]> {
+  if (!offersHere()) return [];
   try {
     const offers = await read();
     return Array.isArray(offers) ? offers : [];

@@ -13,7 +13,7 @@ vi.hoisted(() => {
 });
 vi.mock('../src/renderer/src/i18n', async (orig) => ({ ...(await orig<typeof import('../src/renderer/src/i18n')>()), useT: () => t }));
 const { OfferCard, OfferCards } = await import('../src/renderer/src/screens/cycle/OfferCards');
-const { OFFER_REFRESH_MS, declineOffer, keepOffer, readOffers } = await import('../src/renderer/src/screens/procedures/offerModel');
+const { OFFER_REFRESH_MS, declineOffer, keepOffer, offersHere, readOffers } = await import('../src/renderer/src/screens/procedures/offerModel');
 
 afterEach(() => setLanguage('pt-BR'));
 
@@ -86,6 +86,21 @@ describe('what the card does with the answers', () => {
     expect(await readOffers(async () => [offer()])).toHaveLength(1);
     expect(await readOffers(async () => Promise.reject(new Error('Not available in the browser')))).toEqual([]);
     expect(await readOffers(async () => undefined as unknown as OfferView[])).toEqual([]);
+  });
+
+  it('does not call the channel at all in a paired browser', async () => {
+    const dataset = (document.documentElement as unknown as { dataset: Record<string, string> }).dataset;
+    const read = vi.fn(async () => [offer()]);
+    dataset.platform = 'web';
+    try {
+      expect(offersHere()).toBe(false);
+      expect(await readOffers(read)).toEqual([]);
+      expect(read).not.toHaveBeenCalled();
+    } finally {
+      delete dataset.platform;
+    }
+    expect(offersHere()).toBe(true);
+    expect(await readOffers(read)).toHaveLength(1);
   });
 
   it('keeps under the title typed, and tells a refusal, a gone offer and a failure apart', async () => {
