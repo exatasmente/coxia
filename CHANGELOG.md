@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.8] - 2026-10-09
+
 ### Added
 
 - **A stage of a run can test the app under development with the workspace's test environment.** Per workspace, the configuration keeps a test environment: plain variables with their values, and secret references into the secrets store under the `test.` prefix (the value is resolved on the computer, at launch, and never shown or saved). Settings › Team and cycle gains a Test-environment tab to edit it. A stage that allows it (QA stages by default; other kinds opt in per stage) starts with the entries as environment variables, its network opens only to the hosts the entries declare (443 through the app proxy; a private address only where the person marked it private), and one stage that tests this app itself on the host machine starts against fresh empty data and specs folders, never the person's real data. Every resolved value is masked — raw, URL-encoded, JSON-escaped — in the conversation, the audit log, the run file, the stage documents and the run's command lists; a commit, a push or a pull request that would carry a value is refused with the reason, so is an image a secret-carrying stage produces (images cannot be masked). A secret not marked test-only launches only after one confirmation by the person, recorded in the audit log.
@@ -411,7 +413,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.7...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.8...HEAD
+[0.9.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.7...v0.9.0-beta.8
 [0.9.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.6...v0.9.0-beta.7
 [0.9.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.5...v0.9.0-beta.6
 [0.9.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.4...v0.9.0-beta.5
