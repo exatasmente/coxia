@@ -397,6 +397,57 @@ describe('the hand-off in a conversation', () => {
     expect(handoff.paused).toBe(0);
   });
 
+  // #177 hands the answer's abort to the screen and #178 to the hand-off: a Stop while the person has the screen must end both, and leave the screen free for the next answer.
+  it('ends a hand-off the person is in, and releases the screen, when the answer is stopped', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const { d, engine, stops } = deps({}, handoff);
+    let waiting: Promise<unknown> = Promise.resolve();
+    engine.script('turn', (call) => {
+      waiting = call.screen!.handoff!.request({ what: 'Log in to the site' });
+      return new Promise((_, reject) => call.abort?.signal.addEventListener('abort', () => reject(new Error('aborted'))));
+    });
+    const answer = answerMentions(noRepo(), say(), d);
+    await began(engine);
+    await handoff.take(KEY);
+    const call = handoff.calls[0];
+    expect(call.active()).toBe(true);
+    expect(handoff.hub.held(KEY)).toBe(true);
+    expect(stops.stop('squads', 'turn')).toBe(true);
+    await answer;
+    await expect(waiting).resolves.toBeNull();
+    expect(call.active()).toBe(false);
+    expect(handoff.hub.held(KEY)).toBe(false);
+    expect(handoff.paused).toBe(0);
+    expect(handoff.asks.list()).toEqual([]);
+    expect(lines('runner.mention.stopped')).toHaveLength(1);
+    // The lease is back: the screen stays with its idle clock running, and the next answer gets it instead of "in use".
+    expect(screens.sessions.list('squads')[0].closesAt).not.toBeNull();
+    engine.script('turn', () => ({ text: 'Again.' }));
+    await answerMentions(noRepo(), say(), d);
+    expect(engine.calls[1].screen?.browser).toBeTruthy();
+  });
+
+  it('ends the hand-off of an answer stopped while its browser is still starting, so the request is not left waiting', async () => {
+    let start!: () => void;
+    screens = fakeScreens({ startGate: new Promise<void>((r) => (start = r)) });
+    const handoff = fakeHandoff();
+    const { d, engine, stops } = deps({}, handoff);
+    engine.script('turn', () => ({ text: 'unused' }));
+    const answer = answerMentions(noRepo(), say(), d);
+    await vi.waitFor(() => expect(screens.sessions.has(KEY)).toBe(true));
+    expect(stops.stop('squads', 'turn')).toBe(true);
+    await answer;
+    start();
+    await vi.waitFor(() => expect(screens.sessions.has(KEY)).toBe(false));
+    expect(engine.calls).toHaveLength(0);
+    expect(handoff.calls).toHaveLength(1);
+    expect(handoff.calls[0].active()).toBe(false);
+    await expect(handoff.calls[0].request({ what: 'Log in' })).resolves.toBeNull();
+    expect(handoff.asks.list()).toEqual([]);
+    expect(handoff.paused).toBe(0);
+  });
+
   it('lets a kept session refuse and mask through the answer that has it now, not the one that made it', async () => {
     screens = fakeScreens();
     const handoff = fakeHandoff();

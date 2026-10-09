@@ -504,4 +504,50 @@ describe('the hand-off of a stage', () => {
     expect(handoff.paused).toBe(0);
     expect(handoff.asks.list()).toEqual([]);
   });
+
+  // #177 hands the stage's abort to the screen and #178 to the hand-off: a cancel while the person has the screen must end both.
+  it('ends a hand-off the person is in, and releases the screen, when the stage is cancelled', async () => {
+    screens = fakeScreens({ ownDisplay: '/own/X77' });
+    const handoff = fakeHandoff();
+    const b = await boot({
+      screens: hubFake(true).hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      handoff: handoff.service,
+      configure: (c) => {
+        c.runner.sandbox.display = true;
+        Object.assign(agentOf(c, 'planner'), { screen: true, shell: 'none' });
+      },
+    });
+    easy(b);
+    let waiting: Promise<unknown> = Promise.resolve();
+    let started = false;
+    b.engine.script('planner', (call) => {
+      started = true;
+      waiting = call.screen!.handoff!.request({ what: 'Log in to the site' });
+      return new Promise((_resolve, reject) => call.abort?.signal.addEventListener('abort', () => reject(new Error('cancelled'))));
+    });
+    const run = await b.runner.start('app#101');
+    await vi.waitFor(
+      () => {
+        if (b.runner.get(run.id)?.status === 'gate') b.runner.gate(run.id, 'approve');
+        expect(started).toBe(true);
+      },
+      { timeout: 20_000, interval: 20 },
+    );
+    const key = `run:${run.id}`;
+    await handoff.take(key);
+    const call = handoff.calls[0];
+    expect(call.active()).toBe(true);
+    expect(handoff.hub.held(key)).toBe(true);
+    expect(b.runner.cancel(run.id).status).toBe('cancelled');
+    await b.settle();
+    await expect(waiting).resolves.toBeNull();
+    expect(call.active()).toBe(false);
+    expect(handoff.hub.held(key)).toBe(false);
+    expect(handoff.paused).toBe(0);
+    expect(handoff.asks.list()).toEqual([]);
+    // The browser ends with the stage: nothing of it is left open for the person to find.
+    expect(screens.sessions.list()).toEqual([]);
+  });
 });
