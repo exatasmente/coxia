@@ -73,7 +73,28 @@ const ASSIGNMENT = /^[A-Za-z_]\w*=/;
 const LEADING_ASSIGNMENT = /^[A-Za-z_]\w*=(?:"[^"]*"|'[^']*'|[^\s"'`$()&|;<>]*)\s+/;
 const LEADING_CD = /^cd\s+(?:"[^"]*"|'[^']*'|[^\s"'`$()&|;<>]+)\s*&&\s*/;
 const PLAIN_PROGRAM = /^[\w.+@][\w.+@-]*$/;
-const PLAIN_SUBCOMMAND = /^[a-z][\w:-]*$/i;
+// The only words of a command that enter the wording of a step, and so a title, a card and the audit: a positional word of an unknown program may be a secret.
+const SUBCOMMANDS: Record<string, ReadonlySet<string>> = {
+  npm: new Set(['run', 'test', 'install', 'ci', 'build']),
+  pnpm: new Set(['run', 'test', 'install', 'ci', 'build']),
+  yarn: new Set(['run', 'test', 'install', 'ci', 'build']),
+  git: new Set(['add', 'branch', 'checkout', 'cherry-pick', 'clone', 'commit', 'fetch', 'init', 'merge', 'pull', 'push', 'rebase', 'reset', 'restore', 'stash', 'switch', 'tag']),
+  cargo: new Set(['build', 'check', 'clippy', 'fmt', 'run', 'test']),
+  make: new Set(['all', 'build', 'check', 'ci', 'clean', 'dev', 'fmt', 'format', 'install', 'lint', 'run', 'test']),
+  go: new Set(['build', 'run', 'test', 'vet']),
+};
+const PYTHON_MODULES = new Set(['black', 'build', 'coverage', 'flake8', 'mypy', 'pip', 'pytest', 'ruff', 'tox', 'unittest', 'venv']);
+const SCRIPT_PATH = /^[\w./-]+\.(?:[cm]?js|ts)$/;
+
+/** The words a step is worded with after the program: a known subcommand, `python -m <module>` or `node <script>`, else none. */
+function subcommandOf(program: string, args: readonly string[]): string {
+  const first = args[0];
+  if (first === undefined) return '';
+  if (SUBCOMMANDS[program]?.has(first)) return ` ${first}`;
+  if (/^python[\d.]*$/.test(program) && first === '-m' && args[1] !== undefined && PYTHON_MODULES.has(args[1])) return ` -m ${args[1]}`;
+  if (program === 'node' && SCRIPT_PATH.test(first) && !first.startsWith('-')) return ` ${first}`;
+  return '';
+}
 
 // Carriers: what mentions a place or a word where a secret lives. A command with one is left out whole, which errs toward leaving out (`npm run test:token` goes too).
 const CARRIERS: RegExp[] = [
@@ -233,8 +254,8 @@ export function buildCommandDraft(entries: readonly ExecEntry[], options: Comman
       leftOut++;
       continue;
     }
-    const sub = wordsOf(run)[1];
-    const text = `Run ${program}${sub && PLAIN_SUBCOMMAND.test(sub) ? ` ${sub}` : ''}`;
+    // The step is worded from the program and a known subcommand only; the full command stays in `run`, where the validator reads it.
+    const text = `Run ${program}${subcommandOf(program, wordsOf(run).slice(1))}`;
     counted.push({ at: e.n, run, program, text, failed: e.exitCode !== 0 || e.timedOut, timedOut: e.timedOut, exitCode: e.exitCode });
   }
 

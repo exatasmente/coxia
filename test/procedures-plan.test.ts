@@ -87,6 +87,17 @@ describe('a work that earned a last turn', () => {
     expect(offers[0].screen).toBeUndefined();
   });
 
+  it('commands: a positional word of an unknown program never reaches a step\'s words, the title or the plan\'s text outside the run', () => {
+    const s = shell();
+    s.ran('mytool run', 1);
+    s.ran('mytool hunter2 --verbose');
+    const { session } = make({ commands: s.source });
+    const offers = session.plan({ words: '' })?.settle() ?? [];
+    expect(offers).toHaveLength(1);
+    expect(offers[0].steps).toEqual([{ text: 'Run mytool', run: 'mytool hunter2 --verbose' }]);
+    expect(offers[0].title).toBe('Run mytool');
+  });
+
   it('commands: no trial and error, no turn (all worked, or a failure its program never recovered from)', () => {
     const worked = shell();
     worked.ran('npm ci');

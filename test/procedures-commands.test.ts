@@ -89,6 +89,15 @@ describe('the path that worked (acceptance 1)', () => {
     expect(d.steps[0].run).toBe('npm run build');
   });
 
+  it('words a step from a known subcommand only, so a positional word of any other program stays in the run', () => {
+    n = 0;
+    const d = draft([ok('mytool hunter2'), ok('git commit -m work'), ok('git frobnicate'), ok('make deploy'), ok('make test'), ok('python3 -m pytest -x'), ok('python -m mymodule'), ok('node scripts/x.mjs --out=dist'), ok('node app.js'), ok('cargo test'), ok('go build ./...'), ok('pnpm install'), ok('yarn lint')]);
+    expect(d.steps.map((s) => s.text)).toEqual(['Run mytool', 'Run git commit', 'Run git', 'Run make', 'Run make test', 'Run python3 -m pytest', 'Run python', 'Run node scripts/x.mjs', 'Run node app.js', 'Run cargo test', 'Run go build', 'Run pnpm install', 'Run yarn']);
+    expect(d.steps[0].run).toBe('mytool hunter2');
+    expect(d.failed).toEqual([]);
+    expect(JSON.stringify(d.steps.map((s) => s.text))).not.toContain('hunter2');
+  });
+
   it('lists the programs with most steps first, the first to appear on a tie', () => {
     n = 0;
     expect(draft([ok('make build'), ok('npm ci'), ok('npm test'), ok('docker ps')]).programs).toEqual(['npm', 'make', 'docker']);
