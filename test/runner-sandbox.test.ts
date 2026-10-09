@@ -305,7 +305,9 @@ describe('what QA claims to have executed', () => {
     const run = await reach(b, await b.runner.start('app#101'), 'ready');
     expect(run.status).toBe('failed');
     expect(run.error?.detail).toMatch(/evidenceIds/);
-    expect(Object.keys(run.evidence ?? {})).toHaveLength(1);
+    // The stage was asked once more before failing; the round kept a second piece and still cited none.
+    expect(b.engine.calls.filter((c) => c.agent.id === 'qa')).toHaveLength(2);
+    expect(Object.keys(run.evidence ?? {})).toHaveLength(2);
   });
 
   it('finishes a retried QA that cites the evidence an earlier attempt of the stage kept, and not one citing an id the run never kept', async () => {

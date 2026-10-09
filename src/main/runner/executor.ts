@@ -713,6 +713,23 @@ function repairRound(d: ExecutorDeps, call: AgentCall, commands: string[], watch
 }
 
 /**
+ * The one round given to a QA stage whose answer concludes scenarios with no evidence the stage kept behind them: the agent is told which ids it cited that
+ * were never kept and which pieces the stage does hold, and asked to keep the rest with SaveEvidence and cite the ids it gets back. The answer comes whole.
+ * Null when the round fails: the first answer then stands, and the stage fails for the scenarios it left without evidence.
+ */
+function evidenceRound(d: ExecutorDeps, call: AgentCall, commands: string[], watch: Watchdog, lacking: readonly Scenario[], kept: readonly EvidenceRecord[], first: Answered): Promise<{ data: unknown; answered: Answered } | null> {
+  const held = new Set(kept.map((e) => e.id));
+  const said = lacking
+    .map((s) => {
+      const unknown = (s.evidenceIds ?? []).filter((id) => !held.has(id));
+      return unknown.length ? `${s.name}: ${cp('runner.repair.evidenceUnknown', { ids: unknown.join(', ') })}` : `${s.name}: ${cp('runner.repair.evidenceNone')}`;
+    })
+    .join('\n');
+  const list = kept.map((e) => `${e.id}: ${clipText(e.title.replace(/\s+/g, ' '), 160)}`).join('\n');
+  return askAgain(d, call, commands, watch, cp('runner.repair.evidence', { count: lacking.length, scenarios: said, kept: list || cp('runner.repair.noEvidence') }), first);
+}
+
+/**
  * The documents a concluding answer leaves missing: the stage produces them, the answer does not carry them and the cycle folder does not have them. An answer
  * that pauses (a question) or says nothing is not asked for documents: it is not concluding.
  */
@@ -925,6 +942,13 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     if (keptCount) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookKept', params: { agent: agent.id, count: keptCount }, stage: stage.id });
   };
   const keepRecording = (outcome: RecordingOutcome | null): void => void keepStageRecording(d, runSoFar(), stage, agent, outcome);
+  // What backs a QA scenario: a piece this stage kept, in this attempt or an earlier one. An attempt that picks the stage up again is told to cite the evidence
+  // already kept by its id. The app's own recording and a piece the retention sweep removed back nothing.
+  const backingRecords = (): EvidenceRecord[] => [...keptRecords, ...Object.values(run.evidence ?? {}).filter((e) => e.stage === stage.id && !e.recording && !e.removed)];
+  const unevidenced = (scenarios: readonly Scenario[]): Scenario[] => {
+    const backing = new Set(backingRecords().map((e) => e.id));
+    return scenarios.filter((scenario) => scenario.result !== 'not-run' && !scenario.evidenceIds?.some((id) => backing.has(id)));
+  };
   const evidence =
     evidenceRoot && d.keepEvidence
       ? evidenceToolsOf({
@@ -1124,6 +1148,18 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         for (const s of judged.filter((x) => x.unbacked)) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.unbacked', params: { agent: agent.id, name: s.name }, stage: stage.id });
       }
     }
+    // A QA answer with a scenario that cites no evidence the stage kept (no id, or an id SaveEvidence never handed back) is asked once to keep it, before the
+    // stage fails for it: the output folder is still there, so what the agent ran can still be saved. It comes before the round for documents, which takes only
+    // the documents from its answer: this one takes the answer whole.
+    const lacking = checked(kind) && evidence ? unevidenced(readOutput(data, kind).scenarios) : [];
+    if (lacking.length) {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.evidenceRepair', params: { agent: agent.id, names: lacking.map((s) => s.name).join('; ') }, stage: stage.id });
+      const repaired = await evidenceRound(d, call, commands, watch, lacking, backingRecords(), answered);
+      if (repaired !== null) {
+        data = repaired.data;
+        answered = repaired.answered;
+      }
+    }
     // A concluding answer that leaves out a document the stage produces is asked once for it, before the stage fails for it: the agent may have written the
     // document somewhere else, or said it was in the answer and left it out. Only the documents that were missing are taken from the round; the rest of the
     // answer stays as it was, already checked.
@@ -1190,12 +1226,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // What QA claims to have executed is checked against what the stage's sandbox ran; with no sandbox every scenario was only read.
   // Only what the agent ran itself backs a claim: the app's own commands before QA are context, not the agent's evidence.
   if (kind === 'qa') output.scenarios = judgeScenarios(output, kind, session, ran);
-  // A scenario is backed by what this stage kept, in this attempt or an earlier one: an attempt that picks the stage up again is told to cite the evidence already
-  // kept by its id. The app's own recording and a piece the retention sweep removed back nothing.
-  const backing = new Set([...keptIds, ...Object.values(run.evidence ?? {}).filter((e) => e.stage === stage.id && !e.recording && !e.removed).map((e) => e.id)]);
-  const scenariosWithoutEvidence = kind === 'qa' && evidence
-    ? output.scenarios.filter((scenario) => scenario.result !== 'not-run' && !scenario.evidenceIds?.some((id) => backing.has(id)))
-    : [];
+  // A scenario is backed by what this stage kept (`unevidenced`); the repair round already asked once for what was missing.
+  const scenariosWithoutEvidence = kind === 'qa' && evidence ? unevidenced(output.scenarios) : [];
   if (scenariosWithoutEvidence.length) throw new StageError('qa-evidence-missing', { scenarios: scenariosWithoutEvidence.map((scenario) => scenario.name).join(', ') });
   // Everything that ran in the stage's sandbox, in order: the app's own commands before QA, then the agent's. A called agent that wrote ran in its own session over
   // the same worktree, and its commands join the list under its name.

@@ -162,6 +162,75 @@ describe('the repair round of a QA scenario with no backing', () => {
   });
 });
 
+describe('the repair round of a QA scenario with no evidence kept', () => {
+  const read = (name: string, evidenceIds?: string[]) => ({ name, result: 'pass' as const, detail: 'Ran the tests', evidence: 'read' as const, commands: [], ...(evidenceIds ? { evidenceIds } : {}) });
+  const evidenceRounds = (b: Boot, run: Run) => b.thread(run).filter((m) => m.kind === 'system' && m.code === 'runner.qa.evidenceRepair');
+
+  it('asks once when a scenario cites an id that was never kept, and takes the evidence the round keeps', async () => {
+    const { b, run } = await qaRun(
+      (c) => void (c.language = 'en'),
+      async () => work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [read('The list', ['ev-9'])] }),
+      async (call) => work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [read('The list', await keepQaEvidence(call))] }),
+    );
+    const done = b.runner.get(run.id) as Run;
+    const replies = b.engine.calls.filter((c) => c.agent.id === 'qa');
+    expect(replies).toHaveLength(2);
+    // The round continues the answer's session and names the scenario and the id nothing kept.
+    expect(replies[1].resume).toEqual({ session: 'session-5', engine: 'claude-sdk' });
+    expect(replies[1].prompt).toContain('The list: cites ev-9, which this stage never kept');
+    expect(replies[1].prompt).toContain('(no evidence kept in this stage)');
+    expect(evidenceRounds(b, done)).toHaveLength(1);
+    expect(done.status).not.toBe('failed');
+    expect(done.qa[0].scenarios[0].evidenceIds).toHaveLength(1);
+  });
+
+  it('lists the evidence the stage already kept, so the round can cite it', async () => {
+    let kept = '';
+    const { b, run } = await qaRun(
+      (c) => void (c.language = 'en'),
+      async (call) => {
+        [kept] = await keepQaEvidence(call);
+        return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [read('The list', [kept]), read('The squad')] });
+      },
+      async () => work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [read('The list', [kept]), read('The squad', [kept])] }),
+    );
+    const done = b.runner.get(run.id) as Run;
+    const replies = b.engine.calls.filter((c) => c.agent.id === 'qa');
+    expect(replies).toHaveLength(2);
+    // Only the scenario without evidence is asked about; the piece the stage kept is offered by its id and title.
+    expect(replies[1].prompt).toContain('The squad: cites no evidence at all');
+    expect(replies[1].prompt).not.toContain('The list:');
+    expect(replies[1].prompt).toContain(`${kept}: QA result`);
+    expect(done.status).not.toBe('failed');
+  });
+
+  it('fails the stage when the round still leaves a scenario without evidence, without asking again', async () => {
+    const { b, run } = await qaRun(
+      (c) => void (c.language = 'en'),
+      async () => work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [read('The list', ['ev-5'])] }),
+      async () => work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [read('The list', ['ev-6'])] }),
+    );
+    const done = b.runner.get(run.id) as Run;
+    expect(b.engine.calls.filter((c) => c.agent.id === 'qa')).toHaveLength(2);
+    expect(evidenceRounds(b, done)).toHaveLength(1);
+    expect(done.status).toBe('failed');
+    expect(done.error?.detail).toContain('The list');
+  });
+
+  it('asks nothing when every concluded scenario cites kept evidence or did not run', async () => {
+    const { b, run } = await qaRun(
+      (c) => void (c.language = 'en'),
+      async (call) => work('Checked.', {
+        artifacts: [doc('5_TEST_PLAN.md')],
+        scenarios: [read('The list', await keepQaEvidence(call)), { name: 'The screen', result: 'not-run', detail: 'No display', evidence: 'read' }],
+      }),
+    );
+    const done = b.runner.get(run.id) as Run;
+    expect(b.engine.calls.filter((c) => c.agent.id === 'qa')).toHaveLength(1);
+    expect(evidenceRounds(b, done)).toHaveLength(0);
+  });
+});
+
 describe('the test plan and the comment say what the run recorded', () => {
   it('writes the plan from the record: a downgraded scenario reads as read, a not-run one as not run', async () => {
     const { b, run } = await qaRun(
