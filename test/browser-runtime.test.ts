@@ -13,6 +13,9 @@ import { EXPOSED_TOOLS, PROBE_TOOLS } from '../src/main/browser/allowlist';
 import { countsText } from '../src/main/browser/audit';
 import { findChromium } from '../src/main/browser/chromium';
 import { createHostsTally } from '../src/main/browser/hosts';
+import { createIntermediary } from '../src/main/browser/intermediary';
+import { createMaskSet } from '../src/main/browser/mask';
+import { createStepLog } from '../src/main/browser/stepLog';
 import { BrowserStartError, type BrowserRuntime, startBrowser } from '../src/main/browser/launch';
 import { BROWSER_PROXY_URL, browserBwrapArgs, browserEnv, browserNetwork, displayBwrapArgs, displayNameOf, serverArgs, serverConfig, serverEnv, shellQuote, wrapperScript } from '../src/main/browser/policy';
 import { displayProgram } from '../src/main/sandbox';
@@ -443,6 +446,36 @@ describe.skipIf(!real)('a real browser in its sandbox', () => {
     // `http://` reaches the proxy as a request that is not CONNECT: refused, and counted under no host.
     expect(refusedBy.some((d) => !d.allowed && d.why === 'method')).toBe(true);
   }, 120_000);
+
+  it('is driven through the intermediary: the app reads the page itself, holds a submit, and fences what comes back', async () => {
+    const asked: string[] = [];
+    const log = createStepLog();
+    const inter = createIntermediary({
+      client: runtime.client,
+      network: runtime.network,
+      hosts: runtime.hosts,
+      masks: createMaskSet(),
+      log,
+      gate: { hold: async (r) => (asked.push(`${r.why} ${r.step.name ?? ''}`), 'no'), passed: () => false },
+      seesImages: true,
+    });
+    const nav = await inter.call('browser_navigate', { url: `https://${HOST}/` });
+    expect(nav.isError, nav.text).toBe(false);
+    const snap = await inter.call('browser_snapshot', {});
+    expect(snap.text).toContain('<data>');
+    expect(snap.text).toContain('Welcome to the allowed site');
+    const ref = /button "Next" \[ref=(\w+)\]/.exec(snap.text)?.[1] as string;
+    expect(ref).toBeTruthy();
+    // A click on a control named like any other is let through; the app asked the page about it with its own question, which the real server answered.
+    const click = await inter.call('browser_click', { target: ref });
+    expect(click.isError, click.text).toBe(false);
+    expect(asked).toEqual([]);
+    // A selector is refused before the browser sees it, and a host outside the list never reaches it.
+    expect((await inter.call('browser_click', { target: 'button' })).isError).toBe(true);
+    expect((await inter.call('browser_navigate', { url: 'https://other.example.com/' })).isError).toBe(true);
+    expect(log.entries().map((e) => `${e.tool} ${e.outcome} ${e.class}`)).toEqual(['browser_navigate ok free', 'browser_snapshot ok free', 'browser_click ok free', 'browser_click not-run unclassified', 'browser_navigate not-run unclassified']);
+    expect(log.entries()[2]).toMatchObject({ role: 'button', name: 'Next', site: HOST });
+  }, 90_000);
 
   it('has nothing but its own loopback to go out by', async () => {
     // The sandbox shows only `lo`: the executable of the browser's sandbox is the one the server launched, so look at it with a probe of the same arguments.
