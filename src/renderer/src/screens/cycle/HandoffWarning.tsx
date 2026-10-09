@@ -6,9 +6,20 @@ import { useT } from '../../i18n';
 // sandbox or on the computer, or none), so each guarantee is said only where it holds, and the weaker one is said as weaker. It is shown on every hand-off: nothing remembers a
 // "do not show again". Nothing is sent to the screen until the button is clicked.
 
+// The keys composeWarning can give, each written out where a search finds it (it builds them from a prefix); a line it names that is not here is not shown.
+const KNOWN = new Set<string>([
+  'ui.screen.handoff.warning.always',
+  'ui.screen.handoff.warning.recorded',
+  'ui.screen.handoff.warning.browser',
+  'ui.screen.handoff.warning.programs',
+  'ui.screen.handoff.warning.programsHost',
+  'ui.screen.handoff.warning.noPrograms',
+  'ui.screen.handoff.warning.last',
+]);
+
 export function HandoffWarning({ ask, busy, onTake, onDecline }: { ask: PendingAsk; busy: boolean; onTake: () => void; onDecline: () => void }) {
   const t = useT();
-  const lines = composeWarning(ask.handoff?.paths ?? { browser: false, shell: 'none' });
+  const lines = composeWarning(ask.handoff?.paths ?? { browser: false, shell: 'none' }).filter((key) => KNOWN.has(key));
   return (
     <section className="cy-handoff-warning" role="group" aria-label={t('ui.screen.handoff.warning.title')}>
       <h3 className="cy-handoff-warning-title">{t('ui.screen.handoff.warning.title')}</h3>
