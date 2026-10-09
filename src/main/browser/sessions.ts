@@ -9,6 +9,7 @@ import { type AskContext, type ScreenAsks } from './asks';
 import { type ScreenGrants, withheldText } from './guard';
 import { type Intermediary, createIntermediary } from './intermediary';
 import { BrowserStartError, type BrowserRuntime, type BrowserStartOptions } from './launch';
+import { safeHost, summaryParams } from './hosts';
 import { type MaskSet, createMaskSet } from './mask';
 import { type OpenedProfile, ProfileError } from './profile';
 import { browserNetwork } from './policy';
@@ -189,8 +190,6 @@ export interface ScreenSessions {
 /** What a screen was opened with that a change of the settings must close it for: the network of its browser, and whether its agent's logged-in profile was granted. */
 const setupOf = (network: unknown, profile: boolean): string => JSON.stringify([network, profile]);
 const modeOf = (shell: AgentDef['shell']): ScreenMode => (shell === 'host' ? 'host' : shell === 'sandbox' ? 'sandbox' : 'none');
-/** A host a page made the browser ask for is not the app's text: only what DNS can write reaches the thread. */
-const safeHost = (h: string): string | null => (/^[a-z0-9]([a-z0-9.-]{0,78}[a-z0-9])?$/.test(h) ? h : null);
 
 export function createScreenSessions(d: SessionDeps): ScreenSessions {
   const now = d.now ?? Date.now;
@@ -332,13 +331,8 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
     for (const mark of [...said]) if (mark.startsWith(`${s.key}|`)) said.delete(mark);
     if (reason === 'idle') tell(s, 'idleClosed', { agent: s.agent, minutes: String(Math.round(idleMs / 60_000)) });
     else tell(s, 'closed', { agent: s.agent, reason: t(`main.browser.end.${reason}`) });
-    const refused = Object.entries(summary.refused)
-      .sort((a, b) => b[1] - a[1])
-      .map(([h]) => safeHost(h))
-      .filter((h): h is string => h !== null)
-      .slice(0, 5);
-    const refusedCount = Object.values(summary.refused).reduce((a, b) => a + b, 0);
-    if (refusedCount > 0) tell(s, 'hostsSummary', { agent: s.agent, allowed: String(Object.values(summary.allowed).reduce((a, b) => a + b, 0)), refused: String(refusedCount), hosts: refused.join(', ') || '—' });
+    const line = summaryParams(summary);
+    if (line) tell(s, 'hostsSummary', { agent: s.agent, allowed: String(line.allowed), refused: String(line.refused), hosts: line.hosts });
     changed(s.key);
   }
 

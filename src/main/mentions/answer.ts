@@ -12,7 +12,10 @@ import type { AgentCall } from '../agents';
 import type { ReadConfinement } from '../engine/contract';
 import { callKey } from '../../shared/browser';
 import { type CallScreen, type CallScreenRequest, type ScreenPorts, modelSeesImages, openCallScreen, promptFor } from '../browser/callScreen';
+import { countsText } from '../browser/audit';
 import { grantsFor, withheldText } from '../browser/guard';
+import { createHostsTally, safeHost, summaryParams } from '../browser/hosts';
+import type { ProxyDecision } from '../sandbox/proxy';
 import { recordWrite } from '../auditoria';
 import { ATAS } from '../env';
 import { redact } from '../errorlog-core';
@@ -398,9 +401,34 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
       // A note that cannot be recorded does not stop the answer.
     }
   };
-  // The proxy of a sandbox says what it decided, as a stage's does: a conversation's agent with hosts of its own shows the person which names it asked for.
-  const onProxy = (p: { host: string; port: number; allowed: boolean; why?: string }): void =>
-    say('runner.proxy', { agent: def.id, host: p.host || '—', port: p.port, result: p.allowed ? t('main.runner.proxy.allowed') : t(`main.runner.proxy.refused.${p.why}`) });
+  // The proxy of the session's sandbox is counted, not told tunnel by tunnel: the thread gets one line the first time a host is refused and one summary when the session
+  // closes (a package install opens dozens of tunnels), as the app's browser does, and the audit log gets the summary.
+  const tally = createHostsTally({
+    onFirstRefusal: (h) => {
+      const shown = safeHost(h);
+      if (shown) say('runner.proxy.firstRefusal', { agent: def.id, host: shown });
+    },
+  });
+  tally.beginCall();
+  const onProxy = (p: ProxyDecision): void => tally.decide(p);
+  const summarize = (): void => {
+    const line = summaryParams(tally.summary());
+    if (!line) return;
+    say('runner.proxy.summary', { agent: def.id, allowed: line.allowed, refused: line.refused, hosts: line.hosts });
+    const { allowed, refused } = tally.summary();
+    recordWrite({
+      kind: 'exec',
+      issue: place.run?.issue.iid ?? 0,
+      target: 'network summary',
+      via: 'sandbox',
+      fields: { agent: def.id, thread, hostsAllowed: countsText(allowed), hostsRefused: countsText(refused) },
+      ok: true,
+      code: null,
+      result: 'summary',
+      origin: { actionId: '', kind: 'conversation-proxy', key: `${thread}:${def.id}`, summary: null },
+      by: def.id,
+    });
+  };
   const onExec = (r: { n: number; command: string; exitCode: number | null; timedOut: boolean; ms: number; output: string; refused?: string }, mode?: 'run' | 'refused'): void => {
     say(host ? 'runner.exec.host' : 'runner.exec', { agent: def.id, n: r.n, command: redact(r.command.replace(/\s+/g, ' ')).slice(0, 300), result: r.refused ? t('main.runner.exec.refused.denied') : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }), ms: Math.round(r.ms / 100) / 10, tail: r.output.slice(0, 600) || '—' });
     // A command of a conversation is audited as a stage's is: what ran, where, and how it ended; the log's own scrubbing applies on top.
@@ -438,7 +466,19 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
   const grants = grantsFor(def);
   if (def.shell !== 'host' && grants.withheld.includes('hosts') && !def.screen) say('runner.screen.testWorkspace', { agent: def.id, what: withheldText('hosts') });
   if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, approve, signal, ...(display ? { display } : {}) });
-  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, agent: { allowedHosts: grants.allowedHosts }, ...(display ? { display } : {}), ...(source.clone ? { clone: source.clone } : {}) });
+  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, agent: { allowedHosts: grants.allowedHosts }, ...(display ? { display } : {}), ...(source.clone ? { clone: source.clone } : {}) }).then((session) => {
+    // The summary is written once, when the session ends, whoever ends it.
+    const close = session.close.bind(session);
+    let done = false;
+    session.close = async () => {
+      if (!done) {
+        done = true;
+        summarize();
+      }
+      return close();
+    };
+    return session;
+  });
 }
 
 /** What the sessions are asked to open the screen of an agent in this place for this answer. */
