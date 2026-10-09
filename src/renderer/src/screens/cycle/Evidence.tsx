@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { EvidenceView } from '../../../../shared/evidence';
-import { isEvidenceImage } from '../../../../shared/evidence';
+import { evidenceDataUrl, isEvidenceImage } from '../../../../shared/evidence';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import { runsApi } from './runsApi';
@@ -14,7 +14,7 @@ const size = (t: (key: string, params?: Record<string, string | number>) => stri
 
 const stamp = (iso: string): string => new Date(iso).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
-/** A blob address of one piece of evidence, read once and freed when the component goes. */
+/** The image of one piece of evidence as a `data:` address, read once: the desktop's content policy refuses a `blob:` image. Only an image is shown through it. */
 function useEvidenceUrl(runId: string, record: EvidenceView | null): { url: string | null; error: boolean } {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -23,15 +23,13 @@ function useEvidenceUrl(runId: string, record: EvidenceView | null): { url: stri
     setError(false);
     if (!record) return;
     let live = true;
-    let made: string | null = null;
     void runsApi.evidenceBytes(runId, record.id).then(
       (bytes) => {
         if (!live || !bytes) {
           if (live) setError(true);
           return;
         }
-        made = URL.createObjectURL(new Blob([bytes], { type: record.media }));
-        setUrl(made);
+        setUrl(evidenceDataUrl(bytes, record.media));
       },
       () => {
         if (live) setError(true);
@@ -39,7 +37,6 @@ function useEvidenceUrl(runId: string, record: EvidenceView | null): { url: stri
     );
     return () => {
       live = false;
-      if (made) URL.revokeObjectURL(made);
     };
   }, [runId, record]);
   return { url, error };
@@ -161,7 +158,7 @@ export function EvidenceAttachment({ runId, attachment }: { runId: string; attac
   const [open, setOpen] = useState(false);
   const [failed, setFailed] = useState(false);
   const image = attachment.media.startsWith('image/');
-  const { url } = useEvidenceUrl(runId, open ? ({ id: attachment.id, media: attachment.media } as EvidenceView) : null);
+  const { url } = useEvidenceUrl(runId, open && image ? ({ id: attachment.id, media: attachment.media } as EvidenceView) : null);
   const download = async () => {
     setFailed(false);
     const bytes = await runsApi.evidenceBytes(runId, attachment.id).catch(() => null);
@@ -213,9 +210,9 @@ export function EvidenceCites({ runId, ids, list }: { runId: string; ids: string
 function EvidenceCite({ runId, record, id }: { runId: string; record: EvidenceView | undefined; id: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const { url } = useEvidenceUrl(runId, open ? (record ?? null) : null);
+  const image = !!record && isEvidenceImage(record.kind);
+  const { url } = useEvidenceUrl(runId, open && image ? (record ?? null) : null);
   if (!record) return <span className="faint small mono">{id}</span>;
-  const image = isEvidenceImage(record.kind);
   return (
     <span className="cy-evidence-cite">
       {image ? (
