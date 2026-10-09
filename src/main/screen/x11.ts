@@ -27,7 +27,10 @@ const GENERIC_EVENT_MAX = 64 * 1024;
 export const SCREEN_SIDE_MAX = 4096;
 export const FRAME_BYTES_MAX = REPLY_MAX;
 const FAKE_INPUT_MAX = 1024;
-/** The root's children a reply may list (4 bytes each), and how many of them, from the top of the stack, are asked about. */
+/**
+ * The root's children a reply may list (4 bytes each), and how many of them, from the top of the stack, are asked about. A root with more children than that, none of
+ * the ones asked about drawn, is taken as in use: a window may be among those left out, and a recording that stops for want of a look is worse than one that goes on.
+ */
 const TREE_MAX_BYTES = 64 * 1024;
 const TREE_LOOKED_AT = 64;
 
@@ -83,7 +86,9 @@ export interface X11Connection {
   grab(): Promise<X11Frame | null>;
   /**
    * A window is mapped on the screen: true when a child of the root is drawable and viewable, false when the root is bare, null when the server did not answer. It
-   * is how the recording tells a screen in use from an empty one. Never throws.
+   * is how the recording tells a screen in use from an empty one. Of the root's children only the 64 at the top of the stack are asked about; a root with more, none
+   * of the 64 drawn, answers true (a window may be among the rest). The whole question has one deadline, `requestMs`: past it the answer is null, with the connection
+   * and the queue left free. Never throws.
    */
   inUse(): Promise<boolean | null>;
   /** The keyboard mapping, read once per connection; null when it cannot be read. */
@@ -373,6 +378,8 @@ export async function connectX11(path: string, deps: X11Deps = {}): Promise<X11C
   // The root's children come in stacking order, the top one last. A window that was destroyed between the two requests answers with an error: it is not one.
   const inUseNow = (): Promise<boolean | null> =>
     serial(async (): Promise<boolean | null> => {
+      // One deadline for the whole question, from the time it runs (not the time it waited behind a frame): a server that answers each of 64 requests slowly must not hold the queue.
+      const deadline = Date.now() + requestMs;
       const rest = Buffer.alloc(4);
       rest.writeUInt32LE(info.root, 0);
       const tree = await exchange(simple(OP_QUERY_TREE, 0, 2, rest), 1, { maxExtra: TREE_MAX_BYTES, ms: requestMs });
@@ -384,6 +391,7 @@ export async function connectX11(path: string, deps: X11Deps = {}): Promise<X11C
         return null;
       }
       for (let i = count - 1; i >= Math.max(0, count - TREE_LOOKED_AT); i--) {
+        if (Date.now() >= deadline) return null;
         const ask = Buffer.alloc(4);
         ask.writeUInt32LE(tree.reply.readUInt32LE(32 + 4 * i), 0);
         const got = await exchange(simple(OP_GET_WINDOW_ATTRIBUTES, 0, 2, ask), 1, { maxExtra: 12, exactExtra: 12, ms: requestMs });
@@ -391,7 +399,8 @@ export async function connectX11(path: string, deps: X11Deps = {}): Promise<X11C
         // Class 1 is InputOutput (2 is InputOnly, which draws nothing); map state 2 is Viewable.
         if (got.kind === 'reply' && got.reply.readUInt16LE(12) === 1 && got.reply[26] === 2) return true;
       }
-      return false;
+      // Windows below the ones asked about are not known: in use.
+      return count > TREE_LOOKED_AT;
     });
 
   const conn: X11Connection = {

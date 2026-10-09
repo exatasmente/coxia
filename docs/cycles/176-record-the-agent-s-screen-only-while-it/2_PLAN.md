@@ -31,6 +31,8 @@ No new dependency, no configuration, no schema bump of the config. The run file'
 1. `QueryTree` (opcode 15) on the root. The reply's extra data is exactly `n * 4` bytes for `n` children (the count at offset 16 must agree with the length field, or the connection closes as for any reply that is not what was asked for); at most 64 KiB (16384 children) are accepted. The children are in stacking order, bottom to top.
 2. `GetWindowAttributes` (opcode 3) for the topmost children, one request each, from the top, at most 64 of them, stopping at the first that is `InputOutput` (class at offset 12) and `Viewable` (map state at offset 26 equal to 2). The reply is exactly 44 bytes (length field 3). An X error (the window went away between the two requests) means "not that one".
 3. `true` when one is found, `false` when none is, `null` when the server did not answer (a connection that is gone, or a reply that closed it). It never throws.
+4. **More children than are asked about.** When the root has more than 64 children and none of the 64 at the top is viewable, the answer is `true` ("treat as in use"): a window may be among those left out, and a recording that stops for want of a look is worse than one that goes on. A root with 64 or fewer, none viewable, is `false`.
+5. **One deadline.** The whole question has `requestMs` (3 s) in total, counted from the time it runs on the queue. Before each `GetWindowAttributes` the deadline is checked; past it the answer is `null`, the queue is free and the connection is kept (a request already sent still has its own `requestMs`, after which the connection is closed as for any request that is not answered).
 
 **Why this and not comparing the frame with the empty root.**
 

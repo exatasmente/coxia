@@ -295,8 +295,19 @@ describe('whether a window is mapped', () => {
   it('asks about at most the 64 windows at the top, however many the root has', async () => {
     const many = Array.from({ length: 200 }, (_, i) => win(i + 1, 0));
     const { x, c } = await open({ windows: many });
-    expect(await c.inUse()).toBe(false);
+    await c.inUse();
     expect(x.requests.filter((r) => r.opcode === 3)).toHaveLength(64);
+  });
+
+  it('takes a root with more windows than it asks about as in use when none of those it asked about is drawn (#176)', async () => {
+    // The 64 at the top are unmapped; a mapped one may be among the 136 below, which are not asked about. Calling that screen bare would stop a recording of a real window.
+    const unmapped = Array.from({ length: 200 }, (_, i) => win(i + 1, 0));
+    expect(await (await open({ windows: unmapped })).c.inUse()).toBe(true);
+    // 64 windows are all that is asked about, so the root with exactly 64 unmapped ones is bare; with 65 the one left out decides nothing and the answer is "in use".
+    expect(await (await open({ windows: unmapped.slice(0, 64) })).c.inUse()).toBe(false);
+    expect(await (await open({ windows: unmapped.slice(0, 65) })).c.inUse()).toBe(true);
+    // A window that is drawn is found whatever the count.
+    expect(await (await open({ windows: [win(1, 2), ...unmapped.slice(1, 150)] })).c.inUse()).toBe(true);
   });
 
   it('is null, and ends the connection, when the child count is not what the reply carries', async () => {
@@ -356,6 +367,36 @@ describe('whether a window is mapped', () => {
     expect(await silent.c.inUse()).toBeNull();
     expect(silent.c.closed).toBe(true);
     expect(await silent.c.inUse()).toBeNull();
+  });
+
+  it('gives the whole question one deadline: past it the answer is null, the queue is free and the connection is kept (#176)', async () => {
+    // Every attribute reply takes 40 ms; 64 of them are 2.5 s, far past the 300 ms the question may take.
+    const many = Array.from({ length: 64 }, (_, i) => win(i + 1, 0));
+    const { x, c } = await open(
+      {
+        windows: many,
+        override: (req, send) => {
+          if (req.opcode !== 3) return false;
+          const r = Buffer.alloc(44);
+          r[0] = 1;
+          r.writeUInt16LE(req.seq, 2);
+          r.writeUInt32LE(3, 4);
+          r.writeUInt16LE(1, 12);
+          setTimeout(() => send(r), 40);
+          return true;
+        },
+      },
+      { requestMs: 300 },
+    );
+    const started = Date.now();
+    expect(await c.inUse()).toBeNull();
+    expect(Date.now() - started).toBeLessThan(900);
+    expect(x.requests.filter((r) => r.opcode === 3).length).toBeLessThan(20);
+    expect(c.closed).toBe(false);
+    // The queue is free: a frame is read at once afterwards.
+    const after = Date.now();
+    expect(await c.geometry()).not.toBeNull();
+    expect(Date.now() - after).toBeLessThan(200);
   });
 
   it('goes through the same queue as a frame being read', async () => {
