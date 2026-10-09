@@ -603,7 +603,8 @@ describe('the recording of a live screen', () => {
     const out = await r.hub.finish('r-1');
     expect(out?.ok).toBe(true);
     if (!out?.ok) return;
-    expect(out.meta).toMatchObject({ width: W, height: H, durationMs: 9500, marks: [{ fromMs: 1000, toMs: 2000 }] });
+    // The last change was at 2000; the 7500 ms after it are one second of video (#176), and the mark is before the cut.
+    expect(out.meta).toMatchObject({ width: W, height: H, durationMs: 3000, realMs: 9500, cuts: [{ atMs: 3000, skippedMs: 6500 }], marks: [{ fromMs: 1000, toMs: 2000 }] });
     expect(readEbml(out.bytes)[0].id).toBe('1a45dfa3');
     expect(r.sink.closed).toBe(1);
     expect(r.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used', 'runner.screen.controlOff']);
@@ -669,7 +670,7 @@ describe('the recording of a live screen', () => {
     expect(r.sink.aborted).toBe(0);
     r.clock.t += 4000;
     const out = await r.hub.finish('r-1');
-    expect(out?.ok && out.meta.durationMs).toBe(5000);
+    expect(out?.ok && out.meta).toMatchObject({ durationMs: 2000, realMs: 5000 });
     expect(await r.hub.finish('r-1')).toBeNull();
   });
 
@@ -706,5 +707,244 @@ describe('the recording of a live screen', () => {
     await s.hub.finish('r-1');
     expect(s.conn.grabs).toBe(0);
     expect(await s.hub.finish('r-1')).toBeNull();
+  });
+});
+
+// #176: the recording starts when the screen is first used and holds nothing of an empty one. The display is asked whether a window is mapped before it is read.
+describe('a screen in use', () => {
+  async function bare(over: { limits?: Partial<RecorderLimits> } = {}) {
+    const sink = fakeSink();
+    const s = setup({ sink, limits: over.limits });
+    s.conn.windows = false;
+    await s.open();
+    /** One second goes by and the timer of the next look goes off; resolves when that look is done. */
+    const second = async (): Promise<void> => {
+      s.clock.t += 1000;
+      const due = s.timers.filter((t) => t.live && t.ms === 1000);
+      for (const t of due) {
+        t.live = false;
+        t.fn();
+      }
+      await new Promise((r) => setTimeout(r, 5));
+    };
+    await new Promise((r) => setTimeout(r, 5));
+    return { ...s, sink, second };
+  }
+
+  it('reads nothing and starts no encoder while no window is mapped, and goes on looking', async () => {
+    const r = await bare();
+    for (let i = 0; i < 5; i++) await r.second();
+    expect(r.conn.grabs).toBe(0);
+    expect(r.sink.opened).toEqual([]);
+    expect(r.sink.fed).toEqual([]);
+    // Nothing is recorded yet: the viewer is told it waits for a window, not that it is recording (#176).
+    expect(r.hub.state('r-1')).toMatchObject({ recording: 'waiting' });
+    expect(r.timers.filter((t) => t.live && t.ms === 1000)).toHaveLength(1);
+  });
+
+  it('says in the recording how long after the screen opened the first window was used (#176)', async () => {
+    const r = await bare();
+    r.conn.windows = true;
+    await r.second();
+    const out = await r.hub.finish('r-1');
+    // The screen opened at t and the first look with a window was a second later.
+    expect(out?.ok && out.meta.startedAfterMs).toBe(1000);
+  });
+
+  it('is handed out as recording once a window is on the screen, waiting again when it is bare, and tells the list each time', async () => {
+    const r = await bare();
+    const changes = () => r.changed.length;
+    const before = changes();
+    r.conn.windows = true;
+    await r.second();
+    expect(r.hub.state('r-1')).toMatchObject({ recording: 'on' });
+    expect(changes()).toBe(before + 1);
+    await r.second();
+    expect(changes()).toBe(before + 1);
+    r.conn.windows = false;
+    await r.second();
+    expect(r.hub.state('r-1')).toMatchObject({ recording: 'waiting' });
+    expect(changes()).toBe(before + 2);
+    // A display that did not answer the question is not a window: still waiting, and no news.
+    r.conn.silent = true;
+    await r.second();
+    expect(r.hub.state('r-1')).toMatchObject({ recording: 'waiting' });
+    expect(changes()).toBe(before + 2);
+  });
+
+  it('is stopped, not waiting, once the recording hit a limit or there is no encoder', async () => {
+    const none = setup();
+    none.conn.windows = false;
+    await none.open();
+    expect(none.hub.state('r-1')).toMatchObject({ recording: 'stopped' });
+  });
+
+  it('starts the video with the frame in which the first window shows, at time 0, and not when the display opened', async () => {
+    const r = await bare();
+    for (let i = 0; i < 10; i++) await r.second();
+    r.conn.windows = true;
+    r.conn.pixels.fill(6);
+    await r.second();
+    expect(r.sink.fed).toEqual([{ ts: 0, key: true, width: W, height: H }]);
+    r.conn.pixels.fill(7);
+    await r.second();
+    expect(r.sink.fed.map((f) => f.ts)).toEqual([0, 1000]);
+    const out = await r.hub.finish('r-1');
+    expect(out?.ok && out.meta.durationMs).toBeLessThanOrEqual(3000);
+  });
+
+  it('does not take a bare picture a viewer read just before the window mapped as the first frame of the video (#176)', async () => {
+    const r = await bare();
+    // A viewer reads the bare screen; the window maps within the 400 ms the cache keeps that picture.
+    expect((await r.hub.frame('r-1', 0, 640)).state).toBe('frame');
+    expect(r.conn.grabs).toBe(1);
+    r.conn.windows = true;
+    r.conn.pixels.fill(6);
+    r.clock.t += 300;
+    for (const t of r.timers.filter((x) => x.live && x.ms === 1000)) {
+      t.live = false;
+      t.fn();
+    }
+    await vi.waitFor(() => expect(r.sink.fed).toHaveLength(1));
+    expect(r.sink.firstBytes).toEqual([6]);
+    expect(r.conn.grabs).toBe(2);
+  });
+
+  it('goes on reusing a recent picture once the window has been there: only the first look after a bare screen is read afresh', async () => {
+    const r = await bare();
+    r.conn.windows = true;
+    await r.second();
+    expect(r.sink.fed).toHaveLength(1);
+    r.conn.pixels.fill(7);
+    r.clock.t += 1000;
+    await r.hub.frame('r-1', 0, 640);
+    const grabs = r.conn.grabs;
+    r.clock.t += 300;
+    for (const t of r.timers.filter((x) => x.live && x.ms === 1000)) {
+      t.live = false;
+      t.fn();
+    }
+    await vi.waitFor(() => expect(r.sink.fed).toHaveLength(2));
+    expect(r.conn.grabs).toBe(grabs);
+  });
+
+  it('feeds nothing from an empty screen after the window is gone, though its picture changed', async () => {
+    const r = await bare();
+    r.conn.windows = true;
+    await r.second();
+    expect(r.sink.fed).toHaveLength(1);
+    r.conn.windows = false;
+    r.conn.pixels.fill(0);
+    const grabs = r.conn.grabs;
+    await r.second();
+    await r.second();
+    expect(r.sink.fed).toHaveLength(1);
+    expect(r.conn.grabs).toBe(grabs);
+    r.conn.windows = true;
+    r.conn.pixels.fill(9);
+    await r.second();
+    expect(r.sink.fed).toHaveLength(2);
+  });
+
+  it('keeps no recording and says it was never used when no window ever appeared', async () => {
+    const r = await bare();
+    await r.second();
+    r.clock.t += 600_000;
+    expect(await r.hub.finish('r-1')).toEqual({ ok: false, reason: 'unused' });
+    expect(r.sink.closed).toBe(0);
+    expect(r.notes.map((n) => n.code)).toEqual([]);
+    expect(r.conn.grabs).toBe(0);
+  });
+
+  it('takes one last look when the stage ends: a window that opened less than a second before is recorded, not called unused (#176)', async () => {
+    const r = await bare();
+    await r.second();
+    // The window maps, and the stage ends before the timer's next look.
+    r.conn.windows = true;
+    r.conn.pixels.fill(5);
+    r.clock.t += 400;
+    const out = await r.hub.finish('r-1');
+    expect(out?.ok).toBe(true);
+    expect(r.sink.firstBytes).toEqual([5]);
+    // Still unused when the last look finds the screen bare.
+    const none = await bare();
+    expect(await none.hub.finish('r-1')).toEqual({ ok: false, reason: 'unused' });
+  });
+
+  it('does not lose a window an in-flight look saw while the stage was giving control back: the label follows what was seen last', async () => {
+    const r = await bare();
+    // The encoder takes no frame, so the recording stays empty though a window was seen.
+    r.sink.behind = 1;
+    await r.hub.control('r-1', true);
+    // The look in flight asks the question and waits for the answer; the one the stage's end makes is answered at once, bare.
+    let answer: (v: boolean) => void = () => undefined;
+    const slow = new Promise<boolean>((res) => (answer = res));
+    const calls: number[] = [];
+    r.conn.inUse = async () => {
+      calls.push(calls.length);
+      return calls.length === 1 ? slow : false;
+    };
+    // The person's key is still down, so ending the stage waits for the display to take the release.
+    await r.hub.input('r-1', [{ t: 'key', key: 'a', down: true }]);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((res) => (release = res));
+    const real = r.conn.fakeInput;
+    r.conn.fakeInput = async (events) => {
+      await held;
+      return real(events);
+    };
+    r.clock.t += 1000;
+    for (const t of r.timers.filter((x) => x.live && x.ms === 1000)) {
+      t.live = false;
+      t.fn();
+    }
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    const finishing = r.hub.finish('r-1');
+    await new Promise((res) => setTimeout(res, 5));
+    // The first look gets its answer while the stage is still giving control back: a window, whose picture the encoder does not take.
+    answer(true);
+    await new Promise((res) => setTimeout(res, 5));
+    release();
+    expect(await finishing).toEqual({ ok: false, reason: 'no-frame' });
+  });
+
+  it('says it was never used also for a display that died before any window, and not for one whose picture could not be read', async () => {
+    const died = await bare();
+    died.conn.close();
+    expect(died.hub.state('r-1')).toBeNull();
+    expect(await died.hub.finish('r-1')).toEqual({ ok: false, reason: 'unused' });
+
+    const sink = fakeSink();
+    const s = setup({ sink });
+    // A window is there but the display answers none of the reads: that is a failure to read, not an unused screen.
+    s.conn.failReads = 10;
+    await s.open();
+    await vi.waitFor(() => {
+      for (const t of s.timers.filter((x) => x.live && x.ms === 1000)) {
+        t.live = false;
+        t.fn();
+      }
+      expect(s.hub.state('r-1')).toBeNull();
+    });
+    expect(await s.hub.finish('r-1')).toEqual({ ok: false, reason: 'no-frame' });
+  });
+
+  it('does not take a display that did not answer the question as a window, and is not undone by it', async () => {
+    const r = await bare();
+    r.conn.silent = true;
+    await r.second();
+    await r.second();
+    expect(r.conn.grabs).toBe(0);
+    expect(r.hub.state('r-1')).not.toBeNull();
+    r.conn.silent = false;
+    r.conn.windows = true;
+    await r.second();
+    expect(r.sink.fed).toHaveLength(1);
+  });
+
+  it('still answers a viewer when the screen is bare: the live view is not the recording', async () => {
+    const r = await bare();
+    const answer = await r.hub.frame('r-1', 0, 640);
+    expect(answer.state).toBe('frame');
   });
 });

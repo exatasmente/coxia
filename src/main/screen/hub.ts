@@ -12,9 +12,11 @@ import { type InputPlanner, createInputPlanner } from './xinput';
 // agent's commands, spends none of the stage's budget and is not in its log. The conversation says it in two ways: a line when control is taken and given back, and one
 // line for each burst of input ("the person used the screen from ... to ...").
 //
-// The recording (the one thing that reads without a watcher, spec rule 14): while a screen is open a timer looks at it about once a second through the same cache the
-// viewer uses, and the recorder is offered the picture; it feeds the encoder only when the picture changed. A burst of the person's input is also a mark on the recording.
-// The recording is built by `finish`, at the end of the stage; a screen that is lost on the way (the display died) keeps its recorder aside until `finish` or `end`.
+// The recording (the one thing that reads without a watcher, spec rule 14): while a screen is open a timer asks the display whether a window is mapped on it (#176) and,
+// only if one is, looks at it through the same cache the viewer uses and offers the recorder the picture; it feeds the encoder only when the picture changed. A bare
+// screen is not read for the recording, so the video begins when the screen is first used and a stage that never used it keeps none. A burst of the person's input is
+// also a mark on the recording. The recording is built by `finish`, at the end of the stage, after one last look; a screen that is lost on the way (the display died) keeps its recorder
+// aside until `finish` or `end`.
 
 /** A frame read less than this long ago is reused: two viewers cost one read. */
 export const FRAME_MIN_MS = 400;
@@ -97,9 +99,15 @@ interface Live {
   cancelTick: (() => void) | null;
   /** The conversation was told that the recording stopped. */
   stopSaid: boolean;
+  /** A window was mapped on the screen at some look: tells a screen that was never used from one whose pictures could not be read. */
+  sawWindow: boolean;
+  /** When the look that began the present stretch of looks with a window mapped was made; null while the screen is bare. A picture read before it may predate the window. */
+  usedSince: number | null;
   ended: boolean;
   grabbed: Grabbed | null;
   reading: Promise<Grabbed | null> | null;
+  /** When the read under way began. */
+  readingFrom: number;
   failed: number;
   /** The pictures made of `grabbed`, by width: one per (frame, width), dropped when the screen changes. */
   pictures: Map<number, { jpeg: Uint8Array; width: number; height: number }>;
@@ -122,7 +130,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
   });
   const lives = new Map<string, Live>();
   /** The recorders of screens that were lost (the display died) and wait for `finish`; dropped by `end`. */
-  const lost = new Map<string, Recorder>();
+  const lost = new Map<string, { rec: Recorder; sawWindow: boolean }>();
   const say = (live: Live, code: string, params: Record<string, string> = {}): void => {
     try {
       deps.note?.(live.run, live.stage, code, { agent: live.agent, ...params });
@@ -186,8 +194,8 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     live.rec = null;
     if (rec) {
       if (keep) {
-        lost.get(run)?.abort();
-        lost.set(run, rec);
+        lost.get(run)?.rec.abort();
+        lost.set(run, { rec, sawWindow: live.sawWindow });
       } else rec.abort();
     }
     changed(run);
@@ -195,7 +203,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
 
   const end = (run: string): void => {
     drop(run, false);
-    lost.get(run)?.abort();
+    lost.get(run)?.rec.abort();
     lost.delete(run);
   };
 
@@ -210,10 +218,20 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     changed(live.run);
   };
 
-  /** The latest frame, read now or reused: null when the display did not answer (the second time in a row the screen is over). */
-  const read = (live: Live): Promise<Grabbed | null> => {
-    if (live.grabbed && now() - live.grabbed.at < FRAME_MIN_MS) return Promise.resolve(live.grabbed);
-    if (live.reading) return live.reading;
+  /**
+   * The latest frame, read now or reused: null when the display did not answer (the second time in a row the screen is over). `notBefore` is the earliest time a
+   * frame may have been read at: a cached or under-way read that began before it is not taken, and the screen is read afresh.
+   */
+  const read = async (live: Live, notBefore = 0): Promise<Grabbed | null> => {
+    for (;;) {
+      if (live.grabbed && now() - live.grabbed.at < FRAME_MIN_MS && live.grabbed.at >= notBefore) return live.grabbed;
+      if (!live.reading) break;
+      if (live.readingFrom >= notBefore) return live.reading;
+      // A read that began too early is waited out, not used: the next one is the caller's.
+      await live.reading.catch(() => undefined);
+      if (live.ended) return null;
+    }
+    live.readingFrom = now();
     live.reading = (async (): Promise<Grabbed | null> => {
       const f = await live.conn.grab();
       if (live.ended) return null;
@@ -239,17 +257,41 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     return live.reading;
   };
 
+  /**
+   * One look at the screen for the recording: asks whether a window is mapped and, if one is, offers the picture to the recorder. The first look after a bare screen
+   * reads afresh: a picture a viewer read within the cache's 400 ms may be from before the window mapped, and it would be the video's first frame.
+   */
+  const look = async (live: Live, rec: Recorder): Promise<void> => {
+    const checkedAt = now();
+    // A bare screen (or a display that did not answer) is not read for the recording: it is empty, or the next look finds out.
+    const used = await live.conn.inUse();
+    if (live.ended) return;
+    if (used !== true) {
+      // The run is handed out as waiting for a window again: the list refreshes to say so.
+      if (live.usedSince !== null) {
+        live.usedSince = null;
+        changed(live.run);
+      }
+      return;
+    }
+    if (live.usedSince === null) {
+      live.usedSince = checkedAt;
+      changed(live.run);
+    }
+    live.sawWindow = true;
+    const got = await read(live, live.usedSince);
+    if (live.ended || !got) return;
+    await rec.add(got.frame, got.hash, got.at);
+    if (rec.state === 'stopped') sayStopped(live, rec);
+  };
+
   /** One look at the screen for the recording; the next is timed when this one is done, so two never overlap. */
   const tick = async (live: Live): Promise<void> => {
     live.cancelTick = null;
     const rec = live.rec;
     if (live.ended || !rec) return;
     try {
-      const got = await read(live);
-      if (!live.ended && got) {
-        await rec.add(got.frame, got.hash, got.at);
-        if (rec.state === 'stopped') sayStopped(live, rec);
-      }
+      await look(live, rec);
     } catch {
       // A look that failed is the next one's to retry; a recording is never the stage's failure.
     }
@@ -268,7 +310,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       } catch {
         return false;
       }
-      const live: Live = { run: screen.run, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits }) : null, cancelTick: null, stopSaid: false, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, failed: 0, pictures: new Map() };
+      const live: Live = { run: screen.run, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits, openedAt: now() }) : null, cancelTick: null, stopSaid: false, sawWindow: false, usedSince: null, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, readingFrom: 0, failed: 0, pictures: new Map() };
       lives.set(screen.run, live);
       // A connection that is lost ends the screen: it is never dialled again, since what is at the socket's path is not the app's to trust after the agent has run.
       conn.onClose(() => {
@@ -282,7 +324,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     state(run) {
       const live = lives.get(run);
       if (!live) return null;
-      return { stage: live.stage, width: live.grabbed?.frame.width ?? live.conn.size.width, height: live.grabbed?.frame.height ?? live.conn.size.height, since: live.since, control: live.control, recording: live.rec?.state ?? 'stopped' };
+      return { stage: live.stage, width: live.grabbed?.frame.width ?? live.conn.size.width, height: live.grabbed?.frame.height ?? live.conn.size.height, since: live.since, control: live.control, recording: !live.rec || live.rec.state === 'stopped' ? 'stopped' : live.usedSince === null ? 'waiting' : 'on' };
     },
     async frame(run, since, width) {
       const live = lives.get(run);
@@ -346,11 +388,19 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       return { ok: true, delivered: plan.accepted, rejected };
     },
     async finish(run) {
-      const live = lives.get(run);
+      let live = lives.get(run);
+      // One last look: a window that mapped less than a second ago (the timer's interval) is on the screen now and is the video's, not an unused screen. The display may
+      // die during it, which sets the recording aside as lost, so the screen is looked up again after.
+      if (live?.rec && !live.ended) await look(live, live.rec).catch(() => undefined);
+      live = lives.get(run);
       let rec: Recorder | null;
+      let sawWindow: boolean;
+      // The screen this call ends, kept to read what a look still in flight saw before the screen is gone.
+      const ending = live;
       if (live) {
-        // Taken before anything is awaited: a display that dies meanwhile sets the recording aside as lost, and it is this call's to build.
+        // Taken before anything else is awaited: a display that dies meanwhile sets the recording aside as lost, and it is this call's to build.
         rec = live.rec;
+        sawWindow = live.sawWindow;
         // Control is given back with the stage: what the person held down is put up, and the conversation says both.
         await releaseHeld(live).catch(() => undefined);
         closeBurst(live);
@@ -360,15 +410,20 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
         }
         // The recording leaves the screen here, so ending the screen does not throw it away.
         live.rec = null;
-        if (rec && lost.get(run) === rec) lost.delete(run);
+        if (rec && lost.get(run)?.rec === rec) lost.delete(run);
         end(run);
       } else {
-        rec = lost.get(run) ?? null;
+        const kept = lost.get(run);
+        rec = kept?.rec ?? null;
+        sawWindow = kept?.sawWindow ?? false;
         lost.delete(run);
       }
       if (!rec) return null;
       try {
-        return await rec.finish(now());
+        const out = await rec.finish(now());
+        // Nothing was fed because nothing was ever on the screen: that is not a failure to read it. What a look in flight saw while the screen was being ended counts.
+        sawWindow ||= ending?.sawWindow ?? false;
+        return !out.ok && out.reason === 'no-frame' && !sawWindow ? { ok: false, reason: 'unused' } : out;
       } catch {
         return { ok: false, reason: 'encoder' };
       }

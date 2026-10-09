@@ -306,9 +306,14 @@
 .cy-rec-video { display: block; width: 100%; max-height: 360px; border-radius: 8px; border: 1px solid var(--line-3); background: var(--surface-2); }
 .cy-evidence-attach .cy-rec-video { max-width: 360px; }
 .cy-rec-capped { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--amber-soft); color: var(--amber-ink); }
+.cy-rec-real, .cy-rec-started { margin: 0; color: var(--muted); }
 .cy-rec-marks-box { display: flex; flex-direction: column; gap: 4px; }
 .cy-rec-marks { position: relative; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: var(--chip-quiet-bg); }
 .cy-rec-mark { position: absolute; top: 2px; bottom: 2px; min-width: 8px; padding: 0; border: 0; border-radius: 4px; background: var(--blue-solid); cursor: pointer; }
 .cy-rec-mark:hover { background: var(--ink); }
 .cy-rec-mark:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.cy-rec-cuts { position: relative; height: 18px; border-radius: 6px; border: 1px solid var(--line); background: var(--chip-quiet-bg); }
+.cy-rec-cut { position: absolute; top: 1px; bottom: 1px; width: 6px; margin-left: -3px; padding: 0; border: 0; border-radius: 3px; background: var(--amber-ink); cursor: pointer; }
+.cy-rec-cut:hover { background: var(--ink); }
+.cy-rec-cut:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .cy-evidence-removed { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--chip-quiet-bg); color: var(--muted); }

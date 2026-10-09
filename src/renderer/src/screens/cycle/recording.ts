@@ -1,5 +1,5 @@
 import type { Run } from '../../../../shared/runs';
-import type { RecordingMeta } from '../../../../shared/screen';
+import type { RecordingCut, RecordingMeta } from '../../../../shared/screen';
 
 // Small pure pieces of the evidence block's player: where a mark sits on the timeline, and the key that tells the evidence list a run kept (or lost) a piece.
 
@@ -14,6 +14,12 @@ export function markBox(durationMs: number, mark: RecordingMeta['marks'][number]
   const left = clamp((mark.fromMs / durationMs) * 100, 0, 100 - MARK_MIN_PERCENT);
   const width = clamp(((Math.min(mark.toMs, durationMs) - mark.fromMs) / durationMs) * 100, MARK_MIN_PERCENT, 100 - left);
   return { left, width };
+}
+
+/** The place of a cut on the timeline, in percent of the video's length; null for a recording with no length or a cut at or past its end (the tail's, which is not on the strip). */
+export function cutLeft(durationMs: number, cut: RecordingCut): number | null {
+  if (!(durationMs > 0) || !(cut.atMs >= 0) || cut.atMs >= durationMs) return null;
+  return clamp((cut.atMs / durationMs) * 100, 0, 100);
 }
 
 /**
