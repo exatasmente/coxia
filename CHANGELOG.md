@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A release step that finds the branch held elsewhere stops at once, and the card offers to free it.** Before any step that checks the release branch out (merging a pull request into it, cutting a beta, pushing the branch), the app reads the repository's worktrees and, when the branch is checked out in a second worktree of the same repository, the step stops there — before the run's own worktree is made and nothing of the release is touched — with the branch and the path named; the failed card shows what freeing the branch does and a button that detaches that worktree (it stays on the same commit), after your confirmation, so the step can run again. A worktree with changes not saved, one of another repository, or a registration whose folder is gone is refused, never freed for you. The refusals of the release script now say what to do next alongside their output: a version already cut ("tag … already exists") is done and asked of nothing again but the push that follows it; an empty `[Unreleased]` asks for the changes to be described, which the app never writes.
+
 ## [0.9.0-beta.9] - 2026-10-09
 
 ### Fixed

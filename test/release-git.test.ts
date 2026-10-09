@@ -64,7 +64,8 @@ describe('the worktree of the steps', () => {
     const alien = new ReleaseWorld();
     // a worktree of another repository at the path is refused too
     alien.git('worktree', 'add', '--detach', join(w.root, 'alien'), 'main');
-    await expect(runReleaseOp(unit({ op: 'push-branch' }), { clone: w.dir, worktree: join(w.root, 'alien'), identity: AUTHOR, env: w.scriptEnv() })).rejects.toThrow(/is not the worktree of this release/);
+    // the worktree registration of this release's steps holds the branch, so the early conflict refusal fires before the folder's own refusal
+    await expect(runReleaseOp(unit({ op: 'push-branch' }), { clone: w.dir, worktree: join(w.root, 'alien'), identity: AUTHOR, env: w.scriptEnv() })).rejects.toThrow(/cannot be checked out twice/);
   });
 
   it('links the dependencies of the clone into it and keeps the links out of the status the script reads, so the checks can run and the tree is clean', async () => {
