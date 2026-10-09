@@ -75,6 +75,11 @@ export interface StageInput {
   memory?: { over: boolean; max: number } | null;
   /** What the app knows of the activities of the workspace, rendered: the front of this activity whole and the rest in short, or "" (then no section). */
   shared?: string;
+  /**
+   * The workspace's learned procedures: the call has the tools when this is a string (then the rules are in the system text), and the list is the string itself,
+   * rendered; "" is a call with the tools and nothing listed (no section). Absent: no tools, and neither rules nor section.
+   */
+  procedures?: string;
   /** The stage changes the branch and the repository has AGENTS.md instructions that must stay true. */
   docsKeep?: boolean;
 }
@@ -151,6 +156,7 @@ export function systemText(i: StageInput): string {
     cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),
     cp('runner.rules.focus'),
+    i.procedures !== undefined ? cp('runner.rules.procedures') : '',
     // The folder of the stage's evidence is named as this stage has it: the sandbox's `/coxia/out`, or the real folder a host session saves in.
     i.evidence ? cp(i.sandbox?.host && i.sandbox.gui?.out ? 'runner.rules.evidence.host' : 'runner.rules.evidence', { out: i.sandbox?.gui?.out ?? OUT }) : '',
     i.docsKeep ? cp('runner.docs.keep') : '',
@@ -249,6 +255,7 @@ export function stagePrompt(i: StageInput): string {
   if (i.commandResults) sections.push(commandsSection(i.commandResults, i.numberedCommands));
   // What the app knows of the other activities, and of this one whole: material to consult, under its own tags (specification rules 5 to 7).
   if (i.shared) sections.push(cp('runner.section.shared', { text: fence(i.shared) }));
+  if (i.procedures) sections.push(cp('runner.section.procedures', { text: fence(i.procedures) }));
   if (i.release) sections.push(i.release);
   if (i.plugins?.length) sections.push(cp('runner.section.plugins', { text: fence(i.plugins.map((p) => `${p.name}: ${p.note}`).join('\n')) }));
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));

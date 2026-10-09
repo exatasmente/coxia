@@ -36,6 +36,7 @@ import { type CommentAsk, type ResumeWhy, type StageInput, type StageResume, sta
 import { prompt as cp } from '../cyclePrompts';
 import { type StageInbox, inboxOf, openInbox } from './inbox';
 import { type RunnerTools, runnerTools } from './tools';
+import type { ProceduresPort } from '../procedures/port';
 import { callRefusal, countOpen, openedIn, runConversation, resetOpened } from './conversation';
 import { releaseSection, releaseStateOf } from './release';
 import { prepareDocsFolder } from './docs';
@@ -108,6 +109,8 @@ export interface ExecutorDeps {
   dataDir: () => string;
   /** The live screens of the stages that have a virtual display; absent: none is opened. */
   screens?: ScreenHub;
+  /** The workspace's learned procedures: a stage and the agents it calls get their list and tools from here. Absent, or the workspace's switch off: none. */
+  procedures?: ProceduresPort;
 }
 
 export interface StageRun {
@@ -644,6 +647,24 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
 
   const documented = !!(await scanHarness(wt)).document && !run.docs;
 
+  // The procedures the workspace learned: the list this stage is told and the tools it uses. A line of the session (a save, a report, a use) goes to the run's thread.
+  const procedures = d.procedures?.open({
+    surface: 'stage',
+    agent,
+    ref: run.issue.ref,
+    issue: run.issue.iid,
+    stage: stage.kind,
+    repos: [run.repo],
+    agentsMd: documented ? new Set([run.repo]) : undefined,
+    note: (code, params) => {
+      try {
+        d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code, params, stage: stage.id });
+      } catch (e) {
+        console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
+      }
+    },
+  });
+
   // A sandbox and a host session that tests an interface both declare where the stage's evidence lives; a host session without one keeps what it has today.
   const evidenceRoot = session?.outputDir;
 
@@ -659,6 +680,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     memory: { over: memoryOver(memory), max: MEMORY_MAX },
     // What a stage is told of the record: its own activity whole, and the others in short. Nothing when the record has nothing to say.
     shared: d.sharedMemory?.(run) ?? '',
+    procedures: procedures?.list.text,
     docsKeep: documented && writes,
     plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),
@@ -791,6 +813,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     onLooked,
     label: agent.id,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
+    procedures: procedures?.tools,
     abort,
     // The files of the answer the stage waits for: the agent opens them with the read-only tool, scoped to the run's conversation. They come from the
     // message the answer recorded (a run file never holds them); when this turn is running the stage the answer just resumed, from the move that recorded it.
@@ -801,7 +824,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const watch = watchdog(abort, limitsOf(config, d));
   if (clock) clock.watch = watch;
   call.beat = watch.beat;
-  call.onUsage = usage;
+  call.onUsage = procedures ? procedures.wrapUsage(usage) : usage;
   // The mailbox of the stage: a message addressed to this agent while it works enters the session between two steps. It is opened with the attempt and closed
   // before the sandbox, so nothing the stage hands over outlives it.
   const inbox = openInbox(run.id, stage.id, agent.id, d.forum, () => new Date().toISOString());
@@ -868,6 +891,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         openSession: (def, wr, clock) => (d.sandbox ? openStageSandbox(d, run, stage, def, wr, abort.signal, clock) : Promise.resolve(null)),
         commands,
         onUsage: usage,
+        procedures: d.procedures,
         // A called agent that writes changes the worktree: what it changed is committed with the calling stage before the stage commits its own work.
         commit: writes
           ? async (message) => {
@@ -911,6 +935,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   };
 
   let data: unknown;
+  // Whether the agent's call ended in an answer: what a failed or aborted call read is no use of a procedure.
+  let called = false;
   // The session the last answer was given in, and the engine that holds it: what a repair round continues from.
   let answered: Answered = { sessionId: null, engine: 'claude-sdk' };
   try {
@@ -952,11 +978,14 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     }
     // What the stage looked at and did not keep is kept as evidence of the stage here, before the sandbox takes the folder away; what cannot be kept is said.
     if (session) keepLooked();
+    called = true;
   } catch (e) {
     if (e instanceof MaxTurnsError) throw new StageError('turns');
     if (e instanceof ProviderBudgetError) throw new StageError('budget', { provider: e.provider, engine: e.engine, detail: e.detail });
     throw e;
   } finally {
+    // What the call read becomes uses, and what it created gets its baseline; each use is a line in the thread.
+    procedures?.finish(called ? 'done' : 'failed');
     // The stage begins finishing: a message that arrives now is not handed over and comes back in the thread with the reason.
     inbox.closing();
     inbox.close();

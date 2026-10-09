@@ -41,6 +41,8 @@ export interface MentionInput {
    * what is in progress. It is shown as material, never added to the tools, and an empty one leaves the call without the section.
    */
   memory?: string;
+  /** The learned procedures, as in a stage's input: a string means the call has the tools (the rules are told), and the string is the rendered list ("" lists nothing). */
+  procedures?: string;
 }
 
 /** An issue the answer proposes, read leniently: a title and a body are needed, labels are optional. */
@@ -173,6 +175,7 @@ export function mentionCall(i: MentionInput): AgentCall {
     i.proposals ? labelsLine(i.config) : '',
     cp('runner.rules.data'),
     cp('runner.rules.claims'),
+    i.procedures !== undefined ? cp('runner.rules.procedures') : '',
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.agent.instructions).trim(),
@@ -183,6 +186,7 @@ export function mentionCall(i: MentionInput): AgentCall {
     ...i.files.map((f) => cp('runner.section.file', { name: f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') })),
     // What the app knows of the activities, before the thread: material to consult, under its own tags, so a call about an activity is answered from it.
     i.memory ? cp('runner.section.shared', { text: fence(i.memory) }) : '',
+    i.procedures ? cp('runner.section.procedures', { text: fence(i.procedures) }) : '',
     // The files of the message the agent was called in: the warning names them by the ref the tool takes, and never a path.
     i.attachments?.refs.length ? cp('runner.mention.attachment.list', { text: fence(attachmentsSection(i.attachments.refs)) }) : '',
     threadText(i.thread.slice(-40)) ? cp('runner.section.thread', { text: fence(threadText(i.thread.slice(-40))) }) : '',

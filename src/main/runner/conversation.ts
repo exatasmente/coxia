@@ -9,6 +9,9 @@ import type { StageEngine } from './executor';
 import { type RunnerTools, calledAgentTools } from './tools';
 import { confinedHooks } from './hooks';
 import type { Denial } from './hooks';
+import type { ProceduresPort } from '../procedures/port';
+import { prompt as cp } from '../cyclePrompts';
+import { fence } from './prompt';
 
 // A conversation between two agents of the team, started by a stage that is working: the caller asks about a point, the called agent answers, and the two go
 // back and forth inside a limit of rounds. The called agent starts as a reader and, when the point needs it, uses its own permissions in the team (commands per
@@ -62,6 +65,8 @@ export interface ConversationDeps {
    * return: the conversation commits nothing (the called agent changed nothing, or the caller does not commit for it).
    */
   commit?: (message: string) => Promise<string | null>;
+  /** The workspace's learned procedures: the called agent gets the list and the tools, and its uses are marked on this conversation. Absent: none. */
+  procedures?: ProceduresPort;
   /** The abort of the run: it ends the conversation with everything else. */
   abort: AbortController;
   /** The chain of calls that brought the run here (the caller first): the cycle is refused against it. */
@@ -156,7 +161,7 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
           break;
         }
         rounds++;
-        const turn = await turnOf(deps, session, clock, nextFromCaller, say);
+        const turn = await turnOf(deps, thread, session, clock, nextFromCaller, say);
         if (turn === null) break;
         ex.answered(turn);
         if (closed) break;
@@ -181,6 +186,7 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
  */
 async function turnOf(
   deps: ConversationDeps,
+  thread: string,
   session: SandboxSession | null,
   clock: ConversationClock,
   nextFromCaller: () => Promise<string | null>,
@@ -213,11 +219,23 @@ async function turnOf(
       console.error('[runner] could not record a refusal of a called agent', deps.run.id, e instanceof Error ? e.message : e);
     }
   };
+  // The called agent reads and writes the workspace's procedures like the stage that called it; its uses are marked on this conversation's thread.
+  const procedures = deps.procedures?.open({
+    surface: 'called',
+    agent: deps.called,
+    ref: thread,
+    issue: deps.run.issue.iid,
+    stage: deps.stage.kind,
+    repos: [deps.run.repo],
+    requests: true,
+    note: (code, params) => say({ kind: 'system', author: { type: 'app' }, code, params, stage: deps.stage.id }),
+  });
+  const listed = procedures?.list.text ? cp('runner.section.procedures', { text: fence(procedures.list.text) }) : '';
   const call: AgentCall = {
     agent: deps.called,
-    prompt: writes ? t('main.runner.conversation.systemWrite', { called: deps.called.name, caller: deps.caller.name }) : t('main.runner.conversation.system', { called: deps.called.name, caller: deps.caller.name }),
+    prompt: [writes ? t('main.runner.conversation.systemWrite', { called: deps.called.name, caller: deps.caller.name }) : t('main.runner.conversation.system', { called: deps.called.name, caller: deps.caller.name }), listed].filter(Boolean).join('\n\n'),
     schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'], additionalProperties: false },
-    system: t('main.runner.conversation.role', { called: deps.called.name }),
+    system: [t('main.runner.conversation.role', { called: deps.called.name }), procedures ? cp('runner.rules.procedures') : ''].filter(Boolean).join('\n\n'),
     cwd: deps.run.worktree,
     confine: writes ? { root: deps.run.worktree, hooks: confinedHooks({ root: deps.run.worktree, commands: deps.commands, onDenied: denied }) } : undefined,
     exec: session ?? undefined,
@@ -225,9 +243,17 @@ async function turnOf(
     maxTurns: 12,
     abort: deps.abort,
     runnerTools: calledAgentTools(tools),
-    onUsage: deps.onUsage,
+    procedures: procedures?.tools,
+    onUsage: procedures ? procedures.wrapUsage(deps.onUsage) : deps.onUsage,
   };
-  const r = await deps.engine(call, deps.commands);
+  let r: Awaited<ReturnType<StageEngine>>;
+  try {
+    r = await deps.engine(call, deps.commands);
+  } catch (e) {
+    procedures?.finish('failed');
+    throw e;
+  }
+  procedures?.finish('done');
   if (ended) return null;
   const text = typeof (r.data as { texto?: unknown })?.texto === 'string' ? (r.data as { texto: string }).texto.trim() : '';
   // What the agent said through the tool is already posted; the final text is its closing word, if any.

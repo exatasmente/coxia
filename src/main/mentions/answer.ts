@@ -24,6 +24,8 @@ import { conversationCallTool } from './converse';
 import { type ProposalOutcome } from './propose';
 import { reposOnDisk, runRepo, type MentionPlace } from './place';
 import { type DocsAsk, runDocsAsk, stageOfRun } from '../harness/deliver';
+import type { ProceduresPort } from '../procedures/port';
+import type { ProcedureSession } from '../procedures/session';
 
 // The answer an agent named in a message gives, wherever the person wrote (a run's thread, a channel, a general conversation, the direct conversation of an agent).
 // One owner per place: the runner owns the run's thread (it has the worktree, the cycle folder and the publisher) and calls this; the mentions module owns the rest.
@@ -77,6 +79,8 @@ export interface MentionDeps {
    * in progress. The caller renders it (the runner has the store, the mentions module reads it too); absent: the answer gets no such section.
    */
   memory?: (place: MentionPlace, message: ForumMessage) => string;
+  /** The workspace's learned procedures: an answer outside a ceremony gets their list and tools, and what it read is marked in the thread. Absent: none. */
+  procedures?: ProceduresPort;
 }
 
 /** What a mention answer produced, for a caller that records it elsewhere (a ceremony). */
@@ -163,6 +167,9 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
     let source: { cwd: string; made: boolean; reader: boolean; clone?: string } | null = null;
     // Whether the engine got to run: what failed before it is the call's own failure, and its line must not wait forever.
     let ran = false;
+    // The procedures the answer is given (none in a ceremony), and whether the engine ended in an answer: what a failed call read is no use of a procedure.
+    let procedures: ProcedureSession | null = null;
+    let answered = false;
     try {
       if (wantsCommands) {
         source = await shellSourceOf(place, def, message.seq, abort.signal, config.runner.sandbox.limits.copyMb * 1024 * 1024);
@@ -176,6 +183,24 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         }
       }
       const info = inputOf(place);
+      if (place.kind !== 'ceremony') {
+        procedures =
+          deps.procedures?.open({
+            surface: deps.chain?.length ? 'called' : place.kind === 'run' ? 'run-thread' : place.kind === 'general' ? 'forum' : place.owner ? 'direct' : 'channel',
+            agent: reader,
+            ref: place.kind === 'run' && place.run ? place.run.issue.ref : place.thread,
+            issue: place.run?.issue.iid,
+            repos: info.repos,
+            requests: true,
+            note: (code, params) => {
+              try {
+                deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code, params, stage });
+              } catch (e) {
+                console.error('[mentions] could not record a note', e instanceof Error ? e.message : e);
+              }
+            },
+          }) ?? null;
+      }
       // The files the message carries go to the agent only when the workspace gives them: the person still attaches and opens them, the agent is told why not.
       const attachments = deps.config().attachments?.agents === false ? null : attachmentsFor(deps, place.thread, message);
       const call: AgentCall = mentionCall({
@@ -196,7 +221,12 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         attachments: attachments ?? undefined,
         // What the app knows of the activities: the section is text only, so no tool of the call changes and no folder of it is opened.
         memory: deps.memory?.(place, message) || undefined,
+        procedures: procedures?.list.text,
       });
+      if (procedures) {
+        call.procedures = procedures.tools;
+        call.onUsage = procedures.wrapUsage();
+      }
       if (attachments === null && message.attachments.length) {
         // The workspace turned attachments to agents off: the conversation says so, once per answer, so the person knows why the agent did not read them.
         deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'main.attachment.agentsOff', stage });
@@ -234,6 +264,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       if (made?.queued) made.activity.status('started');
       ran = true;
       const r = await watch.guard(withActivityContext(place.kind === 'run' ? `run:${place.run?.id}` : mentionJob(place.thread), () => deps.engine(call, [])));
+      answered = true;
       const text = answerText((r.data as { text?: unknown })?.text);
       if (!text) throw new Error(t('main.runner.error.empty-answer'));
       deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
@@ -246,6 +277,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       if (!ran) made?.activity.status('failed', reason);
       deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
     } finally {
+      procedures?.finish(answered ? 'done' : 'failed');
       await session?.close().catch(() => undefined);
       if (source?.made) rmSync(source.cwd, { recursive: true, force: true });
       deps.release?.(id);
