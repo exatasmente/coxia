@@ -377,9 +377,10 @@ function v23ToV24(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
 }
 
 // A role and an agent's own model may now carry a pool (`fallbacks`, `activities`) and the workspace `llm.scoreOverrides`. A v24 file has none, and a model without a pool is
-// the only one its call uses: nothing is raised or switched on. The bump is what keeps an app that does not know the fields from reading a file that carries them as an llm block to repair.
+// the only one its call uses: nothing is raised or switched on. The pool mode (`llm.poolMode`, `agents.team[].poolMode`, a stage's `poolMode`) is part of the same unreleased step: it
+// is no permission and a file without it reads as the default. The bump is what keeps an app that does not know the fields from reading a file that carries them as an llm block to repair.
 function v24ToV25(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
-  notes.push('model pools were added (fallbacks and activities per role and per agent; absent = no fallbacks)');
+  notes.push('model pools were added (fallbacks and activities per role and per agent; absent = no fallbacks) with the way they are used (poolMode; absent = delegate, which acts only on an activity list)');
   return { ...old, schemaVersion: 25 };
 }
 
@@ -401,8 +402,13 @@ function set(root: Doc, path: (string | number)[], value: unknown): void {
 // The optional model-pool fields are absent in every default, so a bad one is dropped (one entry of a list, or the field), never the role or the agent model around it.
 const POOL_KEYS = new Set(['fallbacks', 'activities', 'scoreOverrides', 'images', 'contextWindow', 'echoReasoning']);
 
-// Index of the pool field a path points into, or -1: `llm.roles.<role>.<key>`, `llm.scoreOverrides` or `agents.team[i].model.<key>`.
+// Index of the pool field a path points into, or -1: `llm.roles.<role>.<key>`, `llm.scoreOverrides` or `agents.team[i].model.<key>`; the pool mode of the workspace, of an
+// agent and of a stage is dropped alone too (absent = inherit).
 function poolKeyAt(path: (string | number)[]): number {
+  if (path[0] === 'llm' && path[1] === 'poolMode') return 1;
+  if (path[0] === 'agents' && path[1] === 'team' && path[3] === 'poolMode') return 3;
+  if (path[0] === 'devCycle' && path[1] === 'stages' && path[3] === 'poolMode') return 3;
+  if (path[0] === 'devCycle' && path[1] === 'flows' && path[4] === 'poolMode') return 4;
   const known = (k: string | number | undefined) => typeof k === 'string' && POOL_KEYS.has(k);
   if (path[0] === 'llm' && path[1] === 'roles' && known(path[3])) return 3;
   if (path[0] === 'llm' && path[1] === 'scoreOverrides') return 1;

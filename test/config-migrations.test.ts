@@ -8,6 +8,7 @@ import { neutralConfig, neutralRunner, newProvider } from '../src/shared/config/
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
 import { MARKER_FILE, V1_BACKUP_FILE, bootstrapConfigs, detectExistingInstall, readConfigFile } from '../src/main/config-bootstrap';
+import { TEST_STAGES } from './helpers/config';
 import { ensureWorkspaces, setTestFlag, workspaceDir, createWorkspace } from '../src/main/workspaces-core';
 import { V1_SETTINGS, exampleProfile } from './helpers/config';
 
@@ -647,6 +648,55 @@ describe('migrateConfig', () => {
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.config.llm.roles.turn).toEqual(c.llm.roles.turn && { provider: c.llm.roles.turn.provider, model: c.llm.roles.turn.model });
       expect(r.config.llm.scoreOverrides).toBeUndefined();
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('reads a file without a pool mode as delegate and writes none into the agents and stages', () => {
+      const c = v24();
+      delete c.llm.poolMode;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.llm.poolMode ?? 'delegate').toBe('delegate');
+      expect(r.config.agents.team.every((a) => a.poolMode === undefined)).toBe(true);
+      expect(r.config.devCycle.stages.every((s) => s.poolMode === undefined)).toBe(true);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps a mode a file carries, in the workspace, an agent, a stage and a flow', () => {
+      const c = v24();
+      c.devCycle.stages = [structuredClone(TEST_STAGES[0])];
+      c.llm.poolMode = 'switch';
+      c.agents.team[c.agents.team.length - 1].poolMode = 'fallback';
+      c.devCycle.stages[0].poolMode = 'delegate';
+      c.devCycle.flows = { release: [{ ...c.devCycle.stages[0], poolMode: 'switch' }] };
+      c.schemaVersion = 25;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.changed).toBe(false);
+      expect(r.config.llm.poolMode).toBe('switch');
+      expect(r.config.agents.team.find((a) => a.id === 'writer')?.poolMode).toBe('fallback');
+      expect(r.config.devCycle.stages[0].poolMode).toBe('delegate');
+      expect(r.config.devCycle.flows?.release[0].poolMode).toBe('switch');
+    });
+
+    it('drops an invalid mode alone: the workspace, the agent, the stage and the flow keep everything else', () => {
+      const c = v24();
+      c.devCycle.stages = [structuredClone(TEST_STAGES[0])];
+      c.llm.poolMode = 'both';
+      const writer = c.agents.team[c.agents.team.length - 1];
+      writer.poolMode = 3;
+      c.devCycle.stages[0].poolMode = 'sometimes';
+      c.devCycle.flows = { release: [{ ...c.devCycle.stages[0], poolMode: 'x' }] };
+      c.schemaVersion = 25;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.changed).toBe(true);
+      expect(r.config.llm.poolMode ?? 'delegate').toBe('delegate');
+      expect(r.config.llm.roles).toEqual(c.llm.roles);
+      const w = r.config.agents.team.find((a) => a.id === 'writer')!;
+      expect(w.poolMode).toBeUndefined();
+      expect(w.model).toEqual({ role: null, provider: 'spare', model: 'model-a' });
+      expect(r.config.devCycle.stages[0]).toMatchObject({ id: c.devCycle.stages[0].id });
+      expect(r.config.devCycle.stages[0].poolMode).toBeUndefined();
+      expect(r.config.devCycle.flows?.release[0].poolMode).toBeUndefined();
+      expect(r.notes.filter((n) => n.startsWith('dropped')).length).toBe(4);
       expect(validateConfig(r.config).ok).toBe(true);
     });
 

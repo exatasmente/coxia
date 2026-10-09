@@ -70,6 +70,8 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     ...(partial.screen === true ? { screen: true } : {}),
     ...(partial.allowedHosts?.length ? { allowedHosts: [...partial.allowedHosts] } : {}),
     ...(partial.browserProfile === true ? { browserProfile: true } : {}),
+    // Absent means "the stage's, then the workspace's": only an agent that chose a mode carries it.
+    ...(partial.poolMode ? { poolMode: partial.poolMode } : {}),
     instructions: partial.instructions ?? '',
     system: partial.system ?? false,
   };

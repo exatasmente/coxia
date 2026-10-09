@@ -2,7 +2,7 @@
 import { neutralDevCycle } from '../cycles/neutral';
 import { newSquad } from './squads';
 import { ensureSystemAgents, newAgent, systemAgents } from './team';
-import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type PluginsConfig, type RoleModel, type RunnerConfig, type RunnerSandbox, type TestEnvironment, type WorkspaceAutonomy, type WorkspaceConfig } from './types';
+import { CONFIG_SCHEMA_VERSION, DEFAULT_POOL_MODE, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type PluginsConfig, type RoleModel, type RunnerConfig, type RunnerSandbox, type TestEnvironment, type WorkspaceAutonomy, type WorkspaceConfig } from './types';
 
 // What a fresh install gets: nothing that belongs to one company or one machine.
 // A person's own values reach a workspace only through the optional legacy profile of the v1 migration (legacy.ts).
@@ -63,6 +63,7 @@ export function neutralConfig(): WorkspaceConfig {
     llm: {
       providers: [{ id: DEFAULT_PROVIDER_ID, kind: 'anthropic', engine: 'claude-sdk', baseUrl: 'https://api.anthropic.com', models: ['haiku', 'sonnet', 'opus'], secretRef: DEFAULT_SECRET_REF, envFile: null, options: {}, capabilities: null, structured: 'auto', headers: {}, maxOutputTokens: null, temperature: null, timeoutMs: null, legacyCustomEndpoint: false }],
       roles: roles<RoleModel>((r) => ({ provider: DEFAULT_PROVIDER_ID, model: NEUTRAL_ROLE_MODELS[r] })),
+      poolMode: DEFAULT_POOL_MODE,
     },
     projects: { roots: [], repos: [], autoDiscover: true, issues: { vcsId: null, project: null, projectId: null, refPrefix: '', cardScope: 'assigned', cardLabels: [] }, verifyCommands: {} },
     vcs: [],

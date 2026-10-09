@@ -5,7 +5,7 @@ import { poolFieldsOf } from '../../../../shared/config/pool';
 import { withoutLead } from '../../wizard/poolEdit';
 import { addAgent, isDraft, isSystemId, modelPoolOf, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
 import { t } from '../../../../shared/i18n';
-import { MAX_POOL_ENTRIES, type AgentDef, type AgentModel, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type ModelPool, type ModelRef, type StageDef, type WorkspaceConfig } from '../../../../shared/config/types';
+import { MAX_POOL_ENTRIES, type AgentDef, type AgentModel, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type ModelPool, type ModelRef, type PoolMode, type StageDef, type WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
 import { shown } from './text';
@@ -39,6 +39,8 @@ export interface AgentDraft {
   allowedHosts: string[];
   /** The agent's browser keeps its logins between uses. */
   browserProfile: boolean;
+  /** How the agent's pool is used; null: the stage's, then the workspace's. */
+  poolMode: PoolMode | null;
   /** The stage ids the agent lists (the flow editor keeps them in step with the stages that name it). */
   stages: string[];
 }
@@ -70,6 +72,7 @@ export function draftOf(a: AgentDef): AgentDraft {
     screen: a.screen === true,
     allowedHosts: [...(a.allowedHosts ?? [])],
     browserProfile: a.browserProfile === true,
+    poolMode: a.poolMode ?? null,
     stages: [...a.stages],
   };
 }
@@ -111,7 +114,7 @@ function poolProblems(config: WorkspaceConfig, model: AgentModel): AgentProblem[
 }
 
 export function blankAgent(): AgentDraft {
-  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, screen: false, allowedHosts: [], browserProfile: false, stages: [] };
+  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, screen: false, allowedHosts: [], browserProfile: false, poolMode: null, stages: [] };
 }
 
 /** What is wrong with the draft on its own (the checks that need the whole team come from `teamIssues`). */
@@ -165,6 +168,8 @@ function fieldsOf(draft: AgentDraft) {
     screen: draft.screen ? true : undefined,
     allowedHosts: hostsOf(draft) ?? undefined,
     browserProfile: draft.browserProfile ? true : undefined,
+    // Inheriting is the absence of the field, not a value.
+    poolMode: draft.poolMode ?? undefined,
     stages: draft.stages,
   };
 }

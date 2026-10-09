@@ -126,6 +126,25 @@ describe('applying a draft', () => {
     expect(agent(back, 'developer').model).toEqual({ role: 'fix', provider: '', model: '' });
   });
 
+  it('keeps the pool mode of an agent through the form, sets it, and clears it back to inheriting', () => {
+    const c = flow();
+    expect(blankAgent().poolMode).toBeNull();
+    expect(draftOf(agent(c, 'developer')).poolMode).toBeNull();
+    const plain = applyAgent(c, draftOf(agent(c, 'developer')), false);
+    expect('poolMode' in agent(plain, 'developer')).toBe(false);
+    const set = applyAgent(c, { ...draftOf(agent(c, 'developer')), poolMode: 'switch' }, false);
+    expect(agent(set, 'developer').poolMode).toBe('switch');
+    expect(validateConfig(agentOnly(set)).errors).toEqual([]);
+    expect(draftOf(agent(set, 'developer')).poolMode).toBe('switch');
+    // Saving something else keeps it; the person clearing it removes the field.
+    const renamed = applyAgent(set, { ...draftOf(agent(set, 'developer')), name: 'Dev' }, false);
+    expect(agent(renamed, 'developer').poolMode).toBe('switch');
+    const cleared = applyAgent(set, { ...draftOf(agent(set, 'developer')), poolMode: null }, false);
+    expect('poolMode' in agent(cleared, 'developer')).toBe(false);
+    const made = applyAgent(c, { ...blankAgent(), id: 'scout', name: 'Scout', poolMode: 'fallback' }, true);
+    expect(agent(made, 'scout').poolMode).toBe('fallback');
+  });
+
   it('saving an agent with no allowed command leaves no empty field, and clearing the last one removes it', () => {
     const c = flow();
     const plain = applyAgent(c, draftOf(agent(c, 'developer')), false);

@@ -1,7 +1,7 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
-import { ACTIVITIES, MAX_POOL_ENTRIES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
+import { ACTIVITIES, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
 // The JSON Schema of WorkspaceConfig (schema 25). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
@@ -151,6 +151,7 @@ const stage = object(
     waitsFor: waitFor,
     comment: { type: ['string', 'null'], description: 'The key of this stage\'s comment template in devCycle.comments; left out: the stage id; null or empty: no comment.', maxLength: 48 },
     trackerStatus: string('A label the issue gets on the tracker when the run enters the stage.', { maxLength: 200 }),
+    poolMode: enumOf('How the pool of the stage\'s agent is used here (work stages): fallback: one model, the pool only when it is busy; switch: each turn goes to the model of its activity; delegate: a fixed main model hands edit, command and screen work to sub-agents. Left out: the workspace\'s llm.poolMode.', POOL_MODES),
     testEnv: boolean('This stage receives the workspace\'s test environment (plain variables and secret references from testEnvironment). Left out: a QA stage of the current editor reads as yes, an already-saved template reads as no.'),
   },
   ['id', 'kind'],
@@ -271,6 +272,7 @@ const agentDef = object(
     screen: boolean('A virtual screen for the agent and the app\'s browser tools, which the person can watch. Absent: off. A paired browser may turn it off, never on; a template or an import never brings it.'),
     allowedHosts: list('The hosts the agent may reach through the app\'s filtering proxy: exact lowercase names, HTTPS port 443, no wildcard or port. Not used by an agent on shell: host. Absent: none.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
     browserProfile: boolean('The agent\'s browser keeps its logins between uses, in a profile folder of its own in the workspace\'s data. Absent: off, a fresh profile every time.'),
+    poolMode: enumOf('How the agent\'s model pool is used (fallback, switch or delegate). Absent: the stage\'s, then the workspace\'s llm.poolMode.', POOL_MODES),
     instructions: string('Appended to the agent system prompt (a catalog key or a literal).', { maxLength: 20_000 }),
     system: boolean('One of the five built-in agents: it can be edited and never removed.'),
   },
@@ -433,6 +435,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
       llm: object('Model providers and which one serves each role.', {
         providers: list('Providers.', provider, { maxItems: 20 }),
         roles: byRole('Provider and model per role.', object('Provider and model.', { provider: string('A provider id.', { pattern: ID }), model: string('Model id as the provider spells it.', { minLength: 1, maxLength: 200, pattern: '^\\S+$' }), images: modelRef.properties!.images, contextWindow: modelRef.properties!.contextWindow, echoReasoning: modelRef.properties!.echoReasoning, ...poolFields }, ['provider', 'model'])),
+        poolMode: enumOf('The default for how a pool is used. fallback: one model, the pool only when it is busy. switch: each turn goes to the model of its activity\'s list. delegate: the main model stays fixed and hands edit, command and screen work to sub-agents on the lists of their activity. It acts only where a role or an agent has a list of its own for an activity. Absent: delegate.', POOL_MODES),
         scoreOverrides: object('Overrides of the quality scores the app ships for the suggested pools.', {
           floors: scoresOf('The score a model must reach to go first, per activity.'),
           models: { type: 'object', description: 'The scores of one model, by its normalized id (lowercase, without the organization prefix).', additionalProperties: scoresOf('Scores of the model.') },

@@ -128,10 +128,22 @@ export interface ScoreOverrides {
   models?: Record<string, Partial<Record<ScoredActivity, number>>>;
 }
 
+/**
+ * How a pool is used (open engine only). fallback: one model, the pool enters only when it is busy. switch: each turn goes to the model of its activity's list.
+ * delegate: the main model stays fixed (and keeps its cache) and edit, command and screen work go to sub-agents on the lists of their activity.
+ * Not a permission: it never reaches a tool the agent did not already have.
+ */
+export const POOL_MODES = ['fallback', 'switch', 'delegate'] as const;
+export type PoolMode = (typeof POOL_MODES)[number];
+/** What a workspace, an agent and a stage that say nothing use. It only acts where a role or agent has a list of its own for an activity. */
+export const DEFAULT_POOL_MODE: PoolMode = 'delegate';
+
 export interface LlmConfig {
   providers: LlmProvider[];
   roles: Record<LlmRole, RoleModel>;
   scoreOverrides?: ScoreOverrides;
+  /** The workspace default for how a pool is used. Absent: `delegate`. */
+  poolMode?: PoolMode;
 }
 
 export interface RepoConfig {
@@ -257,6 +269,8 @@ export interface StageDef {
    * expressions); a cycle where one does is a flow a run follows, and a stage with no type in it is work.
    */
   type?: StageType;
+  /** How the pool of the stage's agent is used in this stage (work stages only). Left out: the workspace's `llm.poolMode`. Not an address, so a template carries it. */
+  poolMode?: PoolMode;
   /** Whether the stage receives the workspace's test environment. Left out: a QA stage of the current editor reads as yes; every stage carried by an already-saved template reads as no. */
   testEnv?: boolean;
   /** The agent that works this stage in a run (an `agents.team` id). It wins over the `stages` list of the agents. Work stages only. */
@@ -622,6 +636,8 @@ export interface AgentDef {
   allowedHosts?: string[];
   /** The agent's browser keeps its logins between uses, in a profile folder of its own in the workspace's data. Absent: off, a fresh profile every time. */
   browserProfile?: boolean;
+  /** How the agent's model pool is used. Absent: the stage's, then the workspace's `llm.poolMode`. */
+  poolMode?: PoolMode;
   /** Appended to the agent's system prompt. A catalog key or a literal. */
   instructions: string;
   /** One of the five built-in agents (the ids of the LLM roles): they can be edited, never removed. */

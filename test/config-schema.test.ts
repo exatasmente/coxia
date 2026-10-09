@@ -185,6 +185,50 @@ describe('config schema', () => {
     });
   });
 
+  describe('the pool mode', () => {
+    const withStage = () => {
+      const c = neutralConfig();
+      c.devCycle.stages = [structuredClone(TEST_STAGES[0])];
+      return c;
+    };
+    const stageOf = (c: ReturnType<typeof neutralConfig>) => c.devCycle.stages[0];
+
+    it('is in the neutral config as delegate, and absent from an agent and a stage until one chooses', () => {
+      const c = neutralConfig();
+      expect(c.llm.poolMode).toBe('delegate');
+      expect(c.agents.team.every((a) => !('poolMode' in a))).toBe(true);
+      expect(c.devCycle.stages.every((s) => !('poolMode' in s))).toBe(true);
+      expect(newAgent({ id: 'x' })).not.toHaveProperty('poolMode');
+      expect(newAgent({ id: 'x', poolMode: 'switch' }).poolMode).toBe('switch');
+    });
+
+    it('accepts the three modes in the workspace, an agent, a stage and a flow', () => {
+      for (const mode of ['fallback', 'switch', 'delegate'] as const) {
+        const c = withStage();
+        c.llm.poolMode = mode;
+        c.agents.team[0].poolMode = mode;
+        stageOf(c).poolMode = mode;
+        c.devCycle.flows = { release: [{ ...stageOf(c), poolMode: mode }] };
+        expect(validateConfig(c).errors).toEqual([]);
+      }
+    });
+
+    it('refuses another value, by path', () => {
+      const c = withStage();
+      const paths = (x: unknown) => validateConfig(x).errors.map((e) => e.path);
+      expect(paths({ ...c, llm: { ...c.llm, poolMode: 'both' } })).toEqual(['llm.poolMode']);
+      expect(paths({ ...c, agents: { ...c.agents, team: [{ ...c.agents.team[0], poolMode: 'both' }, ...c.agents.team.slice(1)] } })).toEqual(['agents.team[0].poolMode']);
+      expect(paths({ ...c, devCycle: { ...c.devCycle, stages: [{ ...stageOf(c), poolMode: 1 }, ...c.devCycle.stages.slice(1)] } })).toEqual(['devCycle.stages[0].poolMode']);
+    });
+
+    it('describes the three fields', () => {
+      const props = CONFIG_SCHEMA.properties!;
+      expect(props.llm.properties?.poolMode.enum).toEqual(['fallback', 'switch', 'delegate']);
+      expect(props.agents.properties?.team.items?.properties?.poolMode.enum).toEqual(['fallback', 'switch', 'delegate']);
+      expect(props.devCycle.properties?.stages.items?.properties?.poolMode.enum).toEqual(['fallback', 'switch', 'delegate']);
+    });
+  });
+
   it('accepts the draft mark of an agent and refuses one that is not a boolean', () => {
     const c = neutralConfig();
     const agent = { id: 'trial', name: 'Trial', draft: true };

@@ -365,6 +365,23 @@ describe.each([['agent-flow'], ['agent-flow-engineering']])('the template %s', (
     expect(JSON.stringify(applyTemplate(neutralConfig(), exported).agents.team)).not.toMatch(/fallbacks|activities|contextWindow/);
   });
 
+  it('carries the pool mode of an agent and of a stage, and still never the pool', () => {
+    const source = applied();
+    source.agents.team.push(newAgent({ id: 'scout', name: 'Scout', poolMode: 'switch', model: { role: null, provider: 'anthropic', model: 'sonnet', fallbacks: [{ provider: 'anthropic', model: 'haiku' }] } }));
+    const work = source.devCycle.stages.find((s) => (s.type ?? 'work') === 'work')!;
+    work.poolMode = 'fallback';
+    const exported = templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' });
+    expect(exported.team!.find((a) => a.id === 'scout')!.poolMode).toBe('switch');
+    expect(exported.team!.find((a) => a.id === 'scout')!.model).toEqual({ role: null, provider: 'anthropic', model: 'sonnet' });
+    const check = parseTemplate(JSON.parse(exportTemplateText(exported, new Date('2026-10-02T12:00:00Z'))));
+    expect(check.errors).toEqual([]);
+    const back = applyTemplate(neutralConfig(), check.template!);
+    expect(back.agents.team.find((a) => a.id === 'scout')!.poolMode).toBe('switch');
+    expect(back.devCycle.stages.find((s) => s.id === work.id)!.poolMode).toBe('fallback');
+    // The workspace default is the workspace's, not the template's.
+    expect(JSON.stringify(exported)).not.toMatch(/"llm"/);
+  });
+
   it('lists in the setup wizard with its team', async () => {
     const { listCycleTemplates } = await import('../src/main/cycles');
     const entry = listCycleTemplates('en').find((t) => t.id === id)!;

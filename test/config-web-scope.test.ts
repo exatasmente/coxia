@@ -4,6 +4,7 @@ import { newAgent } from '../src/shared/config/team';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { WEB_EDITABLE, changedPaths, refusedPaths } from '../src/main/configScope';
 import { webAccess } from '../src/main/webPolicy';
+import { TEST_STAGES } from './helpers/config';
 
 vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0' }, BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] }, dialog: {} }));
 
@@ -166,6 +167,23 @@ describe('the reserve models of an agent, from a paired browser', () => {
   it('may not touch the pool of a role: the five of them are llm.roles, which the browser cannot change', () => {
     expect(refused((c) => { c.llm.roles.turn.fallbacks = [ref('a')]; })).toEqual(['llm.roles.turn.fallbacks']);
     expect(refused((c) => { c.llm.scoreOverrides = { floors: { shell: 1 } }; })).toEqual(['llm.scoreOverrides']);
+  });
+});
+
+describe('the pool mode, from a paired browser', () => {
+  it('may change the mode of an agent and of a stage: it reaches no tool the agent did not have', () => {
+    expect(refused((c) => { c.agents.team[0].poolMode = 'fallback'; })).toEqual([]);
+    expect(refused((c) => { c.agents.team[0].poolMode = 'delegate'; })).toEqual([]);
+    const staged = (c: WorkspaceConfig) => { c.devCycle.stages = [structuredClone(TEST_STAGES[0])]; };
+    const stored = edit(staged);
+    const next = (change: (c: WorkspaceConfig) => void) => { const c = structuredClone(stored); change(c); return c; };
+    expect(refusedPaths(stored, next((c) => { c.devCycle.stages[0].poolMode = 'switch'; }))).toEqual([]);
+    expect(refusedPaths(stored, next((c) => { c.devCycle.flows = { core: [{ ...c.devCycle.stages[0], poolMode: 'switch' }] }; }))).toEqual([]);
+  });
+
+  it('may not change the workspace default, which sits in llm beside the pools it governs', () => {
+    expect(refused((c) => { c.llm.poolMode = 'fallback'; })).toEqual(['llm.poolMode']);
+    expect(refused((c) => { delete c.llm.poolMode; })).toEqual(['llm.poolMode']);
   });
 });
 
