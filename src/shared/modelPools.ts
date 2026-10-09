@@ -93,8 +93,11 @@ export interface PoolSuggestion {
   write: RankedModel[];
   /** A list for an activity, only where it differs from `write`. */
   activities: Partial<Record<Activity, RankedModel[]>>;
-  /** What each role on the provider gets: its own model first, the rest of `write` as reserves, and the lists that differ. */
-  roles: Partial<Record<LlmRole, ModelPool>>;
+  /**
+   * What each role on the provider gets: `lead` (the first of `write`, which becomes the role's own model), the rest as reserves in the same order, and the
+   * lists that differ. The role's model of today keeps its place by cost among them, so the cheapest model that passes comes first.
+   */
+  roles: Partial<Record<LlmRole, ModelPool & { lead: ModelRef }>>;
 }
 
 const sameModels = (a: RankedModel[], b: RankedModel[]): boolean => a.length === b.length && a.every((r, i) => r.ref.model === b[i].ref.model);
@@ -114,9 +117,13 @@ export function suggestPools(catalog: readonly CatalogModel[], opts: SuggestOpti
   for (const role of LLM_ROLES) {
     const own = opts.roles?.[role];
     if (!own) continue;
-    const fallbacks = write.filter((r) => r.ref.model !== own.model).slice(0, size - 1).map((r) => ({ ...r.ref }));
+    // The role's model of today stays in the pool at its place in the ranking; one the listing does not rank (unknown or not eligible) goes last.
+    const ranked = write.findIndex((r) => r.ref.model === own.model);
+    const top = write.slice(0, size).map((r) => ({ ...r.ref }));
+    const list = ranked >= size ? [...top.slice(0, size - 1), { ...write[ranked].ref }] : ranked >= 0 ? top : [...top.slice(0, size - 1), { ...own }];
+    const [lead, ...fallbacks] = list;
     const acts = Object.fromEntries(Object.entries(activities).map(([a, l]) => [a, l!.map((r) => ({ ...r.ref }))]));
-    roles[role] = { ...(fallbacks.length ? { fallbacks } : {}), ...(Object.keys(acts).length ? { activities: acts } : {}) };
+    roles[role] = { lead, ...(fallbacks.length ? { fallbacks } : {}), ...(Object.keys(acts).length ? { activities: acts } : {}) };
   }
   return { write: write.slice(0, size), activities, roles };
 }

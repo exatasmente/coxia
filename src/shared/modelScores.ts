@@ -7,10 +7,10 @@ import type { ScoredActivity, ScoreOverrides } from './config/types';
 // When a score changes or a model is added, raise SCORE_TABLE_VERSION: a saved pool does not depend on it (a pool is a list of models the person reviewed),
 // but a note in the changelog can say which table a suggestion came from.
 
-export const SCORE_TABLE_VERSION = 1;
+export const SCORE_TABLE_VERSION = 2;
 
 /** The score below which a model is listed after the ones that pass, per activity. `explore` and `write` have none: they are ordered by price. */
-export const FLOORS: Record<ScoredActivity, number> = { shell: 85, edit: 65, screen: 70 };
+export const FLOORS: Record<ScoredActivity, number> = { shell: 90, edit: 70, screen: 70 };
 
 /** Who measured: the vendor of the model itself, or someone else comparing models. Shown next to the score. */
 export type ScoreOrigin = 'self-reported' | 'third-party';

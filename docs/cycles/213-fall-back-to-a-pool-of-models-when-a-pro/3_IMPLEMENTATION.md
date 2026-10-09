@@ -121,3 +121,13 @@ Registro do que foi feito por commit, dos desvios do plano (`2_PLAN.md`) e dos t
   - A rule `paired-phone.md` (fora do repositório) fica sem a linha do pool; é do mantenedor.
   - A linha do cartão do agente (`modelText`) não mostra as reservas.
 - **Testes.** `team-agent-edit` (as trocas do editor mantêm o pool, a reserva que vira o modelo sai, o papel guarda o pool no rascunho e não o grava, o pool vai ao `applyAgent` e valida, os problemas), `config-web-scope` (tirar e reordenar passam; acrescentar, por lista e por atividade, e criar um agente com pool são recusados por nome; os pools dos papéis e `llm.scoreOverrides` seguem fora do alcance), `team-pool-ui` (o editor no computador, a frase do papel, o navegador pareado só vê, PT e EN).
+
+## Ajuste depois da revisão das telas: pisos 90/70, a sugestão reordena o papel, nota no formato do idioma
+
+A tela do assistente, aberta no app compilado com um servidor falso que serve uma listagem real de preços, mostrou três coisas, decididas pelo mantenedor:
+
+- **Pisos `shell` 90 e `edit` 70** (`FLOORS`, `SCORE_TABLE_VERSION` 2). Com 85/65 os dois modelos mais fortes da tabela passavam, e o mais barato ia primeiro em `shell` e `edit`; agora o de nota maior vai primeiro e o outro fica abaixo do piso. `screen` segue em 70.
+- **"Usar a sugestão" troca o modelo do papel.** `suggestPools` devolve `lead` por papel (o primeiro da lista `write`) e as reservas na mesma ordem; o modelo de hoje fica no conjunto no seu lugar pelo custo, ou por último quando a listagem não o classifica. `applySuggestion` põe `lead` como `provider`/`model` do papel (os fatos do modelo de hoje só ficam se ele continuar o mesmo). Os textos `wizard.suggest.defaultHint` e `wizard.suggest.useHint` dizem isso nos dois catálogos.
+- **Nota no formato do idioma** (`84,3` em pt-BR): `PoolFacts` usa `toLocaleString(intlLocale())`.
+
+Testes: `model-pools` (ordem com os pisos novos sobre os três modelos da tabela, `lead` e o modelo de hoje no seu lugar ou por último) e `pool-editor` (o papel passa ao mais barato, o painel mostra o piso 90).

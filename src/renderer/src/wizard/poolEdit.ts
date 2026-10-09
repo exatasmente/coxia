@@ -51,8 +51,9 @@ export function withoutLead(pool: ModelPool, lead: Pick<ModelRef, 'provider' | '
 }
 
 /**
- * "Use the suggestion" for the roles that are on a provider: their reserves and lists become the suggested ones. Only the draft changes. The role's own model and
- * the facts about it stay, and so do the reserves of the roles the suggestion has nothing for.
+ * "Use the suggestion" for the roles that are on a provider: the role starts with the suggestion's first model, and its reserves and lists become the suggested
+ * ones (the model of today among them, at its place by cost). Only the draft changes. The facts about the role's model stay when the model stays; the roles the
+ * suggestion has nothing for keep what they had.
  */
 export function applySuggestion(cfg: WorkspaceConfig, suggestion: PoolSuggestion): WorkspaceConfig {
   const roles = { ...cfg.llm.roles };
@@ -60,7 +61,9 @@ export function applySuggestion(cfg: WorkspaceConfig, suggestion: PoolSuggestion
     const pool = suggestion.roles[role];
     if (!pool) continue;
     const { fallbacks: _f, activities: _a, ...own } = roles[role];
-    roles[role] = { ...own, ...poolFieldsOf(pool) };
+    const { lead, ...rest } = pool;
+    const head = same(own, lead) ? own : { ...lead };
+    roles[role] = { ...head, ...poolFieldsOf(rest) };
   }
   return { ...cfg, llm: { ...cfg.llm, roles } };
 }

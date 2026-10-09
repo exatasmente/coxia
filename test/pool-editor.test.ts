@@ -110,8 +110,10 @@ describe('using the suggestion changes only the draft', () => {
     const before = JSON.stringify(cfg);
     const suggestion = suggestPools(catalog, { provider: 'p1', roles: rolesOnProvider(cfg, 'p1') });
     const next = applySuggestion(cfg, suggestion);
-    expect(next.llm.roles.turn.fallbacks?.map((r) => r.model)).toEqual(['model-b', 'model-a']);
-    expect(next.llm.roles.turn.model).toBe('own');
+    // The cheapest becomes the role's model; the model of today stays in the pool, at its place by cost.
+    expect(next.llm.roles.turn.model).toBe('model-b');
+    expect(next.llm.roles.turn.provider).toBe('p1');
+    expect(next.llm.roles.turn.fallbacks?.map((r) => r.model)).toEqual(['model-a', 'own']);
     expect(next.llm.roles.fix).toEqual({ provider: 'p2', model: 'other', fallbacks: models('keep', 'me') });
     // A new object: the config the screen was drawn from is not edited, so nothing is saved by this call.
     expect(JSON.stringify(cfg)).toBe(before);
@@ -122,7 +124,8 @@ describe('using the suggestion changes only the draft', () => {
     const cfg = withProviders('p1');
     cfg.llm.roles.turn = { provider: 'p1', model: 'own', fallbacks: models('old'), activities: { shell: models('old-shell') } };
     const next = applySuggestion(cfg, suggestPools(catalog, { provider: 'p1', roles: rolesOnProvider(cfg, 'p1') }));
-    expect(next.llm.roles.turn.fallbacks?.map((r) => r.model)).toEqual(['model-b', 'model-a']);
+    expect(next.llm.roles.turn.model).toBe('model-b');
+    expect(next.llm.roles.turn.fallbacks?.map((r) => r.model)).toEqual(['model-a', 'own']);
     expect(next.llm.roles.turn.activities).toBeUndefined();
   });
 
@@ -255,7 +258,7 @@ describe('the suggestion panel', () => {
     expect(out).not.toContain('>small<');
     expect(out).toContain('Use the suggestion');
     expect(out).toContain('Nothing is saved until you save');
-    expect(out).toContain('app&#x27;s table: 85');
+    expect(out).toContain('app&#x27;s table: 90');
     expect(out).toContain('Test this model');
   });
 

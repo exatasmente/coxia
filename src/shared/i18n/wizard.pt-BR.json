@@ -477,7 +477,7 @@
   "wizard.suggest.floorFor": "Piso de qualidade de {activity}",
   "wizard.suggest.floorTable": "tabela do app: {floor}",
   "wizard.suggest.default": "Lista padrão",
-  "wizard.suggest.defaultHint": "O começo da etapa, as cerimônias e os documentos. Cada papel mantém o próprio modelo em primeiro e recebe os outros como reserva.",
+  "wizard.suggest.defaultHint": "O começo da etapa, as cerimônias e os documentos. O primeiro da lista passa a ser o modelo de cada papel; o modelo de hoje fica no conjunto, no seu lugar pelo custo.",
   "wizard.suggest.byActivity": "Listas por tipo de trabalho ({count})",
   "wizard.suggest.belowFloor": "abaixo do piso",
   "wizard.suggest.scoreFor": "Nota de {model} para {activity}",
@@ -485,7 +485,7 @@
   "wizard.suggest.noCatalog": "A listagem de {provider} não traz preço nem capacidades, então não há do que sugerir. Adicione reservas à mão em cada papel.",
   "wizard.suggest.none": "Nenhum modelo da listagem serve: é preciso que ferramentas e saída estruturada não estejam descartadas e que o contexto conhecido tenha ao menos {tokens} tokens.",
   "wizard.suggest.use": "Usar a sugestão",
-  "wizard.suggest.useHint": "Substitui as reservas e as listas de {roles} neste rascunho. Nada é salvo até você salvar.",
+  "wizard.suggest.useHint": "Troca o modelo, as reservas e as listas de {roles} neste rascunho. Nada é salvo até você salvar.",
   "wizard.suggest.noRoles": "Nenhum papel usa {provider}, então não há onde pôr a sugestão.",
   "wizard.suggest.placed": "A sugestão está no rascunho. Confira em cada papel e depois salve."
 }

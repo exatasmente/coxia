@@ -16,7 +16,7 @@ export function PoolFacts({ facts }: { facts: EntryFacts }) {
   if (facts.cost !== null) parts.push(t('wizard.pool.cost', { cost: usd(facts.cost) }));
   if (facts.contextWindow !== null) parts.push(t('wizard.pool.context', { tokens: facts.contextWindow.toLocaleString(intlLocale()) }));
   for (const { activity, found } of facts.scores) {
-    const params = { activity: t(`wizard.activity.${activity}`), score: String(found.score) };
+    const params = { activity: t(`wizard.activity.${activity}`), score: found.score.toLocaleString(intlLocale()) };
     parts.push(found.source === 'override' ? t('wizard.pool.scoreOverride', params) : t('wizard.pool.score', { ...params, benchmark: found.source.benchmark, origin: t(`wizard.pool.origin.${found.source.origin}`) }));
   }
   return (

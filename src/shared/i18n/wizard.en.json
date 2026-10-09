@@ -477,7 +477,7 @@
   "wizard.suggest.floorFor": "Quality floor for {activity}",
   "wizard.suggest.floorTable": "app's table: {floor}",
   "wizard.suggest.default": "Default list",
-  "wizard.suggest.defaultHint": "The start of a stage, the ceremonies and the documents. Each role keeps its own model first and gets the others as reserves.",
+  "wizard.suggest.defaultHint": "The start of a stage, the ceremonies and the documents. The first of the list becomes each role's model; today's model stays in the pool, at its place by cost.",
   "wizard.suggest.byActivity": "Lists by kind of work ({count})",
   "wizard.suggest.belowFloor": "under the floor",
   "wizard.suggest.scoreFor": "Score of {model} for {activity}",
@@ -485,7 +485,7 @@
   "wizard.suggest.noCatalog": "The listing of {provider} carries no price or capabilities, so there is nothing to suggest from. Add reserves by hand under each role.",
   "wizard.suggest.none": "No model in the listing qualifies: it needs tools and structured output not ruled out, and at least {tokens} tokens of known context.",
   "wizard.suggest.use": "Use the suggestion",
-  "wizard.suggest.useHint": "Replaces the reserves and lists of {roles} in this draft. Nothing is saved until you save.",
+  "wizard.suggest.useHint": "Replaces the model, the reserves and the lists of {roles} in this draft. Nothing is saved until you save.",
   "wizard.suggest.noRoles": "No role uses {provider}, so there is nothing to place the suggestion on.",
   "wizard.suggest.placed": "The suggestion is in the draft. Review it under each role, then save."
 }

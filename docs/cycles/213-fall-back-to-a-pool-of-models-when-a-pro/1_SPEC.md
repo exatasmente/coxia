@@ -145,7 +145,11 @@ que o cliente da API pare de repetir o mesmo modelo sem limite quando o servidor
    `deepseek-ai/DeepSeek-V4.1-Flash` shell 90,6 (Terminal-Bench 2.1), edit 74,2 (DeepSWE v1.1);
    `XiaomiMiMo/MiMo-V2.6-Flash` shell 87,6 (Terminal-Bench 2.1), edit 67,9 (DeepSWE v1.1),
    screen 80,8 (OSWorld-Verified); `zai-org/GLM-5.3-Flash` shell 84,3, edit 63,4 (comparativo
-   de terceiros, não do fornecedor). **Pisos:** shell 85, edit 65, screen 70.
+   de terceiros, não do fornecedor). **Pisos:** shell 85, edit 65, screen 70; revistos depois da
+   implementação para **shell 90, edit 70, screen 70** (com 85/65 os dois modelos mais fortes
+   passavam e o mais barato ia primeiro em shell e edit, o contrário do pretendido).
+7. **"Usar a sugestão" reordena o papel** (depois da implementação): o primeiro da lista sugerida
+   passa a ser o modelo do papel, e o modelo de hoje fica no conjunto, no seu lugar pelo custo.
 2. **Fica no modelo em uso** até ele recusar; a próxima etapa recomeça do topo.
 3. **Trocam de modelo:** taxa (429), sobrecarga (503/529) e os outros 5xx, depois das
    repetições do cliente. Tempo esgotado não troca.

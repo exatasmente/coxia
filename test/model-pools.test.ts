@@ -96,10 +96,12 @@ describe('rankForActivity', () => {
 describe('suggestPools', () => {
   const catalog = [model('model-a', 0.3, { vision: true }), model('model-b', 0.2, { vision: true }), model('model-c', 0.1), model('model-d', 0.4)];
 
-  it('gives each role on the provider its own model first and the others as reserves, cheapest first', () => {
+  it('starts each role on the provider with the cheapest model and keeps its model of today at its place by cost', () => {
     const s = suggestPools(catalog, { ...opts, roles: { turn: { provider: 'p1', model: 'model-d' }, deep: { provider: 'p1', model: 'model-c' } } });
     expect(ids(s.write)).toEqual(['model-c', 'model-b', 'model-a', 'model-d']);
-    expect(s.roles.turn?.fallbacks?.map((r) => r.model)).toEqual(['model-c', 'model-b', 'model-a']);
+    expect(s.roles.turn?.lead.model).toBe('model-c');
+    expect(s.roles.turn?.fallbacks?.map((r) => r.model)).toEqual(['model-b', 'model-a', 'model-d']);
+    expect(s.roles.deep?.lead.model).toBe('model-c');
     expect(s.roles.deep?.fallbacks?.map((r) => r.model)).toEqual(['model-b', 'model-a', 'model-d']);
     expect(s.roles.reply).toBeUndefined();
   });
@@ -124,14 +126,18 @@ describe('suggestPools', () => {
     const many = Array.from({ length: 12 }, (_, i) => model(`m-${String(i).padStart(2, '0')}`, 0.1 + i / 100));
     const s = suggestPools(many, { ...opts, roles: { turn: { provider: 'p1', model: 'own' } } });
     expect(s.write).toHaveLength(4);
-    expect(s.roles.turn?.fallbacks).toHaveLength(3);
+    expect(s.roles.turn?.lead.model).toBe('m-00');
+    // The role's model of today is not in the listing: it stays, last.
+    expect(s.roles.turn?.fallbacks?.map((r) => r.model)).toEqual(['m-01', 'm-02', 'own']);
+    const late = suggestPools(many, { ...opts, roles: { turn: { provider: 'p1', model: 'm-09' } } });
+    expect(late.roles.turn?.fallbacks?.map((r) => r.model)).toEqual(['m-01', 'm-02', 'm-09']);
   });
 });
 
 describe('the shipped score table', () => {
   it('is versioned and carries the floors of the maintainer', () => {
-    expect(SCORE_TABLE_VERSION).toBe(1);
-    expect(FLOORS).toEqual({ shell: 85, edit: 65, screen: 70 });
+    expect(SCORE_TABLE_VERSION).toBe(2);
+    expect(FLOORS).toEqual({ shell: 90, edit: 70, screen: 70 });
     expect(floorFor('shell', { floors: { shell: 90 } })).toBe(90);
     expect(floorFor('explore')).toBeNull();
   });
@@ -155,10 +161,18 @@ describe('the shipped score table', () => {
     expect((scoreFor('deepseek-ai/DeepSeek-V4.1-Flash', 'shell')?.source as { origin: string }).origin).toBe('self-reported');
   });
 
-  it('puts the shipped scores under the shipped floors: 84.3 is under 85 for shell and 63.4 under 65 for edit', () => {
-    const list = ['deepseek-ai/DeepSeek-V4.1-Flash', 'XiaomiMiMo/MiMo-V2.6-Flash', 'zai-org/GLM-5.3-Flash'].map((id, i) => model(id, 0.1 + i / 10));
+  it('puts the stronger model first for shell and edit with the shipped floors, and the cheapest with images first for screen', () => {
+    // Costs in the order of the listing the maintainer chose from: the cheapest has images and the lower scores.
+    const list = [
+      model('XiaomiMiMo/MiMo-V2.6-Flash', 0.1, { vision: true }),
+      model('deepseek-ai/DeepSeek-V4.1-Flash', 0.2, { vision: true }),
+      model('zai-org/GLM-5.3-Flash', 0.3, { vision: true }),
+    ];
     const shell = rankForActivity(list, 'shell', opts);
-    expect(shell.map((r) => r.belowFloor)).toEqual([false, false, true]);
+    expect(ids(shell)).toEqual(['deepseek-ai/DeepSeek-V4.1-Flash', 'XiaomiMiMo/MiMo-V2.6-Flash', 'zai-org/GLM-5.3-Flash']);
+    expect(shell.map((r) => r.belowFloor)).toEqual([false, true, true]);
     expect(ids(rankForActivity(list, 'edit', opts))).toEqual(['deepseek-ai/DeepSeek-V4.1-Flash', 'XiaomiMiMo/MiMo-V2.6-Flash', 'zai-org/GLM-5.3-Flash']);
+    expect(ids(rankForActivity(list, 'screen', opts))[0]).toBe('XiaomiMiMo/MiMo-V2.6-Flash');
+    expect(ids(rankForActivity(list, 'write', opts))[0]).toBe('XiaomiMiMo/MiMo-V2.6-Flash');
   });
 });
