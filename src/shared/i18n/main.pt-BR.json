@@ -1429,6 +1429,7 @@
   "main.evidence.keptByApp": "Guardada pelo app: imagem que o agente olhou durante a etapa",
   "main.evidence.screenRecording": "Gravação da tela da etapa (feita pelo app)",
   "main.screen.notKept.noFrame": "nenhuma imagem da tela pôde ser lida",
+  "main.screen.notKept.unused": "nenhuma janela foi aberta na tela",
   "main.screen.notKept.encoder": "o codificador de vídeo não funcionou",
   "main.screen.notKept.tooLong": "o vídeo passa do limite de tamanho de {max} MiB",
   "main.screen.notKept.notWebm": "o vídeo não estava no formato esperado",

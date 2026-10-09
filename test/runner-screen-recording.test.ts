@@ -125,10 +125,11 @@ const passes = async (call: Parameters<Parameters<Boot['engine']['script']>[1]>[
 /** The pieces of evidence that are the app's own recording. */
 const recordingsOf = (run: Run) => Object.values(run.evidence ?? {}).filter((e) => e.recording);
 
-async function qaStage(o: { sink?: FakeSink; qa?: Parameters<Boot['engine']['script']>[1]; evidence?: 'cycle'; onClose?: () => void } = {}) {
+async function qaStage(o: { windows?: boolean; sink?: FakeSink; qa?: Parameters<Boot['engine']['script']>[1]; evidence?: 'cycle'; onClose?: () => void } = {}) {
   let b!: Boot;
   const sink = o.sink ?? fakeSink();
   const s = screens(() => b.forum, sink);
+  if (o.windows === false) s.conn.windows = false;
   const sandbox = fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/stage/x11/X99', kind: 'sandbox' }, onClose: o.onClose });
   b = await boot({
     sandbox,
@@ -190,11 +191,11 @@ describe('the recording of a QA stage', () => {
     expect(w.conn.closed).toBe(true);
   });
 
-  it('is written to the run file as version 2, and the run without a recording stays 1', async () => {
+  it('is written to the run file as version 3 (the recording says when it started, #176), and the run without a recording stays 1', async () => {
     const w = await qaStage();
     const run = await reach(w.b, w.run, 'ready');
     const file = (id: string) => JSON.parse(readFileSync(join(w.b.dir, 'runs', `${id}.json`), 'utf8')) as { version: number; evidence: Record<string, { kind: string }> };
-    expect(file(run.id).version).toBe(2);
+    expect(file(run.id).version).toBe(3);
     expect(Object.values(file(run.id).evidence).map((e) => e.kind)).toEqual(['text', 'webm']);
     const plain = await boot({ sandbox: fakeSandbox(), configure: (c) => shellOf(c, 'qa', 'sandbox') });
     easy(plain, passes);
@@ -299,6 +300,17 @@ describe('the recording of a QA stage', () => {
     const lines = w.b.thread(run).filter((m) => m.kind === 'system' && m.code === 'runner.screen.notKept');
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatchObject({ author: { type: 'app' }, stage: 'qa', params: { agent: 'qa', reason: 'the video encoder did not work' } });
+  });
+
+  it('says once that nothing was kept when the agent never opened a window, and the stage still completes (#176)', async () => {
+    const w = await qaStage({ windows: false, qa: passes });
+    const run = await reach(w.b, w.run, 'ready');
+    expect(run.status).toBe('done');
+    expect(recordingsOf(run)).toEqual([]);
+    expect(w.sink.opened).toEqual([]);
+    const lines = w.b.thread(run).filter((m) => m.kind === 'system' && m.code === 'runner.screen.notKept');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ author: { type: 'app' }, stage: 'qa', params: { agent: 'qa', reason: 'no window was opened on the screen' } });
   });
 
   it('says why when the store refuses the file, and the stage still completes', async () => {

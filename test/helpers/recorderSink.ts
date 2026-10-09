@@ -7,6 +7,8 @@ import type { WebmChunk } from '../../src/main/screen/webm';
 export interface FakeSink extends RecorderSink {
   opened: { width: number; height: number }[];
   fed: { ts: number; key: boolean; width: number; height: number }[];
+  /** The first byte of each frame fed, in order: tells which picture it was. */
+  firstBytes: number[];
   closed: number;
   aborted: number;
   /** Bytes of the chunk made for each frame fed. */
@@ -28,6 +30,7 @@ export function fakeSink(chunkBytes = 100): FakeSink {
   const sink: FakeSink = {
     opened: [],
     fed: [],
+    firstBytes: [],
     closed: 0,
     aborted: 0,
     chunkBytes,
@@ -49,6 +52,7 @@ export function fakeSink(chunkBytes = 100): FakeSink {
         return false;
       }
       sink.fed.push({ ts, key, width: frame.width, height: frame.height });
+      sink.firstBytes.push(frame.data[0]);
       chunks.push({ ts, key, data: new Uint8Array(sink.chunkBytes).fill(key ? 1 : 2) });
       return true;
     },

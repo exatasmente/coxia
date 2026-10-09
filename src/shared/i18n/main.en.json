@@ -1429,6 +1429,7 @@
   "main.evidence.keptByApp": "Kept by the app: image the agent looked at during the stage",
   "main.evidence.screenRecording": "Screen recording of the stage (made by the app)",
   "main.screen.notKept.noFrame": "no picture of the screen could be read",
+  "main.screen.notKept.unused": "no window was opened on the screen",
   "main.screen.notKept.encoder": "the video encoder did not work",
   "main.screen.notKept.tooLong": "the video is over the size limit of {max} MiB",
   "main.screen.notKept.notWebm": "the video was not in the expected format",
