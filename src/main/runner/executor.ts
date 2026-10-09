@@ -952,6 +952,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         abort,
         chain,
         place,
+        // The called agent's own screen, as a mentioned agent's (a docs run has none, as its stages have none).
+        screens: d.sessions && d.asks && !run.docs ? { sessions: d.sessions, asks: d.asks } : null,
         title: t('main.runner.conversation.title', { caller: agent.id, called: to, ref: run.issue.ref }),
       };
       // A conversation with a writer is the only writer of the worktree while it runs: the stage waits for it (its answers still come as messages), so the two
