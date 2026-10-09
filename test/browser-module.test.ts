@@ -12,7 +12,7 @@ vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0', whenReady: () => 
 // soon as the screen that holds it lets go, and an orphan found at the start is deleted.
 
 const { ATAS } = await import('../src/main/env');
-const { getConfig, reloadConfig, saveConfig } = await import('../src/main/workspaceConfig');
+const { configLoadedCleanly, getConfig, reloadConfig, saveConfig } = await import('../src/main/workspaceConfig');
 const { browserModule, syncProfiles } = await import('../src/main/browser/module');
 const { browserRoot, ensureProfile, openProfile, profileLocks } = await import('../src/main/browser/profile');
 const { moduleList } = await import('../src/main/modules');
@@ -84,6 +84,38 @@ describe('the profiles and the team', () => {
     if (opened.ok) opened.release();
     expect(existsSync(profile('scout'))).toBe(false);
     expect(profileLocks.holder(profile('scout'))).toBeNull();
+  });
+
+  it('leaves every profile alone when the config did not load as written, at the start and after', () => {
+    made('scout');
+    made('writer');
+    made('ghost');
+    // An unreadable file: the config in memory is the repair's, and its team is nobody's.
+    writeFileSync(join(ATAS, 'config.json'), '{ not json');
+    reloadConfig();
+    expect(configLoadedCleanly()).toBe(false);
+    browserModule(noCtx);
+    expect(readdirSync(browserRoot(ATAS)).sort()).toEqual(['ghost', 'scout', 'writer']);
+    expect(syncProfiles()).toEqual([]);
+    expect(readdirSync(browserRoot(ATAS)).sort()).toEqual(['ghost', 'scout', 'writer']);
+    // The person saves a config of their own: nothing was dropped by it, so nothing goes.
+    saveConfig(withTeam('scout'));
+    expect(configLoadedCleanly()).toBe(true);
+    expect(readdirSync(browserRoot(ATAS)).sort()).toEqual(['ghost', 'scout', 'writer']);
+    // A file that parses but does not pass the check is the same case.
+    writeFileSync(join(ATAS, 'config.json'), JSON.stringify({ schemaVersion: 1, agents: 'wrong' }));
+    reloadConfig();
+    expect(syncProfiles()).toEqual([]);
+    expect(readdirSync(browserRoot(ATAS)).sort()).toEqual(['ghost', 'scout', 'writer']);
+  });
+
+  it('deletes on a change only the profiles of the agents that left, not the ones the config never named', () => {
+    browserModule(noCtx);
+    made('scout');
+    made('writer');
+    made('ghost');
+    saveConfig(removeAgent(getConfig(), 'writer'));
+    expect(readdirSync(browserRoot(ATAS)).sort()).toEqual(['ghost', 'scout']);
   });
 
   it('syncs on demand for an import that replaced the team, and never throws', () => {
