@@ -150,9 +150,9 @@ describe('a run whose pull request the host refused to open', () => {
     } });
     easy(b);
     b.engine.script('reviewer', async () => {
-      await until(b, (r) => r.status === 'question');
-      // the stage's own answer waits for the retry: when the question is gone the run is working again, and the answer lands as the normal flow would
-      await until(b, (r) => r.question === null);
+      // the stage's own answer waits for the retry: once the base is the chosen one and the question is gone the run is working again, and the answer lands as the normal flow would.
+      // Not "wait for the question first": the retry can clear it before this agent is even called, and that wait would then never end.
+      await until(b, (r) => r.baseBranch === 'main' && r.question === null);
       return reviewOk();
     });
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
