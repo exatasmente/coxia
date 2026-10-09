@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { neutralConfig } from '../src/shared/config';
+import { setLanguage } from '../src/shared/i18n';
+import { prompt as cycleWords } from '../src/main/cyclePrompts';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { ProcedureRecord } from '../src/shared/procedures';
 import type { AgentCall } from '../src/main/agents';
@@ -29,11 +31,13 @@ let screens: FakeScreens;
 const SECRET = 'correct horse 42';
 
 beforeEach(() => {
+  setLanguage('en');
   root = mkdtempSync(join(tmpdir(), 'coxia-procedures-gui-calls-'));
   forum = createForumStore(join(root, 'forum'));
   forum.ensureThread({ id: 'squads', kind: 'channel', title: 'Squads' });
 });
 afterEach(() => {
+  setLanguage('pt-BR');
   screens?.dispose();
   rmSync(root, { recursive: true, force: true });
 });
@@ -99,6 +103,24 @@ describe('an agent mentioned in a conversation', () => {
     expect(rec).toMatchObject({ kind: 'gui', key: 'docs.example.com', keyedBy: 'app', stepsFrom: 'recording', origin: { by: 'turn', surface: 'channel', ref: 'squads' } });
     expect(rec.origin.handoff).toBeUndefined();
     expect(forum.read('squads', 0, 100)?.messages.some((m) => m.code === 'runner.procedures.saved')).toBe(true);
+  });
+
+  it('is told in its rules to keep a screen task with the draft, and an agent with no browser is not', async () => {
+    const gui = cycleWords('runner.rules.proceduresGui');
+    const base = cycleWords('runner.rules.procedures');
+    screens = fakeScreens();
+    const withScreen = world();
+    withScreen.engine.script('turn', () => ({ text: 'Done.' }));
+    await answerMentions(place(), say(), withScreen.d);
+    expect(withScreen.engine.calls[0].system).toContain(base);
+    expect(withScreen.engine.calls[0].system).toContain(gui);
+    expect(withScreen.engine.calls[0].system).toContain('procedures_draft');
+    const without = world({ agent: { screen: false } });
+    without.engine.script('turn', () => ({ text: 'Done.' }));
+    await answerMentions(place(), say(), without.d);
+    expect(without.engine.calls[0].system).toContain(base);
+    expect(without.engine.calls[0].system).not.toContain(gui);
+    expect(without.engine.calls[0].system).not.toContain('procedures_draft');
   });
 
   it('drafts only what it did itself: the steps an earlier answer took on the screen kept between messages are not in this one', async () => {
@@ -222,6 +244,8 @@ describe('a working stage', () => {
     await b.settle();
     expect(drafted).toContain('1. Open /plan on docs.example.com');
     expect(saved).toContain('waits for their review');
+    expect(b.engine.calls.find((c) => c.agent.id === 'planner')?.system).toContain(cycleWords('runner.rules.proceduresGui'));
+    expect(b.engine.calls.find((c) => c.agent.id === 'refiner')?.system).not.toContain(cycleWords('runner.rules.proceduresGui'));
     expect(records()).toHaveLength(1);
     expect(records()[0]).toMatchObject({ kind: 'gui', keyedBy: 'app', origin: { by: 'planner', surface: 'stage', handoff: true } });
     expect(b.thread(run).find((m) => m.code === 'runner.procedures.heldForReview')?.stage).toBeDefined();

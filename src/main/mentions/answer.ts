@@ -277,6 +277,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         // What the app knows of the activities: the section is text only, so no tool of the call changes and no folder of it is opened.
         memory: deps.memory?.(place, message) || undefined,
         procedures: procedures?.list.text,
+        proceduresGui: procedures?.tools.draft !== undefined,
       });
       if (procedures) {
         call.procedures = procedures.tools;

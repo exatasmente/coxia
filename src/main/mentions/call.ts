@@ -46,6 +46,8 @@ export interface MentionInput {
   memory?: string;
   /** The learned procedures, as in a stage's input: a string means the call has the tools (the rules are told), and the string is the rendered list ("" lists nothing). */
   procedures?: string;
+  /** The call has the app's browser, so it is also given the draft (see `StageInput.proceduresGui`). */
+  proceduresGui?: boolean;
 }
 
 /** An issue the answer proposes, read leniently: a title and a body are needed, labels are optional. */
@@ -180,6 +182,7 @@ export function mentionCall(i: MentionInput): AgentCall {
     cp('runner.rules.data'),
     cp('runner.rules.claims'),
     i.procedures !== undefined ? cp('runner.rules.procedures') : '',
+    i.procedures !== undefined && i.proceduresGui ? cp('runner.rules.proceduresGui') : '',
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.agent.instructions).trim(),

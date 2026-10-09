@@ -747,6 +747,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     // What a stage is told of the record: its own activity whole, and the others in short. Nothing when the record has nothing to say.
     shared: d.sharedMemory?.(run) ?? '',
     procedures: procedures?.list.text,
+    proceduresGui: procedures?.tools.draft !== undefined,
     docsKeep: documented && writes,
     plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),
