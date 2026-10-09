@@ -222,7 +222,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
         const item = typeof x === 'number' ? { n: x } : x;
         if (!isObject(item)) return refused('gui-steps', [at], `${at} must name a draft step by its number: {n}, or {n, text} to reword it. You cannot write a step of your own.`);
         const extra = Object.keys(item).find((k) => k !== 'n' && k !== 'text');
-        if (extra !== undefined) return refused('gui-steps', [`${at}.${extra.slice(0, 20).replace(/[^\w]/g, '_')}`], `${at} may hold only n and text: the steps are the app's recording, and you cannot add a command or a control of your own.`);
+        if (extra !== undefined) return refused('gui-steps', [`${at}.<unknown>`], `${at} may hold only n and text: the steps are the app's recording, and you cannot add a command or a control of your own.`);
         if (typeof item.n !== 'number' || !Number.isInteger(item.n)) return refused('gui-steps', [`${at}.n`], `${at}.n must be the number of a step of the draft.`);
         if (!d.steps.some((y) => y.n === item.n)) return refused('gui-steps', [`${at}.n`], `the app did not record a step ${item.n}; the draft has steps 1 to ${d.steps.length}.`);
         if (item.text !== undefined && typeof item.text !== 'string') return refused('gui-steps', [`${at}.text`], `${at}.text must be a string.`);

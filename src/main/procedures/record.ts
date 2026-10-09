@@ -233,7 +233,8 @@ function steps(out: Out, value: unknown, gui: boolean, home: string): ProcedureS
       return;
     }
     const o = raw as Record<string, unknown>;
-    for (const name of Object.keys(o)) if (name !== 'text' && name !== 'run' && name !== 'edited') refuse(out, `${at}.${name}`, 'unknown-field');
+    // The key is the agent's own text: the refusal and the audit name the place, never the name it chose.
+    if (Object.keys(o).some((name) => name !== 'text' && name !== 'run' && name !== 'edited')) refuse(out, `${at}.<unknown>`, 'unknown-field');
     const t = text(out, `${at}.text`, o.text, { max: LIMITS.stepText, gui }, home);
     const r = o.run === undefined ? undefined : text(out, `${at}.run`, o.run, { max: LIMITS.stepRun, gui }, home);
     if (t !== null && (o.run === undefined || r !== null)) done.push({ text: t, ...(r !== undefined && r !== null ? { run: r } : {}), ...(o.edited === true ? { edited: true as const } : {}) });

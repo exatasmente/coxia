@@ -135,6 +135,10 @@ describe('saving a gui procedure', () => {
       ['all of them', /steps must be a list of draft step numbers/],
     ];
     for (const [steps, message] of refusals) expect((await save(w, { title: 'Another title', steps })).text).toMatch(message);
+    // The field name an agent chose is not echoed into the log.
+    await save(w, { title: 'Another title', steps: [{ n: 1, 'my-chosen-field': 'x' }] });
+    expect(JSON.stringify(audits)).not.toContain('my-chosen-field');
+    expect(audits.at(-1)?.fields.fields).toContain('steps[0].<unknown>');
     expect(files()).toEqual(['p-00000001.json']);
   });
 

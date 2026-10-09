@@ -67,7 +67,9 @@ describe('checkContent: the shape', () => {
   });
 
   it('refuses a field a step does not have, and keeps the edited mark', () => {
-    expect(codes(good({ steps: [{ text: 'a', note: 'b' }] }))).toEqual(['steps[0].note:unknown-field']);
+    expect(codes(good({ steps: [{ text: 'a', note: 'b' }] }))).toEqual(['steps[0].<unknown>:unknown-field']);
+    const named = checkContent(good({ steps: [{ text: 'a', 'my-chosen-field': 'b' }] }), ctx);
+    expect(!named.ok && describeRefusals(named.refusals)).not.toContain('my-chosen-field');
     const r = checkContent(good({ steps: [{ text: 'a', edited: true }] }), ctx);
     expect(r.ok && r.value.steps).toEqual([{ text: 'a', edited: true }]);
   });
