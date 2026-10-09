@@ -135,6 +135,40 @@ describe('the open engine', () => {
     }
   });
 
+  it('a procedure-only call offers the procedure tools and no other: not the shell, not a runner tool, whatever the agent is allowed', async () => {
+    const writer = newAgent({ id: 'writer', permission: 'worktree', tracker: 'read', shell: 'sandbox', allowedCommands: ['npm test'], model: { role: null, provider: 'local', model: 'qwen3:8b' } });
+    const exec = { description: 'sandbox', exec: async () => ({ exitCode: 0, output: '', timedOut: false, ms: 1 }), log: [], close: async () => undefined } as never;
+    const runnerTools = [{ name: 'SendMessage', description: 'x', parameters: { type: 'object', properties: {} }, run: async () => ({ response: '', render: () => '' }) }] as never;
+    const s = session();
+    const before = fake.chats().length;
+    // the same call, with everything the stage has: it is offered the shell and the runner tool
+    await runAgent({ agent: writer, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'writer', maxTurns: 3, procedures: s.tools, exec, runnerTools, release: async () => '', attachments: { thread: 't', refs: [] } }, []);
+    expect(toolNames(before)).toEqual(expect.arrayContaining(['Shell', 'SendMessage']));
+    const only = fake.chats().length;
+    await runAgent({ agent: writer, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'writer', maxTurns: 3, procedures: s.tools, procedureOnly: true, exec, runnerTools, release: async () => '', attachments: { thread: 't', refs: [] } }, ['npm test']);
+    expect(toolNames(only).filter((n) => n !== 'final_answer')).toEqual([...PROCEDURE_TOOL_NAMES].sort());
+    // the system text carries no documentation index of the repository
+    expect(JSON.stringify((fake.chats()[only].body as Record<string, any>).messages)).not.toContain('Shell');
+  });
+
+  it('a procedure-only call still reaches the handlers: a tool the model calls is answered', async () => {
+    const own = await fakeOpenAI((req) => (req.n === 1 ? toolStep([{ id: 'a', name: 'procedures_save', args: record }]) : toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }])));
+    try {
+      const { updateConfig } = await import('../src/main/workspaceConfig');
+      updateConfig((c) => {
+        c.llm.providers.push(newProvider({ id: 'own', kind: 'openai-compatible', baseUrl: own.url, structured: 'tool' }));
+        return c;
+      });
+      const agent = newAgent({ id: 'reader', permission: 'read', tracker: 'read', shell: 'none', model: { role: null, provider: 'own', model: 'qwen3:8b' } });
+      const r = await runAgent<{ fala: string }>({ agent, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'reader', maxTurns: 3, procedures: session().tools, procedureOnly: true }, []);
+      expect(r.data).toEqual({ fala: 'done' });
+      const results = ((own.chats()[1].body as Record<string, any>).messages as { role: string; tool_call_id: string; content: string }[]).filter((m) => m.role === 'tool');
+      expect(results[0].content).toMatch(/^Saved p-00000001/);
+    } finally {
+      await own.close();
+    }
+  });
+
   it('the ToolImpls carry the schema of the table and cut a long answer', async () => {
     const tools: ProcedureTools = { list: async () => ({ text: 'x'.repeat(500) }), get: async () => ({ text: 'g' }), save: async () => ({ text: 's' }), stale: async () => ({ text: 't' }) };
     const impls = procedureToolImpls(tools);
@@ -193,6 +227,28 @@ describe('the Claude Agent SDK server', () => {
     await runAgent({ agent: sdkReader, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'reader', maxTurns: 6 });
     expect(Object.keys(calls[0].options.mcpServers ?? {})).not.toContain('coxia_procedures');
     expect(calls[0].options.allowedTools.filter((n: string) => n.includes('procedures'))).toEqual([]);
+  });
+
+  it('a procedure-only call turns the built-in tools off and keeps the in-process server, allowed by name and nothing else', async () => {
+    const writer = newAgent({ id: 'writer', permission: 'worktree', shell: 'sandbox', allowedCommands: ['npm test'] });
+    const exec = { description: 'sandbox', exec: async () => ({ exitCode: 0, output: '', timedOut: false, ms: 1 }), log: [], close: async () => undefined } as never;
+    const runnerTools = [{ name: 'SendMessage', description: 'x', parameters: { type: 'object', properties: {} }, run: async () => ({ response: '', render: () => '' }) }] as never;
+    const confine = { root, hooks: {} } as never;
+    await runAgent({ agent: writer, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'writer', maxTurns: 3, procedures: session().tools, procedureOnly: true, exec, runnerTools, confine, release: async () => '' }, ['npm test']);
+    const o = calls[0].options;
+    expect(o.tools).toEqual([]);
+    expect(o.strictMcpConfig).toBe(true);
+    expect(Object.keys(o.mcpServers)).toEqual(['coxia_procedures']);
+    expect(o.allowedTools).toEqual(PROCEDURE_TOOL_NAMES.map(procedureMcpToolName));
+    expect(o.disallowedTools).toEqual(expect.arrayContaining(['Bash', 'Edit', 'Write']));
+    expect(o.permissionMode).toBe('dontAsk');
+    expect(o.maxTurns).toBe(3);
+    expect(o.resume).toBeUndefined();
+    // a call that is not procedure-only leaves the built-ins as they were
+    calls.length = 0;
+    await runAgent({ agent: writer, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'writer', maxTurns: 3, procedures: session().tools });
+    expect(calls[0].options.tools).toBeUndefined();
+    expect(calls[0].options.strictMcpConfig).toBeUndefined();
   });
 
   it('a server that cannot be built does not stop the call: the thread says the tools are not there, once', async () => {
