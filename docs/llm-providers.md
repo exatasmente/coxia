@@ -44,13 +44,26 @@ O que a seleção entrega a `runOpenOnce`: `OpenEngineSelection` = `{ provider: 
 
 `probeOpenAIProvider(baseUrl, key, model, { lang })` devolve `{ reachable, ok, models, chat, tools, jsonSchema, capabilities, messages }`:
 
-1. alcança o servidor e lista `GET /models` (inclui a janela de contexto quando o servidor informa: `context_length`, `max_model_len`, `meta.n_ctx_train`…);
+1. alcança o servidor e lista `GET /models` (inclui a janela de contexto quando o servidor informa: `context_length`, `max_model_len`, `meta.n_ctx_train`…, e guarda em `catalog` o que a listagem diz de cada modelo: preço, janela e capacidades; veja [Conjunto de modelos](#conjunto-de-modelos));
 2. resposta simples (com SSE; sem SSE, tenta JSON);
 3. chamada de ferramenta;
 4. `response_format` com `json_schema`;
 5. uma imagem numa mensagem (um quadrado vermelho de 16×16): `images` é `true` quando o modelo respondeu, `false` quando o servidor recusou a imagem e fica ausente quando a chamada falhou por outro motivo.
 
 `capabilities` = `{ chat, tools, jsonSchema, streaming, reasoning, contextWindow, images }` alimenta o motor (`Capabilities`). A URL pode ser `http://localhost:11434`, `.../v1` ou `.../v1/chat/completions`.
+
+### Conjunto de modelos
+
+Cada papel (`turn`, `reply`, `deep`, `teams`, `fix`) e cada agente do time com modelo próprio guarda, além do modelo de hoje, uma lista de **reservas** (até 8, do mais barato ao mais caro) e, opcionalmente, uma lista completa por **tipo de trabalho**: `explore` (ler e buscar), `edit` (escrever e editar), `shell` (saída de comando), `screen` (a tela virtual, só em modelo que aceita imagem) e `write` (começo da etapa, cerimônias e documentos). Um tipo sem lista usa a do papel. Quando o modelo em uso recusa por taxa (429), sobrecarga (503/529) ou erro 5xx depois das repetições do cliente, o motor aberto passa a chamada ao próximo **na mesma sessão** e a etapa segue; o modelo que recusou descansa no app inteiro. O formato do campo está em [`configuration.md`](configuration.md); o comportamento no run, em [`runner.md`](runner.md).
+
+No passo **Modelos** do assistente, cada papel tem a lista de reservas abaixo do seletor (adicionar, remover, subir, descer; listas por tipo de trabalho recolhidas), e cada agente com modelo próprio tem as mesmas listas no editor do time. Um agente que empresta o modelo de um papel usa o conjunto do papel.
+
+**Conjunto sugerido.** Depois do teste de conexão, o assistente lê o que a listagem do provedor diz de cada modelo e propõe um conjunto. Dois formatos são lidos: o `data[].metadata` de servidores compatíveis com OpenAI que o publicam (`context_length`, `pricing` em dólares por milhão de tokens com entrada, saída e leitura de cache, e `tags` como `vision`, `prompt_cache` e `reasoning`; conferido contra um provedor real) e o formato de agregador (preço por token como texto, `supported_parameters`, `architecture.input_modalities`; **escrito pela documentação pública e não conferido contra o serviço**). Um provedor que não publica nenhum dos dois não ganha sugestão: as reservas são adicionadas à mão.
+
+- **Quem entra:** modelos com ferramentas e saída estruturada não descartadas pela listagem (o que ela não diz fica marcado "não verificado"; o botão "Testar este modelo" confere ferramentas, esquema, imagem e raciocínio de um modelo, e só dele) e contexto conhecido de ao menos 32.000 tokens. `screen` exige imagem.
+- **A ordem:** pelo custo estimado de uma etapa típica (2,05 milhões de tokens de entrada em cache, 0,06 de entrada nova e 0,0157 de saída; a entrada em cache custa o preço de entrada quando a listagem não tem preço de cache). Em `shell`, `edit` e `screen` os modelos que chegam ao **piso** de qualidade da atividade (shell 85, edit 65, screen 70) vêm primeiro, por custo; depois os abaixo do piso; depois os sem nota. `explore` e `write` só têm o custo.
+- **As notas** vêm de uma tabela pequena e versionada que o app traz (`src/shared/modelScores.ts`), com a fonte ao lado de cada nota. A maioria é **declarada pelo fornecedor do próprio modelo**, e a de um comparativo de terceiros vem marcada: servem de piso e de desempate, não de garantia. A tabela nunca é buscada na rede nem em endereço de provedor. A pessoa muda o piso e a nota de cada modelo na própria tela (`llm.scoreOverrides`) e reordena as listas como quiser.
+- **Nada é salvo sozinho.** "Usar a sugestão" só troca o rascunho da tela dos papéis que usam aquele provedor; o salvar é o do assistente.
 
 ### Saída estruturada
 
@@ -156,13 +169,26 @@ What the selection hands to `runOpenOnce`: `OpenEngineSelection` = `{ provider: 
 
 `probeOpenAIProvider(baseUrl, key, model, { lang })` returns `{ reachable, ok, models, chat, tools, jsonSchema, capabilities, messages }`:
 
-1. reaches the server and lists `GET /models` (including the context window when the server reports it: `context_length`, `max_model_len`, `meta.n_ctx_train`…);
+1. reaches the server and lists `GET /models` (including the context window when the server reports it: `context_length`, `max_model_len`, `meta.n_ctx_train`…, and keeps in `catalog` what the listing says of each model: price, window and capabilities; see [Pool of models](#pool-of-models));
 2. plain completion (over SSE; without SSE, plain JSON);
 3. tool call;
 4. `response_format` with `json_schema`;
 5. an image in a message (a 16×16 red square): `images` is `true` when the model answered, `false` when the server refused the image, and absent when the call failed for another reason.
 
 `capabilities` = `{ chat, tools, jsonSchema, streaming, reasoning, contextWindow, images }` feeds the engine (`Capabilities`). The URL may be `http://localhost:11434`, `.../v1` or `.../v1/chat/completions`.
+
+### Pool of models
+
+Each role (`turn`, `reply`, `deep`, `teams`, `fix`) and each team agent with a model of its own keeps, besides today's model, a list of **reserves** (up to 8, from the cheapest to the most expensive) and, optionally, a complete list per **kind of work**: `explore` (reading and searching), `edit` (writing and editing), `shell` (command output), `screen` (the virtual screen, only on a model that takes images) and `write` (the start of a stage, ceremonies and documents). A kind without a list uses the role's. When the model in use refuses for a rate limit (429), overload (503/529) or a 5xx error after the client's retries, the open engine moves the call to the next one **in the same session** and the stage goes on; the model that refused rests across the whole app. The shape of the field is in [`configuration.md`](configuration.md); the behavior in a run, in [`runner.md`](runner.md).
+
+In the wizard's **Models** step each role has the list of reserves under its selector (add, remove, move up, move down; the lists per kind of work folded), and each agent with a model of its own has the same lists in the team editor. An agent that borrows a role's model uses the role's pool.
+
+**Suggested pool.** After the connection test the wizard reads what the provider's listing says about each model and proposes a pool. Two formats are read: the `data[].metadata` of OpenAI-compatible servers that publish it (`context_length`, `pricing` in US dollars per million tokens with input, output and cache read, and `tags` such as `vision`, `prompt_cache` and `reasoning`; checked against a real provider) and the model aggregator format (price per token as text, `supported_parameters`, `architecture.input_modalities`; **written from its public documentation and not checked against the service**). A provider that publishes neither gets no suggestion: the reserves are added by hand.
+
+- **Who is in:** models whose tools and structured output the listing does not rule out (what it does not say is marked "unverified"; the "Test this model" button checks tools, schema, images and reasoning of one model, and only that one) and a known context of at least 32,000 tokens. `screen` needs images.
+- **The order:** by the estimated cost of a typical stage (2.05 million tokens of cached input, 0.06 of fresh input and 0.0157 of output; cached input costs the input price when the listing has no cache price). In `shell`, `edit` and `screen` the models that reach the activity's quality **floor** (shell 85, edit 65, screen 70) come first, by cost; then the ones under the floor; then the ones without a score. `explore` and `write` have only the cost.
+- **The scores** come from a small, versioned table the app ships (`src/shared/modelScores.ts`), with the source beside each score. Most are **reported by the vendor of the model itself**, and the one from a third-party comparison is marked: they are a floor and a tie-breaker, not a guarantee. The table is never fetched from the network or from a provider's address. The person changes the floor and the score of each model on the screen (`llm.scoreOverrides`) and reorders the lists as they like.
+- **Nothing is saved by itself.** "Use the suggestion" only changes the screen's draft of the roles that use that provider; saving is the wizard's own save.
 
 ### Structured output
 

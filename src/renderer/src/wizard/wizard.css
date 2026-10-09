@@ -97,6 +97,23 @@ div.wz-cards { margin: 0; }
 .wz-dot-warn { background: var(--warn-solid); color: var(--white); }
 .wz-dot-skip { background: var(--chip-quiet-bg); color: var(--muted); }
 
+/* Model pools: the reserves of a role or agent, and the suggestion after a connection test. */
+.wz-pool { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.wz-pool-list { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.wz-pool-entries { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.wz-pool-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 10px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); min-width: 0; }
+.wz-pool-own { background: var(--surface-2); border-style: dashed; }
+.wz-pool-model { font-size: 13px; font-weight: 600; flex: 1 1 220px; min-width: 0; }
+.wz-pool-facts { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; flex: 1 1 100%; }
+.wz-pool-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; }
+.wz-pool-add { display: grid; grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1.4fr) auto; gap: 8px; align-items: center; }
+.wz-pool-add .text-input { min-width: 0; width: 100%; }
+.wz-pool-floors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.wz-mini { min-height: 32px; min-width: 32px; padding: 0 10px; font-size: 13px; }
+.wz-score-input { width: 88px; min-height: 32px; padding: 0 8px; }
+.wz-chip-unverified { background: var(--amber-soft); color: var(--amber-ink); }
+.wz-suggest { gap: 12px; }
+
 /* Settings: configuration and workspaces. */
 .wz-settings { padding: 20px; gap: 16px; }
 .wz-settings .text-input { min-width: 0; font-size: 16px; }
@@ -112,6 +129,8 @@ div.wz-cards { margin: 0; }
   .wz-card { padding: 14px; }
   .wz-two { grid-template-columns: minmax(0, 1fr); }
   .wz-role-pick { grid-template-columns: minmax(0, 1fr); }
+  .wz-pool-add { grid-template-columns: minmax(0, 1fr); }
+  .wz-pool-floors { grid-template-columns: minmax(0, 1fr); }
   .wz-footer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; margin: 0; padding: 10px 12px; background: var(--surface); border-top: 1px solid var(--line); flex-wrap: nowrap; }
   .wz-footer .btn { min-width: 0; padding: 0 12px; }
   .wz-step-title { font-size: 20px; }

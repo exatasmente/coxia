@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { LlmProvider, LlmRole, ProviderKind } from '../../../../shared/config/types';
+import type { LlmProvider, LlmRole, ModelRef, ProviderKind } from '../../../../shared/config/types';
+import type { CatalogModel } from '../../../../shared/modelCatalog';
 import { poolFieldsOf, poolWithoutProvider } from '../../../../shared/config/pool';
 import { LLM_ROLES } from '../../../../shared/config/types';
 import {
@@ -23,6 +24,9 @@ import {
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import type { StepProps } from '../SetupWizard';
+import { PoolEditor } from '../PoolEditor';
+import { poolListCount, withModelFacts, withProbed, withRolePool, withoutLead } from '../poolEdit';
+import { SuggestedPool } from '../SuggestedPool';
 import { Chip, ExternalLink, Field, Notice, SecretFields, secretProblemKey } from '../ui';
 import { wizardApi } from '../wizardApi';
 
@@ -32,6 +36,14 @@ const VERTEX_REGION_PLACEHOLDER = 'global'; // i18n-ignore: cloud region name
 const blankDraft = (kind: ProviderKind = 'anthropic'): ProviderDraft => ({ kind, preset: 'openai', baseUrl: kind === 'openai-compatible' ? presetById('openai').baseUrl : '', options: {}, model: '' });
 
 type TestState = { running: true } | { running: false; result: ProviderTestResult };
+
+/** The test of one model of a pool, shown where the person asked for it. */
+interface ModelTest {
+  where: 'panel' | 'roles';
+  provider: string;
+  model: string;
+  state: TestState;
+}
 
 function TestResultView({ p, state }: { p: LlmProvider; state: TestState }) {
   const t = useT();
@@ -78,6 +90,9 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [recFor, setRecFor] = useState('');
+  // What each provider's listing said (from its connection test), kept with what a test of one model found out.
+  const [catalogs, setCatalogs] = useState<Record<string, CatalogModel[]>>({});
+  const [modelTest, setModelTest] = useState<ModelTest | null>(null);
 
   const providers = cfg.llm.providers;
   const kindInfo = PROVIDER_CHOICES.find((k) => k.kind === draft.kind);
@@ -118,6 +133,7 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
       const result = await wizardApi.testProvider(p.id, model);
       setTests((all) => ({ ...all, [p.id]: { running: false, result } }));
       if (result.ok && result.engine === 'open') {
+        setCatalogs((all) => ({ ...all, [p.id]: result.catalog }));
         setCfg((c) => ({
           ...c,
           llm: { ...c.llm, providers: c.llm.providers.map((x) => (x.id === p.id ? { ...x, capabilities: result.capabilities, models: [...new Set([...x.models, ...result.models])].slice(0, 200) } : x)) },
@@ -126,6 +142,37 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
     } catch (e) {
       setTests((all) => ({ ...all, [p.id]: { running: false, result: { ok: false, engine: p.engine, code: 'failed', detail: errorText(e), messages: [], capabilities: null, models: [], catalog: [], answered: false, ms: 0 } } }));
     }
+  };
+
+  // The test of one model of a pool: nothing is saved by it. What it finds (images, window, reasoning) goes to the entries of that model in the draft.
+  const testModel = async (ref: ModelRef, where: ModelTest['where']) => {
+    const p = providers.find((x) => x.id === ref.provider);
+    if (!p) return;
+    const at = { where, provider: ref.provider, model: ref.model };
+    setModelTest({ ...at, state: { running: true } });
+    try {
+      const result = await wizardApi.testProvider(ref.provider, ref.model);
+      setModelTest({ ...at, state: { running: false, result } });
+      if (result.ok && result.engine === 'open') {
+        setCatalogs((all) => ({ ...all, [ref.provider]: withProbed(all[ref.provider] ?? [], result.catalog, ref.model) }));
+        const caps = result.capabilities;
+        setCfg((c) => withModelFacts(c, ref.provider, ref.model, { images: caps?.images, contextWindow: caps?.contextWindow, reasoning: caps?.reasoning }));
+      }
+    } catch (e) {
+      setModelTest({ ...at, state: { running: false, result: { ok: false, engine: p.engine, code: 'failed', detail: errorText(e), messages: [], capabilities: null, models: [], catalog: [], answered: false, ms: 0 } } });
+    }
+  };
+  const testing = modelTest?.state.running ? `${modelTest.provider}\n${modelTest.model}` : null;
+  const modelTestView = (where: ModelTest['where'], providerId?: string) => {
+    if (!modelTest || modelTest.where !== where || (providerId !== undefined && modelTest.provider !== providerId)) return null;
+    const p = providers.find((x) => x.id === modelTest.provider);
+    if (!p) return null;
+    return (
+      <div className="wz-stack">
+        <div className="small"><strong>{t('wizard.pool.testOf', { model: `${modelTest.provider} · ${modelTest.model}` })}</strong></div>
+        <TestResultView p={p} state={modelTest.state} />
+      </div>
+    );
   };
 
   const add = async () => {
@@ -210,7 +257,9 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
       const prov = c.llm.providers.find((p) => p.id === (patch.provider ?? cur.provider));
       const model = patch.model ?? (providerChanged && prov ? (recommendModel(prov, ROLE_TIERS[role]) ?? '') : cur.model);
       // The pool stays with the role; what was known of the old model (images, window, reasoning echo) does not.
-      return { ...c, llm: { ...c.llm, roles: { ...c.llm.roles, [role]: { provider: patch.provider ?? cur.provider, model, ...poolFieldsOf(cur) } } } };
+      // A reserve that is the new model of the role is the same model twice: it leaves the reserves.
+      const lead = { provider: patch.provider ?? cur.provider, model };
+      return { ...c, llm: { ...c.llm, roles: { ...c.llm.roles, [role]: { ...lead, ...poolFieldsOf(withoutLead(cur, lead)) } } } };
     });
 
   const applyRecommendations = (providerId: string) => {
@@ -270,6 +319,12 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
                   </div>
                 )}
                 {state && <TestResultView p={p} state={state} />}
+                {state && !state.running && state.result.ok && state.result.engine === 'open' && (
+                  <>
+                    <SuggestedPool provider={p} catalog={catalogs[p.id] ?? state.result.catalog} cfg={cfg} setCfg={setCfg} onTest={(ref) => void testModel(ref, 'panel')} testing={testing} />
+                    {modelTestView('panel', p.id)}
+                  </>
+                )}
                 <datalist id={`models-${p.id}`}>{p.models.map((m) => <option key={m} value={m} />)}</datalist>
               </li>
             );
@@ -371,6 +426,7 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
           )}
         </div>
         <p className="small muted">{t('wizard.models.rolesHint')}</p>
+        {modelTestView('roles')}
         {LLM_ROLES.map((role) => {
           const rm = cfg.llm.roles[role];
           const prov = providers.find((p) => p.id === rm.provider);
@@ -389,6 +445,19 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
               </div>
               {rec && rec !== rm.model && <button type="button" className="btn wz-linkbtn" onClick={() => setRole(role, { model: rec })}>{t('wizard.models.useRecommended', { model: rec })}</button>}
               {roleWarnings(role).map((k) => <Notice key={k} tone="warn">{t(k)}</Notice>)}
+              <details className="wz-details" open={poolListCount(rm) > 0 || undefined}>
+                <summary>{t('wizard.pool.summary', { count: poolListCount(rm) })}</summary>
+                <PoolEditor
+                  providers={providers}
+                  primary={{ provider: rm.provider, model: rm.model, ...(rm.contextWindow !== undefined ? { contextWindow: rm.contextWindow } : {}) }}
+                  value={rm}
+                  onChange={(pool) => setCfg((c) => withRolePool(c, role, pool))}
+                  catalogs={catalogs}
+                  overrides={cfg.llm.scoreOverrides}
+                  onTest={(ref) => void testModel(ref, 'roles')}
+                  testing={testing}
+                />
+              </details>
             </div>
           );
         })}
