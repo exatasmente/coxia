@@ -36,6 +36,7 @@ import { type CommentAsk, type ResumeWhy, type StageInput, type StageResume, sta
 import { prompt as cp } from '../cyclePrompts';
 import { type StageInbox, inboxOf, openInbox } from './inbox';
 import { type RunnerTools, runnerTools } from './tools';
+import type { ProcedureUse } from '../../shared/procedures';
 import type { ProceduresPort } from '../procedures/port';
 import { callRefusal, countOpen, openedIn, runConversation, resetOpened } from './conversation';
 import { releaseSection, releaseStateOf } from './release';
@@ -111,6 +112,8 @@ export interface ExecutorDeps {
   screens?: ScreenHub;
   /** The workspace's learned procedures: a stage and the agents it calls get their list and tools from here. Absent, or the workspace's switch off: none. */
   procedures?: ProceduresPort;
+  /** The stage's attempt ended and its agent used these procedures: the run's record of the stage keeps them. */
+  procedureUses?: (runId: string, stage: string, uses: ProcedureUse[]) => void;
 }
 
 export interface StageRun {
@@ -985,7 +988,14 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     throw e;
   } finally {
     // What the call read becomes uses, and what it created gets its baseline; each use is a line in the thread.
-    procedures?.finish(called ? 'done' : 'failed');
+    const uses = procedures?.finish(called ? 'done' : 'failed') ?? [];
+    if (uses.length) {
+      try {
+        d.procedureUses?.(run.id, stage.id, uses);
+      } catch (e) {
+        console.error('[runner] could not record the procedures a stage used', e instanceof Error ? e.message : e);
+      }
+    }
     // The stage begins finishing: a message that arrives now is not handed over and comes back in the thread with the reason.
     inbox.closing();
     inbox.close();

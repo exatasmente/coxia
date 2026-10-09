@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { shownText } from '../../../../shared/cycles/text';
 import { type FlowStage, type Run, type StageUsage, hasUsage } from '../../../../shared/runs';
+import type { ProcedureUse } from '../../../../shared/procedures';
 import { type CommentRow, type StageRow, type StageState, canUndoPost, commentRows, stageRows, usageParams } from '../../../../shared/runs/view';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
@@ -108,6 +109,22 @@ function Usage({ usage }: { usage: StageUsage }) {
   return <p className="faint small cy-usage">{t(key, { calls: p.calls, prompt: p.prompt, cached: p.cached, completion: p.completion, cost: p.cost ?? '' })}</p>;
 }
 
+const PROCEDURE_KEY = { ok: 'ui.cycle.stage.procedureUsed', failed: 'ui.cycle.stage.procedureFailed', replaced: 'ui.cycle.stage.procedureReplaced' } as const;
+
+/** The procedures the stage's agent read, one chip each: the title, and whether a step failed or the agent replaced it. A failure stands out, nothing else does. */
+function Procedures({ uses }: { uses: readonly ProcedureUse[] }) {
+  const t = useT();
+  return (
+    <ul className="cy-artifacts" aria-label={t('ui.cycle.stage.procedures')}>
+      {uses.map((u) => (
+        <li key={u.id}>
+          <span className={`badge ${u.outcome === 'failed' ? 'badge-block' : 'badge-quiet'}`}>{t(PROCEDURE_KEY[u.outcome], { title: u.title })}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow; comments: CommentRow[]; config: WorkspaceConfig | null; go: (s: Screen) => void; view: (name: string) => void }) {
   const t = useT();
   const { stage, record, state } = row;
@@ -139,6 +156,7 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
         {stage.type === 'wait' && stage.waitsFor && <p className="small faint">{t(WAIT_KEY[stage.waitsFor.kind], { label: stage.waitsFor.label ?? '', minutes: stage.waitsFor.minutes ?? 0 })}</p>}
         {record?.startedAt && <p className="faint small">{t('ui.cycle.stage.since', { when: when(record.startedAt) })}{record.endedAt ? ` · ${t('ui.cycle.stage.until', { when: when(record.endedAt) })}` : ''}</p>}
         {record && hasUsage(record.usage) && <Usage usage={record.usage} />}
+        {record?.procedures && record.procedures.length > 0 && <Procedures uses={record.procedures} />}
         {record && record.artifacts.length > 0 && (
           <ul className="cy-artifacts" aria-label={t('ui.cycle.stage.artifacts')}>
             {record.artifacts.map((name) => {

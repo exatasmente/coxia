@@ -2,8 +2,9 @@
 import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
-import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_DETAIL_MAX, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
+import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_DETAIL_MAX, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, PROCEDURES_PER_STAGE, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 import { EVIDENCE_KINDS } from '../evidence';
+import { PROCEDURE_ID } from '../procedures';
 import { RECORDING_CUTS_MAX, RECORDING_MARKS_MAX } from '../screen';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
@@ -46,6 +47,21 @@ const stageRecord = object(
       },
       ['promptTokens', 'completionTokens', 'cachedTokens', 'calls', 'costUsd'],
     ),
+    procedures: {
+      type: 'array',
+      description: 'The procedures the stage used and what became of each. Optional: absent when it read none.',
+      items: object(
+        'One procedure the stage read.',
+        {
+          id: string('The procedure.', { pattern: PROCEDURE_ID.source }),
+          revision: { type: 'integer', description: 'The revision the stage read.', minimum: 1 },
+          title: string('Its title when it was used.', { maxLength: 80 }),
+          outcome: enumOf('No failure reported, a step failed, or the stage replaced it with a corrected version.', ['ok', 'failed', 'replaced']),
+        },
+        ['id', 'revision', 'title', 'outcome'],
+      ),
+      maxItems: PROCEDURES_PER_STAGE,
+    },
   },
   ['stage', 'agent', 'status', 'artifacts', 'startedAt', 'endedAt', 'attempts', 'autonomous'],
 );
@@ -276,7 +292,7 @@ const docsRun = object('What the run is about when it drafts the documentation o
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
-    version: { type: 'integer', description: 'Version of this file format: 3 when a screen recording of the run holds cuts or the time it started after the screen opened, 2 when the run holds one without, else 1.', enum: [1, 2, 3] },
+    version: { type: 'integer', description: 'Version of this file format: 4 when a stage of the run used a procedure, 3 when a screen recording of the run holds cuts or the time it started after the screen opened, 2 when the run holds one without, else 1.', enum: [1, 2, 3, 4] },
     rev: { type: 'integer', description: 'Grows by one on every save.', minimum: 0 },
     id: string('Run id.', { pattern: RUN_ID.source }),
     issue: object('The issue.', { ref: string('How the cards write it.', { minLength: 1, maxLength: 200 }), iid: { type: 'integer', description: 'Issue number.', minimum: 0 }, title: string('Title.', { maxLength: 500 }), url: nullableString('Web address.') }, ['ref', 'iid', 'title', 'url']),
