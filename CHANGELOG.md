@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The test suite no longer leaves its temporary folders behind.** Every run of the tests makes its folders (data folders, repositories it clones, worktrees) under one temporary folder of its own and removes it when the run ends; a folder left by a run that was killed is removed by a later run. Before, each run left thousands of folders in the system's temporary directory, enough to fill a disk on a machine where the tests run often.
+
 ## [0.9.0-beta.4] - 2026-10-08
 
 ### Added
