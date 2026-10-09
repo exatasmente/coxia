@@ -181,6 +181,7 @@
 .cy-cmds .cy-msgs-inner { margin: 4px 0 0 14px; }
 /* A call a message made to an agent, still going: a quiet line under the message, not a message of its own. */
 .cy-call { display: flex; align-items: center; gap: 6px; margin: 2px 0 0; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 13px; }
+.cy-call-watch { margin-left: auto; }
 .cy-call-agent { color: var(--ink); font-weight: 600; }
 .cy-call-step { overflow-wrap: anywhere; }
 .cy-msg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
@@ -317,3 +318,11 @@
 .cy-rec-cut:hover { background: var(--ink); }
 .cy-rec-cut:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .cy-evidence-removed { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--chip-quiet-bg); color: var(--muted); }
+
+/* The agents' open screens of a conversation, above the message box. */
+.cy-screens { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cy-screen { padding: 6px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line-3); }
+.cy-screen-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cy-screen-agent { overflow-wrap: anywhere; }
+.cy-screen-closes { flex: 1 1 120px; min-width: 0; }
+.cy-screen-actions { display: inline-flex; gap: 6px; margin-left: auto; }

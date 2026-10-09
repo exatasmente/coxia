@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
+import type { OpenScreenInfo } from '../../../../shared/browser';
 import { type AttachmentRef, ATTACHMENT_LIMITS, formatBytes } from '../../../../shared/attachments';
 import { type ForumMessage, MAX_MENTIONS, type MessageKind, messageText, parseMentions } from '../../../../shared/forum';
 import { type QuestionChain, applyMention, commandRound, groupThread, mentionAt, mentionChoices, mentionOptions } from '../../../../shared/forumView';
@@ -13,8 +14,12 @@ import { RichText } from '../Diagram';
 import { ArtifactView } from './ArtifactView';
 import { MessageAttachments } from './Attachments';
 import { EvidenceAttachment } from './Evidence';
+import { LiveScreen } from './LiveScreen';
+import { ScreenStrip } from './ScreenStrip';
 import { agentName, agentRole, authorName } from './names';
 import { forumApi, forgetNow, markThreadSeen, useThread } from './forumApi';
+import { screenOfCall } from './screens';
+import { useScreens } from './useScreens';
 import './cycle.css';
 
 const KIND_KEY: Record<MessageKind, string> = {
@@ -38,6 +43,10 @@ interface Ctx {
   runId: string | null;
   /** The calls still going, by the message that named the agents: what each message shows under itself. */
   calls: ReadonlyMap<number, readonly CallGroup[]>;
+  /** The open screens of the thread: a call that has one offers to watch it. */
+  screens: readonly OpenScreenInfo[];
+  /** Opens the viewer of a screen. */
+  watch: (key: string) => void;
   view: (name: string) => void;
   /** Deletes a message and the files it carried: the store records the removal and the files go with it. */
   remove: (m: ForumMessage) => void;
@@ -48,8 +57,8 @@ function useTarget(team: readonly AgentDef[] | undefined): (to: string | null) =
   return (to) => (!to || to === 'person' ? t('ui.forum.to.person') : to === 'reporter' ? t('ui.forum.to.reporter') : agentName(team, to));
 }
 
-/** One call still going under the message that named the agent: it says the call works (or waits its turn), then shows its live step. It is not a message. */
-function CallLine({ group, team }: { group: CallGroup; team: readonly AgentDef[] | undefined }) {
+/** One call still going under the message that named the agent: it says the call works (or waits its turn), then shows its live step, and offers to watch the screen the agent has. It is not a message. */
+export function CallLine({ group, team, screen, onWatch }: { group: CallGroup; team: readonly AgentDef[] | undefined; screen?: OpenScreenInfo; onWatch: (key: string) => void }) {
   const t = useT();
   const state = group.entry.state;
   const label = state === 'queued' ? t('activity.queued') : state === 'started' ? t('activity.call.working') : group.entry.label;
@@ -58,6 +67,7 @@ function CallLine({ group, team }: { group: CallGroup; team: readonly AgentDef[]
       <span className="spinner" aria-hidden="true" />
       <strong className="cy-call-agent">{agentName(team, group.agent)}</strong>
       <span className="cy-call-step">{label}</span>
+      {screen && <button type="button" className="btn cy-mini cy-call-watch" onClick={() => onWatch(screen.key)}>{t('ui.screen.watch')}</button>}
     </p>
   );
 }
@@ -106,7 +116,7 @@ function Message({ m, ctx, inChain = false }: { m: ForumMessage; ctx: Ctx; inCha
           {m.evidence?.map((a) => <EvidenceAttachment key={a.id} runId={ctx.runId as string} attachment={a} />)}
         </p>
       )}
-      {(ctx.calls.get(m.seq) ?? []).map((g) => <CallLine key={g.runId} group={g} team={ctx.team} />)}
+      {(ctx.calls.get(m.seq) ?? []).map((g) => <CallLine key={g.runId} group={g} team={ctx.team} screen={screenOfCall(ctx.screens, g.thread, g.agent)} onWatch={ctx.watch} />)}
       {m.author.type === 'person' && m.mentions.length > 0 && (
         <>
           <p className="faint small">{t('ui.forum.mentions', { agents: m.mentions.slice(0, MAX_MENTIONS).map((id) => agentName(ctx.team, id)).join(', ') })}</p>
@@ -499,6 +509,9 @@ export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
   const activity = useActivity(runId ? `run:${runId}` : mentionJob(thread));
   const [viewing, setViewing] = useState<string | null>(null);
   const [removing, setRemoving] = useState<ForumMessage | null>(null);
+  // The agents' open screens of this thread, and the one whose viewer is open (it stays open when the screen goes, to say so).
+  const screens = useScreens(thread);
+  const [watching, setWatching] = useState<string | null>(null);
   const list = useRef<HTMLOListElement>(null);
   const stick = useRef(true);
   const rows = useMemo(() => groupThread(live.messages, messageText), [live.messages]);
@@ -514,7 +527,7 @@ export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
     }
     return byMessage;
   }, [activity, thread]);
-  const ctx: Ctx = { team, runId, calls, view: setViewing, remove: setRemoving };
+  const ctx: Ctx = { team, runId, calls, screens, watch: setWatching, view: setViewing, remove: setRemoving };
 
   // What is on screen is read: the thread counts as seen up to its last message.
   useEffect(() => {
@@ -556,6 +569,7 @@ export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
           ),
         )}
       </ol>
+      <ScreenStrip screens={screens} team={team} onWatch={setWatching} />
       <Composer
         thread={thread}
         team={team}
@@ -565,6 +579,7 @@ export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
           stick.current = true;
         }}
       />
+      {watching && <LiveScreen screenKey={watching} state={screens.find((x) => x.key === watching) ?? null} canClose onClose={() => setWatching(null)} />}
       {viewing && run && <ArtifactView runId={run.id} name={viewing} onClose={() => setViewing(null)} />}
       {removing && (
         <RemoveMessage

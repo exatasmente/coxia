@@ -523,5 +523,16 @@
   "ui.runs.squad.none": "No squad",
   "ui.runs.title": "Cycle runs",
   "ui.runs.unassigned.start": "Start",
-  "ui.runs.unassigned.title": "Labeled, unassigned issues"
+  "ui.runs.unassigned.title": "Labeled, unassigned issues",
+  "ui.screen.asking_one": "Waiting for your answer",
+  "ui.screen.asking_other": "{count} waiting for your answer",
+  "ui.screen.close": "Close",
+  "ui.screen.closeAria": "Close {agent}'s screen",
+  "ui.screen.closeScreen": "Close the screen",
+  "ui.screen.closesIn_one": "Closes by itself in about {count} minute",
+  "ui.screen.closesIn_other": "Closes by itself in about {count} minutes",
+  "ui.screen.ended": "The screen was closed. It is no longer available.",
+  "ui.screen.inUse": "In use: it stays open",
+  "ui.screen.strip": "Open screens of this conversation",
+  "ui.screen.watch": "Watch"
 }

@@ -1,4 +1,5 @@
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
+import { parseKey } from '../../../../shared/browser';
 import { type LiveScreen as LiveScreenState, SCREEN_WIDTH_DESKTOP, SCREEN_WIDTH_PHONE, type ScreenInput, clampFrameWidth, isExitChord } from '../../../../shared/screen';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
@@ -83,7 +84,7 @@ function useFrames(screenKey: string, width: number): Frames {
 export type ViewerState = Pick<LiveScreenState, 'width' | 'height' | 'recording'>;
 
 /** The viewer of a live screen, in a sheet. `state` may be gone while it is open (the stage ended, the screen was closed): it then says so and stops asking. */
-export function LiveScreen({ screenKey, state, onClose }: { screenKey: string; state: ViewerState | null; onClose: () => void }) {
+export function LiveScreen({ screenKey, state, canClose = false, onClose }: { screenKey: string; state: ViewerState | null; /** Offers "Close screen", which ends the agent's screen and not just the viewer. */ canClose?: boolean; onClose: () => void }) {
   const t = useT();
   const web = isWeb();
   const phone = useIsPhone();
@@ -252,12 +253,19 @@ export function LiveScreen({ screenKey, state, onClose }: { screenKey: string; s
   };
 
   const recording = live?.recording;
+  const [closing, setClosing] = useState(false);
+  const closeScreen = (): void => {
+    setClosing(true);
+    void screenApi.close(screenKey).then(() => undefined, () => undefined).finally(() => open.current && setClosing(false));
+  };
+  const stage = parseKey(screenKey)?.kind !== 'call';
   return (
     <Sheet label={t('ui.cycle.live.title')} onClose={onClose} wide captureKeys={control}>
       <div className="cy-live">
         <div className="row cy-live-bar">
           {recording && <span className={`badge ${recording === 'on' ? 'cy-tone-blocked' : 'cy-tone-quiet'}`}>{recording === 'on' ? t('ui.cycle.live.recordingOn') : recording === 'waiting' ? t('ui.cycle.live.recordingWaiting') : t('ui.cycle.live.recordingStopped')}</span>}
           {frames.remote && !control && <span className="badge cy-tone-person">{t('ui.cycle.live.remote')}</span>}
+          {canClose && !ended && <button type="button" className="btn cy-mini" disabled={closing} onClick={closeScreen}>{t('ui.screen.closeScreen')}</button>}
           {!web && !ended && (
             <div className="cy-switch-row cy-live-switch">
               <button type="button" role="switch" aria-checked={control} aria-label={t('ui.cycle.live.control')} className={`cy-switch ${control ? 'on' : ''}`} onClick={() => (control ? stopControl() : void startControl())}>
@@ -294,7 +302,7 @@ export function LiveScreen({ screenKey, state, onClose }: { screenKey: string; s
           )}
         </div>
         {frames.failed && !ended && <p className="small faint" role="status">{t('ui.cycle.live.failed')}</p>}
-        {ended && <p className="small cy-live-ended" role="status">{t('ui.cycle.live.ended')}</p>}
+        {ended && <p className="small cy-live-ended" role="status">{t(stage ? 'ui.cycle.live.ended' : 'ui.screen.ended')}</p>}
       </div>
     </Sheet>
   );

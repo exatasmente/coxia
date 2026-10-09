@@ -67,7 +67,7 @@ describe('the Live screen button on the stage card', () => {
   });
 });
 
-const viewer = (screen: LiveScreenState | null, screenKey = 'run:r1'): string => renderToStaticMarkup(createElement(LiveScreen, { screenKey, state: screen, onClose: () => undefined }));
+const viewer = (screen: LiveScreenState | null, screenKey = 'run:r1', canClose = false): string => renderToStaticMarkup(createElement(LiveScreen, { screenKey, state: screen, canClose, onClose: () => undefined }));
 
 describe('the live screen viewer', () => {
   it('offers Take control, off, with the recording state, on the desktop', () => {
@@ -109,6 +109,18 @@ describe('the live screen viewer', () => {
     const html = viewer(screenOf(), 'call:general:coder');
     expect(html).toContain('role="switch"');
     expect(html).toContain(t('ui.cycle.live.recordingOn'));
+  });
+
+  it('offers to close the agent\'s screen only where the caller allows it, and not once it is gone', () => {
+    expect(viewer(screenOf(), 'call:general:coder', true)).toContain(`>${t('ui.screen.closeScreen')}</button>`);
+    expect(viewer(screenOf(), 'call:general:coder')).not.toContain(t('ui.screen.closeScreen'));
+    expect(viewer(null, 'call:general:coder', true)).not.toContain(t('ui.screen.closeScreen'));
+  });
+
+  it('says the screen was closed, not that a stage ended, for an agent\'s screen in a conversation', () => {
+    const html = viewer(null, 'call:general:coder');
+    expect(html).toContain(t('ui.screen.ended'));
+    expect(html).not.toContain(t('ui.cycle.live.ended'));
   });
 
   it('says the stage ended, and offers nothing to control, when the run no longer has a screen', () => {

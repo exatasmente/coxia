@@ -1,0 +1,119 @@
+// The agents' screens in a conversation, as a static render shows them: the Watch button on a call that has a screen, the strip of open screens above the message box
+// with Watch and Close and the time it closes by itself, and the pure pieces under them. The viewer in motion and the asks answered are for the manual plan.
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { OpenScreenInfo } from '../src/shared/browser';
+import type { ActivityEntry } from '../src/shared/activity';
+import { CATALOGS, setLanguage, t } from '../src/shared/i18n';
+
+// src/renderer/src/api.ts reads window.api when it loads, and the viewer asks document whether it runs in a paired browser; the node environment has neither.
+const dom = vi.hoisted(() => {
+  const documentElement = { dataset: {} as Record<string, string> };
+  (globalThis as unknown as { window: unknown }).window = { api: { invoke: async () => null }, addEventListener: () => undefined };
+  (globalThis as unknown as { document: unknown }).document = { documentElement };
+  return { documentElement };
+});
+vi.mock('../src/renderer/src/i18n', async (orig) => ({ ...(await orig<typeof import('../src/renderer/src/i18n')>()), useT: () => t }));
+// The diagrams and the document viewer draw with libraries that need a browser; nothing here opens them.
+vi.mock('../src/renderer/src/screens/cycle/ArtifactView', () => ({ ArtifactView: () => null }));
+vi.mock('../src/renderer/src/screens/Diagram', () => ({ RichText: () => null }));
+const { ScreenStrip } = await import('../src/renderer/src/screens/cycle/ScreenStrip');
+const { CallLine } = await import('../src/renderer/src/screens/cycle/Thread');
+const { closesInMinutes, sameScreens, screenOfCall } = await import('../src/renderer/src/screens/cycle/screens');
+
+afterEach(() => {
+  setLanguage('pt-BR');
+  dom.documentElement.dataset.platform = '';
+});
+
+const NOW = Date.parse('2026-10-09T12:00:00.000Z');
+const screen = (over: Partial<OpenScreenInfo> = {}): OpenScreenInfo => ({
+  key: 'call:general:coder',
+  agent: 'coder',
+  thread: 'general',
+  place: 'conversation',
+  since: '2026-10-09T11:50:00.000Z',
+  closesAt: '2026-10-09T12:07:00.000Z',
+  width: 1280,
+  height: 800,
+  control: false,
+  recording: 'on',
+  profile: 'none',
+  pending: [],
+  ...over,
+});
+
+const entry: ActivityEntry = { seq: 1, runId: 'a1', jobId: null, role: 'coder', at: NOW, kind: 'status', label: 'working', state: 'started', call: { agent: 'coder', thread: 'general', message: 3 } };
+const group = { agent: 'coder', thread: 'general', message: 3, runId: 'a1', entry, entries: [entry], since: NOW };
+
+const strip = (screens: OpenScreenInfo[]): string => renderToStaticMarkup(createElement(ScreenStrip, { screens, team: undefined, onWatch: () => undefined }));
+const line = (open?: OpenScreenInfo): string => renderToStaticMarkup(createElement(CallLine, { group, team: undefined, screen: open, onWatch: () => undefined }));
+
+describe('Watch on a call line', () => {
+  it('is offered when the agent has a screen in the conversation, in both languages', () => {
+    for (const language of ['en', 'pt-BR'] as const) {
+      setLanguage(language);
+      expect(line(screen())).toContain(`>${CATALOGS[language]['ui.screen.watch']}</button>`);
+    }
+  });
+
+  it('is not there when the agent has no screen', () => {
+    expect(line(undefined)).not.toContain(t('ui.screen.watch'));
+  });
+});
+
+describe('the strip of open screens', () => {
+  it('lists each screen with Watch, Close and the minutes left', () => {
+    const html = strip([screen(), screen({ key: 'call:general:qa', agent: 'qa', closesAt: null })]);
+    expect(html.match(new RegExp(`>${t('ui.screen.watch')}</button>`, 'g'))).toHaveLength(2);
+    expect(html.match(new RegExp(`>${t('ui.screen.close')}</button>`, 'g'))).toHaveLength(2);
+    expect(html).toContain(`aria-label="${t('ui.screen.strip')}"`);
+    // The second one has something keeping it open.
+    expect(html).toContain(t('ui.screen.inUse'));
+  });
+
+  it('is nothing at all while there is no screen', () => {
+    expect(strip([])).toBe('');
+  });
+
+  it('says a screen waits for the person', () => {
+    const ask = { id: 'a', key: 'call:general:coder', agent: 'coder', kind: 'hold', why: 'submit', step: null, site: 'example.com', since: '2026-10-09T11:59:00.000Z' } as const;
+    expect(strip([screen({ pending: [ask] })])).toContain(t('ui.screen.asking', { count: 1 }));
+    expect(strip([screen()])).not.toContain(t('ui.screen.asking', { count: 1 }));
+  });
+});
+
+describe('what the conversation makes of the list', () => {
+  it('counts whole minutes to the closing time, at least one, and none while something keeps it open', () => {
+    expect(closesInMinutes('2026-10-09T12:07:00.000Z', NOW)).toBe(7);
+    expect(closesInMinutes('2026-10-09T12:00:10.000Z', NOW)).toBe(1);
+    expect(closesInMinutes('2026-10-09T11:59:00.000Z', NOW)).toBe(1);
+    expect(closesInMinutes(null, NOW)).toBeNull();
+    expect(closesInMinutes('not a date', NOW)).toBeNull();
+  });
+
+  it('finds the screen of a call by thread and agent, never a stage\'s', () => {
+    const list = [screen({ key: 'run:r1', place: 'stage', thread: 'run-r1' }), screen()];
+    expect(screenOfCall(list, 'general', 'coder')?.key).toBe('call:general:coder');
+    expect(screenOfCall(list, 'general', 'qa')).toBeUndefined();
+    expect(screenOfCall(list, 'run-r1', 'coder')).toBeUndefined();
+  });
+
+  it('tells a read that found nothing new from one that did', () => {
+    expect(sameScreens([screen()], [screen()])).toBe(true);
+    expect(sameScreens([screen()], [screen({ closesAt: null })])).toBe(false);
+    expect(sameScreens([screen()], [])).toBe(false);
+  });
+});
+
+describe('the words of the screens', () => {
+  it('exist in both languages with the same placeholders', () => {
+    const keys = Object.keys(CATALOGS['pt-BR']).filter((k) => k.startsWith('ui.screen.'));
+    expect(keys.length).toBeGreaterThanOrEqual(10);
+    for (const k of keys) {
+      expect(CATALOGS.en[k], k).toBeTruthy();
+      expect([...CATALOGS.en[k].matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort(), k).toEqual([...CATALOGS['pt-BR'][k].matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort());
+    }
+  });
+});

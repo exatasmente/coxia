@@ -523,5 +523,16 @@
   "ui.runs.squad.none": "Sem squad",
   "ui.runs.title": "Execuções do ciclo",
   "ui.runs.unassigned.start": "Iniciar",
-  "ui.runs.unassigned.title": "Issues com rótulo e sem responsável"
+  "ui.runs.unassigned.title": "Issues com rótulo e sem responsável",
+  "ui.screen.asking_one": "Espera a sua resposta",
+  "ui.screen.asking_other": "{count} esperam a sua resposta",
+  "ui.screen.close": "Fechar",
+  "ui.screen.closeAria": "Fechar a tela de {agent}",
+  "ui.screen.closeScreen": "Fechar a tela",
+  "ui.screen.closesIn_one": "Fecha sozinha em cerca de {count} minuto",
+  "ui.screen.closesIn_other": "Fecha sozinha em cerca de {count} minutos",
+  "ui.screen.ended": "A tela foi fechada. Ela não está mais disponível.",
+  "ui.screen.inUse": "Em uso: fica aberta",
+  "ui.screen.strip": "Telas abertas desta conversa",
+  "ui.screen.watch": "Assistir"
 }
