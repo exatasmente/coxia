@@ -32,6 +32,7 @@ import { docsFlowOf } from '../../shared/config/squads';
 import { ASK_DECISIONS, type AskDecision, SCREEN_ASKS_EVENT, keyOf, parseKey } from '../../shared/browser';
 import { SCREEN_EVENT } from '../../shared/screen';
 import { auditScreen } from '../browser/audit';
+import { QUIT_WAIT_MS, settleWithin } from '../browser/quit';
 import { AskGone, type ScreenAsks, askNotice, createScreenAsks } from '../browser/asks';
 import { grantsFor } from '../browser/guard';
 import { startBrowser } from '../browser/launch';
@@ -92,9 +93,15 @@ export const screenAsks = (): ScreenAsks | null => asks;
 /** The open screens of the agents that have one, and the way to open, reuse and close them; null until the module registered. */
 export const screenSessions = (): ScreenSessions | null => sessions;
 
-/** The app is closing: no live screen is read or sent to after this, and the browsers of the open screens are asked to end. */
-export const endLiveScreens = (): void => {
-  void sessions?.endAll();
+/** Whether a screen of an agent is open: the quit waits for those, so their recordings are kept and their profiles flushed. */
+export const hasOpenScreens = (): boolean => (sessions?.list().length ?? 0) > 0;
+
+/**
+ * The app is closing: the open screens end first (a few seconds at most, so their recordings are kept and the browser closes its profile), then no live screen is read or
+ * sent to and the encoder stops.
+ */
+export const endLiveScreens = async (waitMs = QUIT_WAIT_MS): Promise<void> => {
+  if (sessions) await settleWithin(sessions.endAll(), waitMs);
   screens?.endAll();
   encoders?.shutdown();
 };
