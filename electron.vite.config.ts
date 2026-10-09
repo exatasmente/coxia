@@ -21,6 +21,13 @@ export default defineConfig({
       __BUILD_COMMIT__: JSON.stringify(dirty ? `${commit}+dirty` : commit),
       __BUILD_DATE__: JSON.stringify(new Date().toISOString()),
     },
+    // `mcp-state` is the local state server a terminal session spawns with plain node: no Electron, no Electron-only import (src/main/mcp-state/).
+    build: {
+      rollupOptions: {
+        input: { index: fileURLToPath(new URL('./src/main/index.ts', import.meta.url)), 'mcp-state': fileURLToPath(new URL('./src/main/mcp-state/cli.ts', import.meta.url)) },
+        output: { entryFileNames: '[name].js' },
+      },
+    },
   },
   preload: {
     // Two bridges: the app's window, and the hidden window that encodes the screen recording (out/preload/encoder.cjs).

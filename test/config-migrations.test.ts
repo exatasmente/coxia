@@ -579,9 +579,9 @@ describe('migrateConfig', () => {
       expect(twice.config).toEqual(once.config);
     });
 
-    it('is the newest step: 23 is current and 24 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(23);
-      expect(() => migrateConfig({ schemaVersion: 24 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is the newest step: 24 is current and 25 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(24);
+      expect(() => migrateConfig({ schemaVersion: 25 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

@@ -18,6 +18,7 @@ import { register as gitlabQuick } from './gitlabQuick';
 import { register as glossary } from './glossary';
 import { minutes } from './minutes';
 import { mentionsModule } from './mentions/module';
+import { mcpStateModule } from './mcp-state/module';
 import { pluginsModule } from './plugins/module';
 import { proceduresModule } from './procedures/module';
 import { register as radar } from './radar';
