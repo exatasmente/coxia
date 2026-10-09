@@ -1,4 +1,5 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { intlLocale, t } from '../../shared/i18n';
 import type { AttachmentRef } from '../../shared/attachments';
 import type { AgentToolsConfig, LlmRole } from '../../shared/config/types';
 import type { RunActivity } from '../activity';
@@ -62,10 +63,15 @@ export class ProviderBusyError extends Error {
     readonly until: number | null,
     readonly detail: string,
   ) {
-    // i18n-ignore-next-line: error text the caller reads and the engines compare
-    super(`model pool busy: ${pool}`);
+    super(t('main.runner.error.pool-busy', poolBusyParams({ pool, models, until, detail })));
     this.name = 'ProviderBusyError';
   }
+}
+
+/** The words of the failure of a pool that is all busy: the pool, its models and when the first one is back. The stage and the ceremonies both say it this way. */
+export function poolBusyParams(e: { pool: string; models: string[]; until: number | null; detail: string }): Record<string, string> {
+  const time = e.until === null ? null : new Date(e.until).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
+  return { pool: e.pool, models: e.models.join(', '), when: time === null ? t('main.runner.error.pool-busy.whenUnknown') : t('main.runner.error.pool-busy.when', { time }), detail: e.detail };
 }
 
 /** The read-only shell the agent may use: SDK permission rules plus the allow-list the hook enforces (see agents.ts). */

@@ -15,7 +15,7 @@ import { withActivityContext } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import { rc } from '../workspaceConfig';
 import { type AgentCall, extraReadRoots } from '../agents';
-import { MaxTurnsError, ProviderBudgetError, type ReadConfinement } from '../engine/contract';
+import { MaxTurnsError, ProviderBudgetError, ProviderBusyError, type ReadConfinement, poolBusyParams } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, MEMORY_FILE, ensureMemory, readFolder, readMemory, tidyArtifact, writeArtifact, writeMemory } from './cycleFolder';
@@ -66,7 +66,7 @@ import type { ScreenSessions } from '../browser/sessions';
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
 // the commits carry the workspace's identity. What the attempt means for the run (done, a question, findings) is the service's to apply.
 
-export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget', 'docs-folder-unsafe', 'qa-evidence-missing'] as const;
+export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget', 'pool-busy', 'docs-folder-unsafe', 'qa-evidence-missing'] as const;
 export type StageErrorCode = (typeof STAGE_ERROR_CODES)[number];
 
 export class StageError extends Error {
@@ -1184,6 +1184,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   } catch (e) {
     if (e instanceof MaxTurnsError) throw new StageError('turns');
     if (e instanceof ProviderBudgetError) throw new StageError('budget', { provider: e.provider, engine: e.engine, detail: e.detail });
+    // Every model of the pool was busy: a failure like any other, retried by the person, that names the pool instead of one model.
+    if (e instanceof ProviderBusyError) throw new StageError('pool-busy', poolBusyParams(e));
     throw e;
   } finally {
     // What the call read becomes uses, and what it created gets its baseline; each use is a line in the thread.

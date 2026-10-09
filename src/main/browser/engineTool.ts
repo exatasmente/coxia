@@ -165,6 +165,7 @@ const run = (set: ScreenToolset, name: string, args: unknown, signal?: AbortSign
 function toolImpl(set: ScreenToolset, row: ExposedTool): ToolImpl {
   return {
     name: row.name,
+    activity: 'screen',
     description: row.description,
     parameters: jsonSchemaOf(row) as unknown as Json,
     async run(input, ctx) {

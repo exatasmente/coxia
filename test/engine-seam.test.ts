@@ -77,6 +77,36 @@ describe('a role mapped to an openai-compatible provider', () => {
     expect(sel.docs).toBeDefined();
   });
 
+  it('hands the open engine the pool of the role: only the models of the open engine, with what the entries say of them, and no pool without spares', async () => {
+    const { engineFor } = await import('../src/main/engine/registry');
+    expect(agents.openSelection(engineFor('deep'), '/tmp').pool).toBeUndefined();
+    cfg.updateConfig((c) => {
+      c.llm.roles.deep = {
+        provider: 'local',
+        model: 'qwen3:8b',
+        fallbacks: [{ provider: 'local', model: 'model-b', images: true, contextWindow: 64_000, echoReasoning: true }, { provider: 'anthropic', model: 'haiku' }],
+        activities: { screen: [{ provider: 'local', model: 'model-b', images: true }], shell: [{ provider: 'anthropic', model: 'sonnet' }] },
+      };
+      return c;
+    });
+    try {
+      const sel = agents.openSelection(engineFor('deep'), '/tmp');
+      expect(sel.pool?.name).toBe('deep');
+      expect(sel.pool?.primary).toMatchObject({ label: 'qwen3:8b', provider: 'local' });
+      // The Claude entries wait for the start of a stage; they never join an open session.
+      expect(sel.pool?.fallbacks.map((m) => m.label)).toEqual(['model-b']);
+      expect(sel.pool?.fallbacks[0]).toMatchObject({ provider: 'local', config: { model: 'model-b', baseUrl: fake.url, apiKey: 'secret-for-the-local-provider', echoReasoning: true }, capabilities: { tools: true, jsonSchema: false, contextWindow: 64_000, images: true } });
+      expect(Object.keys(sel.pool?.activities ?? {})).toEqual(['screen']);
+      expect(new Set([sel.pool?.primary.key, ...(sel.pool?.fallbacks.map((m) => m.key) ?? [])]).size).toBe(2);
+      expect(sel.capabilities).toEqual({ tools: true, jsonSchema: false, contextWindow: 32768 });
+    } finally {
+      cfg.updateConfig((c) => {
+        c.llm.roles.deep = { provider: 'local', model: 'qwen3:8b' };
+        return c;
+      });
+    }
+  });
+
   it('fails with a clear message when the key has no source on this machine', async () => {
     cfg.updateConfig((c) => {
       c.llm.providers.find((p) => p.id === 'local')!.secretRef = 'llm.missing';

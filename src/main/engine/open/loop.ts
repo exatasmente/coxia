@@ -14,6 +14,7 @@ import {
   skillTool,
 } from './context';
 import { EngineError } from './errors';
+import { type OpenPool, type PoolMember, type PoolSwitch, PoolClient, activityOf, weigh } from './pool';
 import { scrubbedEnv } from '../guard';
 import { type SdkHooks, policyFromHooks } from './policy';
 import { describeErrors, prune, validate } from './schema';
@@ -26,6 +27,7 @@ import { editTool, writeTool } from './tools/write';
 import { globTool, grepTool } from './tools/search';
 import { type ToolContext, type ToolImage, type ToolImpl, ToolError } from './tools/types';
 import type { ChatMessage, Completion, ContentPart, Json, ToolCall, ToolChoice, ToolDef } from './types';
+import type { Activity } from '../../../shared/config/types';
 import { t } from '../../../shared/i18n';
 import { incomingActivity, incomingText } from '../incoming';
 
@@ -54,6 +56,8 @@ export interface RunEvents {
   onReasoning?: (text: string) => void;
   // What the model said alongside tool calls it is about to make (its narration between steps); never the final answer.
   onInterim?: (text: string) => void;
+  // The call moved to another model of the role's pool (it was busy, or the turn is for an activity the first one does not serve).
+  onSwitch?: (e: PoolSwitch) => void;
 }
 
 export interface OpenRunParams {
@@ -62,6 +66,12 @@ export interface OpenRunParams {
   // JSON Schema of the final answer; without it the final text is the answer.
   schema?: Json;
   client: ChatClient;
+  // The spare models of the role and the lists of its activities; without it `client` is the only model and nothing changes.
+  pool?: OpenPool;
+  // A sub-agent shares the pool of its parent, and with it the model in use.
+  poolClient?: PoolClient;
+  // The activity of the first turn: a stage starts as `write`, a sub-agent as `explore`.
+  startActivity?: Activity;
   capabilities?: Capabilities;
   structured?: StructuredStrategy;
   cwd: string;
@@ -164,6 +174,7 @@ async function buildTools(p: OpenRunParams, skills: ReturnType<typeof loadSkills
   if (on('Agent') && (p.depth ?? 0) === 0) {
     tools.push({
       name: 'Agent',
+      activity: 'explore',
       description:
         // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
         'Delegates a focused, read-only task to a sub-agent that has the same read tools and returns only its final answer. ' +
@@ -256,10 +267,30 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   const sessionId = prior && p.resume ? p.resume : randomUUID();
   const messages: ChatMessage[] = prior ? messagesOf(prior) : [];
   const usage: UsageRecord = { promptTokens: 0, completionTokens: 0, cachedTokens: 0 };
-  const write = (message: ChatMessage, u?: UsageRecord): void => {
+  const write = (message: ChatMessage, u?: UsageRecord, model?: string): void => {
     messages.push(message);
-    if (persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'msg', at: now().toISOString(), message, ...(u ? { usage: u, model: client.cfg.model } : {}) }]);
+    if (persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'msg', at: now().toISOString(), message, ...(u ? { usage: u, model: model ?? client.cfg.model } : {}) }]);
   };
+  // The models of the pool, the one that answers each turn; a lone model is the pool of one.
+  const primary: PoolMember = {
+    key: p.pool?.primary.key ?? `${client.baseUrl}|${client.cfg.model}`,
+    label: p.pool?.primary.label ?? client.cfg.model,
+    provider: p.pool?.primary.provider,
+    client,
+    images: p.capabilities?.images,
+    tools: p.capabilities?.tools,
+    contextWindow: p.capabilities?.contextWindow,
+  };
+  const pool =
+    p.poolClient ??
+    new PoolClient(primary, p.pool, {
+      onSwitch: (e) => {
+        if (persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'switch', at: now().toISOString(), from: e.from.label, to: e.to.label, reason: e.reason, until: e.until, activity: e.activity }]);
+        events.onSwitch?.(e);
+      },
+    });
+  // What the next turn answers: the start of a stage and anything the person or the loop says is `write`; tool results set it (see `activityOf`).
+  let activity: Activity = p.startActivity ?? 'write';
 
   // --- tools
   const runAgent = async (def: AgentDef | null, prompt: string): Promise<string> => {
@@ -275,6 +306,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       sessionsDir: null,
       sources,
       depth: (p.depth ?? 0) + 1,
+      poolClient: pool,
+      startActivity: 'explore',
     });
     usage.promptTokens += r.usage.promptTokens;
     usage.completionTokens += r.usage.completionTokens;
@@ -299,7 +332,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     env: { ...(p.writeRoot ? scrubbedEnv(process.env) : (process.env as Record<string, string>)), ...p.shellEnv },
     bashPrefixes: bashPrefixesOf(p.allowedTools),
     ripgrep: p.ripgrep ?? 'auto',
-    seesImages: () => p.capabilities?.images !== false && client.learned.noImages !== true,
+    seesImages: () => pool.member.images !== false && pool.member.client.learned.noImages !== true,
   };
   const policy = policyFromHooks(p.hooks, sessionId);
 
@@ -357,13 +390,14 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   write({ role: 'user', content: p.prompt });
 
   // --- helpers
-  const call = async (o: { tools?: ToolDef[]; toolChoice?: ToolChoice; responseFormat?: Json }): Promise<Completion> => {
-    const window = p.capabilities?.contextWindow;
-    if (window && estimateTokens(messages) + estimateTokens(o.tools ?? []) > window * 0.8) compact(messages);
+  const call = async (o: { tools?: ToolDef[]; toolChoice?: ToolChoice; responseFormat?: Json; activity?: Activity }): Promise<Completion> => {
+    const need = () => ({ activity: o.activity ?? activity, tools: !!o.tools?.length, tokens: weigh(messages, o.tools) });
+    const window = pool.peek(need()).contextWindow;
+    if (window && need().tokens > window * 0.8) compact(messages);
     let compacted = false;
     for (;;) {
       try {
-        const c = await client.complete({ messages, tools: o.tools?.length ? o.tools : undefined, toolChoice: o.toolChoice, responseFormat: o.responseFormat, signal: p.signal, onText: events.onText, onReasoning: events.onReasoning });
+        const { completion: c, member } = await pool.complete({ messages, tools: o.tools?.length ? o.tools : undefined, toolChoice: o.toolChoice, responseFormat: o.responseFormat, signal: p.signal, onText: events.onText, onReasoning: events.onReasoning }, need());
         const u: UsageRecord = c.usage
           ? { promptTokens: c.usage.promptTokens, completionTokens: c.usage.completionTokens, cachedTokens: c.usage.cachedTokens, ...(c.usage.costUsd !== undefined ? { costUsd: c.usage.costUsd } : {}) }
           : {
@@ -375,11 +409,12 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         usage.promptTokens += u.promptTokens;
         usage.completionTokens += u.completionTokens;
         usage.cachedTokens += u.cachedTokens;
-        events.onUsage?.({ ...u, sessionId, role: p.role, model: client.cfg.model });
+        events.onUsage?.({ ...u, sessionId, role: p.role, model: member.client.cfg.model });
         const msg: ChatMessage = { role: 'assistant', content: c.text };
         if (c.toolCalls.length) msg.tool_calls = c.toolCalls;
         if (c.reasoning) msg.reasoning_content = c.reasoning;
-        write(msg, u);
+        pool.stamp(msg, member);
+        write(msg, u, member.client.cfg.model);
         return c;
       } catch (e) {
         if (e instanceof EngineError && e.kind === 'context' && !compacted && compact(messages, 1, 600)) {
@@ -443,6 +478,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     const message = await p.incoming((text) => events.onInterim?.(incomingActivity(text)));
     if (message === null) return false;
     write({ role: 'user', content: incomingText(message) });
+    activity = 'write';
     return true;
   };
   const throughDoor = async (stepText?: string): Promise<DoorTurn> => {
@@ -454,7 +490,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     const ready = stepText === undefined ? null : extractAnswer(stepText, p.schema as Json);
     if (ready?.ok) return { took: 'answer', value: ready.value as Json };
     write({ role: 'user', content: t('main.engine.text.collect') });
-    const last = await call({ tools: [], responseFormat });
+    const last = await call({ tools: [], responseFormat, activity: 'write' });
     const got = extractAnswer(last.text, p.schema as Json);
     if (got.ok) return { took: 'answer', value: got.value as Json };
     return { took: 'bad', errors: describeErrors(got.errors) };
@@ -490,6 +526,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         for (const tc of c.toolCalls) write(toolMessage(tc, tc === fin ? t('main.engine.text.fixFinal', { errors: describeErrors(errors), tool: FINAL }) : t('main.engine.text.ignoredShort')));
         if (repairs++ >= 2) throw new StructuredOutputError(describeErrors(errors));
         forceFinal = true;
+        activity = 'write';
         continue;
       }
       if (c.text.trim()) events.onInterim?.(c.text);
@@ -498,6 +535,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       // A tool message carries text only: the pictures the tools read follow in one message the model reads right after them.
       const images = results.flatMap((r) => r.images ?? []);
       if (images.length) write(imageMessage(images));
+      // The next turn answers what these tools returned: the most demanding of them decides which models may take it.
+      activity = activityOf(c.toolCalls.map((tc) => byApi.get(tc.function.name)?.activity), images.length > 0);
       // A message that arrived while the tools ran is handed over now, with their results: the agent hears it on its next step, whatever it is doing.
       if (await deliver()) {
         noteSteps = 0;
@@ -535,6 +574,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       turns--;
       write({ role: 'user', content: t('main.engine.text.callFinal', { tool: FINAL }) });
       forceFinal = true;
+      activity = 'write';
       continue;
     }
     if (strategy === 'tool') throw new StructuredOutputError(describeErrors(parsed.errors));
@@ -545,16 +585,17 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     if (door) {
       if (doorRepairs++ >= 1) throw new StructuredOutputError(describeErrors(parsed.errors));
       write({ role: 'user', content: t('main.engine.text.invalidAnswer', { errors: describeErrors(parsed.errors) }) });
+      activity = 'write';
       if (turns >= p.maxTurns) throw new OpenMaxTurnsError(sessionId, sources);
       turns++;
       continue;
     }
     write({ role: 'user', content: strategy === 'response_format' ? finalizePrompt() : `${finalizePrompt()} ${t('main.engine.text.previousProblems', { errors: describeErrors(parsed.errors) })}` });
-    let last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
+    let last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined, activity: 'write' });
     let fixed = extractAnswer(last.text, p.schema);
     if (!fixed.ok) {
       write({ role: 'user', content: t('main.engine.text.invalidAnswer', { errors: describeErrors(fixed.errors) }) });
-      last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
+      last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined, activity: 'write' });
       fixed = extractAnswer(last.text, p.schema);
     }
     if (fixed.ok) return done(fixed.value, turns);

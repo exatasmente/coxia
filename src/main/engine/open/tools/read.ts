@@ -65,6 +65,7 @@ export function imageType(path: string): string | null {
 
 export const readTool: ToolImpl = {
   name: 'Read',
+  activity: 'explore',
   description:
     // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     'Reads a file from the local filesystem. file_path is absolute or relative to the working directory. A text file comes back with its lines numbered ("N<TAB>text"); ' +

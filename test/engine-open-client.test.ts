@@ -266,6 +266,38 @@ describe('errors', () => {
     expect(fake.chats()).toHaveLength(2);
   });
 
+  describe('the reasoning sent back', () => {
+    const history = [
+      { role: 'user' as const, content: 'oi' },
+      { role: 'assistant' as const, content: '', reasoning_content: 'my thoughts', tool_calls: [{ id: 'call_1', type: 'function' as const, function: { name: 'look', arguments: '{}' } }] },
+      { role: 'tool' as const, tool_call_id: 'call_1', content: 'ok' },
+    ];
+    const sentReasoning = (f: Fake, n = 0) => (f.chats()[n].body?.messages as { reasoning_content?: string }[]).map((m) => m.reasoning_content);
+
+    it('is left out of the first call, as before, when nothing says the model wants it', async () => {
+      fake = await fakeOpenAI([textStep('ok')]);
+      await client(fake.url).complete({ messages: history });
+      expect(sentReasoning(fake)).toEqual([undefined, undefined, undefined]);
+    });
+
+    it('is sent from the first call for a model marked for it', async () => {
+      fake = await fakeOpenAI([textStep('ok')]);
+      await client(fake.url, { echoReasoning: true }).complete({ messages: history });
+      expect(sentReasoning(fake)).toEqual([undefined, 'my thoughts', undefined]);
+    });
+
+    it('stops being sent, for good, when the server refuses the field', async () => {
+      fake = await fakeOpenAI([errorStep(400, 'Unrecognized request argument: messages[1].reasoning_content'), textStep('ok'), textStep('again')]);
+      const c = client(fake.url, { echoReasoning: true });
+      expect((await c.complete({ messages: history })).text).toBe('ok');
+      expect(sentReasoning(fake, 0)).toEqual([undefined, 'my thoughts', undefined]);
+      expect(sentReasoning(fake, 1)).toEqual([undefined, undefined, undefined]);
+      // A reply that shows the field does not bring the echo back.
+      await c.complete({ messages: history });
+      expect(sentReasoning(fake, 2)).toEqual([undefined, undefined, undefined]);
+    });
+  });
+
   it('an exhausted quota is not retried', async () => {
     fake = await fakeOpenAI([errorStep(429, 'You exceeded your current quota, please check your plan and billing details.', { code: 'insufficient_quota' })]);
     const e = await failure(client(fake.url).complete({ messages: user }));

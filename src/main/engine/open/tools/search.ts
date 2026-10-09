@@ -82,6 +82,7 @@ function walk(base: string, ctx: ToolContext, limit = MAX_WALK_FILES): Walked[] 
 
 export const globTool: ToolImpl = {
   name: 'Glob',
+  activity: 'explore',
   // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
   description: 'Finds files by glob pattern (for example "**/*.ts" or "src/**/*.{js,ts}"), newest first. Searches the working directory unless path is given.',
   parameters: {
@@ -263,6 +264,7 @@ async function grepWithJs(g: GrepInput, base: string, ctx: ToolContext): Promise
 
 export const grepTool: ToolImpl = {
   name: 'Grep',
+  activity: 'explore',
   description:
     // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     'Searches file contents with a regular expression (ripgrep syntax). output_mode: "files_with_matches" (default, file names), "content" (matching lines with path:line:text) ' +

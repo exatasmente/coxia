@@ -18,7 +18,9 @@ export interface UsageRecord {
 export type SessionLine =
   | { t: 'meta'; id: string; role: string; model: string; provider: string; at: string }
   | { t: 'msg'; at: string; message: ChatMessage; usage?: UsageRecord; model?: string }
-  | { t: 'resume'; at: string; role: string };
+  | { t: 'resume'; at: string; role: string }
+  // The call moved to another model of the pool: not a message, so it never reaches the history.
+  | { t: 'switch'; at: string; from: string; to: string; reason: string; until: number | null; activity: string };
 
 export const SESSION_EXT = '.jsonl';
 

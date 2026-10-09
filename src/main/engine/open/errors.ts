@@ -173,6 +173,8 @@ export interface Learned {
   echoReasoning?: boolean;
   // The model answered that it cannot use tools: the engine stops offering them.
   noTools?: boolean;
+  // The server refused the reasoning sent back to it: it is not sent again, whatever a later reply shows.
+  echoRefused?: boolean;
   // The server refused a request with an image: images are replaced by a line from then on, and Read says the model does not see them.
   noImages?: boolean;
 }
@@ -209,6 +211,13 @@ export function adaptBodyForError(body: ChatRequest, status: number, message: st
   if (hasImage(body) && /image|vision|multimodal|multi-modal|image_url|content type|content part/.test(m)) {
     learned.noImages = true;
     next.messages = withoutImages(body.messages, imageNote);
+    return next;
+  }
+  // Reasoning sent back from the first call (a model marked for it) against a server that does not take the field: stop sending it, and remember.
+  if (body.messages.some((x) => x.reasoning_content !== undefined) && /reasoning/.test(m)) {
+    learned.echoRefused = true;
+    learned.echoReasoning = false;
+    next.messages = body.messages.map(({ reasoning_content: _r, ...rest }) => rest as ChatRequest['messages'][number]);
     return next;
   }
   if (next.max_tokens !== undefined && /max_completion_tokens/.test(m)) {

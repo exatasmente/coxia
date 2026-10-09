@@ -21,7 +21,8 @@ import { redact } from './errorlog-core';
 import { credentialNames } from './engine/guard';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { scrubShellHooks } from './engine/scrubShell';
-import { type DocSources, type OpenEngineSelection, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
+import { type DocSources, type OpenEngineSelection, type PoolMemberSpec, type SelectionPool, defaultDocSources, normalizeBaseUrl, openEngineFromEnv, restKey, runOpenOnce } from './engine/open';
+import { ACTIVITIES } from '../shared/config/types';
 import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
 import { crossDayRepeats } from './minutesStore';
 import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchangedTurn } from './sameDay';
@@ -472,11 +473,16 @@ function openDocs(cwd: string, role: ModelRole, isolated = false, bare = false):
   return isolated || Object.values(docs).some((list) => list.length) ? docs : defaultDocSources(cwd);
 }
 
-/** What the open engine needs to reach the provider a role is mapped to: key from the secrets store, probe results from the config. */
-export function openSelection(t: ResolvedRole, cwd: string, isolated = false, bare = false): OpenEngineSelection {
+/** How to reach one model of the open engine and what is known of it: the key from the secrets store, the probe results from the config, the facts of the pool entry. */
+function openMember(t: ResolvedRole): PoolMemberSpec {
   const c = t.capabilities;
+  const images = t.images ?? c?.images;
+  const contextWindow = t.contextWindow ?? c?.contextWindow ?? null;
   return {
-    provider: {
+    key: restKey({ baseUrl: normalizeBaseUrl(t.baseUrl), model: t.model, secretRef: t.secretRef }),
+    label: t.model,
+    provider: t.providerId,
+    config: {
       baseUrl: t.baseUrl,
       model: t.model,
       apiKey: providerSecret(t.secretRef) ?? undefined,
@@ -485,8 +491,33 @@ export function openSelection(t: ResolvedRole, cwd: string, isolated = false, ba
       ...(t.maxOutputTokens !== null ? { maxOutputTokens: t.maxOutputTokens } : {}),
       ...(t.temperature !== null ? { temperature: t.temperature } : {}),
       ...(t.timeoutMs !== null ? { timeoutMs: t.timeoutMs } : {}),
+      ...(t.echoReasoning !== undefined ? { echoReasoning: t.echoReasoning } : {}),
     },
-    ...(c ? { capabilities: { tools: c.tools, jsonSchema: c.jsonSchema, ...(c.contextWindow !== null ? { contextWindow: c.contextWindow } : {}), ...(c.images !== undefined ? { images: c.images } : {}) } } : {}),
+    ...(c || images !== undefined || contextWindow !== null
+      ? { capabilities: { ...(c ? { tools: c.tools, jsonSchema: c.jsonSchema } : {}), ...(contextWindow !== null ? { contextWindow } : {}), ...(images !== undefined ? { images } : {}) } }
+      : {}),
+  };
+}
+
+/**
+ * What the open engine needs to reach the provider a role is mapped to, and the models its pool may move the call to. Only models of the open engine are in the pool:
+ * an entry that belongs to the Claude engine is chosen at the start of a stage, never in the middle of an open session.
+ */
+export function openSelection(t: ResolvedRole, cwd: string, isolated = false, bare = false): OpenEngineSelection {
+  const first = openMember(t);
+  const open = (list: ResolvedRole[] | undefined): PoolMemberSpec[] => (list ?? []).filter((r) => r.engine === 'open').map(openMember);
+  const activities = Object.fromEntries(
+    ACTIVITIES.flatMap((a) => {
+      const list = open(t.pool?.activities[a]);
+      return list.length ? [[a, list]] : [];
+    }),
+  ) as NonNullable<SelectionPool['activities']>;
+  const fallbacks = open(t.pool?.fallbacks);
+  const pooled = fallbacks.length > 0 || Object.keys(activities).length > 0;
+  return {
+    provider: first.config,
+    ...(pooled ? { pool: { name: t.role, primary: { key: first.key, label: first.label, provider: first.provider }, fallbacks, activities } } : {}),
+    ...(first.capabilities ? { capabilities: first.capabilities } : {}),
     structured: t.structured,
     docs: openDocs(cwd, t.role, isolated, bare),
   };

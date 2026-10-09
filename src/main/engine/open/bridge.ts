@@ -9,11 +9,34 @@ import { type DocSources, discoverClaudeMd } from './context';
 import { EngineError } from './errors';
 import { type Capabilities, type OpenRunParams, OpenMaxTurnsError, type RunEvents, runOpen } from './loop';
 import { ProviderBudgetError } from '../contract';
+import type { Activity } from '../../../shared/config/types';
+import type { OpenPool, PoolMember } from './pool';
 import type { Json } from './types';
 import { existsSync } from 'node:fs';
 
+/** A model of the pool as the app resolved it: how to reach it, and what is known of it. */
+export interface PoolMemberSpec {
+  /** The key the rest registry knows it by (see `restKey`). */
+  key: string;
+  /** The model as the person reads it. */
+  label: string;
+  /** The provider id. */
+  provider?: string;
+  config: ProviderConfig;
+  capabilities?: Capabilities;
+}
+
+/** The pool of the role the call is made for: the model the call starts on is `provider`, and these are the others. */
+export interface SelectionPool {
+  name: string;
+  primary: { key: string; label: string; provider?: string };
+  fallbacks: PoolMemberSpec[];
+  activities?: Partial<Record<Activity, PoolMemberSpec[]>>;
+}
+
 export interface OpenEngineSelection {
   provider: ProviderConfig;
+  pool?: SelectionPool;
   capabilities?: Capabilities;
   structured?: OpenRunParams['structured'];
   docs?: DocSources;
@@ -36,7 +59,7 @@ export function openEngineFromEnv(env: NodeJS.ProcessEnv = process.env): OpenEng
 const clients = new Map<string, ChatClient>();
 
 export function clientFor(provider: ProviderConfig): ChatClient {
-  const key = `${provider.baseUrl}|${provider.model}|${provider.apiKey ? 'k' : ''}`;
+  const key = `${provider.baseUrl}|${provider.model}|${provider.apiKey ? 'k' : ''}|${provider.echoReasoning ? 'e' : ''}`;
   let c = clients.get(key);
   if (!c) {
     c = new ChatClient(provider);
@@ -55,6 +78,18 @@ export function defaultDocSources(cwd: string): DocSources {
     docDirs: [join(cwd, '.claude', 'rules'), join(cwd, '.claude', 'knowledge-base')].filter((d) => existsSync(d)),
     mcpConfigs: [join(cwd, '.mcp.json'), join(homedir(), '.claude.json')].filter((f) => existsSync(f)),
   };
+}
+
+function memberOf(spec: PoolMemberSpec): PoolMember {
+  const c = spec.capabilities;
+  return { key: spec.key, label: spec.label, provider: spec.provider, client: clientFor(spec.config), images: c?.images, tools: c?.tools, contextWindow: c?.contextWindow };
+}
+
+function poolOf(pool: SelectionPool | undefined): OpenPool | undefined {
+  if (!pool) return undefined;
+  const activities: OpenPool['activities'] = {};
+  for (const [a, list] of Object.entries(pool.activities ?? {}) as [Activity, PoolMemberSpec[]][]) if (list.length) activities[a] = list.map(memberOf);
+  return { name: pool.name, primary: pool.primary, fallbacks: pool.fallbacks.map(memberOf), activities };
 }
 
 export interface BridgeArgs {
@@ -89,6 +124,7 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
       prompt: a.prompt,
       schema,
       client: clientFor(a.selection.provider),
+      pool: poolOf(a.selection.pool),
       capabilities: a.selection.capabilities,
       structured: a.selection.structured,
       cwd,

@@ -23,6 +23,8 @@ export interface ProviderConfig {
   // Base delay of the transient retry backoff (tests set it to 0).
   retryDelayMs?: number;
   maxRetries?: number;
+  // The model needs its own reasoning sent back on assistant turns with tool calls: from the first call, not only after a reply has shown the field.
+  echoReasoning?: boolean;
 }
 
 // The user may paste http://localhost:11434, http://localhost:11434/v1 or the full .../chat/completions URL.
@@ -198,6 +200,7 @@ export class ChatClient {
   constructor(readonly cfg: ProviderConfig, learned?: Learned) {
     this.baseUrl = normalizeBaseUrl(cfg.baseUrl);
     this.learned = learned ?? newLearned();
+    if (cfg.echoReasoning && !this.learned.echoRefused) this.learned.echoReasoning = true;
     this.lang = cfg.lang ?? 'pt-BR';
     this.fetchImpl = cfg.fetchImpl ?? fetch;
   }
@@ -217,7 +220,7 @@ export class ChatClient {
 
   private build(o: CallOptions): ChatRequest {
     const stream = this.cfg.stream !== false;
-    const echoed = this.learned.echoReasoning ? o.messages : o.messages.map(({ reasoning_content: _r, ...m }) => m as ChatMessage);
+    const echoed = this.learned.echoReasoning && !this.learned.echoRefused ? o.messages : o.messages.map(({ reasoning_content: _r, ...m }) => m as ChatMessage);
     // A server that refused an image once gets a line in place of each one from then on.
     const messages = this.learned.noImages ? withoutImages(echoed, t('main.engine.text.noImage')) : echoed;
     const body: ChatRequest = { model: this.cfg.model, messages };
@@ -282,7 +285,7 @@ export class ChatClient {
         else folder.fromResponse(JSON.parse(await res.text()) as ChatResponse);
         if (folder.error !== null) throw this.streamError(folder.error, ctx);
         const done = folder.result();
-        if (done.reasoningField === 'reasoning_content') this.learned.echoReasoning = true;
+        if (done.reasoningField === 'reasoning_content' && !this.learned.echoRefused) this.learned.echoReasoning = true;
         return done;
       } catch (e) {
         if (e instanceof EngineError) throw e;
