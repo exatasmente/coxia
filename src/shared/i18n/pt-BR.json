@@ -372,7 +372,7 @@
   "prompt.sdd.card.whereNone": "Sem pasta de spec.",
   "prompt.sdd.card.files": "Arquivos do cartão: {files}.",
   "prompt.sdd.fix.diagram": "O diagrama mermaid abaixo não renderiza (mermaid 12). Corrija somente a sintaxe, mantendo o significado, os rótulos e a estrutura.\n\nDicas: rótulos com símbolos ou parênteses vão entre aspas; sem estilos, cores nem diretivas; flowchart e sequenceDiagram.\n\nErro do mermaid:\n{error}\n\nCódigo:\n{code}\n\n\"code\": o diagrama corrigido completo, sem cerca de ``` e sem comentários.",
-  "prompt.sdd.turn.main": "Você é o agente da atividade {ref} na {ceremony} {mode}.\n{card}\n{specHint}\nMonte a sua vez: \"fala\" com até {words} palavras, dizendo o que mudou desde ontem, o próximo passo e o bloqueio.\n{questionLine}\n{meanings}\n{priorityLine}\n{optionsRule} Ofereça opções quando houver pergunta ou bloqueio.\n{speechRules}",
+  "prompt.sdd.turn.main": "Você é o agente da atividade {ref} na {ceremony} {mode}.\n{card}\n{specHint}\n{crossDay}\nMonte a sua vez: \"fala\" com até {words} palavras, dizendo o que mudou desde ontem, o próximo passo e o bloqueio.\n{questionLine}\n{meanings}\n{priorityLine}\n{optionsRule} Ofereça opções quando houver pergunta ou bloqueio.\n{speechRules}",
   "prompt.sdd.turn.specHint": "Se precisar, leia o spec (no máximo {reads} leituras).",
   "prompt.sdd.turn.questionOn": "Se houver {question}, termine a fala com UMA pergunta objetiva e repita-a em \"pergunta\"; senão, \"pergunta\" é null.",
   "prompt.sdd.turn.questionOff": "Não faça perguntas: \"pergunta\" é sempre null.",

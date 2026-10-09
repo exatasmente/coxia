@@ -153,6 +153,15 @@ const INTENDED: Record<string, Intended> = {
       ['with main', 'with {target}'],
     ],
   },
+  // The turn prompt carries an optional note that this decision was already left unanswered on earlier days.
+  'prompt.sdd.turn.main': {
+    reason: 'the turn prompt carries an optional note that the decision was already left unanswered on earlier days',
+    language: 'both',
+    replace: [
+      ['\n{specHint}\nMonte a sua vez', '\n{specHint}\n{crossDay}\nMonte a sua vez'],
+      ['\n{specHint}\nBuild your turn', '\n{specHint}\n{crossDay}\nBuild your turn'],
+    ],
+  },
   'ui.resolver.publish.intro': {
     reason: 'the merge commit names the branch it merged in, the target of the MR, not always main',
     language: 'both',

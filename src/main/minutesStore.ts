@@ -2,10 +2,13 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, s
 import { join } from 'node:path';
 import {
   type DayIndex,
+  type DayUnanswered,
+  type DayUnansweredEntry,
   type DayView,
   type DeletePreview,
   type Kept,
   type MinutesVersion,
+  type RepeatedQuestion,
   type TrashEntry,
   type VersionView,
   TRASH_DAYS,
@@ -15,15 +18,16 @@ import {
   indexFile,
   mergeDay,
   previousOf,
+  repeatedUnanswered,
   snapshotOf,
   versionFile,
 } from '../shared/minutesVersions';
-import type { Minutes, SavedCeremony, WrittenDecision } from '../shared/types';
+import type { Card, Minutes, SavedCeremony, WrittenDecision } from '../shared/types';
 import { recordWrite } from './auditoria';
 import { voiceText } from '../shared/cycles/text';
 import { language, text as word } from './cyclePrompts';
 import { ATAS } from './env';
-import { HISTORY, ceremonyIds, dateOfId, isLive, readCeremony } from './historyFiles';
+import { HISTORY, ceremonyIds, dateOfId, isLive, readCeremony, today } from './historyFiles';
 
 // Minutes of the day, by version. Every pre-daily of a day is one version: <date>-pre-daily.v<N>.md holds its minutes, and
 // <date>-pre-daily.versions.json is the index (numbers, snapshots for the diff, what was written to specs and notes). <date>-pre-daily.md is
@@ -161,7 +165,14 @@ function writeDayFile(index: DayIndex): void {
     rmSync(file, { force: true });
     return;
   }
-  atomicWrite(file, `${word('minutes.file.dayTitle', { date: index.date })}\n\n${word('minutes.file.dayNote')}\n\n${parts.join('\n\n---\n\n')}\n`);
+  // The repetition is a fact of the day: it lands as a day-level block after every version's own part, and the version files stay as they are.
+  const repeated = dayRepeats(index);
+  const section = repeated.length
+    ? `\n\n---\n\n${word('minutes.file.repeated.title')}\n\n${word('minutes.file.repeated.intro')}\n\n${repeated
+        .map((r) => word('minutes.file.repeated.item', { ref: r.ref, question: r.question, dates: r.dates.join(', '), days: word(r.count === 1 ? 'minutes.day.repeated.days_one' : 'minutes.day.repeated.days_other', { count: r.count }) }))
+        .join('\n')}\n`
+    : '';
+  atomicWrite(file, `${word('minutes.file.dayTitle', { date: index.date })}\n\n${word('minutes.file.dayNote')}\n\n${parts.join('\n\n---\n\n')}${section}\n`);
 }
 
 /** Every date that has minutes: an index, a ceremony that started a call, or the old single file. */
@@ -232,7 +243,7 @@ export function openVersion(date: string, ceremonyId: string | undefined, m: Pic
   const startedAt = Date.parse(m.startedAt);
   let rec = (ceremonyId ? index.versions.find((v) => v.ceremonyId === ceremonyId) : undefined) ?? index.versions.find((v) => v.startedAt === startedAt);
   if (!rec) {
-    rec = { n: Math.max(0, ...index.versions.map((v) => v.n)) + 1, ceremonyId: ceremonyId ?? '', ...(m.squad ? { squad: m.squad } : {}), startedAt, endedAt: Date.parse(m.endedAt), savedAt: null, file: null, teams: null, written: [], snapshot: { decisions: m.decisions, effects: m.effects, unanswered: m.unanswered, covered: [] } };
+    rec = { n: Math.max(0, ...index.versions.map((v) => v.n)) + 1, ceremonyId: ceremonyId ?? '', ...(m.squad ? { squad: m.squad } : {}), startedAt, endedAt: Date.parse(m.endedAt), savedAt: null, file: null, teams: null, written: [], snapshot: { decisions: m.decisions, effects: m.effects, unanswered: m.unanswered.map((u) => ({ ref: u.ref, question: u.question, stage: null })), covered: [] } };
     index.versions.push(rec);
     writeIndex(index);
   }
@@ -289,6 +300,44 @@ export function saveDayTeams(date: string, key: string, text: string): void {
 
 // ---------------------------------------------------------------- reading
 
+/**
+ * The unanswered questions of the days before `date`, most recent first, up to `limit`; only days with an index (the read never creates one, so an
+ * empty day is skipped, not kept). A malformed index makes the day nothing: the repetition is computed from what can be read.
+ */
+export function previousDayAnswers(date: string, limit = 7): DayUnanswered[] {
+  const out: DayUnanswered[] = [];
+  for (const day of minutesDates().filter((d) => d < date)) {
+    const index = readIndex(day);
+    if (!index) continue;
+    const merged = mergeDay(index.versions);
+    out.push({ date: day, unanswered: merged.unanswered.map(({ version, ...u }) => ({ ...u, ...(index.versions.find((v) => v.n === version)?.squad ? { squad: index.versions.find((v) => v.n === version)?.squad } : {}) })) });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/** The merged unanswered of the day's own index, each entry tagged with the squad of the version that asked it. */
+function dayEntries(index: DayIndex): DayUnansweredEntry[] {
+  const merged = mergeDay(index.versions);
+  return merged.unanswered.map(({ version, ...u }) => {
+    const squad = index.versions.find((v) => v.n === version)?.squad;
+    return { ...u, ...(squad ? { squad } : {}) };
+  });
+}
+
+/** What the day's minutes repeat from the previous days (the pure rule of the snapshot, with the days the folder holds). */
+function dayRepeats(index: DayIndex): RepeatedQuestion[] {
+  return repeatedUnanswered(index.date, dayEntries(index), previousDayAnswers(index.date));
+}
+
+/** The dates the card's question-forma was left unanswered on, before today; empty when it is not one of them. */
+export function crossDayRepeats(card: Card, date = today()): string[] {
+  return previousDayAnswers(date)
+    .filter((d) => d.unanswered.some((u) => u.ref === card.ref && (u.stage === card.stage || u.stage === null || card.stage === null)))
+    .map((d) => d.date)
+    .sort();
+}
+
 export function dayView(date: string): DayView {
   const index = ensureDay(date);
   const versions: VersionView[] = index.versions.map((v) => ({
@@ -299,7 +348,7 @@ export function dayView(date: string): DayView {
   }));
   const merged = mergeDay(index.versions);
   const dayPath = existsSync(pathOf(dayFile(date))) ? pathOf(dayFile(date)) : null;
-  return { date, versions, merged, dayTeams: index.dayTeams, dayKey: dayKey(merged), dayPath };
+  return { date, versions, merged, dayTeams: index.dayTeams, dayKey: dayKey(merged), repeated: dayRepeats(index), dayPath };
 }
 
 // ---------------------------------------------------------------- deleting

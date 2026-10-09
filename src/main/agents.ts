@@ -23,6 +23,7 @@ import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { scrubShellHooks } from './engine/scrubShell';
 import { type DocSources, type OpenEngineSelection, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
 import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
+import { crossDayRepeats } from './minutesStore';
 import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchangedTurn } from './sameDay';
 import { claudeSdkEnv, providerSecret } from './llm';
 import { loginPath, mergedPath } from './loginPath';
@@ -889,6 +890,7 @@ export async function prepareTurn(card: Card, opts: TurnOptions = {}): Promise<A
   const snap = day?.now ?? cardSnapshot(card);
   const c = cycle();
   const pre = c.ceremonyParams.preDaily;
+  const crossDates = crossDayRepeats(card);
   const common = {
     ref: card.ref,
     card: cardContext(card),
@@ -897,8 +899,12 @@ export async function prepareTurn(card: Card, opts: TurnOptions = {}): Promise<A
     questionLine: c.meanings.question.enabled ? cp('turn.questionOn', { question: cycleWord(c.meanings.question.text) }) : cp('turn.questionOff'),
     meanings: meaningsLine(),
     priorityLine: priorityLine(card),
+    crossDay: crossDates.length ? cp('turn.crossDay', { dates: crossDates.join(', ') }) : '',
   };
-  const prompt = day ? cp('turn.sameDay', { ...common, since: timeOf(day), earlier: earlierText(day), delta: deltaText(day) }) : cp('turn.main', common);
+  const prompt =
+    day
+      ? cp('turn.sameDay', { ...common, since: timeOf(day), earlier: earlierText(day, crossDates.length ? cp('turn.crossDay', { dates: crossDates.join(', ') }) : ''), delta: deltaText(day) })
+      : cp('turn.main', common);
   const schema = obj({ fala: str, andou: str, proximo: str, bloqueio: strOrNull, pergunta: strOrNull, opcoes: OPTIONS });
   const r = await run<{ fala: string; andou: string; proximo: string; bloqueio: string | null; pergunta: string | null; opcoes: string[] }>(
     'turn',
