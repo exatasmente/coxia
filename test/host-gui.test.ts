@@ -12,7 +12,8 @@ import { neutralSandbox } from '../src/shared/config/defaults';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { Run } from '../src/shared/runs';
 import { createSandboxService } from '../src/main/sandbox';
-import { startHostDisplay } from '../src/main/sandbox/display';
+import { HOST_DISPLAY_ARGS, startHostDisplay } from '../src/main/sandbox/display';
+import { hostDisplaySocket } from '../src/main/sandbox/host';
 import { viewImageToolImpl } from '../src/main/sandbox/engineTool';
 import { openHostSession } from '../src/main/sandbox/host';
 import { offersViewImage, viewImageDescription } from '../src/main/sandbox/tool';
@@ -98,6 +99,27 @@ describe.runIf(posix)('a host session asked to test an interface', () => {
     expect(r.output).toContain('folder');
     expect(s.gui).toEqual({ browsers: '/b/ms-playwright', display: 'on', out });
     expect(offersViewImage(s)).toBe(true);
+  });
+
+  it('reports where the stage\'s display can be dialled from the app, and only when it is on', async () => {
+    const on = ask({ browsers: null, display: 'on', displayName: ':101' });
+    expect(on.screen).toEqual({ socket: '/tmp/.X11-unix/X101', kind: 'host' });
+    // What the prompt receives does not change: no path of this computer is in `gui`.
+    expect(JSON.stringify(on.gui)).not.toContain('X11');
+    // No display name (the server did not say which it took) is no socket either.
+    const others = [ask({ browsers: null, display: 'missing' }), ask({ browsers: null, display: 'failed' }), ask({ browsers: '/b', display: null }), ask({ browsers: null, display: 'on' }), openHostSession({ cwd: root, limits, env: hostEnv })];
+    for (const s of others) expect(s.screen).toBeUndefined();
+    await Promise.all([on, ...others].map((s) => s.close()));
+  });
+
+  it('takes only a plain display number for a socket', () => {
+    expect(hostDisplaySocket(':0')).toBe('/tmp/.X11-unix/X0');
+    expect(hostDisplaySocket(':99999')).toBe('/tmp/.X11-unix/X99999');
+    for (const bad of ['', ':', ':1.0', 'host:1', ':100000', ':-1', ':1/../../x', '/tmp/x']) expect(hostDisplaySocket(bad)).toBeNull();
+  });
+
+  it('starts the host display with the arguments it always had: no file for the framebuffer, no TCP', () => {
+    expect(HOST_DISPLAY_ARGS).toEqual(['-displayfd', '3', '-screen', '0', '1280x800x24', '-nolisten', 'tcp']);
   });
 
   it('leaves a command no display at all when the one that was asked for is not there, so a window app does not open on the person\'s screen', async () => {
@@ -205,6 +227,9 @@ describe.runIf(posix)('the host session of the sandbox service', () => {
     const off = await svc.openHost({ worktree: wt(), reader: false, config: { ...config, display: false }, display: true });
     try {
       expect(qa.gui).toMatchObject({ browsers: browsers(), display: 'on' });
+      expect(qa.screen).toEqual({ socket: '/tmp/.X11-unix/X77', kind: 'host' });
+      expect(other.screen).toBeUndefined();
+      expect(off.screen).toBeUndefined();
       expect((await qa.exec('echo "$DISPLAY"')).output).toBe(':77');
       expect(other.gui).toMatchObject({ browsers: browsers(), display: null });
       expect(off.gui).toMatchObject({ display: null });
