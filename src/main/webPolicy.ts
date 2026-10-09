@@ -18,8 +18,9 @@ const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)
 // the release sync) waits there, so refusing it refuses all of them. runs:command lets an agent set to `shell: host` run a command on this
 // computer, outside any sandbox: allowing one from a phone is as far-reaching as approving a proposal, so it sits behind the same switch. runs:startRelease
 // starts a run that ends in the repository's own scripts and merged code, run as the person: the same switch decides whether a phone may start one (each push
-// of the release still waits for its own "yes" in actions:approve).
-export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command', 'runs:startRelease']);
+// of the release still waits for its own "yes" in actions:approve). runs:screenAnswer answers a step the app's browser holds before an irreversible act (a submit, a delete,
+// a payment) or a confirmation an agent asked for: a yes lets that step happen on a site, so a phone gives it only with the same switch.
+export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command', 'runs:startRelease', 'runs:screenAnswer']);
 
 // forum:* (list, read, post, create, the four attachment channels — attachment-put, attachment-post, attachment-drop, attachment-get — and attachment-delete,
 // which removes one message of the conversation and the files it carried) read and write the workspace's own thread files and its own attachment folder, and

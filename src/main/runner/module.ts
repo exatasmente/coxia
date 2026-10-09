@@ -10,6 +10,8 @@ import { createdIssueOf } from '../../shared/runs/links';
 import type { ReleaseAction } from '../../shared/types';
 import type { Module } from '../module';
 import { failureText, noteRetroIssue } from '../retroIssues';
+import { callStops } from '../mentions/stop';
+import { callOrigin } from '../rpc';
 import { runStore } from '../runs';
 import { git } from '../conflictGit';
 import { vcsProvider, vcsReady } from '../vcs';
@@ -25,10 +27,10 @@ import { createPublisher } from './publish';
 import { applyDocsFlow, startDocsRun } from '../harness/docsRun';
 import { docsStatus } from '../harness/status';
 import { docsFlowOf } from '../../shared/config/squads';
-import { SCREEN_ASKS_EVENT, parseKey } from '../../shared/browser';
+import { ASK_DECISIONS, type AskDecision, SCREEN_ASKS_EVENT, keyOf, parseKey } from '../../shared/browser';
 import { SCREEN_EVENT } from '../../shared/screen';
 import { auditScreen } from '../browser/audit';
-import { type ScreenAsks, askNotice, createScreenAsks } from '../browser/asks';
+import { AskGone, type ScreenAsks, askNotice, createScreenAsks } from '../browser/asks';
 import { grantsFor } from '../browser/guard';
 import { startBrowser } from '../browser/launch';
 import { openProfile } from '../browser/profile';
@@ -287,6 +289,28 @@ export const runsModule: Module = (ctx) => {
   // The latest frame of a live screen, for a viewer that shows `since` and wants about `width`: a read like the ones beside it, open to a paired browser. The first argument
   // is a screen key (`run:<id>`, `call:<thread>:<agent>`) or a bare run id. It answers `none` when there is no such screen (it ended): only a malformed call is an error.
   ctx.handle('runs:screen', (key: unknown, since: unknown, width: unknown) => hub.frame(id(key), typeof since === 'number' && Number.isFinite(since) ? since : 0, typeof width === 'number' ? width : Number.NaN));
+  // The screens of agents that have one. The list is a read, open to a paired browser like the others: a conversation shows its screens with Watch and Close. Close and Stop only
+  // take capability away, like runs:cancel, so they are open too; the viewer's own input stays under `screen:`, which the web policy denies by a pattern.
+  ctx.handle('runs:screens', (thread?: unknown) => openSessions.list(typeof thread === 'string' && thread ? thread : undefined));
+  // Ends a screen: the browser, the agent's processes and the display go, the recording is kept, a step that waits for the person counts as declined. false: no such screen.
+  ctx.handle('runs:screenClose', (key: unknown) => {
+    const k = keyOf(key);
+    return k ? openSessions.close(k, 'person') : false;
+  });
+  // Stops one answer of an agent in a conversation and leaves its screen open. false: the agent has no answer running there.
+  ctx.handle('runs:callStop', (thread: unknown, agent: unknown) => callStops.stop(text(thread), text(agent)));
+  // The person's answer to a step the app's browser holds, or to a confirmation an agent asked for. An external effect: a yes lets an irreversible step happen on a site, so a
+  // paired browser gives it only with the external-effects switch (webPolicy.ts). The audit says whether the window or a paired browser answered.
+  ctx.handle('runs:screenAnswer', (askId: unknown, decision: unknown, note?: unknown) => {
+    if (!ASK_DECISIONS.includes(decision as AskDecision)) return { ok: false as const, reason: 'decision' as const };
+    try {
+      askStore.answer(text(askId), decision as AskDecision, callOrigin() === 'web' ? 'paired' : 'window', typeof note === 'string' ? note : undefined);
+      return { ok: true as const };
+    } catch (e) {
+      if (e instanceof AskGone) return { ok: false as const, reason: 'gone' as const };
+      throw e;
+    }
+  });
   // Removing a piece of evidence is the person's action, never an agent's; the file goes and the run drops the record.
   ctx.handle('runs:evidenceDelete', (run: unknown, evidence: unknown) => r.removeEvidence(id(run), text(evidence)));
   ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined));
