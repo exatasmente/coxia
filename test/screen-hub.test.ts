@@ -2,11 +2,14 @@
 // ends a live screen (the stage, a display that stops answering, a connection that is lost). The display is a fake connection and the clock is ours.
 import { describe, expect, it, vi } from 'vitest';
 import { type FrameEncoder } from '../src/main/screen/frame';
+import type { RecorderLimits } from '../src/main/screen/recorder';
 import { BURST_GAP_MS, FRAME_MIN_MS, type ScreenHub, createScreenHub } from '../src/main/screen/hub';
 import { SCREEN_INPUT_MAX, SCREEN_INPUT_PER_SECOND } from '../src/shared/screen';
+import { readEbml } from './helpers/ebml';
+import { type FakeSink, fakeSink } from './helpers/recorderSink';
 import { type FakeConn, H, W, fakeConn } from './helpers/screen';
 
-function setup(over: { enabled?: boolean; connectFails?: boolean; encode?: FrameEncoder['encode'] } = {}) {
+function setup(over: { enabled?: boolean; connectFails?: boolean; encode?: FrameEncoder['encode']; sink?: FakeSink; limits?: Partial<RecorderLimits> } = {}) {
   const conn = fakeConn();
   const clock = { t: 1_000_000 };
   const encoded: number[] = [];
@@ -29,6 +32,7 @@ function setup(over: { enabled?: boolean; connectFails?: boolean; encode?: Frame
         }),
     },
     now: () => clock.t,
+    ...(over.sink ? { sink: () => over.sink as FakeSink, recordingLimits: over.limits } : {}),
     connect,
     changed: (run) => changed.push(run),
     note: (run, stage, code, params) => notes.push({ run, stage, code, params }),
@@ -51,7 +55,7 @@ describe('a live screen', () => {
     const s = setup();
     expect(await s.open()).toBe(true);
     expect(s.connect).toHaveBeenCalledWith('/x/X99');
-    expect(s.hub.state('r-1')).toEqual({ stage: 'qa', width: W, height: H, since: new Date(1_000_000).toISOString(), control: false });
+    expect(s.hub.state('r-1')).toEqual({ stage: 'qa', width: W, height: H, since: new Date(1_000_000).toISOString(), control: false, recording: 'stopped' });
     expect(s.hub.state('r-2')).toBeNull();
     expect(s.changed).toEqual(['r-1']);
   });
@@ -487,5 +491,162 @@ describe('bursts of input', () => {
     await s.hub.control('r-1', true);
     await s.hub.control('r-1', false);
     expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.controlOff']);
+  });
+});
+
+// The recording (spec rule 14): the one read without a watcher. A timer looks at the screen about once a second through the cache the viewer uses, and the recorder is
+// offered the picture; the person's bursts are marks; the end builds the file.
+describe('the recording of a live screen', () => {
+  /** Opens with an encoder and lets the first look at the screen (made at once, not waited for) finish. */
+  async function recording(over: { limits?: Partial<RecorderLimits>; chunkBytes?: number } = {}) {
+    const sink = fakeSink(over.chunkBytes ?? 100);
+    const s = setup({ sink, limits: over.limits });
+    await s.open();
+    await vi.waitFor(() => expect(sink.fed).toHaveLength(1));
+    /** One second goes by and the timer of the next look goes off; resolves when that look is done. */
+    const second = async (): Promise<void> => {
+      s.clock.t += 1000;
+      const due = s.timers.filter((t) => t.live && t.ms === 1000);
+      const before = s.conn.grabs;
+      for (const t of due) {
+        t.live = false;
+        t.fn();
+      }
+      await vi.waitFor(() => expect(s.conn.grabs).toBeGreaterThan(before));
+      await new Promise((r) => setTimeout(r, 0));
+    };
+    return { ...s, sink, second };
+  }
+
+  it('looks at the screen as soon as it opens, without the stage waiting for it, and the first picture is the video\'s first frame at 0', async () => {
+    const r = await recording();
+    expect(r.sink.opened).toEqual([{ width: W, height: H }]);
+    expect(r.sink.fed).toEqual([{ ts: 0, key: true, width: W, height: H }]);
+    expect(r.hub.state('r-1')).toMatchObject({ recording: 'on' });
+  });
+
+  it('feeds the encoder only when the screen changed, and reads once a second whether or not anyone watches', async () => {
+    const r = await recording();
+    await r.second();
+    await r.second();
+    expect(r.conn.grabs).toBe(3);
+    expect(r.sink.fed).toHaveLength(1);
+    r.conn.pixels.fill(9);
+    await r.second();
+    expect(r.sink.fed.map((f) => f.ts)).toEqual([0, 3000]);
+  });
+
+  it('reuses a picture a viewer read a moment ago instead of reading again, and the viewer\'s picture counts for the video', async () => {
+    const r = await recording();
+    r.conn.pixels.fill(7);
+    r.clock.t += 1000;
+    await r.hub.frame('r-1', 0, 640);
+    expect(r.conn.grabs).toBe(2);
+    // The timer goes off 300 ms after the viewer's read: the cache still holds it.
+    r.clock.t += 300;
+    const due = r.timers.filter((t) => t.live && t.ms === 1000);
+    for (const t of due) t.fn();
+    await vi.waitFor(() => expect(r.sink.fed).toHaveLength(2));
+    expect(r.conn.grabs).toBe(2);
+  });
+
+  it('does not read for a recording once the screen is over, and nothing is left to go off', async () => {
+    const r = await recording();
+    const out = await r.hub.finish('r-1');
+    expect(out?.ok).toBe(true);
+    const grabs = r.conn.grabs;
+    r.clock.t += 5000;
+    for (const t of r.timers) if (t.live) t.fn();
+    await new Promise((res) => setTimeout(res, 0));
+    expect(r.conn.grabs).toBe(grabs);
+    expect(r.conn.closed).toBe(true);
+    expect(r.timers.filter((t) => t.live && t.ms === 1000)).toEqual([]);
+  });
+
+  it('ends as a WebM of the whole stage, with the person\'s bursts as marks on the same clock', async () => {
+    const r = await recording();
+    await r.second();
+    await r.hub.control('r-1', true);
+    r.conn.pixels.fill(4);
+    await r.hub.input('r-1', [move(1, 1), { t: 'button', b: 1, down: true }, { t: 'button', b: 1, down: false }]);
+    await r.second();
+    r.clock.t += 500;
+    r.quiet();
+    await r.hub.control('r-1', false);
+    r.clock.t += 7000;
+    const out = await r.hub.finish('r-1');
+    expect(out?.ok).toBe(true);
+    if (!out?.ok) return;
+    expect(out.meta).toMatchObject({ width: W, height: H, durationMs: 9500, marks: [{ fromMs: 1000, toMs: 2000 }] });
+    expect(readEbml(out.bytes)[0].id).toBe('1a45dfa3');
+    expect(r.sink.closed).toBe(1);
+    expect(r.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used', 'runner.screen.controlOff']);
+  });
+
+  it('is built once: a second finish and a finish of a run with no screen give nothing', async () => {
+    const r = await recording();
+    expect((await r.hub.finish('r-1'))?.ok).toBe(true);
+    expect(await r.hub.finish('r-1')).toBeNull();
+    expect(await r.hub.finish('r-none')).toBeNull();
+  });
+
+  it('is thrown away by end, and its encoder with it', async () => {
+    const r = await recording();
+    r.hub.end('r-1');
+    expect(r.sink.aborted).toBe(1);
+    expect(await r.hub.finish('r-1')).toBeNull();
+    expect(r.sink.closed).toBe(0);
+  });
+
+  it('stops at its limit: the state says so, the conversation is told once, and the screen is not read for it any more', async () => {
+    const r = await recording({ chunkBytes: 400, limits: { bytes: 3000, reserve: 1200 } });
+    // Five frames of 400 bytes are 2000 of the 1800 allowed: the sixth look finds it full.
+    for (let i = 0; i < 5; i++) {
+      r.conn.pixels.fill(20 + i);
+      await r.second();
+    }
+    expect(r.hub.state('r-1')).toMatchObject({ recording: 'stopped' });
+    expect(r.notes.filter((n) => n.code === 'runner.screen.cappedSize')).toEqual([{ run: 'r-1', stage: 'qa', code: 'runner.screen.cappedSize', params: { agent: 'qa', max: '24' } }]);
+    const grabs = r.conn.grabs;
+    // A viewer still reads (the live view is not the recording); nothing else does.
+    r.clock.t += 1000;
+    await r.hub.frame('r-1', 0, 640);
+    expect(r.timers.filter((t) => t.live && t.ms === 1000)).toEqual([]);
+    expect(r.conn.grabs).toBe(grabs + 1);
+    const out = await r.hub.finish('r-1');
+    expect(out?.ok && out.meta.truncated).toBe('size');
+    expect(r.notes.filter((n) => n.code === 'runner.screen.cappedSize')).toHaveLength(1);
+  });
+
+  it('keeps the recording of a display that died, for the end of the stage to keep', async () => {
+    const r = await recording();
+    r.conn.pixels.fill(5);
+    await r.second();
+    expect(r.sink.fed).toHaveLength(2);
+    r.conn.close();
+    expect(r.hub.state('r-1')).toBeNull();
+    expect(r.sink.aborted).toBe(0);
+    r.clock.t += 4000;
+    const out = await r.hub.finish('r-1');
+    expect(out?.ok && out.meta.durationMs).toBe(5000);
+    expect(await r.hub.finish('r-1')).toBeNull();
+  });
+
+  it('says there was nothing to keep when the encoder could not start', async () => {
+    const sink = fakeSink();
+    sink.refuseOpen = true;
+    const s = setup({ sink });
+    await s.open();
+    await vi.waitFor(() => expect(s.hub.state('r-1')).toMatchObject({ recording: 'stopped' }));
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.encoderStopped']);
+    expect(await s.hub.finish('r-1')).toEqual({ ok: false, reason: 'encoder' });
+  });
+
+  it('records nothing without an encoder: no read, no recording, nothing to keep', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.finish('r-1');
+    expect(s.conn.grabs).toBe(0);
+    expect(await s.hub.finish('r-1')).toBeNull();
   });
 });

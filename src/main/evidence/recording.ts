@@ -1,4 +1,5 @@
 import { type EvidenceRecord } from '../../shared/evidence';
+import { t } from '../../shared/i18n';
 import { RECORDING_MAX_BYTES, type RecordingMeta } from '../../shared/screen';
 import type { Run } from '../../shared/runs';
 import { placeEvidence } from './store';
@@ -8,6 +9,12 @@ import { placeEvidence } from './store';
 
 /** Why a recording was not kept. */
 export type RecordingProblem = 'empty' | 'too-long' | 'not-webm' | 'write';
+
+/** Why a recording ended without a file the store could keep: the recorder's own reasons, then the store's. */
+export type NotKept = RecordingProblem | 'no-frame' | 'encoder';
+
+/** The reason, in words, for the line the conversation gets when a recording could not be kept. */
+export const notKeptText = (why: NotKept): string => t(why === 'empty' || why === 'no-frame' ? 'main.screen.notKept.noFrame' : `main.screen.notKept.${why === 'too-long' ? 'tooLong' : why === 'not-webm' ? 'notWebm' : why}`, { max: Math.round(RECORDING_MAX_BYTES / (1024 * 1024)) });
 
 /** The EBML header of a WebM file: the magic, then the DocType element (id 0x4282, one length byte 4, "webm") within the first 64 bytes. */
 const MAGIC = [0x1a, 0x45, 0xdf, 0xa3];

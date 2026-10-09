@@ -4,6 +4,10 @@
 /** The event the main process sends when a live screen opens or ends, so the run list refreshes at once. It carries the run's id and no pixels. */
 export const SCREEN_EVENT = 'runs-screen';
 
+/** The channels between the main process and the hidden window that encodes the recording. They are not served to the main window or to a paired browser. */
+export const SCREEN_ENCODER_COMMAND = 'screen-encoder:command';
+export const SCREEN_ENCODER_EVENT = 'screen-encoder:event';
+
 /** What the app's own recording of a screen says about itself: kept on the evidence record, so the player knows the length and where the person took over. */
 export interface RecordingMeta {
   /** Recorded time: the stage's time on the screen, including the still stretches in which no frame was fed. */
@@ -21,6 +25,18 @@ export const RECORDING_MARKS_MAX = 200;
 
 /** The largest recording the app keeps: its own ceiling, since the 8 MiB of a piece of evidence does not fit a video. */
 export const RECORDING_MAX_BYTES = 24 * 1024 * 1024;
+/** The longest recorded time: past it the recording stops and says so. */
+export const RECORDING_MAX_MS = 60 * 60 * 1000;
+/** How often the screen is looked at for the recording, and the least time between two frames that are fed (a little under the interval, so a timer's jitter never costs a frame). */
+export const RECORDING_INTERVAL_MS = 1000;
+export const RECORDING_MIN_GAP_MS = 900;
+/** The target bit rate of the video, and how far apart the key frames are (a seek never decodes more than this). */
+export const RECORDING_BITRATE = 250_000;
+export const RECORDING_KEY_MS = 10_000;
+/** Kept free below the ceiling for the frames still in the encoder and for the container's own bytes. */
+export const RECORDING_RESERVE_BYTES = 1024 * 1024;
+/** An interval of the person's use of the screen is marked at least this wide, so a single click is a mark that can be seen and hit. */
+export const RECORDING_MARK_MIN_MS = 1000;
 
 /** What a run handed out carries while its working stage has a live screen. Filled by the runner when it hands the run out and never saved. */
 export interface LiveScreen {
@@ -32,6 +48,8 @@ export interface LiveScreen {
   since: string;
   /** Someone is controlling it from the desktop. */
   control: boolean;
+  /** The screen is being recorded as evidence of the stage; `stopped` once a limit was reached (or the encoder failed): what came before is still kept. */
+  recording: 'on' | 'stopped';
 }
 
 /**

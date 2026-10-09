@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'">
+<title>Coxia screen encoder</title>
+</head>
+<body>
+<script>
+// The page of the hidden window that encodes the screen recording. It keeps one VideoEncoder (VP8) per recording and does what the main process says: open, encode a
+// frame at the time it is given, flush, close. It reads nothing, loads nothing and talks only through the bridge. A frame is raw blue-green-red pixels.
+const encoders = new Map();
+const send = (m) => window.enc.send(m);
+
+async function open(m) {
+  try {
+    const config = { codec: 'vp8', width: m.width, height: m.height, bitrate: m.bitrate, framerate: m.framerate, latencyMode: 'quality' };
+    const support = await VideoEncoder.isConfigSupported(config);
+    if (!support.supported) return send({ ev: 'opened', rec: m.rec, ok: false });
+    const encoder = new VideoEncoder({
+      output: (chunk) => {
+        const data = new Uint8Array(chunk.byteLength);
+        chunk.copyTo(data);
+        send({ ev: 'chunk', rec: m.rec, ts: Math.round(chunk.timestamp / 1000), key: chunk.type === 'key', data });
+      },
+      error: (e) => send({ ev: 'error', rec: m.rec, message: String(e && e.message) }),
+    });
+    encoder.configure(config);
+    encoders.set(m.rec, encoder);
+    send({ ev: 'opened', rec: m.rec, ok: true });
+  } catch (e) {
+    send({ ev: 'opened', rec: m.rec, ok: false });
+  }
+}
+
+function frame(m) {
+  const encoder = encoders.get(m.rec);
+  if (!encoder) return;
+  try {
+    // A frame the encoder is too far behind to take is told to main, which keeps its clock and offers the picture again.
+    if (encoder.encodeQueueSize > 4) return send({ ev: 'dropped', rec: m.rec });
+    const video = new VideoFrame(m.data, { format: 'BGRX', codedWidth: m.width, codedHeight: m.height, timestamp: m.ts * 1000 });
+    encoder.encode(video, { keyFrame: m.key });
+    video.close();
+  } catch (e) {
+    send({ ev: 'error', rec: m.rec, message: String(e && e.message) });
+  }
+}
+
+async function flush(m) {
+  const encoder = encoders.get(m.rec);
+  if (!encoder) return send({ ev: 'flushed', rec: m.rec, ok: false });
+  try {
+    await encoder.flush();
+    send({ ev: 'flushed', rec: m.rec, ok: true });
+  } catch (e) {
+    send({ ev: 'flushed', rec: m.rec, ok: false });
+  }
+}
+
+function close(m) {
+  const encoder = encoders.get(m.rec);
+  encoders.delete(m.rec);
+  try {
+    if (encoder && encoder.state !== 'closed') encoder.close();
+  } catch (e) {
+    // Already closed.
+  }
+}
+
+window.enc.onCommand((m) => {
+  if (!m || typeof m !== 'object') return;
+  if (m.op === 'open') void open(m);
+  else if (m.op === 'frame') frame(m);
+  else if (m.op === 'flush') void flush(m);
+  else if (m.op === 'close') close(m);
+});
+send({ ev: 'ready' });
+</script>
+</body>
+</html>

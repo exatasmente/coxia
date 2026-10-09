@@ -28,6 +28,8 @@ import { docsFlowOf } from '../../shared/config/squads';
 import { runThreadId } from '../../shared/forum';
 import { SCREEN_EVENT } from '../../shared/screen';
 import { type NativeImageLike, createFrameEncoder } from '../screen/frame';
+import { type EncoderHost, createEncoderHost } from '../screen/encoderHost';
+import { realEncoderEnv } from '../screen/encoderWindow';
 import { type ScreenHub, createScreenHub } from '../screen/hub';
 import { type GateAction, type IssueSource, type Runner, RunnerError, createRunner } from './service';
 
@@ -66,12 +68,16 @@ let current: Runner | null = null;
 export const runner = (): Runner | null => current;
 
 let screens: ScreenHub | null = null;
+let encoders: EncoderHost | null = null;
 
 /** The live screens of this process's runner; null until the module registered. */
 export const screenHub = (): ScreenHub | null => screens;
 
 /** The app is closing: no live screen is read or sent to after this. */
-export const endLiveScreens = (): void => screens?.endAll();
+export const endLiveScreens = (): void => {
+  screens?.endAll();
+  encoders?.shutdown();
+};
 
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 const id = (v: unknown): string => {
@@ -101,9 +107,13 @@ export const runsModule: Module = (ctx) => {
   sandbox.purge();
   // The agents' virtual screens (Linux only). A frame goes to the viewer that asked for it, never through `emit`, which reaches every paired browser: the one event is
   // that a screen opened or ended, with no pixels, so the run list refreshes at once.
+  // The recording's encoder is one hidden window shared by every recording; it is made at the first one and closed a while after the last.
+  const encoderHost = createEncoderHost(realEncoderEnv());
+  encoders = encoderHost;
   const hub = createScreenHub({
     enabled: process.platform === 'linux',
     encoder: createFrameEncoder({ nativeImage: nativeImage as unknown as NativeImageLike }),
+    sink: () => encoderHost.sink(),
     changed: (run) => ctx.emit({ type: 'module', name: SCREEN_EVENT, payload: { run } }),
     // The conversation says when the person took control of the screen and what they did with it: written by the app, never by the agent.
     note: (run, stage, code, params) => {

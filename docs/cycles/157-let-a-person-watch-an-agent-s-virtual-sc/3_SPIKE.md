@@ -86,3 +86,21 @@ Run after the input was written, with the app's real hub, input planner and X cl
 ## What changes in the plan
 
 Nothing in the design. Recorded decisions: frames by `GetImage` (about 50 ms); VP8 by `VideoEncoder` in a hidden window; JPEG 1280/q75 and 640/q60; `data:` for frames and `blob:` for the video; caps unchanged. One fact the plan did not have: the pad byte is `0` and does not change the JPEG, so the alpha fix is a safety for the hash, not for the picture.
+
+## The recording with the app's own code (commit 7)
+
+Run on 2026-10-08, after the recorder was written, on a throwaway `Xvfb` (1280x800x24, no TCP) with the repository's Electron 44. Nothing touched the app's data; the harness was a throwaway outside the tree, the app's code bundled into it unchanged (the hub, the recorder, the muxer, the encoder host and the real hidden encoder window, with its page and its bridge).
+
+A visible window drew on the display (a counter and a table that scrolled once a second for 9 s). The hub opened the display like a `shell: host` stage, a still stretch of 6 s followed, then Take control with a pointer move and a click, then 5 more changes, then `finish`.
+
+- The hidden window started, said it was ready, took the encoder for 1280x800 and returned chunks; `finish` gave a 407,240-byte file, `durationMs` 21,556, one mark of 1 s at 15,047 ms (the person's burst, widened to the minimum of 1 s), and the three conversation lines in order (control on, the burst, control off).
+- **`ffprobe`:** `format_name=matroska,webm`, `duration=21.556000`, one stream `vp8` 1280x800, 14 packets. The key frames are at 0 s and 17.4 s: the idle stretch from 8.2 s to 17.4 s fed no frame and is a gap between two times, and the second key frame is the first frame fed after 10 s since the last one, as the recorder forces. **`ffmpeg -i out.webm -f null -` decodes it with no error.** Frames pulled out at 12 s (the still screen, the table scrolled to its row 10) and at 20 s (row 15) show the right picture.
+- **In a `<video>` in a throwaway Electron window**, under the desktop's `<meta>` policy (`media-src 'self' blob:`): metadata loaded, `duration` 21.556, `videoWidth x videoHeight` 1280x800, `seekable` the whole 0 to 21.556 s. Seeks to 12 s (inside the idle gap), 20 s, 3 s, 17.5 s, 21.4 s (after the last frame) and 0.5 s all fired `seeked` at the time asked, with a picture drawn each time (non-blank on a canvas); `play()` advanced 2.498 s in 2.5 s of wall time.
+- So the muxer's real output, written by the app's own code from the helper window's real encoder, plays and **seeks** in Chromium, which phase A had only shown for an ffmpeg-remuxed file. The layout that does it: the SeekHead (Info, Tracks, Cues by offset), `Duration` as a float64 in ms, one cluster per key frame (and one more after 30 s of delta frames), one cue per key-frame cluster, Cues at the end.
+- **Not tested:** a phone's browser. The encoded stream is VP8 in WebM, which every Chromium and Firefox plays; the download link stays the way out.
+
+What the plan had that changed in the code, none of it in the design:
+
+- The page of the encoder is `resources/encoder.html` (shipped as an extra resource, loaded with `loadFile`), not `src/main/screen/encoder.html` with `?asset`: the repository has no `?asset` imports, and `resources/` already ships outside the archive. `isSecureContext` stays true for a file loaded this way (S3).
+- The encoder's logic is `encoderHost.ts` (pure, with the window and the channel injected, tested with a fake window) and `encoderWindow.ts` is the thin Electron part, so the file the plan called `encoderWindow.ts` is two.
+- The recording's post in the conversation is internal, not public: the tracker comment of a stage is linked to the latest public message of the stage (`markPublished`), which a recording must never become.
