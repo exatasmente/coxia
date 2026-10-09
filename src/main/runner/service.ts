@@ -350,14 +350,17 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
     void done;
     const media = evidenceViewOf(record).media;
+    // The app's own recording of the screen is the app's: its post is authored by the app, internal (the stage's tracker comment is linked to the latest public
+    // message of the stage, which a recording must never become) and carries the video for the player.
+    const own = !!record.recording;
     const messages = deps.forum.append(runThreadId(runId), {
       kind: 'post',
-      author: { type: 'agent', id: record.by },
-      code: 'runner.evidence.kept',
-      params: { title: record.title, kind: record.kind, description: record.description, id: record.id },
+      author: own ? { type: 'app' } : { type: 'agent', id: record.by },
+      code: own ? 'runner.evidence.recorded' : 'runner.evidence.kept',
+      params: { title: record.title, kind: record.kind, description: record.description, id: record.id, ...(own ? { agent: record.by } : {}) },
       evidence: [{ id: record.id, name: record.name, media, bytes: record.bytes }],
       stage: record.stage,
-      public: true,
+      public: !own,
     });
     return messages[0] ?? null;
   }

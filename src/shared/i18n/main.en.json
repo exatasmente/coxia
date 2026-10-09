@@ -1497,6 +1497,7 @@
   "main.forum.code.runner.screen.controlOn": "A person took control of the screen of {agent}'s stage from the desktop: clicks and keys now go to that screen. {agent}'s commands keep running.",
   "main.forum.code.runner.screen.controlOff": "The person gave the screen of {agent}'s stage back.",
   "main.forum.code.runner.screen.used": "The person used the screen of {agent}'s stage from {from} to {to}. What happened on it in that time is not {agent}'s doing.",
+  "main.forum.code.runner.evidence.recorded": "The app recorded the screen of {agent}'s stage. The video shows what was on that screen, including what a person did on it; the marks on its timeline say when.",
   "main.forum.code.run.stage.wait.release-approved": "Stage {stage}: waiting for every {crLong} of the release to be merged into its branch.",
   "main.forum.code.run.stage.wait.beta-age": "Stage {stage}: waiting for the beta to be out for {minutes} minutes with no issue labelled \"{label}\" open.",
   "main.forum.code.wait.done.release-approved": "{stage}: every {crLong} of the release is merged.",

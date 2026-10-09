@@ -176,7 +176,8 @@ export function stageResume(run: Run, stage: FlowStage, agent: string, thread: F
     why,
     done: stage.artifacts.filter((name) => existsSync(join(wt, run.cycleFolder, name))),
     evidence: Object.values(run.evidence ?? {})
-      .filter((e) => e.stage === stage.id)
+      // The app's own screen recording is not the agent's to cite: it is left out of what the agent is told it kept.
+      .filter((e) => e.stage === stage.id && !e.recording)
       .map((e) => ({ id: e.id, title: e.title })),
     previous: report?.text.trim() || null,
   };
@@ -929,7 +930,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const output = readOutput(data, kind);
   // The evidence ids the stage cites are kept only when this stage really kept them (or, for a QA pass, cites them beside its scenarios): an unknown id is told
   // in the conversation and dropped, never taken as proof of anything.
-  const known = new Set([...keptIds, ...Object.keys(run.evidence ?? {})]);
+  // The app's own screen recording of an earlier attempt is not among them: the agent cannot cite it, so an id of it is unknown like any other.
+  const known = new Set([...keptIds, ...Object.values(run.evidence ?? {}).filter((e) => !e.recording).map((e) => e.id)]);
   const cited = output.evidence.filter((id) => known.has(id));
   const unknownEvidence = output.evidence.filter((id) => !known.has(id));
   output.evidence = cited;

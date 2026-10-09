@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createRunStore } from '../src/main/runs-core';
-import { RunError, cancel, gateApprove, resumeAfterRestart, stageDone, startRun } from '../src/shared/runs';
+import { RunError, cancel, gateApprove, parseRun, recordEvidence, resumeAfterRestart, stageDone, startRun } from '../src/shared/runs';
+import type { EvidenceRecord } from '../src/shared/evidence';
 import { agentFlowStages, at, startInput } from './helpers/runs';
 
 let dir: string;
@@ -123,5 +124,41 @@ describe('the run store', () => {
     mkdirSync(join(dir, '..'), { recursive: true });
     expect(createRunStore(dir).list()).toEqual([]);
     expect(existsSync(dir)).toBe(false);
+  });
+});
+
+// The record of the app's own screen recording (#157): the marks and the removal by retention live on the evidence record, bounded like the rest of the file.
+describe('the record of a screen recording', () => {
+  const piece: EvidenceRecord = { id: 'ev-1', stage: 'qa', by: 'qa', title: 'Screen recording', description: '', name: 'screen-recording.webm', kind: 'webm', bytes: 100, at: at(2), from: null, message: null, recording: { durationMs: 9000, width: 1280, height: 800, truncated: 'size', marks: [{ fromMs: 1000, toMs: 3000 }] } };
+
+  it('is kept by the store and read back as it was, also once retention marked it removed', () => {
+    const store = createRunStore(dir);
+    const run = store.create(fresh());
+    store.update(run.id, (r) => recordEvidence(r, piece, at(2)));
+    expect(store.get(run.id)?.evidence?.['ev-1']).toEqual(piece);
+    store.update(run.id, (r) => recordEvidence(r, { ...piece, removed: 'retention' }, at(3)));
+    expect(store.get(run.id)?.evidence?.['ev-1']).toEqual({ ...piece, removed: 'retention' });
+  });
+
+  it('is bounded: more marks than the cap, a removal reason that is not retention and a mark with no end are not believed', () => {
+    const base = JSON.parse(JSON.stringify(fresh()));
+    const withPiece = (edit: (p: Record<string, any>) => void) => {
+      const p = JSON.parse(JSON.stringify(piece));
+      edit(p);
+      return parseRun({ ...base, evidence: { 'ev-1': p } });
+    };
+    expect(withPiece(() => undefined).ok).toBe(true);
+    expect(withPiece((p) => (p.recording.marks = Array.from({ length: 200 }, (_, i) => ({ fromMs: i, toMs: i + 1 })))).ok).toBe(true);
+    expect(withPiece((p) => (p.recording.marks = Array.from({ length: 201 }, (_, i) => ({ fromMs: i, toMs: i + 1 })))).ok).toBe(false);
+    expect(withPiece((p) => (p.removed = 'someone')).ok).toBe(false);
+    expect(withPiece((p) => (p.recording.marks = [{ fromMs: 1 }])).ok).toBe(false);
+    expect(withPiece((p) => (p.recording.truncated = 'never')).ok).toBe(false);
+    expect(withPiece((p) => (p.kind = 'mp4')).ok).toBe(false);
+  });
+
+  it('is not required: a piece with neither field reads as it always did', () => {
+    const plain = { id: 'ev-1', stage: 'qa', by: 'qa', title: 'A shot', description: '', name: 'a.png', kind: 'png', bytes: 10, at: at(2), from: null, message: null };
+    const parsed = parseRun({ ...JSON.parse(JSON.stringify(fresh())), evidence: { 'ev-1': plain } });
+    expect(parsed.ok && parsed.run.evidence?.['ev-1']).toEqual(plain);
   });
 });

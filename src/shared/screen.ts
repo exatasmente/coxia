@@ -4,6 +4,24 @@
 /** The event the main process sends when a live screen opens or ends, so the run list refreshes at once. It carries the run's id and no pixels. */
 export const SCREEN_EVENT = 'runs-screen';
 
+/** What the app's own recording of a screen says about itself: kept on the evidence record, so the player knows the length and where the person took over. */
+export interface RecordingMeta {
+  /** Recorded time: the stage's time on the screen, including the still stretches in which no frame was fed. */
+  durationMs: number;
+  width: number;
+  height: number;
+  /** The recording stopped at a limit and holds only what came before it. */
+  truncated?: 'size' | 'time';
+  /** The intervals in which the person used the screen, in ms from the start of the recording. */
+  marks: { fromMs: number; toMs: number }[];
+}
+
+/** The most marks a recording keeps: a stage the person controls many times over keeps the first ones. */
+export const RECORDING_MARKS_MAX = 200;
+
+/** The largest recording the app keeps: its own ceiling, since the 8 MiB of a piece of evidence does not fit a video. */
+export const RECORDING_MAX_BYTES = 24 * 1024 * 1024;
+
 /** What a run handed out carries while its working stage has a live screen. Filled by the runner when it hands the run out and never saved. */
 export interface LiveScreen {
   stage: string;
