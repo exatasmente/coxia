@@ -34,7 +34,7 @@ import { reposOnDisk, runRepo, type MentionPlace } from './place';
 import { type DocsAsk, runDocsAsk, stageOfRun } from '../harness/deliver';
 import type { ProceduresPort } from '../procedures/port';
 import type { ProcedureOffers } from '../procedures/offers';
-import { runWrapUp } from '../procedures/wrapup';
+import { raiseOffers, runWrapUp } from '../procedures/wrapup';
 import { procedureScreen } from '../procedures/screen';
 import type { ProcedureSession } from '../procedures/session';
 
@@ -400,7 +400,12 @@ function giveLastTurn(deps: MentionDeps, session: ProcedureSession, ports: Scree
       } catch {
         // a screen that is gone has no mark: its turn is the first
       }
-      if (offers.turned(key, mark)) return false;
+      // The turn was given already for this screen at this mark: no second one, but the card is refreshed from what this answer drafted (the store replaces it by thread,
+      // agent, kind and key). The commands of the answer are in the plan as well, and are offered too.
+      if (offers.turned(key, mark)) {
+        raiseOffers({ offers }, { plan, agent: w.agent, session, thread: w.place.thread, ...(w.stage ? { stage: w.stage } : {}) });
+        return false;
+      }
     }
     // The call's typed values are forgotten when its answer ends, which comes before the turn does: the turn keeps a copy in memory, and forgets it when it is over.
     session.freezeTyped();

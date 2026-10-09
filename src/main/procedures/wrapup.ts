@@ -107,7 +107,7 @@ export async function runWrapUp(deps: WrapUpDeps, run: WrapUpRun): Promise<void>
     await give(deps, run);
     // A Cancel while the turn ran is the work's cancel: nothing is offered for work that was stopped.
     if (run.abort?.aborted) return;
-    offer(deps, run);
+    raiseOffers(deps, run);
   } catch (e) {
     console.error('[procedures] the last turn failed', redact(e instanceof Error ? e.message : String(e)).slice(0, 300));
   }
@@ -158,8 +158,11 @@ async function give(deps: WrapUpDeps, run: WrapUpRun): Promise<void> {
   }
 }
 
-/** The drafts the turn left, as offers. A draft that does not pass the checks of a card is dropped, and one that fails to raise does not stop the next. */
-function offer(deps: WrapUpDeps, run: WrapUpRun): void {
+/**
+ * The drafts a plan left, as offers. A draft that does not pass the checks of a card is dropped, and one that fails to raise does not stop the next. A conversation answer
+ * whose screen already had its turn calls this alone, to refresh the card from what the newer answer drafted.
+ */
+export function raiseOffers(deps: Pick<WrapUpDeps, 'offers'>, run: Pick<WrapUpRun, 'plan' | 'agent' | 'session' | 'thread' | 'stage' | 'home'>): void {
   for (const draft of run.plan.settle()) {
     try {
       if (!cardable(draft, run.home)) continue;

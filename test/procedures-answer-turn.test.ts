@@ -167,11 +167,15 @@ describe('an answer that fought a command and kept nothing', () => {
     await answerMentions(place(), say(), d);
     await settled();
     expect(turnCalls(engine)).toHaveLength(1);
+    const first = offers.list()[0];
     await answerMentions(place(), say(), d);
     await settled();
-    // more steps, same mark: the card is waiting for the person and no new turn is spent
+    // more steps, same mark: the card is waiting for the person and no new turn is spent, but the card is refreshed from the newer answer
     expect(turnCalls(engine)).toHaveLength(1);
     expect(offers.list()).toHaveLength(1);
+    expect(offers.list()[0].offerId).not.toBe(first.offerId);
+    expect(offers.list()[0].steps.length).toBeGreaterThan(first.steps.length);
+    expect(codes().filter((c) => c === 'runner.procedures.offered')).toHaveLength(1);
     expect(offers.list()[0]).toMatchObject({ kind: 'gui', key: 'docs.example.com', screen: true });
     // the person said no: the mark moved and the next answer's steps earn a turn again
     expect(offers.decline(offers.list()[0].offerId)).toEqual({ ok: true });
