@@ -22,17 +22,26 @@ describe('web policy for the procedures channels', () => {
     expect(webRefusal(channel, false)).toBeNull();
   });
 
-  it.each([...WRITES, 'procedures:made-up', 'procedures:', 'procedures:listAll', 'procedures:get2', 'procedures:stats:x'])('denies %s, with or without the external-effects switch', (channel) => {
+  it.each([...WRITES, ...OFFERS, 'procedures:offer', 'procedures:offers:all', 'procedures:offer-keep:o-00000001', 'procedures:made-up', 'procedures:', 'procedures:listAll', 'procedures:get2', 'procedures:stats:x'])('denies %s, with or without the external-effects switch', (channel) => {
     expect(webAccess(channel)).toBe('deny');
     expect(webRefusal(channel, false)).not.toBeNull();
     expect(webRefusal(channel, true)).not.toBeNull();
   });
 
   it('closes the prefix by a pattern, not by an entry: none is in a set by name', () => {
-    for (const channel of [...READS, ...WRITES]) {
+    for (const channel of [...READS, ...WRITES, ...OFFERS]) {
       expect(DESKTOP_ONLY.has(channel), channel).toBe(false);
       expect(EXTERNAL_EFFECT.has(channel), channel).toBe(false);
     }
+  });
+
+  it('keeps the card of an offer to keep a procedure off a paired browser: it cannot list it, keep it or decline it', () => {
+    // A record is read by every agent of the workspace, so a yes from a stolen paired browser would plant text in every prompt; a no was kept off the phone too.
+    for (const channel of OFFERS) {
+      expect(webAccess(channel), channel).toBe('deny');
+      expect(webRefusal(channel, true), channel).not.toBeNull();
+    }
+    expect(webAccess('runs:handoffDecline')).toBe('allow');
   });
 
   it('does not mistake a channel that only has procedures in its name for one of them', () => {
