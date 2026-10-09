@@ -166,7 +166,7 @@ export function buildActivities(served: Resolved): string {
 
 /** The procedures the agents learned (#179's store, listed the way its own view lists them; never the steps). */
 export function buildProcedures(served: Resolved, args: ToolArgs): string {
-  const store = createProcedureStore(served.dir);
+  const store = createProcedureStore(served.dir, { readOnly: true });
   if (typeof args.id === 'string' && args.id) {
     const got = store.get(args.id);
     if (got.status === 'ok') return JSON.stringify({ procedures: [shapeProcedure(got.record)] }, null, 1);

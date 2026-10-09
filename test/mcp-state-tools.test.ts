@@ -1,6 +1,6 @@
 // The reads of the state server, pure over a fixture workspace's data folder: the shapes each read answers, the isolation from another
 // workspace, the masking of planted secret shapes, and the freshness (a change between two calls is answered).
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -8,7 +8,7 @@ import { buildActivities, buildCycles, resolveWorkspace, stateTools, type ToolAr
 import { createBoardStore } from '../src/main/board-core';
 import { createForumStore } from '../src/main/forum-core';
 import { createRunStore } from '../src/main/runs-core';
-import { createProcedureStore } from '../src/main/procedures/store';
+import { createProcedureStore, proceduresPath } from '../src/main/procedures/store';
 import { emptyIndex, frontOfActivity, writeIndex } from '../src/main/runner/activities';
 import { runThreadId, type ForumDraft } from '../src/shared/forum';
 import { RUN_ID, type Run } from '../src/shared/runs';
@@ -220,6 +220,22 @@ describe('the procedures read', () => {
     expect(saved.ok).toBe(true);
     expect(tool('coxia_state_procedures')).toContain('Learned procedure');
     expect(tool('coxia_state_procedures', { id: 'p-99999999' })).toContain('No such procedure');
+  });
+
+  it('never writes the procedures folder: a stale temporary file is still there after the read', () => {
+    makeWorkspaces();
+    const dir = join(root, 'workspaces', servedId);
+    createProcedureStore(dir, {}).save({
+      input: { kind: 'repo', key: 'api', title: 'Learned procedure', steps: [{ text: 'Do the thing' }], pitfalls: [], waits: [] },
+      writer: { by: 'dev', surface: 'stage', stage: 'implement' },
+      repos: ['api'],
+    });
+    const stale = join(proceduresPath(dir), 'p-00000001.json.tmp-4242');
+    writeFileSync(stale, '{');
+    const old = (Date.now() - 2 * 3600_000) / 1000;
+    utimesSync(stale, old, old);
+    expect(tool('coxia_state_procedures')).toContain('Learned procedure');
+    expect(existsSync(stale)).toBe(true);
   });
 });
 
