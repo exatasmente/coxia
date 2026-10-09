@@ -60,6 +60,18 @@ describe('what is fed', () => {
     expect(sink.fed[1].key).toBe(false);
   });
 
+  it('starts the video at the first frame that was taken: a dropped first frame does not leave it starting late (#176)', async () => {
+    const { sink, rec } = setup();
+    sink.behind = 1;
+    expect(await rec.add(frameOf(1), 'a', T0)).toBe('dropped');
+    expect(await rec.add(frameOf(2), 'b', T0 + 2000)).toBe('fed');
+    expect(await rec.add(frameOf(3), 'c', T0 + 3000)).toBe('fed');
+    expect(sink.fed.map((f) => f.ts)).toEqual([0, 1000]);
+    expect(sink.fed[0].key).toBe(true);
+    const out = await rec.finish(T0 + 3500);
+    expect(out.ok && out.meta.durationMs).toBe(1500);
+  });
+
   it('ends at a picture of another size than the one the encoder was started with, and keeps what came before', async () => {
     const { sink, rec } = setup();
     await rec.add(frameOf(1), 'a', T0);

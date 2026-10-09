@@ -70,7 +70,9 @@ export interface RecorderLimits {
 export function createRecorder(deps: { sink: RecorderSink; limits?: Partial<RecorderLimits> }): Recorder {
   const sink = deps.sink;
   const limits: RecorderLimits = { bytes: RECORDING_MAX_BYTES, ms: RECORDING_MAX_MS, reserve: RECORDING_RESERVE_BYTES, ...deps.limits };
+  // The stage's time of the first frame that was fed: set only when the encoder took one, so a dropped first frame does not leave the video starting late.
   let start: number | null = null;
+  let opened = false;
   let size: { width: number; height: number } | null = null;
   let lastTs = -1;
   // The stage's time of the last frame fed (from the start), what has been cut out so far and where.
@@ -101,15 +103,16 @@ export function createRecorder(deps: { sink: RecorderSink; limits?: Partial<Reco
 
   async function offer(frame: RawFrame, hash: string, at: number): Promise<AddResult> {
     if (stopped || ending || aborted) return 'stopped';
-    if (start === null) {
+    if (!opened) {
       size = { width: frame.width, height: frame.height };
       if (!(await sink.open(frame.width, frame.height))) {
         stop('encoder', at);
         return 'stopped';
       }
-      start = at;
+      opened = true;
     }
-    const real = Math.max(0, at - start);
+    const origin = start ?? at;
+    const real = Math.max(0, at - origin);
     // The encoder is configured for one size; a picture of another (the display was resized) cannot be fed, so the recording ends there, with what came before.
     if (size && (frame.width !== size.width || frame.height !== size.height)) {
       stop('resized', at);
@@ -139,6 +142,7 @@ export function createRecorder(deps: { sink: RecorderSink; limits?: Partial<Reco
       }
       return 'dropped';
     }
+    start ??= at;
     lastTs = ts;
     lastReal = real;
     if (cut > 0) {
