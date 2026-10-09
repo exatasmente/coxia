@@ -1,0 +1,119 @@
+// The live screen of an agent's virtual display (#157): what a run carries while its working stage has one, what the viewer asks and is answered, what the person's
+// input looks like on the wire and the limits both sides hold to. Pure, so the renderer and the main process read the same constants.
+
+/** The event the main process sends when a live screen opens or ends, so the run list refreshes at once. It carries the run's id and no pixels. */
+export const SCREEN_EVENT = 'runs-screen';
+
+/** The channels between the main process and the hidden window that encodes the recording. They are not served to the main window or to a paired browser. */
+export const SCREEN_ENCODER_COMMAND = 'screen-encoder:command';
+export const SCREEN_ENCODER_EVENT = 'screen-encoder:event';
+
+/** What the app's own recording of a screen says about itself: kept on the evidence record, so the player knows the length and where the person took over. */
+export interface RecordingMeta {
+  /** Recorded time: the stage's time on the screen, including the still stretches in which no frame was fed. */
+  durationMs: number;
+  width: number;
+  height: number;
+  /** The recording stopped at a limit and holds only what came before it. */
+  truncated?: 'size' | 'time';
+  /** The intervals in which the person used the screen, in ms from the start of the recording. */
+  marks: { fromMs: number; toMs: number }[];
+}
+
+/** The most marks a recording keeps: a stage the person controls many times over keeps the first ones. */
+export const RECORDING_MARKS_MAX = 200;
+
+/** The largest recording the app keeps: its own ceiling, since the 8 MiB of a piece of evidence does not fit a video. */
+export const RECORDING_MAX_BYTES = 24 * 1024 * 1024;
+/** The longest recorded time: past it the recording stops and says so. */
+export const RECORDING_MAX_MS = 60 * 60 * 1000;
+/** How often the screen is looked at for the recording, and the least time between two frames that are fed (a little under the interval, so a timer's jitter never costs a frame). */
+export const RECORDING_INTERVAL_MS = 1000;
+export const RECORDING_MIN_GAP_MS = 900;
+/** The target bit rate of the video, and how far apart the key frames are (a seek never decodes more than this). */
+export const RECORDING_BITRATE = 250_000;
+export const RECORDING_KEY_MS = 10_000;
+/** Kept free below the ceiling for the frames still in the encoder and for the container's own bytes. */
+export const RECORDING_RESERVE_BYTES = 1024 * 1024;
+/** An interval of the person's use of the screen is marked at least this wide, so a single click is a mark that can be seen and hit. */
+export const RECORDING_MARK_MIN_MS = 1000;
+
+/** What a run handed out carries while its working stage has a live screen. Filled by the runner when it hands the run out and never saved. */
+export interface LiveScreen {
+  stage: string;
+  /** The screen's own size in pixels, for mapping the pointer. */
+  width: number;
+  height: number;
+  /** ISO time the screen opened. */
+  since: string;
+  /** Someone is controlling it from the desktop. */
+  control: boolean;
+  /** The screen is being recorded as evidence of the stage; `stopped` once a limit was reached (or the encoder failed): what came before is still kept. */
+  recording: 'on' | 'stopped';
+}
+
+/**
+ * The answer to a viewer that asks for the latest frame: no live screen (the stage ended, or there never was one); the same picture as the sequence number it holds;
+ * or a newer one. `screen` is the display's own size, which the pointer is mapped to; `width` and `height` are the picture's.
+ */
+export type ScreenFrameAnswer =
+  | { state: 'none' }
+  | { state: 'same'; seq: number; control: boolean }
+  | { state: 'frame'; seq: number; width: number; height: number; screen: { width: number; height: number }; jpeg: Uint8Array; control: boolean };
+
+/** The widths a viewer may ask for: clamped to this range in steps, so the encoder holds a bounded number of pictures. */
+export const SCREEN_FRAME_MIN_WIDTH = 320;
+export const SCREEN_FRAME_MAX_WIDTH = 1280;
+export const SCREEN_FRAME_STEP = 80;
+/** The width the desktop asks for and the one the phone asks for. */
+export const SCREEN_WIDTH_DESKTOP = 1280;
+export const SCREEN_WIDTH_PHONE = 640;
+
+export function clampFrameWidth(width: unknown): number {
+  if (typeof width !== 'number' || !Number.isFinite(width)) return SCREEN_FRAME_MAX_WIDTH;
+  const stepped = Math.round(width / SCREEN_FRAME_STEP) * SCREEN_FRAME_STEP;
+  return Math.min(SCREEN_FRAME_MAX_WIDTH, Math.max(SCREEN_FRAME_MIN_WIDTH, stepped));
+}
+
+/** One input event from the viewer: pointer position in the screen's own pixels, buttons, wheel notches and keys. */
+export type ScreenInput =
+  | { t: 'move'; x: number; y: number }
+  | { t: 'button'; b: 1 | 2 | 3; down: boolean }
+  /** Wheel notches, signed: positive scrolls down. */
+  | { t: 'scroll'; dy: number }
+  /** A `KeyboardEvent.key`: a name such as `Enter`, or one character. */
+  | { t: 'key'; key: string; down: boolean };
+
+/** The answer to Take control on or off: `none` is a run with no live screen (the stage ended). */
+export interface ScreenControlAnswer {
+  ok: boolean;
+  reason?: 'none';
+}
+
+/**
+ * The answer to a batch of input: `delivered` events of the viewer reached the screen, `rejected` did not (a shape or a key the screen has no key for, past the limits).
+ * `reason` says why nothing was sent at all: no live screen, or Take control is off.
+ */
+export interface ScreenInputAnswer {
+  ok: boolean;
+  delivered: number;
+  rejected: number;
+  reason?: 'none' | 'off';
+}
+
+/** Most events one call carries. */
+export const SCREEN_INPUT_MAX = 64;
+/** Most events accepted for a run in one second. */
+export const SCREEN_INPUT_PER_SECOND = 200;
+/** Longest `key` a call may carry. */
+export const SCREEN_KEY_MAX = 32;
+/** Most wheel notches one scroll event turns into. */
+export const SCREEN_SCROLL_NOTCHES_MAX = 5;
+
+/**
+ * The chord that leaves Take control from the keyboard: Control, Alt and Shift held with Escape. The viewer acts on it and the main process never sends it to the
+ * screen either, so a person is never stuck inside the agent's screen.
+ */
+export function isExitChord(key: string, held: { ctrl: boolean; alt: boolean; shift: boolean }): boolean {
+  return key === 'Escape' && held.ctrl && held.alt && held.shift;
+}

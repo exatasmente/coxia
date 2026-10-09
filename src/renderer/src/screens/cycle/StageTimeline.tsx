@@ -7,6 +7,7 @@ import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import { ArtifactView } from './ArtifactView';
+import { LiveScreen } from './LiveScreen';
 import { WAIT_KEY, agentName, agentRole } from './names';
 import { runsApi } from './runsApi';
 
@@ -114,6 +115,9 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
   const agent = stage.agent;
   // What the stage's agent does when it is entered: the record keeps what it was then; a stage not entered yet shows what it would be now.
   const autonomous = record ? record.autonomous : stage.autonomous;
+  // The agent's virtual screen, while this is the stage working on one. A viewer that is open stays when the stage ends, so it can say so.
+  const [watching, setWatching] = useState(false);
+  const hasScreen = row.current && state === 'running' && run.screen?.stage === stage.id;
   return (
     <li className="cy-stage" data-state={state} aria-current={row.current ? 'step' : undefined}>
       <span className="cy-dot" aria-hidden="true" />
@@ -122,6 +126,7 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
           <h3 className="cy-stage-name">{shownText(stage.label)}</h3>
           <span className="badge badge-quiet">{t(TYPE_KEY[stage.type])}</span>
           <span className={`cy-stage-state cy-s-${state}`}>{t(STATE_KEY[state])}</span>
+          {hasScreen && <button type="button" className="btn cy-mini" onClick={() => setWatching(true)}>{t('ui.cycle.live.open')}</button>}
           {record && record.attempts > 1 && <span className="faint small">{t('ui.cycle.stage.attempts', { count: record.attempts })}</span>}
         </div>
         {agent && (
@@ -154,6 +159,7 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
           </ul>
         )}
       </div>
+      {watching && <LiveScreen run={run} onClose={() => setWatching(false)} />}
     </li>
   );
 }

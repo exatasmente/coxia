@@ -7,7 +7,7 @@ import { flowProblems, producerOf, snapshotOf } from './flow';
 import { scenarioBlocks } from './output';
 import { SEND_BACK_STATUSES, canSendBack, sendBackTargets, sendBackText } from './sendBack';
 import { mergeUsage } from './usage';
-import { HISTORY_DETAIL_MAX, RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunDocs, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
+import { HISTORY_DETAIL_MAX, isTerminal, runVersionOf, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunDocs, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
@@ -198,7 +198,7 @@ export function assertStartable(flow: FlowStage[]): void {
 export function startRun(input: StartInput, flow: FlowStage[], at: string): Transition {
   assertStartable(flow);
   const run: Run = {
-    version: RUN_VERSION,
+    version: runVersionOf({}),
     rev: 0,
     id: input.id,
     issue: structuredClone(input.issue),
@@ -1038,6 +1038,19 @@ export function deleteEvidence(run: Run, id: string, at: string): Transition {
   if (!out.evidence?.[id]) throw new RunError('unknown-evidence', { id });
   delete out.evidence[id];
   log(out, at, 'evidence-removed', run.stage, 'person', id);
+  return { run: out, messages: [] };
+}
+
+/**
+ * Retention removed the file of the app's own screen recording: the run keeps the record, marked, so the stage says "removed by retention" instead of showing an
+ * error. Nothing else of the run changes, and what was copied elsewhere is never touched.
+ */
+export function markRecordingRemoved(run: Run, id: string, at: string): Transition {
+  const record = run.evidence?.[id];
+  if (!record?.recording) throw new RunError('unknown-evidence', { id });
+  const out = clone(run, at);
+  out.evidence = { ...(out.evidence ?? {}), [id]: { ...structuredClone(record), removed: 'retention' } };
+  log(out, at, 'evidence-removed', record.stage, 'app', `${id}: retention`);
   return { run: out, messages: [] };
 }
 

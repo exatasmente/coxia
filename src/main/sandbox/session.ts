@@ -7,7 +7,7 @@ import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
 import { redact } from '../errorlog-core';
 import { tail } from '../runner/commands';
 import { MAX_IMAGE_BYTES, imageMediaType } from '../imageType';
-import { CTL, FORWARDER_JS, OUT, SUPERVISOR_COMMAND, SUPERVISOR_SH } from './policy';
+import { CTL, DISPLAY_SOCKET_NAME, FORWARDER_JS, OUT, SUPERVISOR_COMMAND, SUPERVISOR_SH, X11_DIR } from './policy';
 import { SandboxError } from './errors';
 import { removeTree } from './remove';
 
@@ -46,6 +46,13 @@ export interface SandboxGui {
 /** An image the stage saved in its output folder, read for the model, or why it was not. `file` is the real path on this computer of the file the picture came from. */
 export type ImageRead = { ok: true; path: string; mediaType: string; data: string; file?: string } | { ok: false; why: 'outside' | 'missing' | 'not-file' | 'too-big' | 'not-image' };
 
+/** Where the app reaches a stage's virtual display from outside: the socket of the display, and whose it is. */
+export interface ScreenSocket {
+  /** The socket's real path on this computer. */
+  socket: string;
+  kind: 'sandbox' | 'host';
+}
+
 export interface SandboxSession {
   /** What the Shell tool tells the model about where its commands run; absent: the sandbox's own text. */
   readonly description?: string;
@@ -55,6 +62,8 @@ export interface SandboxSession {
   readonly outputDir?: string;
   /** What the sandbox offers to test an interface; absent: nothing was asked for (a session with neither setting on). */
   readonly gui?: SandboxGui;
+  /** The stage's virtual display, reachable for the live screen; set only when `gui.display` is `on`. Absent: there is no screen to show. */
+  readonly screen?: ScreenSocket;
   /** Reads an image the stage saved in its output folder (`/coxia/out` inside; a host session's own folder, `gui.out`); absent where there is no such folder. */
   readImage?(path: string): ImageRead;
   /**
@@ -137,7 +146,8 @@ const LINE_MAX = 4096;
 export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Promise<SandboxSession> {
   const ctl = join(o.stageDir, 'ctl');
   const out = join(o.stageDir, 'out');
-  for (const d of [o.stageDir, ctl, out, join(o.stageDir, 'home')]) mkdirSync(d, { recursive: true, mode: 0o700 });
+  // The display's own folder (bound over /tmp/.X11-unix, see bwrapArgs) must exist before the sandbox starts.
+  for (const d of [o.stageDir, ctl, out, join(o.stageDir, 'home'), ...(o.gui?.display === 'start' ? [join(o.stageDir, X11_DIR)] : [])]) mkdirSync(d, { recursive: true, mode: 0o700 });
   writeFileSync(join(ctl, 'supervisor.sh'), SUPERVISOR_SH, { mode: 0o700 });
   if (o.proxy) writeFileSync(join(ctl, 'forward.js'), FORWARDER_JS, { mode: 0o600 });
 
@@ -291,6 +301,7 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
     stageDir: o.stageDir,
     outputDir: out,
     ...(gui ? { gui } : {}),
+    ...(gui?.display === 'on' ? { screen: { socket: join(o.stageDir, X11_DIR, DISPLAY_SOCKET_NAME), kind: 'sandbox' as const } } : {}),
     readImage: (path) => readOutputImage(out, path),
     take: (name, max) => readOutputText(out, name, max),
     put: (name, content) => {

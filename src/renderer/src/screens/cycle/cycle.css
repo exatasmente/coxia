@@ -287,3 +287,28 @@
 .cy-board-detail { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line-2); padding-top: 8px; }
 .cy-board-detail .cy-field { flex: 1 1 140px; }
 .cy-board-detail .text-input { width: 100%; }
+
+/* the live screen of a working stage: the viewer in a sheet, the Take control banner and the picture */
+.cy-live { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cy-live-bar { gap: 10px; flex-wrap: wrap; align-items: center; }
+.cy-live-switch { margin-left: auto; }
+.cy-live-banner { margin: 0; padding: 8px 12px; border-radius: 10px; border: 2px solid var(--red-solid); background: var(--red-soft); color: var(--red-ink); font-weight: 600; line-height: 1.4; }
+.cy-live-rejected { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--amber-soft); color: var(--amber-ink); }
+.cy-live-stage { display: flex; align-items: center; justify-content: center; min-height: 120px; border-radius: 10px; border: 2px solid var(--line); background: var(--surface-2); overflow: hidden; outline: none; }
+.cy-live-stage:focus-visible { border-color: var(--focus); }
+.cy-live-stage.controlled { border-color: var(--red-solid); cursor: crosshair; touch-action: none; }
+.cy-live-image { display: block; width: 100%; height: auto; max-height: 62vh; max-height: 62dvh; object-fit: contain; user-select: none; -webkit-user-drag: none; }
+.cy-live-wait { margin: 0; }
+.cy-live-ended { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--chip-quiet-bg); color: var(--muted); }
+
+/* the app's recording of an agent's screen: the video, and the strip that marks where a person used the screen */
+.cy-rec { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cy-rec-video { display: block; width: 100%; max-height: 360px; border-radius: 8px; border: 1px solid var(--line-3); background: var(--surface-2); }
+.cy-evidence-attach .cy-rec-video { max-width: 360px; }
+.cy-rec-capped { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--amber-soft); color: var(--amber-ink); }
+.cy-rec-marks-box { display: flex; flex-direction: column; gap: 4px; }
+.cy-rec-marks { position: relative; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: var(--chip-quiet-bg); }
+.cy-rec-mark { position: absolute; top: 2px; bottom: 2px; min-width: 8px; padding: 0; border: 0; border-radius: 4px; background: var(--blue-solid); cursor: pointer; }
+.cy-rec-mark:hover { background: var(--ink); }
+.cy-rec-mark:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.cy-evidence-removed { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--chip-quiet-bg); color: var(--muted); }

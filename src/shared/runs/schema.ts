@@ -4,6 +4,7 @@ import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
 import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_DETAIL_MAX, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 import { EVIDENCE_KINDS } from '../evidence';
+import { RECORDING_MARKS_MAX } from '../screen';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -161,6 +162,18 @@ const evidenceRecord = object(
     from: { type: ['string', 'null'], description: 'The evidence this one was made from.', pattern: '^ev-\\d{1,6}$', maxLength: 12 },
     message: { type: ['integer', 'null'], description: 'The forum message it was published as an attachment of.', minimum: 1 },
     inCycle: { type: 'boolean', description: 'The file was also copied into the cycle folder.' },
+    recording: object(
+      'Only on the app\'s own recording of a stage\'s screen.',
+      {
+        durationMs: { type: 'integer', description: 'Recorded time.', minimum: 0, maximum: 86_400_000 },
+        width: { type: 'integer', description: 'Width of the picture.', minimum: 1, maximum: 16_384 },
+        height: { type: 'integer', description: 'Height of the picture.', minimum: 1, maximum: 16_384 },
+        truncated: enumOf('Why it stopped before the stage did.', ['size', 'time']),
+        marks: { type: 'array', description: 'The intervals in which the person used the screen, in ms from the start.', items: object('One interval.', { fromMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, toMs: { type: 'integer', minimum: 0, maximum: 86_400_000 } }, ['fromMs', 'toMs']), maxItems: RECORDING_MARKS_MAX },
+      },
+      ['durationMs', 'width', 'height', 'marks'],
+    ),
+    removed: enumOf('The file was removed by retention; the record stays.', ['retention']),
   },
   ['id', 'stage', 'by', 'title', 'description', 'name', 'kind', 'bytes', 'at', 'from', 'message'],
 );
@@ -260,7 +273,7 @@ const docsRun = object('What the run is about when it drafts the documentation o
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
-    version: { type: 'integer', description: 'Version of this file format.', const: RUN_VERSION },
+    version: { type: 'integer', description: 'Version of this file format: 2 when the run holds a screen recording, else 1.', enum: [1, 2] },
     rev: { type: 'integer', description: 'Grows by one on every save.', minimum: 0 },
     id: string('Run id.', { pattern: RUN_ID.source }),
     issue: object('The issue.', { ref: string('How the cards write it.', { minLength: 1, maxLength: 200 }), iid: { type: 'integer', description: 'Issue number.', minimum: 0 }, title: string('Title.', { maxLength: 500 }), url: nullableString('Web address.') }, ['ref', 'iid', 'title', 'url']),

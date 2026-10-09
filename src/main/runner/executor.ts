@@ -27,7 +27,9 @@ import { type ExecResult, type SandboxService, type SandboxSession, SandboxError
 import { type EvidenceRecord, evidencePlacementOf } from '../../shared/evidence';
 import { evidenceToolsOf, evidenceProblemText, outputProblemText } from '../evidence/handlers';
 import { resolveOutputPath } from '../evidence/paths';
+import { notKeptText, putRecording } from '../evidence/recording';
 import { copyToCycleFolder, putEvidence, withRecordedEvidence } from '../evidence/store';
+import type { RecordingOutcome } from '../screen/recorder';
 import { redact, redactCode, redactDoc } from '../errorlog-core';
 import { type Denial, confinedHooks, readConfinedHooks } from './hooks';
 import { type CommentAsk, type ResumeWhy, type StageInput, type StageResume, stagePrompt, systemText } from './prompt';
@@ -43,6 +45,7 @@ import { finalizeHarness } from '../harness/finalize';
 import { AGENTS_FILE } from '../../shared/harness/agentsMd';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
+import type { ScreenHub } from '../screen/hub';
 
 // One attempt at one stage: build what the agent reads, run it, write the documents it returned into the cycle folder and commit what it did.
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
@@ -102,6 +105,8 @@ export interface ExecutorDeps {
   sharedMemory?: (run: Run) => string;
   /** The workspace's data folder: where a run's evidence is stored. */
   dataDir: () => string;
+  /** The live screens of the stages that have a virtual display; absent: none is opened. */
+  screens?: ScreenHub;
 }
 
 export interface StageRun {
@@ -175,7 +180,8 @@ export function stageResume(run: Run, stage: FlowStage, agent: string, thread: F
     why,
     done: stage.artifacts.filter((name) => existsSync(join(wt, run.cycleFolder, name))),
     evidence: Object.values(run.evidence ?? {})
-      .filter((e) => e.stage === stage.id)
+      // The app's own screen recording is not the agent's to cite: it is left out of what the agent is told it kept.
+      .filter((e) => e.stage === stage.id && !e.recording)
       .map((e) => ({ id: e.id, title: e.title })),
     previous: report?.text.trim() || null,
   };
@@ -308,7 +314,7 @@ const endedAs = (r: ExecResult): string => (r.refused ? t(`main.runner.exec.refu
  * the thread, the audit log and (through the session) the live activity about every command that runs in it. A machine that cannot make a sandbox fails the stage: an
  * agent set to run commands in one never runs them without.
  */
-export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean, signal: AbortSignal, clock: StageClock): Promise<SandboxSession> {
+export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean, signal: AbortSignal, clock: StageClock, own = false): Promise<SandboxSession> {
   const host = agent.shell === 'host';
   const config = d.config();
   const threadId = runThreadId(run.id);
@@ -365,6 +371,10 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
     if (gui?.display === 'missing' || gui?.display === 'failed') appendGui(gui.display === 'missing' ? 'runner.sandbox.noDisplay' : 'runner.sandbox.displayFailed', {});
+    // The app's own connection to the stage's display is made now, before the agent has run a single command: what is at the socket's path is the agent's to change from
+    // then on. A display that cannot be reached leaves the stage without a live screen and says so; nothing else changes. Only the stage's own session is registered
+    // (`own`): an agent it calls, or one mentioned in the run's thread, gets its display but no live screen, since a run has one and it is the stage's.
+    if (own && d.screens && display && session.screen && gui?.display === 'on' && !(await d.screens.open({ run: run.id, stage: stage.id, agent: agent.id, socket: session.screen.socket, kind: session.screen.kind }))) appendGui('runner.screen.noConnect', {});
     return session;
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
@@ -451,6 +461,32 @@ function hostApproval(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentD
 }
 
 /**
+ * Keeps the app's own recording of the stage's screen, if it made one: one piece of evidence, one run revision and one post of the app. It is not among what the stage
+ * kept (the agent cannot cite it) and not copied to the cycle folder. What cannot be kept is said in the conversation with the reason; it never fails the stage, which
+ * has ended already one way or another. `current` is the run with the evidence the stage kept so far, so the recording takes the next id.
+ */
+function keepScreenRecording(d: ExecutorDeps, current: Run, stage: FlowStage, agent: AgentDef, outcome: RecordingOutcome | null): void {
+  if (!outcome || !d.keepEvidence) return;
+  const threadId = runThreadId(current.id);
+  const notKept = (why: Parameters<typeof notKeptText>[0]): void => {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.screen.notKept', params: { agent: agent.id, reason: notKeptText(why) }, stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not say a recording was not kept', e instanceof Error ? e.message : e);
+    }
+  };
+  try {
+    if (!outcome.ok) return notKept(outcome.reason);
+    const put = putRecording(d.dataDir(), current, { bytes: outcome.bytes, stage: stage.id, by: agent.id, title: t('main.evidence.screenRecording'), meta: outcome.meta, at: new Date().toISOString() });
+    if (!put.ok) return notKept(put.problem);
+    d.keepEvidence(current.id, put.record);
+  } catch (e) {
+    console.error('[runner] could not keep the screen recording', e instanceof Error ? e.message : e);
+    notKept('write');
+  }
+}
+
+/**
  * @param usage Told what every model call of the attempt used, as it happens: a stage that fails or is stopped part-way has used it all the same.
  * @param carried The files the message that resumes the stage carries (the person's answer): the run file does not keep them, so they come from the turn that recorded the move.
  */
@@ -468,10 +504,14 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   // The watchdog is made with the agent call, after the session: until then a pause has nothing to stop.
   const clock: StageClock & { watch?: Watchdog } = { pause: () => clock.watch?.pause() ?? (() => undefined), beat: () => clock.watch?.beat(), allowed: new Set() };
   // A documentation run's agent gets no command door at all, whatever its `shell` says.
-  const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host') ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock) : null;
+  const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host') ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock, true) : null;
   try {
     return await runStage(d, run, flow, abort, usage, carried, session, clock);
   } finally {
+    // The live screen goes first, whatever way the stage ended: nothing reads the display once its sandbox is closing. A stage that failed before it could build the
+    // recording itself still keeps what was recorded (nothing then, when `runStage` ended the screen already).
+    keepScreenRecording(d, run, stage, agent, await d.screens?.finish(run.id).catch(() => null) ?? null);
+    d.screens?.end(run.id);
     // Whatever happened, nothing the stage started outlives it. Closing never throws, and a finished stage is not turned into a failed one by it.
     await session?.close().catch(() => undefined);
   }
@@ -704,6 +744,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     }
     if (keptCount) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookKept', params: { agent: agent.id, count: keptCount }, stage: stage.id });
   };
+  const keepRecording = (outcome: RecordingOutcome | null): void => keepScreenRecording(d, runSoFar(), stage, agent, outcome);
   const evidence =
     evidenceRoot && d.keepEvidence
       ? evidenceToolsOf({
@@ -917,6 +958,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     inbox.close();
     // The attempt is over: the cap of conversations starts again, so a stage returned and run again may talk once more.
     resetOpened(run.id, stage.id);
+    // The live screen ends with the stage, before its sandbox does; its recording is kept whatever way the stage ended, a failed or cancelled one included.
+    keepRecording(await d.screens?.finish(run.id).catch(() => null) ?? null);
     // The sandbox ends after the app read the answer, ran the repair round and kept what the agent looked at: no process of the stage can race the commit.
     await session?.close();
   }
@@ -924,7 +967,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const output = readOutput(data, kind);
   // The evidence ids the stage cites are kept only when this stage really kept them (or, for a QA pass, cites them beside its scenarios): an unknown id is told
   // in the conversation and dropped, never taken as proof of anything.
-  const known = new Set([...keptIds, ...Object.keys(run.evidence ?? {})]);
+  // The app's own screen recording of an earlier attempt is not among them: the agent cannot cite it, so an id of it is unknown like any other.
+  const known = new Set([...keptIds, ...Object.values(run.evidence ?? {}).filter((e) => !e.recording).map((e) => e.id)]);
   const cited = output.evidence.filter((id) => known.has(id));
   const unknownEvidence = output.evidence.filter((id) => !known.has(id));
   output.evidence = cited;

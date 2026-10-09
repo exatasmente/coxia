@@ -4,6 +4,7 @@ import { CONFIG_EVENT, type ConfigView } from '../../../../shared/configView';
 import type { EvidenceView } from '../../../../shared/evidence';
 import { FORUM_EVENT, type ForumEventPayload } from '../../../../shared/forum';
 import type { CommandDecision, Run, RunIssue } from '../../../../shared/runs';
+import { SCREEN_EVENT } from '../../../../shared/screen';
 import { api, moduleEvents } from '../../api';
 
 // The runs of the running workspace as the screens see them: the channels of the runner (`runs:*`), and one shared copy of the list that every screen
@@ -115,6 +116,8 @@ function start(): void {
     const thread = (e as CustomEvent<ForumEventPayload>).detail?.thread;
     if (typeof thread === 'string' && thread.startsWith('run-')) soon();
   });
+  // A live screen opening or ending changes the run without a message in its thread: the button on the stage card follows at once.
+  moduleEvents.addEventListener(SCREEN_EVENT, soon);
   window.addEventListener('focus', soon);
   setInterval(() => {
     if (!document.hidden) reloadRuns();

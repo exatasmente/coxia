@@ -39,6 +39,9 @@ export interface SandboxSpec {
 /** The display a sandbox starts for a stage: the socket of `:99` lives in the sandbox's own /tmp. */
 export const DISPLAY = ':99';
 export const DISPLAY_SOCKET = '/tmp/.X11-unix/X99';
+/** The folder of the stage folder bound over `/tmp/.X11-unix`, so the app can dial the display's socket from outside; the socket's name in it. */
+export const X11_DIR = 'x11';
+export const DISPLAY_SOCKET_NAME = 'X99';
 
 const BASE_PATH = ['/usr/local/sbin', '/usr/local/bin', '/usr/sbin', '/usr/bin', '/sbin', '/bin'];
 
@@ -100,6 +103,8 @@ export function bwrapArgs(spec: SandboxSpec): string[] {
   // /dev is a memory filesystem too, as large as half the memory unless it is made read-only: it is, and /dev/shm gets a size of its own like /tmp.
   const tmp = String(spec.tmpMb * 1024 * 1024);
   a.push('--proc', '/proc', '--dev', '/dev', '--size', tmp, '--tmpfs', '/dev/shm', '--remount-ro', '/dev', '--size', tmp, '--tmpfs', '/tmp');
+  // A display of the stage: its socket is made in a folder of the stage folder, so the app (never a program inside) can read the screen and send the person's input.
+  if (spec.gui?.xvfb) a.push('--bind', `${spec.stageDir}/${X11_DIR}`, '/tmp/.X11-unix');
   a.push('--bind', `${spec.stageDir}/home`, SANDBOX_HOME);
   a.push('--ro-bind', `${spec.stageDir}/ctl`, CTL, '--bind', `${spec.stageDir}/out`, OUT);
   for (const [src, dest] of spec.roBinds.filter(([, d]) => !d.startsWith(`${spec.worktree}/`) && d !== spec.worktree)) a.push('--ro-bind', src, dest);

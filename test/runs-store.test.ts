@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createRunStore } from '../src/main/runs-core';
-import { RunError, cancel, gateApprove, resumeAfterRestart, stageDone, startRun } from '../src/shared/runs';
+import { RunError, cancel, deleteEvidence, gateApprove, parseRun, recordEvidence, resumeAfterRestart, stageDone, startRun } from '../src/shared/runs';
+import type { EvidenceRecord } from '../src/shared/evidence';
 import { agentFlowStages, at, startInput } from './helpers/runs';
 
 let dir: string;
@@ -68,7 +69,7 @@ describe('the run store', () => {
     const store = createRunStore(dir);
     const run = store.create(fresh());
     const path = join(dir, `${run.id}.json`);
-    const newer = JSON.stringify({ ...run, version: 2, somethingNew: true });
+    const newer = JSON.stringify({ ...run, version: 3, somethingNew: true });
     writeFileSync(path, newer);
     expect(store.get(run.id)).toBeNull();
     expect(store.list()).toEqual([]);
@@ -123,5 +124,100 @@ describe('the run store', () => {
     mkdirSync(join(dir, '..'), { recursive: true });
     expect(createRunStore(dir).list()).toEqual([]);
     expect(existsSync(dir)).toBe(false);
+  });
+});
+
+// The record of the app's own screen recording (#157): the marks and the removal by retention live on the evidence record, bounded like the rest of the file.
+describe('the record of a screen recording', () => {
+  const piece: EvidenceRecord = { id: 'ev-1', stage: 'qa', by: 'qa', title: 'Screen recording', description: '', name: 'screen-recording.webm', kind: 'webm', bytes: 100, at: at(2), from: null, message: null, recording: { durationMs: 9000, width: 1280, height: 800, truncated: 'size', marks: [{ fromMs: 1000, toMs: 3000 }] } };
+
+  it('is kept by the store and read back as it was, also once retention marked it removed', () => {
+    const store = createRunStore(dir);
+    const run = store.create(fresh());
+    store.update(run.id, (r) => recordEvidence(r, piece, at(2)));
+    expect(store.get(run.id)?.evidence?.['ev-1']).toEqual(piece);
+    store.update(run.id, (r) => recordEvidence(r, { ...piece, removed: 'retention' }, at(3)));
+    expect(store.get(run.id)?.evidence?.['ev-1']).toEqual({ ...piece, removed: 'retention' });
+  });
+
+  it('is bounded: more marks than the cap, a removal reason that is not retention and a mark with no end are not believed', () => {
+    const base = JSON.parse(JSON.stringify(fresh()));
+    const withPiece = (edit: (p: Record<string, any>) => void) => {
+      const p = JSON.parse(JSON.stringify(piece));
+      edit(p);
+      return parseRun({ ...base, evidence: { 'ev-1': p } });
+    };
+    expect(withPiece(() => undefined).ok).toBe(true);
+    expect(withPiece((p) => (p.recording.marks = Array.from({ length: 200 }, (_, i) => ({ fromMs: i, toMs: i + 1 })))).ok).toBe(true);
+    expect(withPiece((p) => (p.recording.marks = Array.from({ length: 201 }, (_, i) => ({ fromMs: i, toMs: i + 1 })))).ok).toBe(false);
+    expect(withPiece((p) => (p.removed = 'someone')).ok).toBe(false);
+    expect(withPiece((p) => (p.recording.marks = [{ fromMs: 1 }])).ok).toBe(false);
+    expect(withPiece((p) => (p.recording.truncated = 'never')).ok).toBe(false);
+    expect(withPiece((p) => (p.kind = 'mp4')).ok).toBe(false);
+  });
+
+  it('is not required: a piece with neither field reads as it always did', () => {
+    const plain = { id: 'ev-1', stage: 'qa', by: 'qa', title: 'A shot', description: '', name: 'a.png', kind: 'png', bytes: 10, at: at(2), from: null, message: null };
+    const parsed = parseRun({ ...JSON.parse(JSON.stringify(fresh())), evidence: { 'ev-1': plain } });
+    expect(parsed.ok && parsed.run.evidence?.['ev-1']).toEqual(plain);
+  });
+});
+
+// The run file format (#157): written as 2 only while the run holds a screen recording, so an app that does not know recordings refuses just those runs as written by a
+// newer app, and every other run stays readable by it.
+describe('the version of a run file', () => {
+  const recording: EvidenceRecord = { id: 'ev-1', stage: 'qa', by: 'qa', title: 'Screen recording', description: '', name: 'screen-recording.webm', kind: 'webm', bytes: 100, at: at(2), from: null, message: null, recording: { durationMs: 9000, width: 8, height: 4, marks: [] } };
+  const shot: EvidenceRecord = { id: 'ev-2', stage: 'qa', by: 'qa', title: 'A shot', description: '', name: 'a.png', kind: 'png', bytes: 10, at: at(2), from: null, message: null };
+  const onDisk = (id: string): { version: number } => JSON.parse(readFileSync(join(dir, `${id}.json`), 'utf8'));
+
+  it('is 1 for every run without a recording, whatever happens to it', () => {
+    const store = createRunStore(dir);
+    const run = store.create(fresh());
+    expect(onDisk(run.id).version).toBe(1);
+    store.update(run.id, (r) => recordEvidence(r, shot, at(2)));
+    store.update(run.id, (r) => stageDone(r, flow, { summary: 's', handoff: '', artifacts: [] }, at(3)));
+    expect(onDisk(run.id).version).toBe(1);
+    expect(store.get(run.id)?.version).toBe(1);
+  });
+
+  it('is 2 once the run holds a recording, and is read as 2', () => {
+    const store = createRunStore(dir);
+    const run = store.create(fresh());
+    store.update(run.id, (r) => recordEvidence(r, recording, at(2)));
+    expect(onDisk(run.id).version).toBe(2);
+    expect(store.get(run.id)?.version).toBe(2);
+    // It stays 2 through the moves that follow, also once retention marked the file removed (the record is still of the unknown kind to an older app).
+    store.update(run.id, (r) => recordEvidence(r, { ...recording, removed: 'retention' }, at(3)));
+    store.update(run.id, (r) => recordEvidence(r, shot, at(4)));
+    expect(onDisk(run.id).version).toBe(2);
+  });
+
+  it('goes back to 1 when the person deletes the only recording', () => {
+    const store = createRunStore(dir);
+    const run = store.create(fresh());
+    store.update(run.id, (r) => recordEvidence(r, recording, at(2)));
+    store.update(run.id, (r) => recordEvidence(r, shot, at(3)));
+    store.update(run.id, (r) => deleteEvidence(r, 'ev-1', at(4)));
+    expect(onDisk(run.id).version).toBe(1);
+    expect(store.get(run.id)?.evidence).toEqual({ 'ev-2': shot });
+  });
+
+  it('reads a 1 as it always did, accepts a 2 that holds no recording and writes it back as 1', () => {
+    const store = createRunStore(dir);
+    const run = store.create(fresh());
+    const path = join(dir, `${run.id}.json`);
+    writeFileSync(path, JSON.stringify({ ...run, version: 2 }));
+    expect(store.get(run.id)).toMatchObject({ id: run.id, version: 2 });
+    expect(parseRun({ ...JSON.parse(JSON.stringify(run)), version: 1 }).ok).toBe(true);
+    store.update(run.id, (r) => stageDone(r, flow, { summary: 's', handoff: '', artifacts: [] }, at(1)));
+    expect(onDisk(run.id).version).toBe(1);
+  });
+
+  it('refuses a 3 as written by a newer app and anything else that is not a version', () => {
+    const run = JSON.parse(JSON.stringify(fresh()));
+    expect(parseRun({ ...run, version: 3 })).toMatchObject({ ok: false, reason: 'newer' });
+    expect(parseRun({ ...run, version: 0 })).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(parseRun({ ...run, version: 1.5 })).toMatchObject({ ok: false, reason: 'invalid' });
+    expect(parseRun({ ...run, version: '1' })).toMatchObject({ ok: false, reason: 'invalid' });
   });
 });

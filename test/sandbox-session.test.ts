@@ -1,6 +1,6 @@
 import { type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -152,6 +152,35 @@ describe('a session', () => {
     const s = await openSession(options({ cleanup: [() => void undone++] }), { spawn: f.spawn });
     await s.close();
     expect(undone).toBe(1);
+  });
+
+  it('reports where the display can be dialled from outside only when it came up, and makes its folder before the sandbox starts', async () => {
+    const f = fakeSpawn(() => 0);
+    const on = await openSession(options({ gui: { browsers: null, display: 'start' } }), { spawn: f.spawn });
+    expect(on.gui?.display).toBe('on');
+    expect(on.screen).toEqual({ socket: join(dir, 'x11', 'X99'), kind: 'sandbox' });
+    expect(statSync(join(dir, 'x11')).isDirectory()).toBe(true);
+    expect(statSync(join(dir, 'x11')).mode & 0o077).toBe(0);
+    await on.close();
+  });
+
+  it('has no screen when the display did not come up, was not found or was not asked for', async () => {
+    const down = join(dir, 'down');
+    const failed = await openSession(options({ stageDir: down, gui: { browsers: null, display: 'start' } }), { spawn: fakeSpawn(() => 0, { ready: 'ready-nodisplay', dir: down }).spawn });
+    expect(failed.gui?.display).toBe('failed');
+    expect(failed.screen).toBeUndefined();
+    await failed.close();
+    const missing = join(dir, 'missing');
+    const m = await openSession(options({ stageDir: missing, gui: { browsers: '/b', display: 'missing' } }), { spawn: fakeSpawn(() => 0, { dir: missing }).spawn });
+    expect(m.screen).toBeUndefined();
+    expect(existsSync(join(missing, 'x11'))).toBe(false);
+    await m.close();
+    const plain = join(dir, 'plain');
+    const p = await openSession(options({ stageDir: plain }), { spawn: fakeSpawn(() => 0, { dir: plain }).spawn });
+    expect(p.screen).toBeUndefined();
+    expect(p.gui).toBeUndefined();
+    expect(existsSync(join(plain, 'x11'))).toBe(false);
+    await p.close();
   });
 
   it('fails, clean, when the program says it cannot start, and says why', async () => {

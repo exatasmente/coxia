@@ -2,10 +2,20 @@ import type { AttachmentRef } from '../attachments';
 import type { StageKind, StageType, WaitFor, WaitKind } from '../config/types';
 import type { EvidenceRecord } from '../evidence';
 import type { ForumDraft } from '../forum';
+import type { LiveScreen } from '../screen';
 
 // A run: one issue going through the agent cycle. This file is the shape; the moves are in transitions.ts, the file format check in schema.ts.
 
-export const RUN_VERSION = 1;
+/**
+ * The newest run file format this app reads. Version 2 is a run that holds the app's own screen recording (a `webm` evidence record): an app that does not know the
+ * kind refuses such a file as written by a newer app, instead of reading it as invalid. Every other run is written as version 1 (`runVersionOf`), so a downgrade loses
+ * only the runs that have a recording.
+ */
+export const RUN_VERSION = 2;
+export type RunVersion = 1 | 2;
+
+/** The format a run is written as: 2 when it holds a screen recording, else 1. The store stamps it on every save, so it follows the content and cannot be forgotten by a move. */
+export const runVersionOf = (run: { evidence?: Run['evidence'] }): RunVersion => (Object.values(run.evidence ?? {}).some((e) => e.kind === 'webm') ? 2 : 1);
 export const RUN_ID = /^r-[a-z0-9]{1,12}-[a-z0-9]{2,8}$/;
 
 export type { EvidenceRecord };
@@ -362,7 +372,7 @@ export interface RunSubject {
 }
 
 export interface Run {
-  version: typeof RUN_VERSION;
+  version: RunVersion;
   /** Grows by one on every save of the store. */
   rev: number;
   id: string;
@@ -384,6 +394,8 @@ export interface Run {
   question: PendingQuestion | null;
   /** The command the working stage waits for the person to allow (`shell: host`). Filled in by the runner when it hands a run out, never written to the file. */
   command?: PendingCommand | null;
+  /** The live screen of the working stage's virtual display, while it has one. Filled in by the runner when it hands a run out, never written to the file. */
+  screen?: LiveScreen | null;
   /** The result of a non-autonomous agent, waiting for the person (status `to-accept`). */
   pending: PendingResult | null;
   /** How many times each stage sent the work back (by the stage that sent it: review and QA have a budget each) since the person last answered the limit's question. */

@@ -32,7 +32,7 @@ export interface EvidenceContext {
 }
 
 /** The words of a file kind, for the model and for the person. */
-const KIND_TEXT: Record<EvidenceRecord['kind'], string> = { png: 'PNG', jpeg: 'JPEG', gif: 'GIF', webp: 'WebP', pdf: 'PDF', text: 'text' };
+const KIND_TEXT: Record<EvidenceRecord['kind'], string> = { png: 'PNG', jpeg: 'JPEG', gif: 'GIF', webp: 'WebP', pdf: 'PDF', text: 'text', webm: 'WebM' };
 
 /** The wording of a path refused by the output-folder resolver, for the model and for the person. */
 export const outputProblemText = (p: OutputProblem): string =>

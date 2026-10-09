@@ -7,7 +7,7 @@ import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
 import { redact } from '../errorlog-core';
 import { scrubbedEnv } from '../engine/guard';
 import { tail } from '../runner/commands';
-import { type ExecResult, type SandboxGui, type SandboxSession, readOutputImage, readTailNoFollow } from './session';
+import { type ExecResult, type SandboxGui, type SandboxSession, type ScreenSocket, readOutputImage, readTailNoFollow } from './session';
 
 // The session of an agent set to `shell: host`: the same Shell tool, log and limits of time as a sandbox, but every command runs on this computer, as the person who runs
 // the app, with the login PATH and the app's environment cleaned of what looks like a credential. Nothing confines it: it reaches what the person reaches (the network,
@@ -40,6 +40,12 @@ export interface HostSessionDeps {
   platform?: NodeJS.Platform;
 }
 
+/** Where a display of this computer has its socket, from the name `DISPLAY` is set to (`:101`); null for a name that is not a plain display number. */
+export function hostDisplaySocket(name: string): string | null {
+  const m = /^:(\d{1,5})$/.exec(name);
+  return m ? `/tmp/.X11-unix/X${m[1]}` : null;
+}
+
 /** The most of a command's output that is read back: what the model gets is the end of it. */
 const OUTPUT_READ = 256 * 1024;
 
@@ -57,6 +63,8 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
   const shots = o.gui ? join(outDir, 'out') : null;
   if (shots) mkdirSync(shots, { mode: 0o700 });
   const gui: SandboxGui | undefined = o.gui && shots ? { browsers: o.gui.browsers, ...(o.gui.browsersGone ? { browsersGone: o.gui.browsersGone } : {}), display: o.gui.display, out: shots } : undefined;
+  const socket = o.gui?.display === 'on' && o.gui.displayName ? hostDisplaySocket(o.gui.displayName) : null;
+  const screen: ScreenSocket | undefined = socket ? { socket, kind: 'host' } : undefined;
   // The variables a command starts with to test an interface. With the display on, a Wayland session or an authority file of the person's must not win over it.
   const guiEnv = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv => {
     if (!o.gui || !shots) return env;
@@ -168,6 +176,7 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
 
   return {
     description: HOST_SHELL_DESCRIPTION,
+    ...(screen ? { screen } : {}),
     ...(gui ? { gui, outputDir: shots as string, readImage: (path: string) => readOutputImage(shots as string, path, shots as string) } : {}),
     exec: (command) => {
       const next = queue.then(() => run(command));

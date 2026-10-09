@@ -14,6 +14,7 @@ import { useT } from '../../i18n';
 import { useActivity } from '../../useActivity';
 import { BackIcon } from '../icons';
 import { EvidenceBlock, useEvidenceList } from './Evidence';
+import { evidenceKey } from './recording';
 import { useSeen, useThreads } from './forumApi';
 import { ReviewRounds } from './ReviewRounds';
 import { CommandsSection } from './CommandsSection';
@@ -110,7 +111,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
 
   const activity = useActivity(run ? `run:${run.id}` : undefined);
   // The evidence the run kept, for the stage list and for what a scenario cites.
-  const evidence = useEvidenceList(run?.id ?? '');
+  const evidence = useEvidenceList(run?.id ?? '', evidenceKey(run));
   // A call a message made to an agent of this run's thread: the panel appears for it whatever the run's own status, under the called agent's name.
   const call = useMemo(() => (run ? callGroups(activity).find((g) => g.thread === runThreadId(run.id)) ?? null : null), [activity, run]);
 
