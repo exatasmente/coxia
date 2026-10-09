@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.9] - 2026-10-09
+
 ### Fixed
 
 - **A paired browser can no longer confirm or revoke a test secret.** Confirming a secret of the test environment that is not marked test-only decides that the next stage that takes the environment receives it; `config:testenv-confirm` and `config:testenv-revoke` were open to a paired browser, though its screen showed no such control. They are now refused there, like the secrets themselves; the list of confirmations (references only) stays readable.
@@ -417,7 +419,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.8...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.9...HEAD
+[0.9.0-beta.9]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.8...v0.9.0-beta.9
 [0.9.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.7...v0.9.0-beta.8
 [0.9.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.6...v0.9.0-beta.7
 [0.9.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.5...v0.9.0-beta.6
