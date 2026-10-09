@@ -43,6 +43,15 @@ describe('the draft of a call', () => {
     expect(quoted).toContain('"Say hello to them"');
   });
 
+  it('strips zero-width, bidi and tag characters from a label', () => {
+    const f = fakeSteps(KEY);
+    f.click('button', 'Sa\u200bve\u202e');
+    f.click('button', `Ok${String.fromCodePoint(0xe0041, 0xe0042)}`);
+    for (const t of texts(f.log.entries())) expect(t).not.toMatch(/[\u200b\u202e]|[\u{E0000}-\u{E007F}]/u);
+    expect(texts(f.log.entries())[0]).toContain('"Save"');
+    expect(texts(f.log.entries())[1]).toContain('"Ok"');
+  });
+
   it('drops the query and the fragment of an address and turns what names one thing into :id', () => {
     const f = fakeSteps(KEY);
     f.add('browser_click', { role: 'button', name: 'Open', path: '/orders/48151623/items/ab12cd34ef/edit?token=hunter2#top' });

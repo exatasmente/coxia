@@ -49,11 +49,13 @@ const KIND: Record<string, Kind> = {
 };
 
 const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g;
+// Zero-width, bidi-override and tag characters are dropped, not turned into a space: they hide inside a word and the validator refuses them.
+const INVISIBLE = /[\p{Cf}\u{E0000}-\u{E007F}]/gu;
 const QUOTE_MARKS = /["\u201c\u201d\u00ab\u00bb\u2018\u2019`]/g;
 
 /** A control's label as a step may quote it: one line, no quotation mark inside (it would pair with the one around it), cut to what the validator allows. */
 function labelOf(text: string): string {
-  const flat = text.replace(CONTROL, ' ').replace(QUOTE_MARKS, '').replace(/(?<![\p{L}\p{N}])'|'(?![\p{L}\p{N}])/gu, '').replace(/\s+/g, ' ').trim();
+  const flat = text.replace(INVISIBLE, '').replace(CONTROL, ' ').replace(QUOTE_MARKS, '').replace(/(?<![\p{L}\p{N}])'|'(?![\p{L}\p{N}])/gu, '').replace(/\s+/g, ' ').trim();
   return flat.length > LABEL_MAX ? flat.slice(0, LABEL_MAX).trim() : flat;
 }
 

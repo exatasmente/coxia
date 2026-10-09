@@ -72,6 +72,19 @@ describe('checkContent: the shape', () => {
     expect(r.ok && r.value.steps).toEqual([{ text: 'a', edited: true }]);
   });
 
+  it.each([
+    ['a zero-width space', 'Click\u200b Save'],
+    ['a bidi override', 'Click \u202eSave'],
+    ['a tag character', `Click Save${String.fromCodePoint(0xe0041)}`],
+    ['a joiner', 'Click\u200dSave'],
+  ])('refuses %s in a step, a command, a pitfall, a wait and a title', (_name, bad) => {
+    expect(codes(good({ steps: [{ text: bad }] }))).toContain('steps[0].text:control');
+    expect(codes(good({ steps: [{ text: 'Run', run: bad }] }))).toContain('steps[0].run:control');
+    expect(codes(good({ pitfalls: [bad] }))).toContain('pitfalls[0]:control');
+    expect(codes(good({ waits: [bad] }))).toContain('waits[0]:control');
+    expect(codes(good({ title: bad }))).toContain('title:control');
+  });
+
   it('trims a field and does not change the text otherwise', () => {
     const r = checkContent(good({ title: '  Run the tests  ' }), ctx);
     expect(r.ok && r.value.title).toBe('Run the tests');
