@@ -154,3 +154,87 @@ export interface ProcedureUse {
 
 /** The switch of the learned procedures: absent (a config stored before it) reads as off. Off offers no tool and no prompt section, and the view still works. */
 export const proceduresOn = (config: { runner?: { procedures?: boolean } | null } | null | undefined): boolean => config?.runner?.procedures === true;
+
+/** A saving is shown only from this many uses on: with fewer, the view says there are not enough to compare. */
+export const COMPARE_MIN_USES = 3;
+
+/** What the uses of a procedure cost on average (whole tokens, calls rounded). The cost is the average of the uses, or null when any use has none reported. */
+export interface UsageAverage {
+  promptTokens: number;
+  completionTokens: number;
+  cachedTokens: number;
+  calls: number;
+  costUsd: number | null;
+  costEstimated: boolean;
+}
+
+export interface Comparison {
+  /** Every use the procedure had. */
+  uses: number;
+  /** The uses kept for the comparison (the last 20). */
+  counted: number;
+  /** The share of the counted uses with no failure reported, 0 to 1; null when none are counted. */
+  noFailureShare: number | null;
+  /** What finding the procedure cost: the usage of the call that created it. */
+  baseline: StageUsage | null;
+  average: UsageAverage | null;
+  /** There is a baseline and at least `COMPARE_MIN_USES` counted uses, so a comparison may be shown. Below it the view says "not enough uses to compare". */
+  enough: boolean;
+  /**
+   * (baseline - average) x uses, in tokens, only when `enough` and the average is below the baseline. The cost is there only when the baseline and every counted use
+   * reported one and it is lower too; it is an estimate when any of them says so.
+   */
+  saved: { tokens: number; costUsd: number | null; costEstimated: boolean } | null;
+  /** Always true: the call that created the record and the ones that used it did other work too, so this is a comparison and not a controlled test. */
+  approximate: true;
+}
+
+const tokensOf = (u: Pick<StageUsage, 'promptTokens' | 'completionTokens'>): number => u.promptTokens + u.completionTokens;
+
+/** The comparison of what a procedure cost to find with what it cost to use. Nothing is invented: a missing baseline or too few uses give no saving. */
+export function compare(stats: ProcedureStats): Comparison {
+  const recent = stats.recent;
+  const counted = recent.length;
+  const baseline = stats.baseline;
+  const noFailureShare = counted ? recent.filter((e) => !e.failed).length / counted : null;
+  const mean = (pick: (u: StageUsage) => number): number => recent.reduce((sum, e) => sum + pick(e.usage), 0) / counted;
+  const costed = counted > 0 && recent.every((e) => e.usage.costUsd !== null);
+  const average: UsageAverage | null = counted
+    ? {
+        promptTokens: Math.round(mean((u) => u.promptTokens)),
+        completionTokens: Math.round(mean((u) => u.completionTokens)),
+        cachedTokens: Math.round(mean((u) => u.cachedTokens)),
+        calls: Math.round(mean((u) => u.calls)),
+        costUsd: costed ? mean((u) => u.costUsd ?? 0) : null,
+        costEstimated: recent.some((e) => e.usage.costEstimated === true),
+      }
+    : null;
+  const enough = baseline !== null && counted >= COMPARE_MIN_USES;
+  let saved: Comparison['saved'] = null;
+  if (enough && baseline && average) {
+    const perUse = tokensOf(baseline) - mean((u) => tokensOf(u));
+    if (perUse > 0) {
+      const costPerUse = baseline.costUsd !== null && average.costUsd !== null ? baseline.costUsd - average.costUsd : null;
+      saved = {
+        tokens: Math.round(perUse * stats.uses),
+        costUsd: costPerUse !== null && costPerUse > 0 ? costPerUse * stats.uses : null,
+        costEstimated: baseline.costEstimated === true || average.costEstimated,
+      };
+    }
+  }
+  return { uses: stats.uses, counted, noFailureShare, baseline, average, enough, saved, approximate: true };
+}
+
+/** The workspace summary: the sums of the savings shown, with the same label. Cost is summed over the procedures that have one. */
+export function compareAll(all: readonly ProcedureStats[]): { procedures: number; uses: number; tokens: number; costUsd: number | null; costEstimated: boolean; approximate: true } {
+  const shown = all.map(compare).filter((c) => c.saved !== null);
+  const costs = shown.filter((c) => c.saved?.costUsd != null);
+  return {
+    procedures: shown.length,
+    uses: shown.reduce((n, c) => n + c.uses, 0),
+    tokens: shown.reduce((n, c) => n + (c.saved?.tokens ?? 0), 0),
+    costUsd: costs.length ? costs.reduce((n, c) => n + (c.saved?.costUsd ?? 0), 0) : null,
+    costEstimated: costs.some((c) => c.saved?.costEstimated === true),
+    approximate: true,
+  };
+}
