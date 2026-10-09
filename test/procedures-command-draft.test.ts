@@ -91,12 +91,31 @@ describe('procedures_draft for a call with a shell', () => {
     expect(text).toContain('<data>');
     expect(text).toContain('1. Run npm ci\n   run: npm ci');
     expect(text).toContain('2. Run npm test\n   run: npm test -- --runInBand');
-    expect(text).toContain('Failed (exit 1): npm test');
+    expect(text).toContain('Failed (exit 1): Run npm test');
     expect(text).toContain('procedures_save: kind repo, key api');
     expect(text).toContain('draft "c-1"');
     expect(text).toContain('you cannot add a step or change a command');
     expect(files()).toEqual([]);
     expect(notes).toEqual([]);
+  });
+
+  it('words a pitfall from the safe step text: a failed command with a positional word never reaches the draft, the offer, a record or the log', async () => {
+    const s = shell();
+    s.ran('mytool hunter2', 1);
+    s.ran('mytool');
+    const { session } = make({ commands: s.source });
+    const text = (await session.tools.draft?.({}))?.text ?? '';
+    expect(text).toContain('Failed (exit 1): Run mytool');
+    expect(text).not.toContain('hunter2');
+    const offers = session.plan({ words: '' })?.settle() ?? [];
+    expect(offers).toHaveLength(1);
+    expect(offers[0].pitfalls).toEqual(['Failed (exit 1): Run mytool']);
+    expect(JSON.stringify(offers)).not.toContain('hunter2');
+    const saved = await session.tools.save({ kind: 'tool', key: 'mytool', title: 'Run mytool', draft: 'c-1' });
+    expect(saved.text).toMatch(/^Saved p-/);
+    const [file] = files();
+    expect(readFileSync(join(proceduresPath(ws), file), 'utf8')).not.toContain('hunter2');
+    expect(JSON.stringify([audits, notes, saved])).not.toContain('hunter2');
   });
 
   it('suggests a tool by the program with most steps when the call has no single repository', async () => {

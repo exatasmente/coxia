@@ -80,7 +80,7 @@ describe('a working stage with a sandbox', () => {
     expect(drafted).toMatch(/^Draft c-1\./);
     expect(drafted).toContain('run: npm ci');
     expect(drafted).toContain('run: npm test -- --runInBand');
-    expect(drafted).toContain('Failed (exit 1): npm test');
+    expect(drafted).toContain('Failed (exit 1): Run npm test');
     expect(drafted).not.toContain('node probe.js');
     // The agent of a stage with no shell is given no draft: the other stages of the run had none to make.
     const developer = b.engine.calls.find((c) => c.agent.id === 'developer');
@@ -145,7 +145,7 @@ describe('an agent answering in a conversation with a shell', () => {
     await answerMentions(place(), say(), d);
     expect(first).toContain('run: npm ci');
     expect(second).toContain('run: npm test -- --runInBand');
-    expect(second).toContain('Failed (exit 1): npm test');
+    expect(second).toContain('Failed (exit 1): Run npm test');
     expect(second).not.toContain('npm ci');
   });
 

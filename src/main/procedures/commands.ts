@@ -276,7 +276,8 @@ export function buildCommandDraft(entries: readonly ExecEntry[], options: Comman
   const pitfalls: string[] = [];
   const failed: string[] = [];
   for (const c of counted.filter((x) => x.failed)) {
-    const line = c.timedOut ? `Timed out: ${c.run}` : `Failed (exit ${c.exitCode}): ${c.run}`;
+    // Worded as a step is, never with the raw command: a pitfall has no field to hold it apart, and a positional word may be a secret.
+    const line = c.timedOut ? `Timed out: ${c.text}` : `Failed (exit ${c.exitCode}): ${c.text}`;
     if (!acceptsText(line, { max: LIMITS.pitfall }, options.home)) {
       leftOut++;
       continue;

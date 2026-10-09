@@ -81,7 +81,7 @@ describe('a work that earned a last turn', () => {
       { text: 'Run npm test', run: 'npm test -- --runInBand' },
       { text: 'Run npm run', run: 'npm run build' },
     ]);
-    expect(offers[0].pitfalls).toEqual(['Failed (exit 1): npm test']);
+    expect(offers[0].pitfalls).toEqual(['Failed (exit 1): Run npm test']);
     expect(offers[0].title).toBe('Run npm run');
     expect(offers[0].keyedBy).toBeUndefined();
     expect(offers[0].screen).toBeUndefined();

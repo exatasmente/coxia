@@ -38,7 +38,7 @@ describe('the path that worked (acceptance 1)', () => {
     n = 0;
     const d = draft([bad('npm test'), ok('npm test -- --runInBand')]);
     expect(d.steps).toEqual([{ n: 1, text: 'Run npm test', run: 'npm test -- --runInBand' }]);
-    expect(d.pitfalls).toEqual(['Failed (exit 1): npm test']);
+    expect(d.pitfalls).toEqual(['Failed (exit 1): Run npm test']);
     expect(d.failed).toEqual(['Run npm test']);
     expect(d.trial).toBe(true);
   });
@@ -47,7 +47,7 @@ describe('the path that worked (acceptance 1)', () => {
     n = 0;
     const d = draft([ok('npm ci'), bad('pytest -x', 2)]);
     expect(d.steps.map((s) => s.run)).toEqual(['npm ci']);
-    expect(d.pitfalls).toEqual(['Failed (exit 2): pytest -x']);
+    expect(d.pitfalls).toEqual(['Failed (exit 2): Run pytest']);
     expect(d.trial).toBe(false);
   });
 
@@ -66,7 +66,7 @@ describe('the path that worked (acceptance 1)', () => {
   it('words a timeout as a pitfall', () => {
     n = 0;
     const d = draft([slow('npm run e2e'), ok('npm run e2e -- --headless')]);
-    expect(d.pitfalls).toEqual(['Timed out: npm run e2e']);
+    expect(d.pitfalls).toEqual(['Timed out: Run npm run']);
     expect(d.steps.map((s) => s.run)).toEqual(['npm run e2e -- --headless']);
     expect(d.trial).toBe(true);
   });
@@ -293,7 +293,7 @@ describe('what a command may carry (acceptance 2)', () => {
 
   it('caps the pitfalls at what a record keeps', () => {
     n = 0;
-    const entries = Array.from({ length: 12 }, (_, i) => bad(`pytest tests/t${i}.py`));
+    const entries = Array.from({ length: 12 }, (_, i) => bad(`tool${i} run`));
     expect(draft(entries).pitfalls).toHaveLength(LIMITS.pitfalls);
   });
 
