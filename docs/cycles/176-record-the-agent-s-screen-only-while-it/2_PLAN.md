@@ -61,7 +61,7 @@ Two clocks: the **real** clock (the stage's) and the **media** clock (the video'
 - **The mapping.** With the cuts sorted, the real time of a media time `m` is `m` plus the `skippedMs` of every cut with `atMs <= m`. The media time of a real time `r` is `r` minus the cuts before it; a real time that falls inside a cut maps to that cut's `atMs`. Both are pure functions in `shared/screen.ts` (`realAtMedia`, `mediaAtReal`), used by the recorder and the player, and tested together.
 - **The meta.** `RecordingMeta` gets:
   - `durationMs` — **now the media duration**, the length of the video file (the player's timeline). Before this fix it was the stage's time. Records saved by 0.9.0-beta.4 have no cuts, so for them the two are the same.
-  - `realMs?` — the stage's time between the first fed frame and the end of the recording. `realMs = durationMs + sum(skippedMs)`, except for a recording that stopped at the time limit (`realMs` is then where it stopped, which is at least that).
+  - `realMs?` — the stage's time between the first fed frame and the end of the recording. `realMs = durationMs + sum(skippedMs)`. Both fields are written only when something was cut; without cuts `realMs` is `durationMs`.
   - `cuts?` — the list above, ordered by `atMs`; absent or empty when nothing was cut.
   - `marks` stay in **media** ms from the start, so the strip needs nothing more.
 - **The marks (`fromMs` / `toMs`).** The hub still gives the recorder the real interval of the person's input; the recorder converts both ends with `mediaAtReal`. The least width (`RECORDING_MARK_MIN_MS`) is applied in real time, as before, and again in media time when the cut collapsed the interval; an interval that lies inside the recording's real span but was cut away is kept as a mark of that width at the cut (the evidence never loses what the person did); an interval that begins after the end is dropped, as before.
@@ -90,7 +90,7 @@ Two clocks: the **real** clock (the stage's) and the **media** clock (the video'
 | `test/screen-hub.test.ts` | no frame is read or fed while no window is mapped, and the encoder is not even opened; the video starts at the frame in which the window first appears (ts 0); an empty screen after a window closed feeds nothing; no recording plus `{ ok: false, reason: 'unused' }` when a window never appears, and `no-frame` (not `unused`) when a window was seen and its frame could not be read; the same for a display that died; one line only through the executor |
 | `test/screen-recorder.test.ts` | a gap over 3 s becomes 1 s of media and one cut; a gap of exactly 3 s is kept; the tail is compressed the same way; unfed offers move nothing; the time limit is on the media clock (a long still stretch no longer stops the recording, and a long video of changes still does); the cuts are capped and the mapping stays exact past the cap; marks are converted, widened, snapped to a cut and dropped after the end; the truncation loop drops the cuts past the end; `durationMs`/`realMs`/`cuts` in the meta and the `Duration` of the file |
 | `test/webm-mux.test.ts` | unchanged in behaviour (the muxer takes media times); one case that the media duration is what `Duration` holds |
-| `test/screen-shared.test.ts` (new, small) | `realAtMedia` and `mediaAtReal` are inverses outside the cuts and agree inside them |
+| `test/screen-recorder.test.ts` (the mapping) | `realAtMedia` and `mediaAtReal` are inverses outside the cuts and agree inside them |
 | `test/runner-screen-recording.test.ts` | an `unused` outcome writes exactly one `runner.screen.notKept` line with the new reason, keeps no evidence, and the stage does not fail |
 | `test/recording-player-ui.test.ts` | the ticks render at their place with their label; the real time line and the duration with the real time render only when there are cuts; a recording without cuts renders exactly as before; labels in both languages |
 | `test/evidence-recording.test.ts` | the run-file schema accepts the new fields and refuses a malformed cut |
@@ -140,3 +140,10 @@ Each commit keeps the suite green; the changelog line of the visible change goes
 ## 8. State of what was checked
 
 Read from the code of `release/0.9.0` (0.9.0-beta.4, which holds #157): `hub.ts`, `recorder.ts`, `webm.ts`, `x11.ts`, `shared/screen.ts`, `RecordingPlayer.tsx`, the executor's `keepScreenRecording`, the fake X server and the existing tests. Nothing else was run before this plan was written; the real check (a throwaway Xvfb, the real hub and encoder) is done after the code and reported with its numbers.
+
+## 9. Changes made while building
+
+- `realMs` and `cuts` are written only when a cut exists, and `realMs` is always `durationMs` plus the cuts, also for a recording that stopped at a limit (no separate rule for the time limit).
+- A mark wholly before the first frame is dropped (there is no video to point to); the plan only said what happens after the end.
+- The mapping tests sit in `test/screen-recorder.test.ts`, not in a file of their own.
+- A video that ends at the time limit has no tail cut: it ends exactly at the limit, as in #157.
