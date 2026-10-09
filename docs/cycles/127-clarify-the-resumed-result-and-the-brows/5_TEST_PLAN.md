@@ -6,8 +6,8 @@ One plan covers the two behavior fixes and the aligned test: the run screen's ti
 
 ## Scenarios
 
-1. **Timeline says which attempt each stage document belongs to** (blocking) — pass. A seeded run whose "Triage" stage ran twice (attempt 1 produced `0_TRIAGE.md`; attempt 2 produced `2_PLAN.md` and a name produced again) is opened on the run screen. Seen: `0_TRIAGE.md · tentativa 1`, `2_PLAN.md · tentativa 2`, `3_IMPLEMENTATION.md · tentativa 2`, stage header "tentativa 2"; every document line shows its attempt, without opening an artifact. Evidence: ev-1, ev-2.
-2. **The badge wording exists in English too** (blocking) — pass. The same seeded run with the workspace language switched to English. Seen: `0_TRIAGE.md · attempt 1`, `2_PLAN.md · attempt 2`, `3_IMPLEMENTATION.md · attempt 2`. Evidence: ev-3.
+1. **Timeline says which attempt each stage document belongs to** (blocking) — pass. A seeded run whose "Triage" stage ran twice (attempt 1 produced `0_TRIAGE.md`; attempt 2 produced `2_PLAN.md` and a name produced again) is opened on the run screen. Seen: `0_TRIAGE.md · tentativa 1`, `2_PLAN.md · tentativa 2`, `3_IMPLEMENTATION.md · tentativa 2`, stage header "tentativa 2"; every document line shows its attempt, without opening an artifact. Evidence: ev-15 (timeline), ev-17 (runs list); re-executed in a later attempt with the same outcome: ev-1, ev-2.
+2. **The badge wording exists in English too** (blocking) — pass. The same seeded run with the workspace language switched to English. Seen: `0_TRIAGE.md · attempt 1`, `2_PLAN.md · attempt 2`, `3_IMPLEMENTATION.md · attempt 2`. Evidence: ev-16; first execution: ev-3.
 3. **Stage documents keep the attempt that produced them; a name produced again keeps its first; a run file with the field parses** (blocking) — pass. Repository suite: `test/runs-sendback.test.ts` (12 tests) inside the full-suite run. Evidence: ev-4.
 4. **The reconnect refetch drops a finished run the bucket never held and keeps one still going** (blocking) — pass. Repository suite: the reconnect cases of `test/activity-store.test.ts` (21 tests in the file) inside the full-suite run. Evidence: ev-4.
 5. **A screen opened fresh fetches and files everything, as today** (blocking) — pass. Repository suite: the plain refill cases of `test/activity-store.test.ts`. Evidence: ev-4.
@@ -25,8 +25,8 @@ Criteria 1, 2, 4 and 5 verified live or by the suite; criterion 3's store logic 
 
 ## Resultado dos cenários
 
-- Timeline says which attempt each stage document belongs to: passou (executado na sandbox) — Built app on a disposable data folder, seeded run whose Triage stage ran twice: the timeline lists 0_TRIAGE.md · tentativa 1, 2_PLAN.md · tentativa 2, 3_IMPLEMENTATION.md · tentativa 2, and the stage header counts attempts (tentativa 2). Badge visible without opening an artifact.
-- Badge wording exists in English too: passou (executado na sandbox) — Same seeded run with the workspace language switched to English: 0_TRIAGE.md · attempt 1, 2_PLAN.md · attempt 2, 3_IMPLEMENTATION.md · attempt 2.
+- Timeline says which attempt each stage document belongs to: passou (executado na sandbox) — Built app on a disposable data folder, seeded run whose Triage stage ran twice: the timeline lists 0_TRIAGE.md · tentativa 1, 2_PLAN.md · tentativa 2, 3_IMPLEMENTATION.md · tentativa 2, and the stage header counts attempts (tentativa 2). Badge visible without opening an artifact. (ev-15, ev-17)
+- Badge wording exists in English too: passou (executado na sandbox) — Same seeded run with the workspace language switched to English: 0_TRIAGE.md · attempt 1, 2_PLAN.md · attempt 2, 3_IMPLEMENTATION.md · attempt 2. (ev-16)
 - Stage artifacts keep the producing attempt; repeated name keeps first; run file parses: passou (executado na sandbox) — test/runs-sendback.test.ts (12 tests) passed inside the full-suite run executed in this stage.
 - Reconnect refetch drops a finished run never held, keeps one still going: passou (executado na sandbox) — Reconnect cases of test/activity-store.test.ts (21 tests in the file) passed inside the full-suite run.
 - A screen opened fresh fetches and files everything, as today: passou (executado na sandbox) — Plain refill cases of test/activity-store.test.ts passed inside the full-suite run.
