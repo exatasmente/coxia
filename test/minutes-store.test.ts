@@ -281,6 +281,34 @@ describe('unanswered questions that repeat across days', () => {
     expect(day.repeated).toEqual([{ ref: 'acme#1', question: 'Was the plan approved?', stage: 'Doing', dates: [PREV, DAY], count: 2 }]);
   });
 
+  it('does not count the same question left unanswered in two ceremonies of one day as a repetition', () => {
+    state.saveState(ceremony({ id: A, cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Ship it?' }) }, spoken: ['acme#1'] }));
+    state.saveState(ceremony({ id: B, cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Ship it today?' }) }, spoken: ['acme#1'] }));
+    const day = store.dayView(DAY);
+    expect(day.merged.unanswered).toHaveLength(1);
+    expect(day.repeated).toEqual([]);
+  });
+
+  it('shows no repetition when the earlier day holds a different question, and writes no section for it', async () => {
+    state.saveState(ceremony({ id: '2026-10-01T094000', cards: [card('acme#2')], turns: { 'acme#2': turn('acme#2', { question: 'Who reviews?' }) }, spoken: ['acme#2'] }));
+    store.dayView(PREV);
+    state.saveState(ceremony({ id: A, cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Ship it?' }) }, spoken: ['acme#1'] }));
+    expect(store.dayView(DAY).repeated).toEqual([]);
+    await saver.saveMinutes(minutes({ unanswered: [...QUESTION('Ship it?')] }), '', [], A);
+    expect(readFileSync(join(ATAS, `${DAY}-pre-daily.md`), 'utf8')).not.toContain('Perguntas repetidas sem resposta');
+  });
+
+  it('drops a question answered today from the repeated ones, and leaves the earlier day listing it', () => {
+    state.saveState(ceremony({ id: '2026-10-01T094000', cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Can the plan be approved today?' }) }, spoken: ['acme#1'] }));
+    store.dayView(PREV);
+    // Today the same activity is covered and the turn holds no question: it was answered.
+    state.saveState(ceremony({ id: A, cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1') }, spoken: ['acme#1'] }));
+    const today = store.dayView(DAY);
+    expect(today.merged.unanswered).toEqual([]);
+    expect(today.repeated).toEqual([]);
+    expect(store.dayView(PREV).merged.unanswered.map((u) => u.ref)).toEqual(['acme#1']);
+  });
+
   it('does not rewrite an earlier day\'s document when today is saved, and shows the section only on days with a repetition', async () => {
     state.saveState(ceremony({ id: '2026-10-01T094000', cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1') }, spoken: [] }));
     store.dayView(PREV);
