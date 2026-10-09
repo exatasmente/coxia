@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.5] - 2026-10-08
+
 ### Fixed
 
 - **The test suite no longer leaves its temporary folders behind.** Every run of the tests makes its folders (data folders, repositories it clones, worktrees) under one temporary folder of its own and removes it when the run ends; a folder left by a run that was killed is removed by a later run. Before, each run left thousands of folders in the system's temporary directory, enough to fill a disk on a machine where the tests run often.
@@ -333,7 +335,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.4...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.5...HEAD
+[0.9.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.4...v0.9.0-beta.5
 [0.9.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.3...v0.9.0-beta.4
 [0.9.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.2...v0.9.0-beta.3
 [0.9.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.1...v0.9.0-beta.2
