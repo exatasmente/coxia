@@ -1,4 +1,4 @@
-# Release note: delivery of
+# Release note: the run's timeline now says which attempt produced each document, and a paired browser keeps only its own run's lines
 
 This delivery changes what a run's timeline shows and how a paired browser fills it in, plus one fix so a flaky test stops failing on slow machines.
 
