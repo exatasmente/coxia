@@ -343,6 +343,17 @@
 .cy-ask-note { display: flex; flex-direction: column; gap: 4px; }
 .cy-ask-actions { gap: 8px; flex-wrap: wrap; }
 .cy-ask-computer { margin: 0; }
+.cy-offers { display: flex; flex-direction: column; gap: 8px; margin: 0 0 8px; }
+.cy-offer { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--ink); }
+.cy-offer-title { margin: 0; font-size: 14px; }
+.cy-offer-line { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
+.cy-offer-field { display: flex; flex-direction: column; gap: 4px; }
+.cy-offer-block { display: flex; flex-direction: column; gap: 4px; }
+.cy-offer-sub { margin: 0; font-size: 12px; color: var(--muted); }
+.cy-offer-steps, .cy-offer-list { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; overflow-wrap: anywhere; line-height: 1.4; }
+.cy-offer-run { display: block; margin-top: 2px; padding: 2px 6px; border-radius: 6px; background: var(--surface); border: 1px solid var(--line); overflow-wrap: anywhere; }
+.cy-offer-warning { margin: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); }
+.cy-offer-actions { gap: 8px; flex-wrap: wrap; }
 .cy-call-actions { display: inline-flex; gap: 6px; margin-left: auto; }
 
 /* The recording of an agent's screen in a conversation, played inside the message's file card. */

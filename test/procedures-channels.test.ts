@@ -6,6 +6,7 @@ import { neutralConfig } from '../src/shared/config';
 import type { AuditEntry } from '../src/shared/auditoria';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { createProcedureChannels, type ProcedureChannels } from '../src/main/procedures/channels';
+import { createProcedureOffers } from '../src/main/procedures/offers';
 import { createProcedureStore, proceduresPath, type ProcedureStore } from '../src/main/procedures/store';
 import { procedureAuditEntry } from '../src/main/procedures/audit';
 import type { ProcedureRecord } from '../src/shared/procedures';
@@ -248,5 +249,54 @@ describe('the view helpers', () => {
   it('summarises a record without its text', () => {
     const r = agentRecord();
     expect(Object.keys(summarize(r, T0)).sort()).not.toContain('steps');
+  });
+});
+
+describe('the offers to keep a procedure', () => {
+  const offer = {
+    id: 'c-1',
+    kind: 'repo' as const,
+    key: 'api',
+    title: 'Run the tests',
+    steps: [{ text: 'Install the packages', run: 'npm ci' }],
+    pitfalls: [],
+    waits: [],
+    leftOut: 0,
+    handoff: false,
+    stepsFrom: 'recording' as const,
+    thread: 'app#123',
+    agent: 'writer',
+    writer: agent,
+    usage: { promptTokens: 900, completionTokens: 100, cachedTokens: 0, calls: 2, costUsd: null },
+  };
+
+  it('lists the offers of a thread, keeps one under the title on the card, declines another, and answers gone for what is not there', () => {
+    const offers = createProcedureOffers({ store, config: () => config, now: () => clock, audit: (e) => audits.push(e) });
+    ch = createProcedureChannels({ store, config: () => config, audit: (e) => audits.push(e), now: () => clock, offers });
+    const a = offers.raise(offer);
+    const b = offers.raise({ ...offer, key: 'web', thread: 'app#124' });
+    expect(ch.offers('app#123').map((o) => o.offerId)).toEqual([a.offerId]);
+    expect(ch.offers().map((o) => o.offerId)).toEqual([a.offerId, b.offerId]);
+    expect(ch.offers(42)).toHaveLength(2);
+
+    const kept = ok(ch.offerKeep(a.offerId, 'Run the tests'));
+    expect(kept).toMatchObject({ title: 'Run the tests', reviewed: true, origin: { by: 'person', createdBy: 'writer' } });
+    expect(ch.offerDecline(b.offerId)).toEqual({ ok: true });
+    expect(ch.offers()).toEqual([]);
+    expect(ch.offerKeep(a.offerId, 'x')).toMatchObject({ ok: false, code: 'gone' });
+    expect(ch.offerDecline(b.offerId)).toEqual({ ok: false, code: 'gone' });
+  });
+
+  it('works with the switch off, as the person\'s other writes do', () => {
+    const offers = createProcedureOffers({ store, config: () => config, now: () => clock });
+    ch = createProcedureChannels({ store, config: () => config, now: () => clock, offers });
+    expect(config.runner.procedures).not.toBe(true);
+    expect(ch.offerKeep(offers.raise(offer).offerId, 'Run the tests').ok).toBe(true);
+  });
+
+  it('answers as if there were none when the build has no offers', () => {
+    expect(ch.offers('app#123')).toEqual([]);
+    expect(ch.offerKeep('o-00000001', 'x')).toMatchObject({ ok: false, code: 'gone' });
+    expect(ch.offerDecline('o-00000001')).toEqual({ ok: false, code: 'gone' });
   });
 });

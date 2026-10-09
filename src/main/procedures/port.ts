@@ -2,7 +2,7 @@ import type { AuditEntry } from '../../shared/auditoria';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { proceduresOn, type ProcedureSurface } from '../../shared/procedures';
 import type { ProcedureScreen } from './screen';
-import { createProcedureSession, type ProcedureSession, type SessionDeps } from './session';
+import { createProcedureSession, type CommandSource, type ProcedureSession, type SessionDeps } from './session';
 import { createProcedureStore, type ProcedureStore } from './store';
 
 // The door a call goes through to get its procedures. A stage, a conversation answer and an agent a stage called each ask `open` for a session; the answer is null when the
@@ -28,6 +28,8 @@ export interface OpenContext {
   note?: SessionDeps['note'];
   /** The call's screen, through the adapter: its steps for a draft, and the hand-off's seams. Absent: the call has none. */
   screen?: ProcedureScreen;
+  /** The commands the call's shell ran in it, for the command draft. Absent: the call has no shell of the app. */
+  commands?: CommandSource;
 }
 
 export interface ProceduresPort {
@@ -73,6 +75,7 @@ export function createProceduresPort(deps: PortDeps): ProceduresPort {
         writer: { by: agent.id, surface: ctx.surface, ...(ctx.stage ? { stage: ctx.stage } : {}), ref: ctx.ref, permission: agent.permission, ...(agent.shell ? { shell: agent.shell } : {}) },
         issue: ctx.issue,
         ...(ctx.screen ? { screen: ctx.screen } : {}),
+        ...(ctx.commands ? { commands: ctx.commands } : {}),
         workspaceRepos: config.projects.repos.map((r) => r.id),
         select: {
           repos: ctx.repos,

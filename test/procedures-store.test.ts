@@ -69,6 +69,16 @@ describe('save: a new record', () => {
     expect(r.ok && r.record.origin).toMatchObject({ by: 'person', createdBy: 'person', surface: 'person' });
   });
 
+  it('names the agent as the creator when the person keeps what it did, and a replacement keeps the first creator', () => {
+    const store = make();
+    const kept = store.save(req({ writer: { ...writer, by: 'person' }, createdBy: 'writer' }));
+    expect(kept.ok && kept.record.reviewed).toBe(true);
+    expect(kept.ok && kept.record.origin).toMatchObject({ by: 'person', createdBy: 'writer', surface: 'stage', stage: 'development', ref: 'app#123', permission: 'worktree', shell: 'sandbox' });
+    if (!kept.ok) return;
+    const again = store.save(req({ id: kept.record.id, revision: 1, createdBy: 'someone-else', input: content({ title: 'Run the tests, fixed' }) }));
+    expect(again.ok && again.record.origin.createdBy).toBe('writer');
+  });
+
   it('draws ids of "p-" and 8 hex digits', () => {
     const r = createProcedureStore(ws).save(req());
     expect(r.ok && r.record.id).toMatch(/^p-[0-9a-f]{8}$/);

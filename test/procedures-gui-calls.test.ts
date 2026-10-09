@@ -115,6 +115,7 @@ describe('an agent mentioned in a conversation', () => {
     expect(withScreen.engine.calls[0].system).toContain(base);
     expect(withScreen.engine.calls[0].system).toContain(gui);
     expect(withScreen.engine.calls[0].system).toContain('procedures_draft');
+    expect(gui).toMatch(/whole screen from when it opened|tela inteira desde que ela abriu/);
     const without = world({ agent: { screen: false } });
     without.engine.script('turn', () => ({ text: 'Done.' }));
     await answerMentions(place(), say(), without.d);
@@ -123,7 +124,7 @@ describe('an agent mentioned in a conversation', () => {
     expect(without.engine.calls[0].system).not.toContain('procedures_draft');
   });
 
-  it('drafts only what it did itself: the steps an earlier answer took on the screen kept between messages are not in this one', async () => {
+  it('drafts the whole screen: the steps an earlier answer took on the screen kept between messages are in this one too (#187)', async () => {
     screens = fakeScreens();
     const { d, engine } = world();
     let second = '';
@@ -138,8 +139,67 @@ describe('an agent mentioned in a conversation', () => {
     });
     await answerMentions(place(), say(), d);
     await answerMentions(place(), say(), d);
-    expect(second).toContain('1. Open /later on docs.example.com');
-    expect(second).not.toContain('earlier');
+    expect(second).toContain('1. Open /earlier on docs.example.com');
+    expect(second).toContain('2. Open /later on docs.example.com');
+    expect(second).toContain('on this screen since it opened, in all your answers');
+  });
+
+  it('starts the next draft of the screen after the steps a save used, and after the steps seen when it read the procedure it followed (#187)', async () => {
+    screens = fakeScreens();
+    const { d, engine } = world();
+    const drafts: string[] = [];
+    engine.script('turn', async (call) => {
+      const n = engine.calls.length;
+      if (n === 1) {
+        await open(call, 'https://docs.example.com/first');
+        await open(call, 'https://docs.example.com/second');
+        drafts.push(text(await call.procedures?.draft?.({})));
+        await call.procedures?.save({ kind: 'gui', draft: 'd-1', key: 'docs.example.com', title: 'Open the first pages' });
+      } else if (n === 2) {
+        // A save moved the mark: only this answer's step is in the draft, though the screen is the same.
+        await open(call, 'https://docs.example.com/third');
+        drafts.push(text(await call.procedures?.draft?.({})));
+        // Reading the procedure moves it to the screen's last step, so what came before is not the changed part.
+        await call.procedures?.get({ id: records()[0].id });
+        await open(call, 'https://docs.example.com/fourth');
+        drafts.push(text(await call.procedures?.draft?.({})));
+      }
+      return { text: 'Done.' };
+    });
+    await answerMentions(place(), say(), d);
+    await answerMentions(place(), say(), d);
+    expect(drafts[0]).toContain('1. Open /first on docs.example.com');
+    expect(drafts[1]).toContain('1. Open /third on docs.example.com');
+    expect(drafts[1]).not.toContain('/first');
+    expect(drafts[1]).not.toContain('/second');
+    expect(drafts[2]).toContain('1. Open /fourth on docs.example.com');
+    expect(drafts[2]).not.toContain('/third');
+  });
+
+  it('starts a new screen at the beginning: the mark a save left on the closed one does not hide its steps', async () => {
+    screens = fakeScreens();
+    const { d, engine } = world();
+    let second = '';
+    engine.script('turn', async (call) => {
+      if (engine.calls.length === 1) {
+        await open(call, 'https://docs.example.com/a');
+        await open(call, 'https://docs.example.com/b');
+        await open(call, 'https://docs.example.com/c');
+        await call.procedures?.draft?.({});
+        await call.procedures?.save({ kind: 'gui', draft: 'd-1', key: 'docs.example.com', title: 'Open a, b and c' });
+        return { text: 'First.' };
+      }
+      await open(call, 'https://docs.example.com/fresh');
+      second = text(await call.procedures?.draft?.({}));
+      return { text: 'Second.' };
+    });
+    await answerMentions(place(), say(), d);
+    const [kept] = screens.sessions.list();
+    expect(screens.sessions.markOf(kept.key)).toBe(3);
+    await screens.sessions.close(kept.key);
+    await answerMentions(place(), say(), d);
+    expect(screens.sessions.markOf(kept.key)).toBe(0);
+    expect(second).toContain('1. Open /fresh on docs.example.com');
   });
 
   it('has no draft in a call without the app\'s browser, and a gui save there is refused', async () => {

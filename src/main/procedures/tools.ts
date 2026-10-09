@@ -26,10 +26,20 @@ export interface ProcedureTools {
   get(input: unknown): Promise<ProcedureAnswer>;
   save(input: unknown): Promise<ProcedureAnswer>;
   stale(input: unknown): Promise<ProcedureAnswer>;
-  /** The app's draft of a `gui` procedure from what the app's browser did in this call. Present only when the call has the app's browser; absent: the tool is not offered. */
+  /** The app's draft of what the call did: a `gui` procedure from its browser, a `repo` or `tool` one from its shell. Present only when the call has either; absent: the tool is not offered. */
   draft?(input: unknown): Promise<ProcedureAnswer>;
+  /** Which drafts `draft` can make. Absent, a draft is the screen's (a hand-made table of tools). */
+  has?: DraftSources;
   /** The engine could not offer the tools (the Claude Agent SDK or zod did not load): the place the call works in is told, once. The list stays in the prompt. */
   unavailable?(): void;
+}
+
+/** What a call can be drafted from. */
+export interface DraftSources {
+  /** The app's browser: a `d-N` draft for kind gui. */
+  screen: boolean;
+  /** The app's shell: a `c-N` draft for kind repo or tool. */
+  commands: boolean;
 }
 
 export interface ProcedureToolSpec {
@@ -56,6 +66,11 @@ const GUI_WITH_DRAFT =
   "A gui procedure is not written from memory: call procedures_draft when you are done, and save from its draft. For kind gui give the draft's id as draft, a key (one of the sites the draft lists), a title, " +
   'and, optionally, steps: the numbers of the draft steps to keep, each as {n} or as {n, text} to reword it (you cannot add a step or a command of your own); leave steps out to keep them all. pitfalls and waits are yours, and the draft offers candidates. ';
 
+const COMMANDS_WITH_DRAFT =
+  "A repo or tool procedure about commands you ran is not written from memory either: call procedures_draft when you are done, and save from its c- draft. Give the draft's id as draft (\"c-1\"), kind repo with the id of the repository, " +
+  'or kind tool with the program, a key, a title, and, optionally, steps: the numbers of the draft steps to keep, each as {n} or as {n, text} to reword it (the commands are the app\'s recording: you cannot add a step or change a command); ' +
+  'leave steps out to keep them all. pitfalls and waits are yours, and the draft offers candidates. A repo, tool, cycle or request procedure of what you worked out and did not run as commands is still written by you, without a draft. ';
+
 const saveDescription = (gui: string): string =>
   'Keeps a procedure for the next time: what you worked out about doing a recurring thing, so no agent has to explore it again. Save one when you finished a task by exploring (more than a few steps of trial), ' +
   'the task is likely to repeat and no procedure for it was listed; replace one (give its id and the revision you read) when the one you followed had to be corrected. Do not save a one-off, and do not save what ' +
@@ -70,11 +85,23 @@ const saveDescription = (gui: string): string =>
 export const SAVE_DESCRIPTION = saveDescription(GUI_WITHOUT_DRAFT);
 export const SAVE_WITH_DRAFT_DESCRIPTION = saveDescription(GUI_WITH_DRAFT);
 
-export const DRAFT_DESCRIPTION =
-  "Returns the app's draft of what you did on the screen in this call, so you can keep it as a gui procedure: one step per action the app's browser took, in order, each naming the control by its role and visible label and the page as a path, " +
+const SCREEN_DRAFT =
+  "Returns the app's draft of what was done on the screen, from when it opened (all your answers on it, not only this one) or from the last draft you saved, so you can keep it as a gui procedure: one step per action the app's browser took, in order, each naming the control by its role and visible label and the page as a path, " +
   'with nothing you or the person typed (a typed value reads <value>), the waits the app measured, and the actions that did not work as candidates for pitfalls. It is built by the app from its own log; you review it and ' +
-  'save it with procedures_save (kind gui, its draft id). Call it when the task is done and was worth keeping, not on every task. If you followed a procedure that the draft differs from, the draft says so and saving replaces that one. ' +
-  'It has nothing when the browser took no step: work done through your own shell is not drafted.';
+  'save it with procedures_save (kind gui, its draft id). If you followed a procedure that the draft differs from, the draft says so and saving replaces that one. ' +
+  'It has nothing when the browser took no step.';
+const COMMAND_DRAFT =
+  "Returns the app's draft of the commands you ran in your shell in this call, so you can keep them as a repo or tool procedure: the commands that worked, in order, as the steps (each with the command as you ran it), the commands that did not work as candidates " +
+  'for pitfalls, and how many commands the app left out for safety. It is built from the text of the commands only; no output is read. You review it and save it with procedures_save (kind repo or tool, its draft id).';
+
+/** What `procedures_draft` says about itself, by what the call can be drafted from. */
+export const draftDescription = (has: DraftSources): string =>
+  [has.screen ? SCREEN_DRAFT : '', has.commands ? COMMAND_DRAFT : '', 'Call it when the task is done and was worth keeping, not on every task.'].filter(Boolean).join(' ');
+
+export const DRAFT_DESCRIPTION = draftDescription({ screen: true, commands: false });
+
+/** What `procedures_save` says about drafts, by what the call can be drafted from. */
+export const saveWithDraftDescription = (has: DraftSources): string => saveDescription(`${has.screen ? GUI_WITH_DRAFT : GUI_WITHOUT_DRAFT}${has.commands ? COMMANDS_WITH_DRAFT : ''}`);
 
 export const STALE_DESCRIPTION =
   'Says that a step of a procedure no longer worked: give its id and the number of the step (starting at 1), and optionally a short note on what happened. The procedure is shown as failing so the next agent follows only ' +
@@ -141,10 +168,10 @@ export const SAVE_WITH_DRAFT_SCHEMA = {
   type: 'object',
   properties: {
     ...SAVE_SCHEMA.properties,
-    draft: { type: 'string', description: 'For kind gui: the id of the draft from procedures_draft ("d-1").' },
+    draft: { type: 'string', description: 'The id of the draft from procedures_draft: "d-1" for kind gui (the screen), "c-1" for kind repo or tool (the commands you ran).' },
     steps: {
       type: 'array',
-      description: 'In order. For kind gui: the draft steps to keep, each {n} or {n, text}; leave out to keep them all. For the other kinds: the steps, {text, run}.',
+      description: 'In order. With a draft: the draft steps to keep, each {n} or {n, text}; leave out to keep them all. Without one: the steps, {text, run}.',
       items: {
         type: 'object',
         properties: { ...SAVE_SCHEMA.properties.steps.items.properties, n: DRAFT_STEP.properties.n },
@@ -180,20 +207,25 @@ export const PROCEDURE_TOOLS: readonly ProcedureToolSpec[] = [
 /** The tool names the open engine must have allowed for these tools to reach the model. */
 export const PROCEDURE_TOOL_NAMES: readonly string[] = PROCEDURE_TOOLS.map((t) => t.name);
 
+/** The draft sources of a call's tools: the screen's alone when the table does not say. */
+const sourcesOf = (tools: Pick<ProcedureTools, 'has'>): DraftSources => tools.has ?? { screen: true, commands: false };
+
 /**
- * The tools a call is given: the four, and `procedures_draft` when the call has the app's browser (then `procedures_save` also takes a draft). The engines build what they
- * offer from this, so a call without a screen is exactly as before.
+ * The tools a call is given: the four, and `procedures_draft` when the call has the app's browser or its shell (then `procedures_save` also takes a draft). The engines build
+ * what they offer from this, so a call with neither is exactly as before.
  */
-export function procedureToolSpecs(tools: Pick<ProcedureTools, 'draft'>): readonly ProcedureToolSpec[] {
+export function procedureToolSpecs(tools: Pick<ProcedureTools, 'draft' | 'has'>): readonly ProcedureToolSpec[] {
   if (!tools.draft) return PROCEDURE_TOOLS;
+  const has = sourcesOf(tools);
+  const save = has.screen && !has.commands ? SAVE_WITH_DRAFT_DESCRIPTION : saveWithDraftDescription(has);
   return [
-    ...PROCEDURE_TOOLS.map((t) => (t.name === SAVE_TOOL ? { ...t, description: SAVE_WITH_DRAFT_DESCRIPTION, schema: SAVE_WITH_DRAFT_SCHEMA as unknown as Record<string, unknown> } : t)),
-    { name: DRAFT_TOOL, description: DRAFT_DESCRIPTION, schema: DRAFT_SCHEMA },
+    ...PROCEDURE_TOOLS.map((t) => (t.name === SAVE_TOOL ? { ...t, description: save, schema: SAVE_WITH_DRAFT_SCHEMA as unknown as Record<string, unknown> } : t)),
+    { name: DRAFT_TOOL, description: draftDescription(has), schema: DRAFT_SCHEMA },
   ];
 }
 
 /** The names of the tools a call is given. */
-export const procedureToolNames = (tools: Pick<ProcedureTools, 'draft'>): string[] => procedureToolSpecs(tools).map((t) => t.name);
+export const procedureToolNames = (tools: Pick<ProcedureTools, 'draft' | 'has'>): string[] => procedureToolSpecs(tools).map((t) => t.name);
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 

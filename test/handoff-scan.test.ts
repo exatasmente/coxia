@@ -170,7 +170,16 @@ describe('the tools the app offers a model', () => {
   it('cannot read the typed text back: the call object has a mask, a yes/no, a flag and a clear, and nothing that returns a value', () => {
     const typed = createTypedValues();
     typed.add([MARKER]);
-    expect(Object.keys(typed).sort()).toEqual(['add', 'clear', 'had', 'hits', 'mask']);
+    expect(Object.keys(typed).sort()).toEqual(['add', 'clear', 'had', 'hits', 'mask', 'snapshot']);
+    // the copy kept for a detached turn answers yes or no and forgets: it returns no value either
+    const copy = typed.snapshot();
+    expect(Object.keys(copy).sort()).toEqual(['clear', 'hits']);
+    expect(copy.hits(MARKER)).toBe(true);
+    typed.clear();
+    expect(copy.hits(MARKER)).toBe(true);
+    copy.clear();
+    expect(copy.hits(MARKER)).toBe(false);
+    typed.add([MARKER]);
     expect(typed.mask(`x ${MARKER} y`)).toBe('x [secret] y');
     expect(typed.hits(MARKER)).toBe(true);
     expect(JSON.stringify(typed)).not.toContain(MARKER);

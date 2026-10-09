@@ -130,6 +130,7 @@ import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
 import type { ProceduresPort } from '../procedures/port';
+import type { ProcedureOffers } from '../procedures/offers';
 import { runDocsAsk, stageOfRun } from '../harness/deliver';
 import type { MentionPlace } from '../mentions/place';
 import { proposeMention } from '../mentions/propose';
@@ -254,6 +255,10 @@ export interface RunnerDeps {
   pluginNotes?(): { name: string; note: string }[];
   /** The workspace's learned procedures: stages, the agents they call and the answers in a run's thread get their list and tools from here. Absent: none. */
   procedures?: ProceduresPort;
+  /** Where the offers to keep a procedure are held: a stage and an answer in a run's thread raise them after their last turn (#187). Absent: no last turn. */
+  offers?: ProcedureOffers;
+  /** For a test: the limit of the last turn, in ms. */
+  procedureTurnMs?: number;
 }
 
 export type GateAction = 'approve' | 'reject' | 'skip';
@@ -405,7 +410,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref), procedures: deps.procedures, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref), procedures: deps.procedures, offers: deps.offers, procedureTurnMs: deps.procedureTurnMs, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
 
   /** The record of the activities as a call reads it: the front named whole, the others in short. Never a model call, never the file. */
   function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = []): string {
@@ -1511,6 +1516,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       // What the answer is told of the activities: its own front whole, and whatever else the message named.
       memory: (_place, msg) => sharedTextOf(run.issue.ref, callsOfMention(msg)),
       procedures: deps.procedures,
+      offers: deps.offers,
       // An agent named in a run's thread reads only inside that run's worktree; a refusal is told in the thread, like a stage's.
       readRoot: (p, def, _cwd) => {
         const r = p.run;
