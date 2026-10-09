@@ -1,14 +1,17 @@
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
-import type { Run } from '../../../../shared/runs';
-import { SCREEN_WIDTH_DESKTOP, SCREEN_WIDTH_PHONE, type ScreenInput, clampFrameWidth, isExitChord } from '../../../../shared/screen';
+import { type PendingAsk, parseKey } from '../../../../shared/browser';
+import { type LiveScreen as LiveScreenState, SCREEN_WIDTH_DESKTOP, SCREEN_WIDTH_PHONE, type ScreenInput, clampFrameWidth, isExitChord } from '../../../../shared/screen';
+import type { AgentDef } from '../../../../shared/config/types';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { useIsPhone } from '../../useIsPhone';
 import { Sheet } from '../Sheet';
+import { AskCards } from './AskCard';
 import { jpegSrc, screenApi } from './screenApi';
 import { type Size, FLUSH_MS, batchesOf, buttonOf, createHeld, isSentKey, pointerToScreen, pollDelay, takeControl, wheelNotches } from './screenKeys';
 
-// The live screen of a working stage: the agent's virtual screen, refreshed about twice a second while the viewer is open, in the desktop window and in the paired browser
+// The live screen of an agent: a working stage's, or the one an agent has in a conversation. The viewer is given the screen's key (`run:<id>` or `call:<thread>:<agent>`), never a run.
+// The agent's virtual screen, refreshed about twice a second while the viewer is open, in the desktop window and in the paired browser
 // alike. On the desktop alone, "Take control" sends the person's clicks, wheel and keys to that screen; the viewer then says plainly that it is on and that it is being
 // recorded, and the chord Ctrl+Alt+Shift+Escape (never sent) gives control back. Frames are asked for, never pushed: closing the viewer stops the asking.
 
@@ -27,8 +30,8 @@ interface Frames {
 
 const NOTE_MS = 3000;
 
-/** Asks for the latest frame of the run's screen over and over: not while the document is hidden, never overlapping, slower after a slow answer, and no more once the stage ended. */
-function useFrames(runId: string, width: number): Frames {
+/** Asks for the latest frame of the screen over and over: not while the document is hidden, never overlapping, slower after a slow answer, and no more once the stage ended. */
+function useFrames(screenKey: string, width: number): Frames {
   const [frames, setFrames] = useState<Frames>({ src: null, screen: null, remote: false, ended: false, failed: false });
   useEffect(() => {
     let live = true;
@@ -42,7 +45,7 @@ function useFrames(runId: string, width: number): Frames {
       let next: Partial<Frames> = {};
       let again = true;
       try {
-        const answer = await screenApi.frame(runId, since, width);
+        const answer = await screenApi.frame(screenKey, since, width);
         if (!live) return;
         if (answer.state === 'none') {
           next = { ended: true, remote: false, failed: false };
@@ -79,18 +82,21 @@ function useFrames(runId: string, width: number): Frames {
       if (timer) clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [runId, width]);
+  }, [screenKey, width]);
   return frames;
 }
 
-/** The viewer of a run's live screen, in a sheet. `run.screen` may be gone while it is open (the stage ended): it then says so and stops asking. */
-export function LiveScreen({ run, onClose }: { run: Run; onClose: () => void }) {
+/** What the viewer needs to know of the screen it shows: its size and whether it is recorded. */
+export type ViewerState = Pick<LiveScreenState, 'width' | 'height' | 'recording'>;
+
+/** The viewer of a live screen, in a sheet. `state` may be gone while it is open (the stage ended, the screen was closed): it then says so and stops asking. */
+export function LiveScreen({ screenKey, state, canClose = false, asks = [], team, onClose }: { screenKey: string; state: ViewerState | null; /** Offers "Close screen", which ends the agent's screen and not just the viewer. */ canClose?: boolean; /** The questions waiting on this screen, answered from here too. */ asks?: readonly PendingAsk[]; team?: readonly AgentDef[]; onClose: () => void }) {
   const t = useT();
   const web = isWeb();
   const phone = useIsPhone();
   const width = clampFrameWidth(web || phone ? SCREEN_WIDTH_PHONE : SCREEN_WIDTH_DESKTOP);
-  const frames = useFrames(run.id, width);
-  const live = run.screen ?? null;
+  const frames = useFrames(screenKey, width);
+  const live = state;
   const ended = frames.ended || !live;
 
   const [control, setControl] = useState(false);
@@ -120,7 +126,7 @@ export function LiveScreen({ run, onClose }: { run: Run; onClose: () => void }) 
     pending.current = [];
     for (const batch of batches) {
       chain.current = chain.current.then(async () => {
-        const answer = await screenApi.input(run.id, batch).catch(() => null);
+        const answer = await screenApi.input(screenKey, batch).catch(() => null);
         if (!answer) return;
         if (answer.rejected > 0) noteRejected(answer.rejected);
         // The main process says control is not on (or the screen is gone): the viewer follows.
@@ -130,7 +136,7 @@ export function LiveScreen({ run, onClose }: { run: Run; onClose: () => void }) 
         }
       });
     }
-  }, [run.id, noteRejected]);
+  }, [screenKey, noteRejected]);
 
   const queue = useCallback(
     (event: ScreenInput) => {
@@ -151,11 +157,11 @@ export function LiveScreen({ run, onClose }: { run: Run; onClose: () => void }) 
     controlRef.current = false;
     setControl(false);
     releaseHeld();
-    chain.current = chain.current.then(() => screenApi.control(run.id, false).then(() => undefined, () => undefined));
-  }, [run.id, releaseHeld]);
+    chain.current = chain.current.then(() => screenApi.control(screenKey, false).then(() => undefined, () => undefined));
+  }, [screenKey, releaseHeld]);
 
   const startControl = async (): Promise<void> => {
-    if (!(await takeControl((on) => screenApi.control(run.id, on), () => open.current))) return;
+    if (!(await takeControl((on) => screenApi.control(screenKey, on), () => open.current))) return;
     controlRef.current = true;
     setControl(true);
     stageBox.current?.focus();
@@ -253,12 +259,19 @@ export function LiveScreen({ run, onClose }: { run: Run; onClose: () => void }) 
   };
 
   const recording = live?.recording;
+  const [closing, setClosing] = useState(false);
+  const closeScreen = (): void => {
+    setClosing(true);
+    void screenApi.close(screenKey).then(() => undefined, () => undefined).finally(() => open.current && setClosing(false));
+  };
+  const stage = parseKey(screenKey)?.kind !== 'call';
   return (
     <Sheet label={t('ui.cycle.live.title')} onClose={onClose} wide captureKeys={control}>
       <div className="cy-live">
         <div className="row cy-live-bar">
           {recording && <span className={`badge ${recording === 'on' ? 'cy-tone-blocked' : 'cy-tone-quiet'}`}>{recording === 'on' ? t('ui.cycle.live.recordingOn') : recording === 'waiting' ? t('ui.cycle.live.recordingWaiting') : t('ui.cycle.live.recordingStopped')}</span>}
           {frames.remote && !control && <span className="badge cy-tone-person">{t('ui.cycle.live.remote')}</span>}
+          {canClose && !ended && <button type="button" className="btn cy-mini" disabled={closing} onClick={closeScreen}>{t('ui.screen.closeScreen')}</button>}
           {!web && !ended && (
             <div className="cy-switch-row cy-live-switch">
               <button type="button" role="switch" aria-checked={control} aria-label={t('ui.cycle.live.control')} className={`cy-switch ${control ? 'on' : ''}`} onClick={() => (control ? stopControl() : void startControl())}>
@@ -271,6 +284,7 @@ export function LiveScreen({ run, onClose }: { run: Run; onClose: () => void }) 
             </div>
           )}
         </div>
+        <AskCards asks={asks} team={team} />
         {control && (
           <p className="cy-live-banner" role="status">
             {recording === 'stopped' ? t('ui.cycle.live.controlStopped') : recording === 'waiting' ? t('ui.cycle.live.controlWaiting') : t('ui.cycle.live.controlOn')}
@@ -295,7 +309,7 @@ export function LiveScreen({ run, onClose }: { run: Run; onClose: () => void }) 
           )}
         </div>
         {frames.failed && !ended && <p className="small faint" role="status">{t('ui.cycle.live.failed')}</p>}
-        {ended && <p className="small cy-live-ended" role="status">{t('ui.cycle.live.ended')}</p>}
+        {ended && <p className="small cy-live-ended" role="status">{t(stage ? 'ui.cycle.live.ended' : 'ui.screen.ended')}</p>}
       </div>
     </Sheet>
   );

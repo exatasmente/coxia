@@ -317,3 +317,27 @@
 .cy-rec-cut:hover { background: var(--ink); }
 .cy-rec-cut:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .cy-evidence-removed { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--chip-quiet-bg); color: var(--muted); }
+
+/* The agents' open screens of a conversation, above the message box. */
+.cy-screens { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cy-screen { padding: 6px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line-3); }
+.cy-screen-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cy-screen-agent { overflow-wrap: anywhere; }
+.cy-screen-closes { flex: 1 1 120px; min-width: 0; }
+.cy-screen-actions { display: inline-flex; gap: 6px; margin-left: auto; }
+
+/* A question the app's screen asks the person, and the agent's own words inside it. */
+.cy-asks { display: flex; flex-direction: column; gap: 8px; margin: 0 0 8px; }
+.cy-ask { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--ink); }
+.cy-ask-title { margin: 0; font-size: 14px; color: var(--amber-ink); }
+.cy-ask-line { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
+.cy-ask-words { margin: 0; padding: 6px 10px; border-left: 3px solid var(--line); background: var(--surface-2); border-radius: 0 8px 8px 0; }
+.cy-ask-words blockquote { margin: 2px 0 0; overflow-wrap: anywhere; font-style: italic; }
+.cy-ask-note { display: flex; flex-direction: column; gap: 4px; }
+.cy-ask-actions { gap: 8px; flex-wrap: wrap; }
+.cy-ask-computer { margin: 0; }
+.cy-call-actions { display: inline-flex; gap: 6px; margin-left: auto; }
+
+/* The recording of an agent's screen in a conversation, played inside the message's file card. */
+.cy-file-video { flex-wrap: wrap; }
+.cy-file-player { flex: 1 1 100%; min-width: 0; max-width: 480px; }
