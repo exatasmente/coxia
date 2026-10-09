@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A terminal session can read the workspace's state through a local server.** Settings › Workspaces gains a per-workspace opt-in ("Terminal state server", schema 24); with it on, the panel shows the exact server entry to add to a project's `.mcp.json` (the same `{mcpServers}` shape the app itself reads) and offers, once per project folder, to merge that entry into the file beside the project's other entries, never replacing a same-name entry that runs a different program (the person confirms the write in the dialog; opting out never touches the file). A session with the entry gets the app's read tools over standard input and output — the workspace's cycles, its runs (stage, status and the question one waits for), one run's conversation without system lines, its evidence, its activities memory and the learned procedures — each answer masked the way the app masks its own, rebuilt from the files at every call, answering other workspaces nothing, and working with the app closed. Nothing is served before the opt-in, and no tool writes.
+
 ## [0.9.0-beta.9] - 2026-10-09
 
 ### Fixed

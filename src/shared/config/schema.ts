@@ -558,6 +558,9 @@ export const CONFIG_SCHEMA: JsonSchema = {
         },
         required: ['variables', 'secrets'],
       },
+      mcpState: object('The local read-only state server of the workspace: a terminal session adds it over stdio. It answers the workspace\'s cycles, runs, conversations, evidence and memories, always masked; it never writes.', {
+        enabled: boolean('A terminal session with the setup entry may list the state server\'s read tools. Off: the server answers every call with the refusal.'),
+      }),
     },
     ['schemaVersion'],
   ),
