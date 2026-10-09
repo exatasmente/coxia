@@ -226,3 +226,24 @@ describe('what a stage is offered of the screen', () => {
     if (row.browser) expect(screens.starts[0].display === null).toBe(!row.asksDisplay);
   });
 });
+
+describe('the recording of an agent called in the run\'s thread', () => {
+  it('is kept as a piece of the run\'s evidence, as a stage\'s is, and a recording that failed is said in the thread', async () => {
+    const b = await boot();
+    easy(b);
+    let run = await b.runner.start('app#101');
+    await b.settle();
+    run = b.runner.get(run.id)!;
+    const { webmHead } = await import('./helpers/webm');
+    const meta = { durationMs: 5000, width: 8, height: 4, marks: [] };
+    expect(b.runner.keepCallRecording(run.id, 'planner', { ok: true, bytes: webmHead(300), meta })).toBe('kept');
+    const kept = b.runner.evidence(run.id)?.filter((e) => e.recording);
+    expect(kept).toHaveLength(1);
+    expect(kept?.[0]).toMatchObject({ kind: 'webm', by: 'planner', bytes: 312 });
+    expect(b.thread(run).some((m) => m.code === 'runner.evidence.recorded')).toBe(true);
+    expect(b.runner.keepCallRecording(run.id, 'planner', { ok: false, reason: 'encoder' })).toBe('not');
+    expect(b.thread(run).filter((m) => m.code === 'runner.screen.notKept')).toHaveLength(1);
+    expect(b.runner.keepCallRecording(run.id, 'planner', null)).toBe('not');
+    expect(b.runner.keepCallRecording('r-gone', 'planner', { ok: true, bytes: webmHead(300), meta })).toBe('not');
+  });
+});

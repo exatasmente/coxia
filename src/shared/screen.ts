@@ -82,6 +82,18 @@ export const RECORDING_RESERVE_BYTES = 1024 * 1024;
 /** An interval of the person's use of the screen is marked at least this wide, so a single click is a mark that can be seen and hit. */
 export const RECORDING_MARK_MIN_MS = 1000;
 
+/** The EBML header of a WebM file: the magic, then the DocType element (id 0x4282, one length byte 4, "webm") within the first 64 bytes. */
+const WEBM_MAGIC = [0x1a, 0x45, 0xdf, 0xa3];
+const WEBM_DOCTYPE = [0x42, 0x82, 0x84, 0x77, 0x65, 0x62, 0x6d];
+
+/** Whether the bytes are a WebM file: what the app's own recording is, and the only video it keeps. */
+export function isWebm(bytes: Uint8Array): boolean {
+  if (!WEBM_MAGIC.every((b, i) => bytes[i] === b)) return false;
+  const head = bytes.subarray(0, 64);
+  for (let i = 0; i + WEBM_DOCTYPE.length <= head.length; i++) if (WEBM_DOCTYPE.every((b, j) => head[i + j] === b)) return true;
+  return false;
+}
+
 /** What a run handed out carries while its working stage has a live screen. Filled by the runner when it hands the run out and never saved. */
 export interface LiveScreen {
   stage: string;

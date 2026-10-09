@@ -3,7 +3,7 @@ import { nativeImage } from 'electron';
 import { join } from 'node:path';
 import { HOME, ATAS, DATA_ROOT } from '../env';
 import { runAgent, probeProviderBudget } from '../agents';
-import { forumStore, interceptPosts } from '../forum';
+import { forumStore, interceptPosts, threadAnchor } from '../forum';
 import { type CommandDecision, RunError, isFlowCycle } from '../../shared/runs';
 import type { AttachmentRef } from '../../shared/attachments';
 import { createdIssueOf } from '../../shared/runs/links';
@@ -12,6 +12,8 @@ import type { Module } from '../module';
 import { failureText, noteRetroIssue } from '../retroIssues';
 import { callStops } from '../mentions/stop';
 import { callOrigin } from '../rpc';
+import { attachmentStore } from '../attachments';
+import { keepConversationRecording } from '../mentions/recording';
 import { runStore } from '../runs';
 import { git } from '../conflictGit';
 import { vcsProvider, vcsReady } from '../vcs';
@@ -182,6 +184,13 @@ export const runsModule: Module = (ctx) => {
       } catch (e) {
         console.error('[runner] could not record a note on the screen', e instanceof Error ? e.message : e);
       }
+    },
+    // The recording of a conversation's screen is kept when the screen closes, before its browser and display go: in a run's thread as a piece of the run's evidence, as a
+    // stage's is; anywhere else as a `video` attachment of the conversation, with one post of the app that says so. A failure is said there and never fails an answer.
+    keepRecording: (screen, outcome) => {
+      const run = screen.thread.startsWith('run-') ? runStore().get(screen.thread.slice('run-'.length)) : null;
+      if (run) return current?.keepCallRecording(run.id, screen.agent, outcome) ?? 'not';
+      return keepConversationRecording({ store: attachmentStore(), forum: forumStore(), anchor: threadAnchor }, screen, outcome);
     },
     changed: (key) => ctx.emit({ type: 'module', name: SCREEN_EVENT, payload: { key } }),
   });

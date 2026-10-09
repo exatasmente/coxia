@@ -478,24 +478,26 @@ function hostApproval(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentD
  * kept (the agent cannot cite it) and not copied to the cycle folder. What cannot be kept is said in the conversation with the reason; it never fails the stage, which
  * has ended already one way or another. `current` is the run with the evidence the stage kept so far, so the recording takes the next id.
  */
-function keepScreenRecording(d: ExecutorDeps, current: Run, stage: FlowStage, agent: AgentDef, outcome: RecordingOutcome | null): void {
-  if (!outcome || !d.keepEvidence) return;
+export function keepScreenRecording(d: ExecutorDeps, current: Run, stage: Pick<FlowStage, 'id'>, agent: Pick<AgentDef, 'id'>, outcome: RecordingOutcome | null): 'kept' | 'not' {
+  if (!outcome || !d.keepEvidence) return 'not';
   const threadId = runThreadId(current.id);
-  const notKept = (why: Parameters<typeof notKeptText>[0]): void => {
+  const notKept = (why: Parameters<typeof notKeptText>[0]): 'not' => {
     try {
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.screen.notKept', params: { agent: agent.id, reason: notKeptText(why) }, stage: stage.id });
     } catch (e) {
       console.error('[runner] could not say a recording was not kept', e instanceof Error ? e.message : e);
     }
+    return 'not';
   };
   try {
     if (!outcome.ok) return notKept(outcome.reason);
     const put = putRecording(d.dataDir(), current, { bytes: outcome.bytes, stage: stage.id, by: agent.id, title: t('main.evidence.screenRecording'), meta: outcome.meta, at: new Date().toISOString() });
     if (!put.ok) return notKept(put.problem);
     d.keepEvidence(current.id, put.record);
+    return 'kept';
   } catch (e) {
     console.error('[runner] could not keep the screen recording', e instanceof Error ? e.message : e);
-    notKept('write');
+    return notKept('write');
   }
 }
 
@@ -788,7 +790,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     }
     if (keptCount) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookKept', params: { agent: agent.id, count: keptCount }, stage: stage.id });
   };
-  const keepRecording = (outcome: RecordingOutcome | null): void => keepScreenRecording(d, runSoFar(), stage, agent, outcome);
+  const keepRecording = (outcome: RecordingOutcome | null): void => void keepScreenRecording(d, runSoFar(), stage, agent, outcome);
   const evidence =
     evidenceRoot && d.keepEvidence
       ? evidenceToolsOf({

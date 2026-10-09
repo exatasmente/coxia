@@ -112,10 +112,11 @@ import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
 import type { ScreenHub } from '../screen/hub';
 import type { ScreenAsks } from '../browser/asks';
+import type { RecordingOutcome } from '../screen/recorder';
 import type { ScreenSessions } from '../browser/sessions';
 import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../shared/evidence';
 import { dropEvidence, readEvidence } from '../evidence/store';
-import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
+import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, keepScreenRecording, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
 import { type ActivityFront, createSharedMemory, sortedFronts } from './activities';
 import { inboxOf } from './inbox';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree, workBase } from './git';
@@ -183,7 +184,7 @@ function takeCarried(runId: string, stage: string): AttachmentRef[] | undefined 
 /** The files a person attached, as the runner takes them from a caller: only what holds its own shape, so a hand-made call cannot smuggle anything in. */
 function cleanAttachments(list: readonly AttachmentRef[] | undefined): AttachmentRef[] {
   return (list ?? [])
-    .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && (ATTACHMENT_KINDS as readonly string[]).includes(a.kind) && typeof a.name === 'string')
+    .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && (ATTACHMENT_KINDS as readonly string[]).includes(a.kind) && a.kind !== 'video' && typeof a.name === 'string')
     .map((a) => ({ id: a.id, name: a.name.slice(0, 200), kind: a.kind, bytes: Number(a.bytes) || 0 }))
     .slice(0, 50);
 }
@@ -257,6 +258,11 @@ export interface Runner {
   evidenceBytes(runId: string, id: string): { bytes: Uint8Array; record: EvidenceRecord } | null;
   /** The person removes one piece of evidence (never an agent): the file goes and the run's record with it. */
   removeEvidence(runId: string, id: string): boolean;
+  /**
+   * Keeps the recording of the screen of an agent called in the run's thread as a piece of the run's evidence, as a stage's recording is. `not` when the run is gone or the
+   * recording could not be kept (the thread then says why).
+   */
+  keepCallRecording(runId: string, agent: string, outcome: RecordingOutcome | null): 'kept' | 'not';
   start(ref: string, repoId?: string): Promise<Run>;
   /**
    * Starts the run of a release: its subject is a version, not an issue. The worktree is the run's own (the cycle documents live there); the release steps run in the
@@ -1122,6 +1128,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!run || !record) return null;
       const bytes = readEvidence(deps.env().dataDir, run.id, record);
       return bytes ? { bytes, record } : null;
+    },
+    keepCallRecording: (runId, agent, outcome) => {
+      const run = deps.runs.get(runId);
+      return run ? keepScreenRecording(exec, run, { id: run.stage ?? '' }, { id: agent }, outcome) : 'not';
     },
     removeEvidence: (runId, id) => {
       const run = deps.runs.get(runId);
