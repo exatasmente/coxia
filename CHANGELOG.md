@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The app's browser starts in the installed app.** In the package, the Playwright that the browser server needs was left inside `app.asar`, where the server (unpacked so that it runs as a real file) cannot read it, so an agent's screen answered that the browser server did not start. Both builds now unpack it too.
+
 ## [0.9.0-beta.7] - 2026-10-09
 
 ### Added

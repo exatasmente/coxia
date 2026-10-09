@@ -19,6 +19,9 @@ describe('build profiles', () => {
       const yml = read(name);
       expect(yml, name).toContain('- node_modules/@playwright/**');
       expect(yml, name).toContain('- node_modules/@playwright/mcp/node_modules/playwright-core/**');
+      // electron-builder hoists the server's Playwright to the top of node_modules in the package; unpacked cli.js cannot reach into app.asar.
+      expect(yml, name).toContain('- node_modules/playwright/**');
+      expect(yml, name).toContain('- node_modules/playwright-core/**');
     }
   });
 
@@ -28,7 +31,7 @@ describe('build profiles', () => {
     expect(pub).toContain('"!node_modules/@anthropic-ai/**"');
     const unpack = pub.slice(pub.search(/^asarUnpack:/m)).split('\n').filter((l) => /^\s+- /.test(l)).map((l) => l.trim().slice(2));
     expect(unpack.length).toBeGreaterThan(0);
-    expect(unpack.every((p) => p.startsWith('node_modules/@playwright/'))).toBe(true);
+    expect(unpack.every((p) => /^node_modules\/(@playwright\/|playwright\/|playwright-core\/)/.test(p))).toBe(true);
     expect(unpack.some((p) => p.includes('anthropic'))).toBe(false);
   });
 
