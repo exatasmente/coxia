@@ -2,26 +2,33 @@
 
 ## Decisões
 
-- Triagem de 82 (tentativa 5): pedido de funcionalidade, não duplicata, dá para entender por leitura. Sem pergunta para a pessoa e sem pergunta para quem abriu.
-- Sugestão de prioridade: `priority:low` (a da issue), por ser capacidade de fluxo sem defeito nem bloqueio.
-- Squad proposto: plataforma — o trabalho é do runtime (plugin embutido, leitura de fase e gate, `specLayout` na configuração compartilhada); nenhum escopo reivindica a issue por rótulo ou pasta.
+- Refino de 82 (tentativa 1): `1_SPEC.md` entregue; nenhuma pergunta — os cinco pontos que a triagem deixou para o refino foram fixados nas Regras 1 a 6 da spec.
+- Nome e lugar: `REQUIREMENTS.md`, `PROTOTYPE.md`, `USER_MANUAL.md`, na raiz da pasta do ciclo, ao lado dos documentos de sempre.
+- Ciclo de agentes: requisitos no refinamento (lido pelo portão 1), protótipo no plano (portão 2), manual na etapa final (depois do último portão, ao lado da nota de lançamento).
+- Plugin embutido vem declarativo e ligado por padrão; desligado na lista de plugins, os três tipos deixam de ser lidos (fase e portões), sem reiniciar.
+- Fase: os três documentos do fluxo contam (cada um representa seu ponto do fluxo); documento colateral de plugin (busca) não move a fase — regra fixada.
+- Prioridade proposta: `priority:low` (a da issue): capacidade nova, sem defeito nem bloqueio; sobe a medium se alguém esperar o manual. Marco: nenhum (o registro de 82, 84 e 97 não traz marco).
 
 ## Restrições
 
-- Esta etapa só lê: nada foi executado (nenhum teste nem aplicativo), então tudo o que se afirma é leitura.
-- Fora de escopo, dito pela própria issue: protótipo em alta fidelidade; o layout dos artefatos é assunto do refino.
+- Só leitura nesta etapa: nada foi executado (nenhum teste, nenhum aplicativo); a comprovação das leituras está em ev-1 e a spec marca cada ponto como lido, não executado.
+- Fora de escopo, ditos pela issue: protótipo em alta fidelidade; layout dos artefatos é do refino e do plano. Fora do refino: formato/conteúdo dos três documentos (é do fluxo) e todo o mecanismo de leitura é do plano.
+- Execuções em andamento continuam no fluxo com que começaram; o fluxo é dado do espaço de trabalho e a pessoa pode editar (tirar um dos documentos ou o manual de ciclos que não o quiserem).
 
 ## Tentado e descartado
 
-- Procurar `rules/cycle-artifacts.md`, citado na issue: não existe na árvore; os artefatos do ciclo estão descritos nos documentos do projeto (`docs/cycles.md`) — usar esse.
-- Procurar duplicatas varrendo os textos das issues do ciclo por requisito/protótipo/manual: só esta issue; relacionadas #84, #96, #97.
+- Perguntar à pessoa nomes, etapas, lugar do manual e estado inicial do plugin — descartado: a issue diz que o layout é "for refinement and planning", então o refino decide e o gate 1 aprova.
+- Pôr requisitos e protótipo juntos no refinamento, ou o manual no QA/revisão — descartado: um documento por etapa anterior a um portão deixa cada portão com o seu e a fase com progressão legível (requisitos → protótipo → manual).
+- Procurar marco no host (issues 82, 84, 97): nenhum tem — proposta de marco nula.
 
 ## Perguntas abertas
 
-Nenhuma que pause a etapa. Fica para o refino: nome e lugar de cada documento, em qual etapa entra, onde o manual aparece, se o plugin embutido vem ligado por padrão e se documentos de plugin também movem a fase.
+Nenhuma que pause a etapa. Fica para o plano (tech-lead): o mecanismo que entrega as regras sem mudar os leitores — como a fase encontra os tipos novos, como cada portão escolhe o seu documento (hoje o portão 1 não os vê e `find` pega o primeiro), o default do plugin para espaços existentes, rótulos e fases nos dois catálogos, e os testes.
 
 ## Onde o trabalho está
 
-- `0_TRIAGE.md` entregue nesta tentativa; a anterior reiniciada não tinha deixado documento algum na pasta.
-- Confirmado por leitura: o gate soma documentos declarados por plugin (`src/main/gate.ts:106,120`, registro em `src/main/plugins/module.ts:664-665`, teste `test/gate-plugin-documents.test.ts` lido e não rodado); a fase lê só os `phaseFiles` configurados (`src/main/cards.ts:38`); o único plugin embutido é `plugins/web-search`, com um documento; nenhum declara requisitos, protótipo ou manual.
-- Próxima etapa: refino (product-owner).
+- `1_SPEC.md` entregue nesta tentativa na pasta do ciclo; issue, memória e triagem continuam como estavam.
+- Confirmado por leitura (não executado): fase só lê `phaseFiles` (`src/main/cards.ts:28-40`); portão soma documentos de plugin só no segundo, fixo (`src/main/gate.ts:110-125`, registro `src/main/plugins/module.ts:665`); portão escolhe a primeira opção do número (`:175`); plugin sem escolha fica desligado (`src/main/plugins/read.ts:111`); declaração sem `entry` é válida (`src/shared/plugins/declaration.ts:76,197-203`); único plugin embutido é busca web com um documento; `rules/` não existe na árvore; etapa sem seus documentos é reparada uma vez (`prompt.sdd.runner.repair.missingArtifacts`, `flowCheck.ts:97-101`).
+- Próxima etapa: plano (tech-lead).
+- Passagem: escrever o plano a partir da spec — leitura da fase e dos portões para os três tipos, produção em refine/plan/communicate, plugin embutido ligado por padrão com migração, i18n e testes; distinção entre documentos do fluxo e colaterais é decisão técnica. <!-- handoff:35 -->
+- Passagem support → product-owner: Seguir para o refino: fixar os nomes e os lugares dos documentos de requisitos, protótipo e manual, em qual etapa cada um entra e é lido, onde o manual aparece, se o plugin embutido vem ligado por padrão e se os documentos de plugin também movem a fase. A-base da plataforma foi conferida por leitura, não executada. <!-- handoff:34 -->
