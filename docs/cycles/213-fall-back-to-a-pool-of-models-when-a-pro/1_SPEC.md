@@ -128,6 +128,31 @@ que o cliente da API pare de repetir o mesmo modelo sem limite quando o servidor
 9. Uma etapa do motor aberto que troca de modelo termina com o histórico inteiro na mesma
    sessão, e o `.jsonl` da sessão mostra o modelo de cada resposta.
 
+## Modos de uso do conjunto
+
+A troca por atividade (itens 5 e 2 acima) perde o cache de prompt a cada troca, e um modelo mais barato que recebe o histórico inteiro só para editar um arquivo gasta o que economizou. Por isso a pessoa escolhe **como** o conjunto é usado, entre três modos:
+
+| Modo (`poolMode`) | Nome na tela | O que faz |
+|---|---|---|
+| `fallback` | Só reserva | Um modelo. O conjunto só entra quando o modelo em uso está ocupado. Nenhuma troca por atividade; uma volta de tela nunca vai a modelo que se sabe sem imagem. |
+| `switch` | Trocar por atividade | O que as partes anteriores entregam: cada volta vai ao modelo da lista da sua atividade (fica no em uso se ele alcança o piso). |
+| `delegate` | Principal com subagentes | O modelo principal fica fixo e guarda o seu cache (só reserva por ocupado, mais a regra da imagem). Edição, comando e tela vão a subagentes, cada um no modelo da lista da atividade dele. |
+
+**Onde se escolhe, e quem vence.** O agente do time (campo novo de `agents.team[]`), depois a etapa do modelo de ciclo (campo novo da etapa), depois o padrão do workspace (`llm.poolMode`, no passo "Modelos"). Vazio = herda do próximo. Cerimônia e `@menção` não têm etapa: vale o agente (na cerimônia, o agente de sistema do papel), depois o workspace. **Padrão: `delegate`**, em workspace novo e existente (campo ausente lê como `delegate`). Não é permissão e não levanta nenhuma.
+
+**`delegate`, na prática**
+- A ferramenta `Agent` ganha um tipo (`kind`): `explore` (ler e buscar), `edit` (escrever e editar), `shell` (comandos) e `screen` (a tela virtual). O subagente começa com o histórico vazio, recebe só a tarefa que o principal escreveu, tem **só as ferramentas do tipo** e devolve ao principal apenas a resposta final. Não aninha.
+- Cada subagente roda na lista da atividade dele: o primeiro modelo que não descansa, com a reserva por ocupado dentro da própria lista. As ferramentas dele são sempre um **subconjunto** das do principal: o confinamento ao worktree, a raiz de escrita, o filtro de segredo, a política de shell e a tela do agente são os mesmos.
+- Só se oferece o tipo que serve: `explore` sempre; `edit`, `shell` e `screen` quando a atividade tem **lista própria** e o principal tem ferramenta daquele tipo (um leitor não ganha `edit`; um agente sem tela não ganha `screen`). O principal é avisado, no prompt do sistema, de delegar edição, comando e tela ao tipo certo e de escrever a tarefa completa.
+- Subagentes de `edit`, `shell` e `screen` rodam **um de cada vez**; os de `explore` podem rodar juntos. A conversa diz "O principal (modelo A) passou o trabalho de edição a um subagente (modelo B)." quando o modelo difere. O uso dos subagentes soma ao da etapa. Esgotados os turnos, o principal recebe um erro claro e decide.
+- A tela: o subagente de `screen` usa a **mesma sessão** da etapa (não abre outra); a espera, o passe por site e a entrega à pessoa valem como se o principal tivesse feito o passo.
+
+**Sem lista por atividade, nada muda.** `switch` e `delegate` só têm efeito quando o papel (ou o agente) tem lista própria de `explore`, `edit`, `shell` ou `screen`; sem ela, o modo vale `fallback` e a ferramenta `Agent` fica como hoje. Nenhum workspace já publicado tem lista (o recurso não saiu), então o padrão `delegate` não muda o comportamento de ninguém ao atualizar. Os modos valem para o motor aberto; no Claude SDK a entrada do conjunto só vale no começo da etapa (item 10) e o modo não tem efeito.
+
+**Critérios de aceite dos modos.** (a) Em `fallback`, uma volta de `shell` com lista de `shell` fica no modelo em uso, e um ocupado passa à reserva. (b) Em `switch`, o comportamento da parte 1 não muda (testes existentes). (c) Em `delegate`, o principal não troca de modelo por atividade; um subagente `shell` roda no modelo da lista de `shell`, só com ferramentas de comando e leitura, e o principal recebe só a resposta final. (d) A precedência agente > etapa > workspace, com o padrão `delegate`. (e) Um tipo sem ferramenta no principal não é oferecido. (f) O celular pareado pode mudar o modo de um agente ou de uma etapa (não dá alcance), e não o do workspace. (g) Sem lista por atividade, nenhuma ferramenta nem prompt muda.
+
+**Confirmado pelo mantenedor (gate da parte 2):** sem lista própria por atividade, `switch` e `delegate` valem como `fallback`; e a chave `tools.subagents` também governa a ferramenta `Agent` no modo `delegate` (os textos dela passam a explicar o uso nas execuções).
+
 ## O que não foi verificado
 
 - O formato do catálogo foi conferido **hoje** contra um provedor real: `GET {baseUrl}/models`
@@ -161,6 +186,7 @@ que o cliente da API pare de repetir o mesmo modelo sem limite quando o servidor
 6. **Entra o segundo leitor de catálogo**, o formato de agregador (preço por token,
    `supported_parameters`, modalidades de entrada), escrito pela documentação pública e
    marcado no código como não conferido contra o serviço.
+8. **Três modos de usar o conjunto (2026-10-09, depois da parte 1):** `fallback` ("só reserva"), `switch` ("trocar por atividade", o que está feito) e `delegate` ("principal com subagentes", o **padrão**, em workspace novo e existente). Escolha: agente > etapa do modelo de ciclo > padrão do workspace; cerimônia e `@menção` só agente > workspace. Não é permissão. Ver "Modos de uso do conjunto" e a parte 2 do plano.
 
 ## Fora do escopo
 

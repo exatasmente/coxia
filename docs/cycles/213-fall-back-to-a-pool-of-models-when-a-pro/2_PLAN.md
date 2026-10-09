@@ -151,3 +151,123 @@ Arquivos afetados: `engine-open-client`, `engine-open-loop`, `engine-open-e2e`, 
 | Eco do raciocínio por entrada, descartado ao trocar de modelo | Eco global do provedor; reaproveitar o raciocínio entre modelos |
 | `pool-busy` é falha comum, com "Tentar de novo" | Espera como a de orçamento (o descanso é curto; a espera esconderia o problema) |
 | `v24ToV25` só sobe a versão | Deixar o campo opcional sem passo (um app antigo repararia e regravaria o bloco) |
+
+# Parte 2: modos de uso do conjunto
+
+Conferido em `wt-213` (`8c687829`, `feat-model-pool`). Escopo: os três modos da seção "Modos de uso do conjunto" da spec. Nada foi executado; o que não foi conferido está em **Riscos da parte 2**.
+
+## O que o código mostra e muda o desenho
+
+1. **O subagente de hoje não é somente leitura.** `runAgent` do laço (`loop.ts:297-318`) repassa `...p` (ferramentas extras, `writeRoot`, hooks, `events`, `docs`) e só tira `Agent` da lista; "read-only" é só o texto da descrição (`loop.ts:177-180`). Delegar por tipo é, portanto, **restringir** (filtro por `ToolImpl.activity`), não ampliar.
+2. **`Agent` não é oferecido a quem escreve.** Com `confine`, `toolsOf` devolve só `Read, Grep, Glob, Edit, Write` (`agents.ts:1278-1283`); `allowedFor` dá `Agent` só com `tools.subagents` e papel `deep` (`agents.ts:82`). Delegar exige oferecê-la, e só no motor aberto (no SDK, `Agent` é outra ferramenta).
+3. **O uso já soma.** `events` herdado dispara `onUsage` do pai (`agents.ts:589`); o `usage` do resultado é descartado por `bridge.ts` (`runOpenOnce` devolve só `data`, `sessionId`, `sources`). Nada a construir; um teste trava a soma.
+4. **Nenhum golden grava o texto de `Agent` nem o prompt de sistema do motor aberto.** `test/golden/*.json` só trazem o nome `Agent` na lista do SDK; só `engine-open-loop.test.ts:460` e `engine-open-pool.test.ts:288` usam a ferramenta. **Os goldens de prompt não mudam**, desde que o texto novo entre no `loop.ts` (`append` de `buildSystemPrompt`), não no `system` do runner, e que sem lista de atividade nada mude. O que muda: o teste de ferramentas/e2e de `delegate` (novos).
+5. **A tela é do run, não do agente que a usa.** `screenToolImpls(req.screen)` (`agents.ts:562`) são fechos sobre a sessão da etapa (`run:<id>`); o subagente os herda e **não abre sessão** (rule `agent-screen`, item 7: uma chave por sessão). O intermediário atende uma chamada por vez, e espera, passe, entrega (`screen_handoff`) e máscara valem iguais. Logo `screen` fica no subagente; sem sessão aninhada.
+
+## O que será construído
+
+| Funcionalidade | Onde cai |
+|---|---|
+| Tipo, resolução pura (agente > etapa > workspace > `delegate`) e `effectivePoolMode` | novo `src/shared/config/poolMode.ts`; `types.ts` (`POOL_MODES`, `LlmConfig.poolMode`, `AgentDef.poolMode`, `StageDef.poolMode`) |
+| Esquema, defaults, reparo | `schema.ts` (`stage` :136-162, agente :271, `llm` :433), `defaults.ts`, `migrations.ts:402` (`POOL_KEYS`/`poolKeyAt`), `validate.ts` (nada novo: o enum do esquema basta) |
+| Modelo de ciclo | `apply.ts:68,112` (o modo do agente e da etapa **viaja**, não é endereço), `flowFile.ts`, testes |
+| Modo até o laço | `EngineRequest.poolMode`, `AgentCall.stagePoolMode` (`agents.ts:1213`), `runAgent` (:1321) e `runOnce` (:822) resolvem; `openSelection` (:507) → `SelectionPool.mode` → `OpenPool.mode` (`bridge.ts:30,89`); `executor.ts:1136` e o `round` (:695) levam `stage.poolMode` |
+| Roteamento fixo | `PoolClient` (`pool.ts`): `route: 'activity' \| 'fixed'` |
+| `Agent` por tipo | `loop.ts:174-198,297-318`; `OpenRunParams.kinds`; novo `src/main/engine/open/subagent.ts` (tabela de tipos, filtro, trava, texto) |
+| Oferecer `Agent` a quem escreve; aviso no prompt | `agents.ts:1278,1330-1344` (no `withPool`, com `picked.engine === 'open'`); `loop.ts:381` (`append`) |
+| Aviso na conversa | `contract.ts:109-125` (`PoolNotice.reason: 'delegate'`), `poolNoticeCode` → `runner.model.delegated`; catálogos |
+| Interface | `ModelsStep.tsx` (padrão), `TeamSection.tsx:556` (agente), `StagePanel.tsx:207`/`flowEdit.ts` (etapa); `ui.*`, `wizard.*` |
+| Documentos | `docs/runner.md`, `docs/llm-providers.md` ("Conjunto de modelos"), `docs/configuration.md`, `docs/cycles.md` (tabela de campos da etapa :82 PT, :335 EN), `CHANGELOG.md` |
+
+## Dados e esquema
+
+```ts
+export const POOL_MODES = ['fallback', 'switch', 'delegate'] as const;
+export type PoolMode = (typeof POOL_MODES)[number];
+export const DEFAULT_POOL_MODE: PoolMode = 'delegate';
+// LlmConfig.poolMode?  (padrão do workspace)   AgentDef.poolMode?   StageDef.poolMode? (só etapa de trabalho)
+export function resolvePoolMode(s: { agent?: PoolMode; stage?: PoolMode; workspace?: PoolMode }): PoolMode  // agent ?? stage ?? workspace ?? DEFAULT
+export function effectivePoolMode(mode: PoolMode, lists: Partial<Record<Activity, unknown[]>>): PoolMode    // sem lista de explore/edit/shell/screen: 'fallback'
+```
+
+- **Esquema 25, sem segundo salto.** O 25 ainda não saiu: a `0.9.0-beta.12` está em 24 (`git show a1a7e6f7:src/shared/config/types.ts`), e o `[Unreleased]` do CHANGELOG já descreve o 25. A regra 3 de `config-schema.md` pede um passo quando o arquivo guardado não pega o campo sozinho e quando um app que não o conhece repararia e regravaria o bloco; os dois casos já são cobertos pela subida 24→25 (`v24ToV25`, `migrations.ts:381`), e nenhum arquivo gravado como 25 existe fora desta branch. Os três campos entram **no mesmo passo**; só a nota da migração (`:382`) ganha "and the pool mode". Nenhum passo sobe permissão (regra 5): o campo não é permissão.
+- **"Ausente = `delegate`" por `withConfigDefaults`.** `defaults.ts` põe `llm.poolMode: 'delegate'` no neutro (workspace novo grava; o existente o recebe em memória, `config-schema.md`, seção `withConfigDefaults`). No tipo o campo é opcional e toda leitura passa por `resolvePoolMode`, então uma config montada à mão num teste segue valendo. `AgentDef.poolMode` e `StageDef.poolMode` ficam **ausentes** (= herda); `newAgent` só grava quando presente (como `screen`, `team.ts:59-61`).
+- **Por que `llm.poolMode` e não `runner.*`.** O conjunto mora em `llm` (`roles`, `scoreOverrides`); as cerimônias leem o modo e `runner.*` é do run; o passo "Modelos" já edita `llm`. Fora de `WEB_EDITABLE`, o celular não o muda sem código novo.
+- **Reparo.** `POOL_KEYS` ganha `poolMode`, e `poolKeyAt` reconhece `llm.poolMode`, `agents.team[i].poolMode` e `devCycle.stages[i].poolMode`: um valor inválido é descartado sozinho, nunca o bloco ao redor (padrão do commit 2).
+- **Modelo de ciclo.** `applyTemplate`/`templateFromConfig`/`parseTemplate` (`apply.ts:68,112,186-210`) não tiram o campo: modo não é endereço de provedor nem permissão, e o conjunto continua sem viajar. `devCycle.stages` é validado pelo mesmo esquema, então a etapa com `poolMode` passa por `parseTemplate`. O formato do arquivo de modelo não muda (campo opcional).
+- **Celular (`paired-phone.md`).** `agents.team` e `devCycle.stages` já estão em `WEB_EDITABLE` (`configScope.ts:15-18`): o celular muda o modo de um agente e de uma etapa. Não dá alcance: o subagente usa o subconjunto das ferramentas do principal e as listas que a pessoa salvou no computador (`poolRaised` continua recusando entrada nova). `llm.poolMode` fica negado por não estar na lista. Travar com teste em `config-web-scope`. `RUN_VERSION` fica 6 (nada de modo no run).
+
+## Fluxo
+
+**Do config ao laço.** `runAgent` resolve `resolvePoolMode({ agent: call.agent.poolMode, stage: call.stagePoolMode, workspace: getConfig().llm.poolMode })`; `runOnce`, `{ agent: <agente de sistema do papel>?.poolMode, workspace }` (`agents.ts:836` já o acha). `openSelection(t, cwd, isolated, bare, mode)` guarda o modo em `SelectionPool.mode`, e o `bridge` em `OpenPool.mode`. **No motor, `mode` ausente em `OpenPool` vale `switch`** (os testes dos commits 4–9 montam `OpenPool` sem modo e continuam valendo); o app sempre o escreve. O laço calcula `effectivePoolMode(mode, <listas de atividade do conjunto>)` uma vez.
+
+**`fixed` (fallback e delegate, para o principal).** `new PoolClient(primary, pool, { route: 'fixed' })`: os candidatos são os da **lista `write`** (a de `write` se existe, senão a do papel, `listFor(lists,'write')`) com o filtro de capacidade da atividade **real** (`eligible(list, need)`; volta de `screen` só em quem não é `images === false`, e sem nenhum que veja cai na mesma lista, como hoje); `fits` é sempre verdadeiro (sem piso); fica no modelo em uso enquanto ele não recusa; ocupado → descanso e próximo da lista, com o aviso `switched` de hoje. `pooled` olha só essa lista (um modelo só continua passagem direta). Em `fixed` a lista `write` é a do principal em todo modo; as listas das outras atividades só servem aos subagentes. `switch` não muda uma linha. O começo da etapa (`modelPick.startList`) já usa a lista `write`; fica como está.
+
+**`delegate`: a ferramenta `Agent`.** `buildTools` recebe o modo efetivo e as listas. Tipos oferecidos (`kind`, enum **dinâmico**, constante na sessão): `explore` sempre; `edit`, `shell`, `screen` se `pool.activities[a]` existe **e** o principal tem ao menos uma ferramenta com aquela `ToolImpl.activity`. Esquema: `description`, `prompt`, `kind` (obrigatório em `delegate`), `subagent_type` (igual). Descrição em inglês, no `loop.ts` com `i18n-ignore`; esboço: "Hands a task to a sub-agent of the given kind, which starts with an empty history, has only the tools of that kind and returns only its final answer. Write the complete task: it sees nothing of this conversation. kind: explore (read and search), edit (change files), shell (run commands), screen (the virtual screen)." Um `kind` fora do enum é recusado pela checagem de argumentos que já existe (`badArgs`, lista os valores); `run` repete a checagem com mensagem própria.
+
+| `kind` | Ferramentas (por `ToolImpl.activity`, `tools/types.ts`) | Voltas |
+|---|---|---|
+| `explore` | `explore`: `Read`, `Grep`, `Glob`, `Skill`, `VcsRead` | 12 (como hoje) |
+| `edit` | `explore` + `edit`: `Write`, `Edit` (só existem se o principal as tem: `writeRoot`) | 30 |
+| `shell` | `explore` + `shell`: `Bash` ou `Shell` (sandbox ou computador, pela política do agente) | 20 |
+| `screen` | `explore` + `screen`: ferramentas do navegador do app, `screen_confirm`, `screen_handoff`, `ViewImage` | 30 |
+
+Sem etiqueta (MCP, evidência, release, anexos, procedimentos, `SendMessage`, `CallAgent`) fica no principal; nunca `Agent`. O filtro é `impls.filter(i => kindSet.has(i.activity))` **sobre as ferramentas que o principal já tem**, então a interseção é por construção; `hooks`, `writeRoot`, `writeReserved`, `isSecret` e `shellEnv` vêm de `...p` como hoje.
+
+**Modelo do subagente.** `subagent.ts` monta `OpenPool` com `activities[a]` como lista (`fallbacks = lista.slice(1)`, `primary` = o primeiro com `tools !== false`) e chama `runOpen` com `client` e `capabilities` desse membro, `route: 'fixed'`, `depth + 1`, `sessionsDir: null`, `schema: undefined`. Sem `poolClient` do pai: ele tem o próprio `PoolClient`, com `onSwitch` ligado a `events.onSwitch` (a troca por ocupado dentro da lista se diz como hoje). `explore` sem lista própria usa o modelo do principal (como hoje). `switch` e `fallback` seguem compartilhando o `PoolClient` do pai.
+
+**Concorrência e erro.** Uma corrente de promessas por laço serializa `edit`/`shell`/`screen`; `explore` roda solto (as chamadas do mesmo turno já correm em `Promise.all`, `loop.ts:534`). `OpenMaxTurnsError` do subagente vira erro de ferramenta (`main.engine.text.subTurns`: o tipo, as voltas, "o trabalho já feito em disco fica; divida a tarefa ou faça você") e não derruba o principal. Uma linha `sub` (tipo, modelo, voltas, tokens) vai ao `.jsonl` do principal (`session.ts`, ignorada por `messagesOf`).
+
+**Prompt do principal** (só em `delegate` efetivo, em `append`, antes do `structuredNote`): delegar edição, comando e tela ao subagente do tipo certo, uma tarefa completa por vez, sem editar os arquivos que um subagente edita, e ler a resposta final dele em vez de refazer. Lista só os tipos oferecidos.
+
+**Oferecer `Agent`.** No `withPool` de `runAgent`, `picked.engine === 'open'` e `mode` efetivo `delegate` e `tools.subagents` ligado (o `tools` que `toolsOf` devolve): `allowedTools` ganha `Agent`, também para quem escreve e sem a restrição ao papel `deep`. Cerimônia: `allowedFor` como hoje (só `deep`). `procedureOnly`/`bare`: nunca. A chave `tools.subagents` ("Subagentes na cerimônia de desbloqueio") passa a cobrir isto; os textos `ui.settings.tool.subagents.*` e `ui.team.tools.subagents.hint` dizem isso nos dois catálogos.
+
+**Aviso.** O subagente que abre num modelo diferente do atual do principal dispara `PoolNotice { reason: 'delegate', from: principal, to: subagente, activity: tipo }`, uma vez por (tipo, modelo) na sessão (um aviso por subagente seria ruído). Código `runner.model.delegated`, chaves `main.forum.code.runner.model.delegated` e `main.engine.pool.delegated` nos dois catálogos (`engine-pool-notice.test.ts` exige os mesmos campos). Mesmo modelo: sem aviso.
+
+## Ordem dos commits (a partir do 10)
+
+Cada um passa em `npx tsc --noEmit`, `npx vitest run`, `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`.
+
+10. **`feat: add the pool mode to the config`** — `poolMode.ts`, `types.ts`, `schema.ts`, `defaults.ts`, `migrations.ts` (nota e `POOL_KEYS`), `docs/configuration.md` (campos e histórico do 25). Testes: `config-schema` (aceita/recusa, neutro traz o padrão, isenção de deriva só para agente e etapa), `config-migrations` (v24→25 intacto, valor inválido descartado sozinho, em `llm`, agente e etapa), novo `pool-mode.test.ts` (precedência; `effectivePoolMode`), `cycle-templates` (o modo do agente e da etapa viaja e volta), `config-web-scope` (celular muda agente e etapa, não `llm.poolMode`), `team-agent-edit` (`fieldsOf` preserva).
+11. **`feat: use a pool by mode in the open engine`** — `PoolClient.route`, `OpenPool.mode`, `SelectionPool.mode`, `openSelection`, `EngineRequest.poolMode`, `AgentCall.stagePoolMode`, `runAgent`/`runOnce`, `executor.ts`. Testes em `engine-open-pool` (`fallback`: volta de `shell` com lista de `shell` fica; ocupado passa à reserva; tela só em quem vê; `switch`: os testes de hoje sem mudança), `engine-open-pool-pure` (candidatos em `fixed`), `engine-seam`, `runner-agent-open` (o modo chega do agente, da etapa e do workspace).
+12. **`feat: run a sub-agent of a kind on its own pool`** — `subagent.ts`, `loop.ts` (`Agent` com `kind`, trava, `OpenMaxTurnsError`, linha `sub`), `session.ts`, `main.engine.text.subTurns` nos catálogos. Testes (`fakeOpenAI` com dois servidores): subagente `shell` roda no segundo servidor, só com `Bash`/leitura, e o principal recebe só a resposta final; `edit` sem `writeRoot` não é oferecido; tipo fora do enum recusado; `edit` e `shell` simultâneos correm um de cada vez, `explore` juntos; ocupado na lista da atividade passa ao seguinte; uso soma uma vez (`onUsage`); `engine-open-activity` (todo tipo tem ferramenta etiquetada); `engine-open-loop` (sub-agente de hoje, sem `kind`, igual em `switch`/`fallback`).
+13. **`feat: offer delegation to the agents of a run`** — `agents.ts` (`Agent` no `withPool`), o aviso no prompt, `PoolNotice.reason: 'delegate'`, `runner.model.delegated`, textos de `tools.subagents`. Testes: `runner-agent-open` (escritor com lista de `shell` recebe `Agent`, sem lista não; `tools.subagents` desligado não; motor Claude não), `engine-pool-notice`, `runner-lifecycle` (linha na conversa), `i18n`, `main-catalogs`, `gitlab-catalogs-unchanged`, `host-terms-leak`, `voice-terminology`, `runner-stage-screen` (subagente `screen` usa a sessão da etapa; `held` e entrega valem).
+14. **`feat: choose how a pool is used`** — `ModelsStep.tsx` (três opções com a explicação, sob o conjunto), `TeamSection.tsx` (agente: "Usar o da etapa ou do workspace" + três), `StagePanel.tsx`/`flowEdit.ts` (etapa de trabalho), `wizard.*`/`ui.*`, `docs/runner.md`, `docs/llm-providers.md`, `docs/cycles.md` (PT e EN), CHANGELOG › Added (um parágrafo: o padrão `delegate`, que só age com lista por atividade). Testes: `team-flow-edit`, `team-agent-edit`, `team-pool-ui` e `pool-editor` (renderização nos dois idiomas), `wizard-i18n`, `theme-audit`.
+
+## Plano de teste (resumo)
+
+Arquivos afetados: `config-schema`, `config-migrations`, `config-web-scope`, `cycle-templates`, `engine-open-pool`, `engine-open-pool-pure`, `engine-open-loop`, `engine-open-activity`, `engine-seam`, `runner-agent-open`, `runner-lifecycle`, `runner-stage-screen`, `engine-pool-notice`, `team-*`, `wizard-i18n`, catálogos. Goldens: **nenhum muda** (item 4 acima). Sem rede (`fakeOpenAI`). Manual, na etapa de teste, com `CERIMONIAS_DATA_DIR` vazio e dois modelos de um provedor: uma etapa em `delegate` com lista de `shell`, a conversa, o `.jsonl` (linha `sub`) e a tela.
+
+## Riscos da parte 2
+
+| Risco | Como é coberto |
+|---|---|
+| Subagente sem o contexto do principal entrega pouco ou refaz leitura (qualidade e custo) | Tarefa completa exigida no texto da ferramenta e no prompt; `explore` primeiro; o custo da releitura é do modelo barato. **Não verificado com modelo de verdade.** |
+| Subagente `edit` e o principal editando o mesmo arquivo no mesmo turno | Só os subagentes mutantes são serializados; o turno do principal corre em paralelo (`Promise.all`); o prompt manda não editar o que um subagente edita. Risco aceito, a verificar na etapa de teste. |
+| Voltas pequenas para a tarefa (12/20/30 são propostas) | Erro claro devolvido ao principal, que divide ou faz; constantes em `subagent.ts`. |
+| Sessão de tela aninhada | Não existe: a ferramenta é o fecho da sessão da etapa; um teste prende que o subagente não abre outra. Um `screen_handoff` do subagente segura o principal (a chamada espera dentro da ferramenta). |
+| **`delegate` por padrão muda comportamento de workspace existente** | Só age com lista por atividade (`effectivePoolMode`); o recurso não saiu, então nenhum workspace publicado tem lista e atualizar não muda nada. Quem salvar uma lista de atividade passa a ter `delegate` (e a ferramenta `Agent` para quem escreve) sem escolher: o texto do passo "Modelos" e o CHANGELOG dizem isso. |
+| `tools.subagents` desligado deixa `delegate` inerte sem a pessoa saber | A interface do agente mostra "Subagentes desligado: o modo vale só reserva" (chave nos dois catálogos). |
+| Ferramentas sem etiqueta (MCP de tracker) deixam de chegar ao subagente `explore` | Mudança de hoje (herdava tudo); só em `delegate` efetivo. VcsRead cobre a leitura do host. Aviso na doc. |
+| Lista de atividade com modelo sem ferramentas ou sem imagem | `eligible` e `tools !== false` já filtram; o subagente de `screen` numa lista sem imagem cai na lista do papel (como hoje). |
+| `PoolClient` em `fixed` e `pooled` com listas só de atividade | `pooled` olha só a lista do principal; um teste cobre o modelo único com listas de atividade. |
+
+## Registro de decisões da parte 2
+
+| Decisão | Alternativa rejeitada |
+|---|---|
+| Os três campos entram no 25 ainda não publicado, sem 26 | Um `v25ToV26` só para o modo (uma subida a mais sem arquivo gravado que a justifique) |
+| Padrão do workspace em `llm.poolMode`, com `delegate` no neutro | `runner.poolMode` (o conjunto é de `llm`; cerimônias não são do runner; entraria em `WEB_EDITABLE` por engano) |
+| `switch`/`delegate` sem lista por atividade valem `fallback`; `Agent` fica como hoje | `delegate` sempre (subagente no mesmo modelo só perde histórico) |
+| `kind` do subagente restringe as ferramentas por `ToolImpl.activity` do que o principal já tem | Tabela de nomes à parte (duplica a classificação das atividades; um nome novo escaparia) |
+| Tipos oferecidos dinâmicos (`explore` sempre; os outros com lista e ferramenta) | Enum fixo de quatro com recusa em tempo de execução (o modelo pediria o que não funciona) |
+| Cada subagente com `PoolClient` próprio, da lista da atividade | Compartilhar o do pai (trocaria o modelo do principal e perderia o cache) |
+| Principal fixo na lista `write`; as outras listas só servem aos subagentes | Ignorar também `write` no `fixed` (mexeria em `startList` sem ganho) |
+| Subagentes mutantes um de cada vez | Livres (dois editores no mesmo worktree) |
+| `Agent` para quem escreve só no motor aberto, com `tools.subagents` ligado | Ligar sem a chave (contornaria uma escolha da pessoa); no SDK (outra ferramenta) |
+| Celular muda o modo de agente e etapa, e os dois viajam no modelo de ciclo | Recusar como `screenRaised` e tirar como o conjunto (o modo não dá alcance nem é endereço) |
+
+## Perguntas abertas (respondidas no gate da parte 2)
+
+1. **Confirmado:** `delegate` (e `switch`) são inertes sem lista por atividade: valem `fallback`.
+2. **Confirmado:** a chave `tools.subagents` governa também `Agent` em `delegate`; os textos dela passam a explicar o uso nas execuções.
