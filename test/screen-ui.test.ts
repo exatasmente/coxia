@@ -3,6 +3,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { AttachmentRef } from '../src/shared/attachments';
 import { ASK_TIMEOUT_MS, type OpenScreenInfo, type PendingAsk } from '../src/shared/browser';
 import type { ActivityEntry } from '../src/shared/activity';
 import { CATALOGS, setLanguage, t } from '../src/shared/i18n';
@@ -25,6 +26,8 @@ const { LiveScreen } = await import('../src/renderer/src/screens/cycle/LiveScree
 const { asksOf, choicesOf } = await import('../src/renderer/src/screens/cycle/askView');
 const { readExternalEffects } = await import('../src/renderer/src/useExternalEffects');
 const { closesInMinutes, sameScreens, screenOfCall } = await import('../src/renderer/src/screens/cycle/screens');
+const { MessageAttachments } = await import('../src/renderer/src/screens/cycle/Attachments');
+const { RecordingPlayer } = await import('../src/renderer/src/screens/cycle/RecordingPlayer');
 const { describeStep } = await import('../src/shared/stepWords');
 
 afterEach(() => {
@@ -203,6 +206,41 @@ describe('the pieces under the card', () => {
     expect(await readExternalEffects(answer({ allowExternalEffects: false }), 'http://localhost/')).toBe(false);
     expect(await readExternalEffects(answer({}, false), 'http://localhost/')).toBeNull();
     expect(await readExternalEffects((async () => { throw new Error('offline'); }) as unknown as typeof fetch, 'http://localhost/')).toBeNull();
+  });
+});
+
+const files = (refs: AttachmentRef[]): string => renderToStaticMarkup(createElement(MessageAttachments, { thread: 'general', message: 4, refs }));
+const video: AttachmentRef = { id: 'ab12cd34ef56', name: 'Screen of coder 11:50-12:00', kind: 'video', bytes: 3_000_000 };
+
+describe('the recording of a conversation\'s screen', () => {
+  it('is offered to play in place and to save, and loads no video until it is played', () => {
+    const html = files([video]);
+    expect(html).toContain(`>${t('ui.screen.rec.play')}</button>`);
+    expect(html).toContain(`>${t('ui.forum.file.save')}</button>`);
+    expect(html).toContain(t('ui.forum.file.kind.video'));
+    expect(html).not.toContain('<video');
+    expect(html).not.toContain('blob:');
+  });
+
+  it('says retention took the file, with nothing to play or save', () => {
+    const html = files([{ ...video, removed: true }]);
+    expect(html).toContain(t('ui.screen.rec.removed'));
+    expect(html).not.toContain(t('ui.screen.rec.play'));
+    expect(html).not.toContain(`>${t('ui.forum.file.save')}</button>`);
+  });
+
+  it('leaves the other files as they were', () => {
+    const html = files([{ id: 'ee11ee11ee11', name: 'notes.txt', kind: 'text', bytes: 100 }]);
+    expect(html).toContain(`>${t('ui.forum.file.open')}</button>`);
+    expect(html).not.toContain(t('ui.screen.rec.play'));
+  });
+
+  it('plays with the player of the evidence block, with no marks or cuts to draw for a conversation', () => {
+    const html = renderToStaticMarkup(createElement(RecordingPlayer, { record: {}, url: 'blob:recording' }));
+    expect(html).toContain('<video');
+    expect(html).toContain('src="blob:recording"');
+    expect(html).not.toContain('cy-rec-marks');
+    expect(html).not.toContain('cy-rec-cuts');
   });
 });
 

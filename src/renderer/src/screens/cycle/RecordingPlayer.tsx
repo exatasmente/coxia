@@ -11,7 +11,7 @@ import { cutLeft, markBox } from './recording';
 // point being played.
 
 /** The player: a video on a `blob:` address (the media policy of both builds allows it) and the strip of marks. */
-export function RecordingPlayer({ record, url }: { record: EvidenceView; url: string }) {
+export function RecordingPlayer({ record, url }: { record: Pick<EvidenceView, 'recording'>; url: string }) {
   const t = useT();
   const video = useRef<HTMLVideoElement>(null);
   const [broken, setBroken] = useState(false);

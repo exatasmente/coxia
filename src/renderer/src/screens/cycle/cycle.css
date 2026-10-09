@@ -337,3 +337,7 @@
 .cy-ask-actions { gap: 8px; flex-wrap: wrap; }
 .cy-ask-computer { margin: 0; }
 .cy-call-actions { display: inline-flex; gap: 6px; margin-left: auto; }
+
+/* The recording of an agent's screen in a conversation, played inside the message's file card. */
+.cy-file-video { flex-wrap: wrap; }
+.cy-file-player { flex: 1 1 100%; min-width: 0; max-width: 480px; }
