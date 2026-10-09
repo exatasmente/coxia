@@ -9,6 +9,7 @@ import { buildDraft, compareDraft, failedStepsOf, type DraftStep } from './draft
 import type { ProcedureScreen } from './screen';
 import { contentFromInput, renderRecord, type ProcedureAnswer, type ProcedureTools } from './tools';
 import { fence } from '../runner/prompt';
+import { redact } from '../errorlog-core';
 
 // One session per call that runs an agent with a session of work (a stage, a conversation answer): it holds the list the call is told, the four tools over the store,
 // what the call read, reported and wrote, and a meter of what the call used. `finish` turns the reads into uses. It imports no Electron and no forum: the place the
@@ -333,7 +334,9 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     staled.add(id);
     audit({ op: 'stale', record: r.record, step });
     say('runner.procedures.stale', { id, step, title: r.record.title });
-    const note = typeof o.note === 'string' ? o.note.replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX) : '';
+    let note = typeof o.note === 'string' ? o.note.replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX) : '';
+    // The note goes to the thread as written: it is dropped, not masked, when it holds a secret-shaped text or something the person typed in this call.
+    if (note && (redact(note, ctx.home) !== note || ctx.screen?.typedIn(note))) note = '';
     if (note) say('runner.procedures.staleNote', { id, note });
     return answer(`Marked ${id} as failing at step ${step}. Follow only the parts that still hold. When you find the way that works, read it again with procedures_get and replace it with procedures_save (its id and revision ${r.record.revision}).`);
   }

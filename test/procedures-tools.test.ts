@@ -334,6 +334,21 @@ describe('procedures_stale', () => {
     expect(notes.filter((n) => n.code === 'runner.procedures.staleNote')).toHaveLength(1);
   });
 
+  it('drops a note that holds a secret-shaped text or what the person typed, and still marks the record', async () => {
+    const screen = { key: 'k', browser: false, steps: () => [], visited: () => [], handedOff: () => true, typedIn: (t: string) => t.includes('correct horse') } as unknown as SessionContext['screen'];
+    const { session } = make({ screen });
+    await session.tools.save(input());
+    await session.tools.stale({ id: 'p-00000001', step: 1, note: 'the login for someone@example.com failed' });
+    expect(onDisk('p-00000001').state).toBe('failing');
+    expect(notes.filter((n) => n.code === 'runner.procedures.staleNote')).toEqual([]);
+    const second = make({ screen }, createProcedureStore(ws, { now: () => clock })).session;
+    await second.tools.get({ id: 'p-00000001' });
+    // A fresh call over the same record reports it again, with a note that carries the typed value.
+    await second.tools.stale({ id: 'p-00000001', step: 2, note: 'it rejected correct horse' });
+    expect(notes.filter((n) => n.code === 'runner.procedures.staleNote')).toEqual([]);
+    expect(JSON.stringify(notes)).not.toMatch(/someone@example|correct horse/);
+  });
+
   it('refuses in words: a step out of range, an unknown id, a missing step', async () => {
     const { session } = make();
     await session.tools.save(input());
