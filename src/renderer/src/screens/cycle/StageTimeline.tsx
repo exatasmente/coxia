@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { runKey } from '../../../../shared/browser';
+import { runThreadId } from '../../../../shared/forum';
 import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { shownText } from '../../../../shared/cycles/text';
 import { type FlowStage, type Run, type StageUsage, hasUsage } from '../../../../shared/runs';
@@ -9,6 +10,8 @@ import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import { ArtifactView } from './ArtifactView';
 import { LiveScreen } from './LiveScreen';
+import { asksOf } from './askView';
+import { useScreens } from './useScreens';
 import { WAIT_KEY, agentName, agentRole } from './names';
 import { runsApi } from './runsApi';
 
@@ -118,6 +121,8 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
   const autonomous = record ? record.autonomous : stage.autonomous;
   // The agent's virtual screen, while this is the stage working on one. A viewer that is open stays when the stage ends, so it can say so.
   const [watching, setWatching] = useState(false);
+  // The questions waiting on the stage's screen are answered from its viewer; the list is read only while the viewer is open.
+  const open = useScreens(watching ? runThreadId(run.id) : null);
   const hasScreen = row.current && state === 'running' && run.screen?.stage === stage.id;
   return (
     <li className="cy-stage" data-state={state} aria-current={row.current ? 'step' : undefined}>
@@ -160,7 +165,7 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
           </ul>
         )}
       </div>
-      {watching && <LiveScreen screenKey={runKey(run.id)} state={run.screen ?? null} onClose={() => setWatching(false)} />}
+      {watching && <LiveScreen screenKey={runKey(run.id)} state={run.screen ?? null} asks={asksOf(open).filter((a) => a.key === runKey(run.id))} team={team} onClose={() => setWatching(false)} />}
     </li>
   );
 }

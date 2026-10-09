@@ -1,10 +1,12 @@
 import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from 'react';
-import { parseKey } from '../../../../shared/browser';
+import { type PendingAsk, parseKey } from '../../../../shared/browser';
 import { type LiveScreen as LiveScreenState, SCREEN_WIDTH_DESKTOP, SCREEN_WIDTH_PHONE, type ScreenInput, clampFrameWidth, isExitChord } from '../../../../shared/screen';
+import type { AgentDef } from '../../../../shared/config/types';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { useIsPhone } from '../../useIsPhone';
 import { Sheet } from '../Sheet';
+import { AskCards } from './AskCard';
 import { jpegSrc, screenApi } from './screenApi';
 import { type Size, FLUSH_MS, batchesOf, buttonOf, createHeld, isSentKey, pointerToScreen, pollDelay, takeControl, wheelNotches } from './screenKeys';
 
@@ -84,7 +86,7 @@ function useFrames(screenKey: string, width: number): Frames {
 export type ViewerState = Pick<LiveScreenState, 'width' | 'height' | 'recording'>;
 
 /** The viewer of a live screen, in a sheet. `state` may be gone while it is open (the stage ended, the screen was closed): it then says so and stops asking. */
-export function LiveScreen({ screenKey, state, canClose = false, onClose }: { screenKey: string; state: ViewerState | null; /** Offers "Close screen", which ends the agent's screen and not just the viewer. */ canClose?: boolean; onClose: () => void }) {
+export function LiveScreen({ screenKey, state, canClose = false, asks = [], team, onClose }: { screenKey: string; state: ViewerState | null; /** Offers "Close screen", which ends the agent's screen and not just the viewer. */ canClose?: boolean; /** The questions waiting on this screen, answered from here too. */ asks?: readonly PendingAsk[]; team?: readonly AgentDef[]; onClose: () => void }) {
   const t = useT();
   const web = isWeb();
   const phone = useIsPhone();
@@ -278,6 +280,7 @@ export function LiveScreen({ screenKey, state, canClose = false, onClose }: { sc
             </div>
           )}
         </div>
+        <AskCards asks={asks} team={team} />
         {control && (
           <p className="cy-live-banner" role="status">
             {recording === 'stopped' ? t('ui.cycle.live.controlStopped') : recording === 'waiting' ? t('ui.cycle.live.controlWaiting') : t('ui.cycle.live.controlOn')}

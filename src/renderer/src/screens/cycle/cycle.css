@@ -181,7 +181,6 @@
 .cy-cmds .cy-msgs-inner { margin: 4px 0 0 14px; }
 /* A call a message made to an agent, still going: a quiet line under the message, not a message of its own. */
 .cy-call { display: flex; align-items: center; gap: 6px; margin: 2px 0 0; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); color: var(--muted); font-size: 13px; }
-.cy-call-watch { margin-left: auto; }
 .cy-call-agent { color: var(--ink); font-weight: 600; }
 .cy-call-step { overflow-wrap: anywhere; }
 .cy-msg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
@@ -326,3 +325,15 @@
 .cy-screen-agent { overflow-wrap: anywhere; }
 .cy-screen-closes { flex: 1 1 120px; min-width: 0; }
 .cy-screen-actions { display: inline-flex; gap: 6px; margin-left: auto; }
+
+/* A question the app's screen asks the person, and the agent's own words inside it. */
+.cy-asks { display: flex; flex-direction: column; gap: 8px; margin: 0 0 8px; }
+.cy-ask { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--ink); }
+.cy-ask-title { margin: 0; font-size: 14px; color: var(--amber-ink); }
+.cy-ask-line { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
+.cy-ask-words { margin: 0; padding: 6px 10px; border-left: 3px solid var(--line); background: var(--surface-2); border-radius: 0 8px 8px 0; }
+.cy-ask-words blockquote { margin: 2px 0 0; overflow-wrap: anywhere; font-style: italic; }
+.cy-ask-note { display: flex; flex-direction: column; gap: 4px; }
+.cy-ask-actions { gap: 8px; flex-wrap: wrap; }
+.cy-ask-computer { margin: 0; }
+.cy-call-actions { display: inline-flex; gap: 6px; margin-left: auto; }
