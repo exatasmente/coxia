@@ -35,6 +35,9 @@ export class EngineError extends Error {
     super(message);
     this.name = 'EngineError';
   }
+
+  /** The provider of the pool member that refused, filled by the pool: a budget refusal has to name the provider that answered, not the role's first one. */
+  provider?: string;
 }
 
 export interface ErrorContext {

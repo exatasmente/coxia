@@ -84,7 +84,7 @@ export class StageError extends Error {
 }
 
 /** Runs one agent call; `commands` are what an agent that writes may execute. The real one is `runAgent` of agents.ts. */
-export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ data: unknown; partial?: true; sessionId?: string | null }>;
+export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ data: unknown; partial?: true; sessionId?: string | null; engine?: ResolvedRole['engine'] }>;
 
 export interface ExecutorDeps {
   engine: StageEngine;
@@ -1135,8 +1135,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   try {
     const firstRun = await watch.guard(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)));
     data = firstRun.data;
-    // Which engine answered, so the round that continues it is asked of the same one: a session of one engine is not one the other knows.
-    answered = { sessionId: firstRun.sessionId ?? null, engine: rc().agentModel(call.agent.model).engine };
+    // Which engine answered, so the round that continues it is asked of the same one: a session of one engine is not one the other knows. With a pool of models
+    // it is the engine of the model that was picked to start the call, which the engine reports; the agent's own model is the answer of a call that did not.
+    answered = { sessionId: firstRun.sessionId ?? null, engine: firstRun.engine ?? rc().agentModel(call.agent.model).engine };
     // The answer is read and checked while the sandbox is still open: a QA claim of execution that nothing backs goes back to the agent for one repair
     // round, and the pictures it looked at are kept (or said as looked and not kept). All of it has to happen before the sandbox (and the stage folder)
     // goes away. The two model calls of the attempt run inside the same guarded work above, so the stage's clock counts the attempt once.

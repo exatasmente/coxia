@@ -153,8 +153,8 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
     return { data: r.data, sessionId: r.sessionId, sources: r.sources };
   } catch (e) {
     if (e instanceof OpenMaxTurnsError) throw a.makeMaxTurnsError(e.sessionId, e.sources);
-    // A refusal by budget is a wait, not a failure of the stage: it goes up as a reason of its own, with the provider that answered.
-    if (e instanceof EngineError && e.kind === 'budget') throw new ProviderBudgetError(a.selection.provider.model, 'open', e.message);
+    // A refusal by budget is a wait, not a failure of the stage: it goes up as a reason of its own, with the provider of the pool member that answered (empty: the caller knows the role's own).
+    if (e instanceof EngineError && e.kind === 'budget') throw new ProviderBudgetError(e.provider ?? '', 'open', e.message);
     throw e;
   }
 }

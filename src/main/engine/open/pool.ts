@@ -206,6 +206,7 @@ export class PoolClient {
           left = { member: pick, reason: e.kind as SwitchReason, until };
           continue;
         }
+        if (e instanceof EngineError && e.kind === 'budget') e.provider = pick.provider;
         // A spare that cannot do tools is dropped from the session; the model the loop started on keeps the loop's own way (it falls back to plain JSON).
         if (e instanceof EngineError && e.kind === 'no_tools' && pick.key !== this.primary.key) {
           this.noTools.add(pick.key);

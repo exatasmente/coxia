@@ -1,7 +1,7 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { intlLocale, t } from '../../shared/i18n';
 import type { AttachmentRef } from '../../shared/attachments';
-import type { Activity, AgentToolsConfig, LlmRole } from '../../shared/config/types';
+import type { Activity, AgentToolsConfig, EngineId, LlmRole } from '../../shared/config/types';
 import type { RunActivity } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import type { UsageReport } from '../../shared/runs/usage';
@@ -22,6 +22,8 @@ export interface Run<T> {
   sources: string[];
   /** The agent ran out of turns and answered from what it had already read. */
   partial?: true;
+  /** The engine that answered, which `runAgent` fills: with a pool of models it is the engine of the model that was picked, not always the role's first one. */
+  engine?: EngineId;
 }
 
 /** Thrown by an engine whose agent hit its turn limit; `run` then resumes the session once, without tools, for a partial answer. */
@@ -32,6 +34,24 @@ export class MaxTurnsError extends Error {
   ) {
     // i18n-ignore: error text the engine compares
     super('agent ended with error_max_turns');
+  }
+
+  /** The engine that held the session, filled where the model was picked: the wrap-up that resumes the session has to run on it. */
+  engine?: EngineId;
+}
+
+/**
+ * Thrown by the Claude SDK path when the text of its answer says the model was busy (rate limit, overload, server error). Its message is the failure text a call has
+ * always had, so a role with one model fails exactly as before; a pool moves to the next model when no tool was used yet (`toolUsed`), because nothing is undone then.
+ */
+export class EngineBusyError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'rate_limit' | 'overloaded' | 'server',
+    readonly toolUsed: boolean,
+  ) {
+    super(message);
+    this.name = 'EngineBusyError';
   }
 }
 

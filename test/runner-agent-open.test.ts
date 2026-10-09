@@ -287,4 +287,27 @@ describe('an agent whose model has spares, on the open engine', () => {
       await spare.close();
     }
   });
+
+  it('names the spare as the provider that ran out of budget when the spare is the one that refused, not the first model of the role', async () => {
+    const { restRegistry } = await import('../src/main/engine/open/rest');
+    const { updateConfig } = await import('../src/main/workspaceConfig');
+    const { ProviderBudgetError } = await import('../src/main/engine/contract');
+    restRegistry.clear();
+    const busy = await fakeOpenAI(() => ({ ...errorStep(429, 'Rate limit reached'), headers: { 'retry-after': '0' } }) as Step);
+    const broke = await fakeOpenAI(() => errorStep(402, 'Payment required'));
+    try {
+      updateConfig((c) => {
+        c.llm.providers.push(newProvider({ id: 'budgetbusy', kind: 'openai-compatible', baseUrl: busy.url, structured: 'tool' }), newProvider({ id: 'budgetbroke', kind: 'openai-compatible', baseUrl: broke.url, structured: 'tool' }));
+        return c;
+      });
+      const agent = newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider: 'budgetbusy', model: 'model-a', fallbacks: [{ provider: 'budgetbroke', model: 'model-b' }] } });
+      const error = await runAgent({ agent, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'reviewer', maxTurns: 4 }).catch((e) => e as Error);
+      expect(error).toBeInstanceOf(ProviderBudgetError);
+      expect((error as InstanceType<typeof ProviderBudgetError>).provider).toBe('budgetbroke');
+    } finally {
+      restRegistry.clear();
+      await busy.close();
+      await broke.close();
+    }
+  });
 });

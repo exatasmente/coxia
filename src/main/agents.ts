@@ -13,15 +13,16 @@ import { getLanguage, t } from '../shared/i18n';
 import { type RunActivity, beginActivity } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, MaxTurnsError, ProviderBudgetError, poolNoticeText } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
 import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
-import { budgetText, clipProviderText } from './engine/budget';
+import { budgetText, busyText, clipProviderText } from './engine/budget';
 import { redact } from './errorlog-core';
 import { credentialNames } from './engine/guard';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { scrubShellHooks } from './engine/scrubShell';
-import { type DocSources, type OpenEngineSelection, type PoolMemberSpec, type SelectionPool, defaultDocSources, normalizeBaseUrl, openEngineFromEnv, restKey, runOpenOnce } from './engine/open';
+import { type DocSources, type OpenEngineSelection, type PoolMemberSpec, type SelectionPool, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
+import { memberKey, withPool, withoutPool } from './modelPick';
 import { ACTIVITIES } from '../shared/config/types';
 import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
 import { crossDayRepeats } from './minutesStore';
@@ -479,7 +480,7 @@ function openMember(t: ResolvedRole): PoolMemberSpec {
   const images = t.images ?? c?.images;
   const contextWindow = t.contextWindow ?? c?.contextWindow ?? null;
   return {
-    key: restKey({ baseUrl: normalizeBaseUrl(t.baseUrl), model: t.model, secretRef: t.secretRef }),
+    key: memberKey(t),
     label: t.model,
     provider: t.providerId,
     config: {
@@ -601,8 +602,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     incoming: req.incoming,
     });
   } catch (e) {
-    // A refusal by budget is a wait, not a failure: it goes up with the provider the role is mapped to, which the bridge does not know.
-    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(req.target.providerId, 'open', e.detail);
+    // A refusal by budget is a wait, not a failure: it goes up with the provider that refused (a spare of the pool names itself), else the one the role is mapped to.
+    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(e.provider || req.target.providerId, 'open', e.detail);
     throw e;
   }
 }
@@ -724,6 +725,8 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const counted = new Set<string>();
   // What the assistant said, kept for the failure a call with no structured output throws: the provider's refusal reaches the person, never only the subtype.
   const assistantText: string[] = [];
+  // Whether the model used a tool: a busy refusal after that cannot be handed to another model, since what the tools did is not undone.
+  let toolUsed = false;
   for await (const m of q) {
     req.beat?.();
     if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt, req.resume !== undefined);
@@ -743,6 +746,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
           req.activity?.text(block.text);
         }
         if (block.type !== 'tool_use') continue;
+        if (block.name !== 'StructuredOutput') toolUsed = true;
         sources.push(source(block.name, block.input as Record<string, unknown>));
         if (block.name !== 'StructuredOutput') req.activity?.tool(sources[sources.length - 1]);
         if (process.env.CERIMONIAS_DEBUG) console.error('[tool]', block.name, JSON.stringify(block.input).slice(0, 300));
@@ -767,7 +771,11 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         // A refusal by budget is a wait, not a failure of the stage; the SDK prefixes the gateway's message with "Failed to authenticate", so the body decides.
         if (budgetText(said)) throw new ProviderBudgetError(req.target.providerId, 'claude-sdk', redact(said));
         // i18n-ignore: developer error from the SDK result
-        throw new Error(`agent failed: ${redact(said || `agent ended with ${m.subtype}`)}`);
+        const failure = `agent failed: ${redact(said || `agent ended with ${m.subtype}`)}`;
+        // A busy model says so in the same text: the pool of the role may hand the start of the call to its next model (same message otherwise).
+        const busy = busyText(said);
+        if (busy) throw new EngineBusyError(failure, busy, toolUsed);
+        throw new Error(failure);
       }
       stream?.end();
       return { data: m.structured_output as T, sessionId, sources };
@@ -808,7 +816,8 @@ export async function probeProviderBudget(providerId: string): Promise<{ ok: boo
   }
 }
 
-// One agent call: the role says which provider and model serve it (llm.roles), the provider says which engine runs it.
+// One agent call: the role says which provider and model serve it (llm.roles), the provider says which engine runs it. With a pool the model is the first of the
+// role's start list that is not resting; `resumeEngine` is the engine of the session a wrap-up continues.
 async function runOnce<T>(
   role: ModelRole,
   prompt: string,
@@ -816,9 +825,11 @@ async function runOnce<T>(
   extra: Partial<Options> = {},
   shell: ShellPolicy = { rules: [], patterns: [] },
   activity?: RunActivity,
+  resumeEngine?: ResolvedRole['engine'],
 ): Promise<Run<T>> {
-  // The env hook (COXIA_ENGINE=open) forces the open engine whatever the provider says.
-  const target = openEngineFromEnv() ? { ...engineFor(role), engine: 'open' as const } : engineFor(role);
+  // The env hook (COXIA_ENGINE=open) forces the open engine whatever the provider says, and with one server there is no pool to pick from.
+  const base = engineFor(role);
+  const resolved = openEngineFromEnv() ? { ...withoutPool(base), engine: 'open' as const } : base;
   const cwd = rc().projectsRoot;
   // The ceremony follows its system agent of the team: whether it reads the code host, and the commands the person allowed it always.
   const agent = getConfig().agents.team.find((a) => a.id === role && a.system);
@@ -826,7 +837,9 @@ async function runOnce<T>(
   const id = agent?.id ?? role;
   const ask: CommandAsk | undefined = role === 'teams' ? undefined : { rules: agent?.allowedCommands ?? [], request: (command) => ceremonyCommands.ask(id, command, extra.abortController?.signal) };
   const tools = agent ? toolsForAgent(getConfig(), agent) : getConfig().agents.tools;
-  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads, tools), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', tools, ask });
+  return withPool<T>(resolved, { resume: resumeEngine, notify: (n) => activity?.tool(poolNoticeText(n)) }, (target) =>
+    runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads, tools), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', tools, ask }),
+  );
 }
 
 // An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.
@@ -898,7 +911,7 @@ async function runResumable<T>(activity: RunActivity, role: ModelRole, prompt: s
     console.error('[agent] error_max_turns, resuming once for a partial answer', e.sessionId);
     activity.status('resumed');
     try {
-      const r = await runOnce<T>(role, cp('system.wrapUp'), schema, { ...extra, resume: e.sessionId, maxTurns: 2, tools: [], allowedTools: [] }, { rules: [], patterns: shell.patterns }, activity);
+      const r = await runOnce<T>(role, cp('system.wrapUp'), schema, { ...extra, resume: e.sessionId, maxTurns: 2, tools: [], allowedTools: [] }, { rules: [], patterns: shell.patterns }, activity, e.engine);
       return { ...r, sources: [...e.sources, ...r.sources], partial: true };
     } catch (again) {
       console.error('[agent] partial answer failed', again instanceof Error ? again.message : again);
@@ -1306,9 +1319,10 @@ function withActivity(session: SandboxSession, activity: RunActivity): SandboxSe
  */
 export async function runAgent<T>(call: AgentCall, commands: string[] = []): Promise<Run<T>> {
   const resolved = rc().agentModel(call.agent.model);
-  const chosen = openEngineFromEnv() ? { ...resolved, engine: 'open' as const } : resolved;
-  // A round that continues an earlier call runs on the engine that holds its session: a session of the open engine is not one the SDK knows, and the other way round.
-  const target = call.resume && call.resume.engine !== chosen.engine ? { ...chosen, engine: call.resume.engine } : chosen;
+  // The env hook (COXIA_ENGINE=open) forces the open engine whatever the provider says, and with one server there is no pool to pick from.
+  const chosen = openEngineFromEnv() ? { ...withoutPool(resolved), engine: 'open' as const } : resolved;
+  /** The model the call runs on: the first of the role's start list that is not resting, or the one the SDK left for the next. The budget refusal names its provider. */
+  let target = chosen;
   /** The session this call left open, for the round that continues it: read after the call, never mid-flight. */
   let resumed: string | null = null;
   const activity = call.activity ?? beginActivity(call.label, (p) => secretPath(p, call.cwd));
@@ -1318,53 +1332,67 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     const { allowedTools, shell, tracker, tools } = toolsOf(call);
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
     const modelRole = call.agent.model.role ?? 'deep';
-    // The documentation of the repositories goes in the system text, the same for both engines; a failure to read it never fails the call.
     const only = call.procedureOnly === true;
-    const docs = call.docs && !only ? await harnessSection(call.docs, call.agent, { cwd: call.cwd, contextWindow: target.capabilities?.contextWindow }).catch((e: unknown) => {
-      console.error('[agent] could not build the documentation section', e instanceof Error ? e.message : e);
-      return '';
-    }) : '';
-    const request: EngineRequest = {
-      role: target.role,
-      prompt: call.prompt,
-      schema: call.schema,
-      target,
-      system: [call.system, docs].filter(Boolean).join('\n\n'),
-      cwd: call.cwd,
-      allowedTools: only ? [] : [...allowedTools, ...rules],
-      extraDirs: call.confine || only ? [] : extraDirs(call.cwd, modelRole, { claude: false }),
-      isolated: true,
-      shell: only ? { rules: [], patterns: shell.patterns } : { rules, patterns: shell.patterns },
-      extra: { maxTurns: call.maxTurns },
-      activity,
-      // Nothing of the code host, no file confinement to carry (no file tool), no sandbox, evidence, release, attachments, mailbox, runner tool or screen: only `procedures`.
-      confine: only ? undefined : call.confine,
-      read: only ? undefined : call.readRoot,
-      tracker: only ? 'none' : tracker,
-      tools,
-      exec: call.exec && !only ? withActivity(call.exec, activity) : undefined,
-      evidence: only ? undefined : call.evidence,
-      onLooked: only ? undefined : call.onLooked,
-      ...(call.resume ? { resume: call.resume.session } : {}),
-      release: only ? undefined : call.release,
-      attachments: only ? undefined : call.attachments,
-      abort: call.abort,
-      beat: call.beat,
-      onUsage: call.onUsage,
-      onPool: call.onPool,
-      incoming: only ? undefined : call.incoming,
-      runnerTools: only ? undefined : call.runnerTools,
-      procedures: call.procedures,
-      screen: only ? undefined : call.screen,
-      ...(only ? { procedureOnly: true } : {}),
-    };
-    let r: Run<T>;
-    try {
-      r = await runnerFor(target)<T>(request);
-    } catch (e) {
-      if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
-      r = await wrapUpAnswer<T>(request, e, activity);
-    }
+    // A round that continues an earlier call runs on the engine that holds its session (a session of the open engine is not one the SDK knows, and the other way
+    // round); a start picks the first model of the pool that is not resting. The thread hears when the call does not open on the first one.
+    const r = await withPool<T>(
+      chosen,
+      {
+        resume: call.resume?.engine,
+        notify: (n) => {
+          activity.tool(poolNoticeText(n));
+          call.onPool?.(n);
+        },
+      },
+      async (picked) => {
+        target = picked;
+        // The documentation of the repositories goes in the system text, the same for both engines; a failure to read it never fails the call.
+        const docs = call.docs && !only ? await harnessSection(call.docs, call.agent, { cwd: call.cwd, contextWindow: picked.capabilities?.contextWindow }).catch((e: unknown) => {
+          console.error('[agent] could not build the documentation section', e instanceof Error ? e.message : e);
+          return '';
+        }) : '';
+        const request: EngineRequest = {
+          role: picked.role,
+          prompt: call.prompt,
+          schema: call.schema,
+          target: picked,
+          system: [call.system, docs].filter(Boolean).join('\n\n'),
+          cwd: call.cwd,
+          allowedTools: only ? [] : [...allowedTools, ...rules],
+          extraDirs: call.confine || only ? [] : extraDirs(call.cwd, modelRole, { claude: false }),
+          isolated: true,
+          shell: only ? { rules: [], patterns: shell.patterns } : { rules, patterns: shell.patterns },
+          extra: { maxTurns: call.maxTurns },
+          activity,
+          // Nothing of the code host, no file confinement to carry (no file tool), no sandbox, evidence, release, attachments, mailbox, runner tool or screen: only `procedures`.
+          confine: only ? undefined : call.confine,
+          read: only ? undefined : call.readRoot,
+          tracker: only ? 'none' : tracker,
+          tools,
+          exec: call.exec && !only ? withActivity(call.exec, activity) : undefined,
+          evidence: only ? undefined : call.evidence,
+          onLooked: only ? undefined : call.onLooked,
+          ...(call.resume ? { resume: call.resume.session } : {}),
+          release: only ? undefined : call.release,
+          attachments: only ? undefined : call.attachments,
+          abort: call.abort,
+          beat: call.beat,
+          onUsage: call.onUsage,
+          onPool: call.onPool,
+          incoming: only ? undefined : call.incoming,
+          runnerTools: only ? undefined : call.runnerTools,
+          procedures: call.procedures,
+          screen: only ? undefined : call.screen,
+          ...(only ? { procedureOnly: true } : {}),
+        };
+        try {
+          return await runnerFor(picked)<T>(request);
+        } catch (e) {
+          if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
+          return wrapUpAnswer<T>(request, e, activity);
+        }
+      },
+    );
     // The engine reports the session it opened or resumed: what a later round of the same stage continues from.
     resumed = r.sessionId;
     // A call whose session is kept for a round that continues it is not the end of the stage: the activity is left working, and the run's own state says when
@@ -1373,8 +1401,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     return r;
   } catch (e) {
     activity.status('failed', e instanceof Error ? e.message : String(e));
-    // One seam for stages, mentions and the chain: the reason carries the provider the role is mapped to, whichever engine raised it.
-    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(target.providerId, e.engine, e.detail);
+    // One seam for stages, mentions and the chain: the reason carries the provider that refused (a spare of the pool names itself), else the one the call ran on.
+    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(e.provider || target.providerId, e.engine, e.detail);
     throw e;
   }
 }
