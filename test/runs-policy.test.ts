@@ -7,12 +7,13 @@ const SRC = join(import.meta.dirname, '../src/main/runner');
 
 // What a paired browser may do to a run: all of it. Reading, answering, and every move that starts a stage, decides a gate, retries, cancels, picks a squad, moves a run to the
 // current flow, takes a comment back or switches an agent's autonomy. What a run may execute is still decided by the configuration, which a browser can only change in a scoped way.
-const READS = ['runs:list', 'runs:get', 'runs:answer', 'runs:artifact', 'runs:unassigned', 'runs:evidenceList', 'runs:evidence', 'runs:activities', 'runs:screen'];
-const MOVES = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:sendBack', 'runs:migrateFlow', 'runs:undoPost', 'runs:memory', 'runs:activitySave', 'runs:evidenceDelete', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous'];
+const READS = ['runs:list', 'runs:get', 'runs:answer', 'runs:artifact', 'runs:unassigned', 'runs:evidenceList', 'runs:evidence', 'runs:activities', 'runs:screen', 'runs:screens'];
+const MOVES = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'runs:gate', 'runs:retry', 'runs:cancel', 'runs:skipWait', 'runs:sendBack', 'runs:migrateFlow', 'runs:undoPost', 'runs:memory', 'runs:activitySave', 'runs:evidenceDelete', 'runs:setSquad', 'runs:removeSquad', 'runs:setSquadAutonomous', 'runs:setAutonomous', 'runs:screenClose', 'runs:callStop', 'runs:handoffDecline'];
 const OPEN = [...READS, ...MOVES];
 // Starting a release run ends in the repository's own scripts and merged code, run as the person, and allowing a host command runs one outside any sandbox: a paired browser
 // does either only when its external effects are on, as it approves a proposal.
-const EXTERNAL = ['runs:command', 'runs:startRelease'];
+// Answering a step the app's browser holds (or a confirmation an agent asked for) lets an irreversible step happen on a site: the same switch as allowing a host command.
+const EXTERNAL = ['runs:command', 'runs:startRelease', 'runs:screenAnswer'];
 
 const files = readdirSync(SRC).filter((f) => f.endsWith('.ts'));
 const source = (f: string) => readFileSync(join(SRC, f), 'utf8');
@@ -34,7 +35,7 @@ describe('web policy for the runs', () => {
     for (const channel of OPEN) expect(EXTERNAL_EFFECT.has(channel)).toBe(false);
   });
 
-  it('puts allowing a host command and starting a release behind the same switch as approving a proposal', () => {
+  it('puts allowing a host command, starting a release and answering a held step behind the same switch as approving a proposal', () => {
     for (const channel of EXTERNAL) {
       expect(webAccess(channel), channel).toBe('external');
       expect(webRefusal(channel, false), channel).not.toBeNull();

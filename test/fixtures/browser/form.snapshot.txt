@@ -1,0 +1,47 @@
+### Page
+- Page URL: https://example.com/
+- Page Title: Account settings
+### Snapshot
+```yaml
+- generic [active] [ref=e1]:
+  - heading "Account settings" [level=1] [ref=e2]
+  - navigation [ref=e3]:
+    - link "Next" [ref=e4] [cursor=pointer]:
+      - /url: /next
+    - link "Help" [ref=e5] [cursor=pointer]:
+      - /url: /help
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - text: Name
+      - textbox "Name" [ref=e8]
+    - generic [ref=e9]:
+      - text: Notes
+      - textbox "Notes" [ref=e10]
+    - generic [ref=e11]:
+      - checkbox "I agree" [ref=e12]
+      - text: I agree
+    - generic [ref=e13]:
+      - text: Plan
+      - combobox "Plan" [ref=e14]:
+        - option "Basic" [selected]
+        - option "Pro"
+    - button "Send" [ref=e15]
+    - button "Enviar" [ref=e16]
+    - button "Cancel" [ref=e17]
+    - button "Save" [ref=e18]
+    - button "Reset" [ref=e19]
+  - generic [ref=e20]:
+    - text: Search
+    - textbox "Search the help" [ref=e21]
+  - button "Delete" [ref=e22]
+  - button "Excluir" [ref=e23]
+  - button "Pagar" [ref=e24]
+  - button "Details" [ref=e25]
+  - button [ref=e26]
+  - button [ref=e27]
+  - button "Sign in" [ref=e29]
+  - button "Go" [ref=e30]
+  - button "Publish" [ref=e31]
+  - iframe [ref=e33]:
+    - button "Inner action" [ref=f1e2]
+```

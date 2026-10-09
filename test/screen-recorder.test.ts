@@ -247,6 +247,55 @@ describe('the intervals the person used the screen', () => {
   });
 });
 
+describe('the interval of a hand-off (#178)', () => {
+  it('is a mark of its own kind, the file says it holds one, and a recording with only the person\'s own marks does not', async () => {
+    const { rec } = setup();
+    await busy(rec, 60);
+    rec.mark(T0 + 5_000, T0 + 6_000);
+    rec.mark(T0 + 20_000, T0 + 40_000, 'handoff');
+    const out = await rec.finish(T0 + 60_000);
+    expect(out.ok && out.meta.marks).toEqual([
+      { fromMs: 5000, toMs: 6000 },
+      { fromMs: 20_000, toMs: 40_000, kind: 'handoff' },
+    ]);
+    expect(out.ok && out.meta.handoff).toBe(true);
+    const plain = setup();
+    await busy(plain.rec, 10);
+    plain.rec.mark(T0 + 2000, T0 + 3000);
+    const other = await plain.rec.finish(T0 + 10_000);
+    expect(other.ok && other.meta).not.toHaveProperty('handoff');
+  });
+
+  it('keeps being fed while it lasts: the interval is a mark on the video, not a hole in it', async () => {
+    const { sink, rec } = setup();
+    await busy(rec, 30);
+    expect(sink.fed.length).toBeGreaterThanOrEqual(30);
+    rec.mark(T0 + 10_000, T0 + 20_000, 'handoff');
+    const out = await rec.finish(T0 + 30_000);
+    expect(out.ok).toBe(true);
+    expect(sink.fed.filter((f) => f.ts >= 10_000 && f.ts <= 20_000).length).toBeGreaterThanOrEqual(10);
+  });
+
+  it('is never the mark that a crowd of others pushes out of the record', async () => {
+    const { rec } = setup();
+    await rec.add(frameOf(1), 'a', T0);
+    for (let i = 0; i < RECORDING_MARKS_MAX + 50; i++) rec.mark(T0 + i * 10, T0 + i * 10 + 5);
+    rec.mark(T0 + 50_000, T0 + 60_000, 'handoff');
+    const out = await rec.finish(T0 + 100_000);
+    expect(out.ok && out.meta.marks).toHaveLength(RECORDING_MARKS_MAX);
+    expect(out.ok && out.meta.marks.filter((m) => m.kind === 'handoff')).toHaveLength(1);
+  });
+
+  it('is not in the file when it fell wholly before the first frame', async () => {
+    const { rec } = setup();
+    await busy(rec, 5);
+    rec.mark(T0 - 9000, T0 - 8000, 'handoff');
+    const out = await rec.finish(T0 + 5000);
+    expect(out.ok && out.meta.marks).toEqual([]);
+    expect(out.ok && out.meta).not.toHaveProperty('handoff');
+  });
+});
+
 describe('the limits', () => {
   it('stops at the size limit: nothing more is fed, the recording is marked truncated and ends where it stopped', async () => {
     // A ceiling of 3000 bytes with 1200 kept free and frames of 300: the sixth frame brings it to 1800 of the 1800 allowed, so the seventh stops it.

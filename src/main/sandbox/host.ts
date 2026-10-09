@@ -6,8 +6,7 @@ import type { SandboxLimits } from '../../shared/config/types';
 import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
 import { redact } from '../errorlog-core';
 import { scrubbedEnv } from '../engine/guard';
-import { tail } from '../runner/commands';
-import { type ExecResult, type SandboxGui, type SandboxSession, type ScreenSocket, readOutputImage, readTailNoFollow } from './session';
+import { type ExecResult, type OutputMask, type SandboxGui, type SandboxSession, type ScreenSocket, handoffRefusal, readOutputImage, readTailNoFollow, shownOutput } from './session';
 
 // The session of an agent set to `shell: host`: the same Shell tool, log and limits of time as a sandbox, but every command runs on this computer, as the person who runs
 // the app, with the login PATH and the app's environment cleaned of what looks like a credential. Nothing confines it: it reaches what the person reaches (the network,
@@ -33,6 +32,10 @@ export interface HostSessionOptions {
   cleanup?: (() => Promise<void> | void)[];
   /** Asked for by the caller, who found the browsers and started the display: the session makes the output folder and adds the variables. Absent: nothing changes. */
   gui?: { browsers: string | null; browsersGone?: string; display: SandboxGui['display']; /** `DISPLAY` for the commands; set when `display` is `on`. */ displayName?: string };
+  /** The person has the screen for a hand-off (#178): a command is refused, unlogged, before the person is asked to allow it, while this answers true. */
+  held?: () => boolean;
+  /** Takes what the person typed during a hand-off out of a command's output, before the pattern-based masking. */
+  mask?: OutputMask;
 }
 
 export interface HostSessionDeps {
@@ -97,6 +100,8 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
   const run = (command: string): Promise<ExecResult> =>
     new Promise((resolve) => {
       const n = results.length + 1;
+      // A command queued before the person took the screen is asked again here, before it reaches the person as a request to allow it.
+      if (o.held?.()) return resolve(handoffRefusal(n, command));
       const record = (r: Omit<ExecResult, 'n'>, mode: 'run' | 'refused'): void => {
         const full: ExecResult = { n, ...r };
         results.push(full);
@@ -116,6 +121,8 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
         .catch(() => ({ ok: false, note: undefined }))
         .then(async (answer) => {
           if (closed) return refuse('closed');
+          // The person took the screen for a hand-off while the command waited to be allowed.
+          if (o.held?.()) return resolve(handoffRefusal(n, command));
           if (!answer.ok) return record({ command, exitCode: null, timedOut: false, output: answer.note ? redact(answer.note.slice(0, 500)) : '', ms: 0, refused: 'denied' }, 'refused');
           start(guiEnv(await o.env().catch(() => ({ ...process.env }))));
         });
@@ -149,7 +156,8 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
           const ms = Date.now() - started;
           spent += ms;
           const output = readTailNoFollow(outFile, OUTPUT_READ) ?? '';
-          record({ command, exitCode: timedOut ? null : code, timedOut, output: redact(tail(error ? `${output}\n${error}` : output)), ms }, 'run');
+          const shown = shownOutput(error ? `${output}\n${error}` : output, o.mask);
+          record({ command, exitCode: timedOut ? null : code, timedOut, output: shown ?? '', ...(shown === null ? { outputUnavailable: true as const } : {}), ms }, 'run');
         };
         child.once('exit', (code, signal) => finish(code ?? (signal ? 128 + (signalNumber(signal) ?? 0) : null)));
         child.once('error', (e) => finish(null, e.message));
@@ -179,6 +187,8 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
     ...(screen ? { screen } : {}),
     ...(gui ? { gui, outputDir: shots as string, readImage: (path: string) => readOutputImage(shots as string, path, shots as string) } : {}),
     exec: (command) => {
+      // At the door, so a refusal does not wait behind a command that is still running.
+      if (o.held?.()) return Promise.resolve(handoffRefusal(results.length + 1, command));
       const next = queue.then(() => run(command));
       queue = next.catch(() => undefined);
       return next;

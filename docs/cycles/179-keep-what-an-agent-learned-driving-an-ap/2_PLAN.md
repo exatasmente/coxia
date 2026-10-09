@@ -30,7 +30,7 @@ New code: `src/shared/procedures.ts` (types, caps, `compare()`), `src/main/proce
 - **Decision on the 4,000 characters**: measured on the *content* (`key`, `title`, `steps`, `pitfalls`, `waits` serialised), not on `stats`, `origin` or `previous`. The file may be longer; `procedures_get` returns content plus the short provenance line.
 - **Files**: `<workspace>/memory/procedures/<id>.json` and `deleted.json` (the ids ever deleted; a new id is drawn again until it is in neither). A file with `v` above ours is skipped by `list`, answers "written by a newer app" to `get`, and `save` refuses to touch it (`activities.ts:82-97` is the precedent). `store.ts` imports no Electron (spec question 8).
 - **Draft** (in memory, per session): `{id: 'd-1', steps: {n, text, edited?}[], pitfalls: string[], waits: string[], sites: string[], handoff: boolean, replaces?: string, compare?: {kept, changed, added}}`.
-- **Run format**: `StageRecord.procedures?: {id, revision, title, outcome: 'ok' | 'failed' | 'replaced'}[]`. Run files that carry it are `version: 4`: `RUN_VERSION = 4`, `RunVersion` gains 4, `runVersionOf` returns 4 when any stage record has the field (`shared/runs/types.ts:15-22`), the enum at `shared/runs/schema.ts:279` and the stage-record properties get the field, so an older app says "written by a newer app" instead of calling the run invalid (the rule #157 set). Runs without it stay at their current version.
+- **Run format**: `StageRecord.procedures?: {id, revision, title, outcome: 'ok' | 'failed' | 'replaced'}[]`. Run files that carry it are `version: 5`: `RUN_VERSION = 5` (4 is the hand-off of #178), `RunVersion` gains 5, `runVersionOf` returns 5 when any stage record has the field (`shared/runs/types.ts:15-22`), the enum at `shared/runs/schema.ts:279` and the stage-record properties get the field, so an older app says "written by a newer app" instead of calling the run invalid (the rule #157 set). Runs without it stay at their current version.
 - **`AuditKind`** gains `'procedure'`. `AgentCall` and `EngineRequest` gain `procedures?: ProcedureTools`. `StageInput` (`runner/prompt.ts`) and `MentionInput` (`mentions/call.ts:15`) gain `procedures?: string` (the rendered list). `ExecutorDeps` (`executor.ts:77`) and `MentionDeps` (`mentions/answer.ts:33`) gain `procedures?: ProceduresPort`.
 
 ## 3. Configuration and migration
@@ -81,7 +81,7 @@ Each phase ends with `npx tsc --noEmit`, `npx vitest run`, `node scripts/theme-a
 7. `feat: add the procedure session and its handlers` (`session.ts`, `tools.ts`, audit kind and label, forum codes and catalogs; acceptance 12, 16, 26 for the agent's side, 20 first half).
 8. `feat: offer the procedure tools to both engines` (`engineTool.ts`, `agents.ts` plumbing, names, wrap-up strips them, server-missing line; acceptance 13: same calls through both shapes, offered to a reading agent, refusal as text).
 9. `feat: give stages and conversations their procedures` (`ProceduresPort` wired in `executor.ts`, `answer.ts`, `conversation.ts`; prompt section and rules text; not in a ceremony; switch off offers nothing; acceptance 15, 19 second half, 14 placement; goldens for the new keys only).
-10. `feat: show which procedure a stage used` (`StageRecord.procedures`, `RUN_VERSION 4`, schema, `recordProcedures`, chip in `StageTimeline.tsx`; acceptance 20, 21 including "an answer that read a procedure records its usage and one that did not records none").
+10. `feat: show which procedure a stage used` (`StageRecord.procedures`, `RUN_VERSION 5`, schema, `recordProcedures`, chip in `StageTimeline.tsx`; acceptance 20, 21 including "an answer that read a procedure records its usage and one that did not records none").
 
 **Phase C, the person's view (3 commits).** Read first: `webPolicy.ts`, `test/screen-policy.test.ts`, `test/runs-policy.test.ts`, `renderer/src/App.tsx`, `BottomNav.tsx`, `screens/team/RunnerSection.tsx`, `screens/Auditoria.tsx`, `rules/paired-phone.md`, `rules/theme.md`, `rules/i18n.md`.
 11. `feat: add the procedures channels and close the prefix to a paired browser` (`module.ts`, `modules.ts`, `PROCEDURES_WRITE`, `test/procedures-policy.test.ts` with a made-up channel and the handler scan; acceptance 17).
@@ -109,7 +109,7 @@ From #177 *(planned)*: `StepLog`/`StepEntry {n, at, tool, role?, name?, site, pa
 ## 8. Risks
 
 - **The draft depends on the step log.** It needs `reason` and a named `key` that #177's `StepEntry` may not keep; commit 14 adds them. If #177 keeps a typed value or page text anywhere in an entry, `draft.ts` must not copy it: it reads only the fields listed in section 2 and a test feeds an entry with extra fields.
-- **`RUN_VERSION` 4 may collide** with another change that also bumps the run format; the merge order decides, and the implementer renumbers.
+- **`RUN_VERSION` collided** with #178, which also made 4 mean something (a recording that holds a hand-off); merged, #179 is 5 and `runVersionOf` checks `procedures` first.
 - **Schema 22 depends on the merge order** (#177 first, then this; #170 renumbers).
 - **Per-attempt usage is not the stage's usage.** The baseline and the uses compare the metered calls of one attempt or one answer; the label "approximate" and the 3-use minimum say so (open question 10 stays as recommended).
 - **A model that reads a procedure and does nothing else counts as a successful use** (rule 11): the view calls it "no failure reported".
@@ -126,7 +126,7 @@ From #177 *(planned)*: `StepLog`/`StepEntry {n, at, tool, role?, name?, site, pa
 | D1 | Switch is `runner.procedures`, schema 22, off by migration, on for new | A top-level block editable from the phone (a raise path), or on for everyone (spec question 7) |
 | D2 | One file per record plus `deleted.json` for ids never reused | One index file (contention between parallel runs and conversations; the activities file is single-writer) |
 | D3 | 4,000 characters measured on the content | On the whole file (`stats` and `previous` would eat the room for steps) |
-| D4 | `StageRecord.procedures` with run format 4 | Reading the chip from thread lines (it would vanish with the thread and the phone could not tell outcome) or from the record's `recent` (a deleted procedure would take the chip with it) |
+| D4 | `StageRecord.procedures` with run format 5 | Reading the chip from thread lines (it would vanish with the thread and the phone could not tell outcome) or from the record's `recent` (a deleted procedure would take the chip with it) |
 | D5 | The session meters usage for every call and persists it only when a procedure was read | A usage store for all conversation answers (spec: out of scope) |
 | D6 | A called agent's marks go to its own conversation thread | Writing them into the calling stage (needs a new path through `conversation.ts` for a small gain) |
 | D7 | `PROCEDURES_WRITE` pattern with a negative lookahead for the three reads | A list of write channels (a channel added later would be open) |

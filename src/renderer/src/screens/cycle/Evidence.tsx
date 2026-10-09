@@ -109,6 +109,7 @@ function EvidenceItem({ runId, record, onRemoved }: { runId: string; record: Evi
         <strong className="small">{record.title}</strong>
         <span className="badge cy-tone-quiet">{record.kind.toUpperCase()}</span>
         <span className="faint small">{record.by} · {stamp(record.at)}</span>
+        {record.recording?.handoff && <span className="badge cy-tone-blocked">{t('ui.cycle.rec.handoffBadge')}</span>}
         {record.inCycle && <span className="badge cy-tone-done">{t('ui.cycle.evidenceBlock.inCycle')}</span>}
       </div>
       {record.description && <p className="small cy-evidence-desc">{record.description}</p>}

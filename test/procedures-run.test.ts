@@ -1,4 +1,4 @@
-// What a run keeps of the procedures a stage used (#179): the field of the stage record, the run format 4 that carries it (and only it), the file check, and the whole
+// What a run keeps of the procedures a stage used (#179): the field of the stage record, the run format 5 that carries it (and only it), the file check, and the whole
 // path from a stage that read a procedure to its record. A stage that read none leaves no field and the run stays in the format it had.
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -49,14 +49,14 @@ describe('recordProcedures', () => {
 });
 
 describe('the run format', () => {
-  it('is 4 only when a stage record holds the field, whatever else the run holds', () => {
+  it('is 5 only when a stage record holds the field, whatever else the run holds', () => {
     const run = fresh();
-    expect(RUN_VERSION).toBe(4);
+    expect(RUN_VERSION).toBe(5);
     expect(runVersionOf(run)).toBe(1);
-    expect(runVersionOf(recordProcedures(run, run.stage, [use(1)], at(1)).run)).toBe(4);
-    // A recording with cuts is 3 by itself; with a procedure the run is 4.
+    expect(runVersionOf(recordProcedures(run, run.stage, [use(1)], at(1)).run)).toBe(5);
+    // A recording with cuts is 3 by itself; with a procedure the run is 5.
     expect(runVersionOf({ evidence: { 'ev-1': recording } })).toBe(3);
-    expect(runVersionOf({ evidence: { 'ev-1': recording }, stages: [{ procedures: [use(1)] }] })).toBe(4);
+    expect(runVersionOf({ evidence: { 'ev-1': recording }, stages: [{ procedures: [use(1)] }] })).toBe(5);
     expect(runVersionOf({ stages: [{}, {}] })).toBe(1);
   });
 
@@ -67,11 +67,11 @@ describe('the run format', () => {
     const onDisk = (): { version: number } => JSON.parse(readFileSync(join(dir, `${run.id}.json`), 'utf8'));
     expect(onDisk().version).toBe(1);
     store.update(run.id, (r) => recordProcedures(r, r.stage, [use(1)], at(1)));
-    expect(onDisk().version).toBe(4);
+    expect(onDisk().version).toBe(5);
     expect(store.get(run.id)?.stages[0].procedures).toEqual([use(1)]);
     // A move that adds a recording does not take the version down.
     store.update(run.id, (r) => recordEvidence(r, recording, at(2)));
-    expect(onDisk().version).toBe(4);
+    expect(onDisk().version).toBe(5);
   });
 
   it('is believed by the file check: a good field is read back, a bad one and a newer format are refused', () => {
@@ -85,7 +85,7 @@ describe('the run format', () => {
     expect(with_({ revision: 0 }).ok).toBe(false);
     expect(with_({ title: 'x'.repeat(81) }).ok).toBe(false);
     expect(with_({ steps: [] }).ok).toBe(false);
-    const newer = parseRun({ ...base, version: 5 });
+    const newer = parseRun({ ...base, version: 6 });
     expect(newer).toMatchObject({ ok: false, reason: 'newer' });
   });
 
@@ -116,7 +116,7 @@ describe('from a stage that read a procedure to its record', () => {
     return r.record;
   };
 
-  it('marks the stage with the id, the revision and the outcome, and the run is stored as format 4; the next stage that read none has no mark', async () => {
+  it('marks the stage with the id, the revision and the outcome, and the run is stored as format 5; the next stage that read none has no mark', async () => {
     const record = seeded();
     const b = await start();
     b.engine.script('refiner', async (call) => {
@@ -130,7 +130,7 @@ describe('from a stage that read a procedure to its record', () => {
     const refine = done.stages.find((s) => s.stage === 'refine')!;
     expect(refine.procedures).toEqual([{ id: record.id, revision: 1, title: 'Run the end-to-end tests', outcome: 'ok' }]);
     expect(done.stages.filter((s) => s.stage !== 'refine').every((s) => s.procedures === undefined)).toBe(true);
-    expect(JSON.parse(readFileSync(join(dir, 'runs', `${run.id}.json`), 'utf8')).version).toBe(4);
+    expect(JSON.parse(readFileSync(join(dir, 'runs', `${run.id}.json`), 'utf8')).version).toBe(5);
     expect(b.thread(done).find((m) => m.code === 'runner.procedures.used')).toBeDefined();
   });
 

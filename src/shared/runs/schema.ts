@@ -187,7 +187,8 @@ const evidenceRecord = object(
         width: { type: 'integer', description: 'Width of the picture.', minimum: 1, maximum: 16_384 },
         height: { type: 'integer', description: 'Height of the picture.', minimum: 1, maximum: 16_384 },
         truncated: enumOf('Why it stopped before the stage did.', ['size', 'time']),
-        marks: { type: 'array', description: 'The intervals in which the person used the screen, in ms from the start.', items: object('One interval.', { fromMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, toMs: { type: 'integer', minimum: 0, maximum: 86_400_000 } }, ['fromMs', 'toMs']), maxItems: RECORDING_MARKS_MAX },
+        handoff: { type: 'boolean', description: 'The video holds a hand-off: the person typed on the screen while it was theirs.', enum: [true] },
+        marks: { type: 'array', description: 'The intervals in which the person used the screen, in ms from the start.', items: object('One interval.', { fromMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, toMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, kind: enumOf('The interval of a hand-off: the agent gave the screen to the person.', ['handoff']) }, ['fromMs', 'toMs']), maxItems: RECORDING_MARKS_MAX },
         cuts: { type: 'array', description: 'Where an idle stretch was shortened: the video time at which its pause ends and the stage time left out.', items: object('One cut.', { atMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, skippedMs: { type: 'integer', minimum: 1, maximum: 4_294_967_295 } }, ['atMs', 'skippedMs']), maxItems: RECORDING_CUTS_MAX },
       },
       ['durationMs', 'width', 'height', 'marks'],
@@ -292,7 +293,7 @@ const docsRun = object('What the run is about when it drafts the documentation o
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
-    version: { type: 'integer', description: 'Version of this file format: 4 when a stage of the run used a procedure, 3 when a screen recording of the run holds cuts or the time it started after the screen opened, 2 when the run holds one without, else 1.', enum: [1, 2, 3, 4] },
+    version: { type: 'integer', description: 'Version of this file format: 5 when a stage of the run used a procedure, 4 when a screen recording of the run holds a hand-off, 3 when it holds cuts or the time it started after the screen opened, 2 when the run holds one without, else 1.', enum: [1, 2, 3, 4, 5] },
     rev: { type: 'integer', description: 'Grows by one on every save.', minimum: 0 },
     id: string('Run id.', { pattern: RUN_ID.source }),
     issue: object('The issue.', { ref: string('How the cards write it.', { minLength: 1, maxLength: 200 }), iid: { type: 'integer', description: 'Issue number.', minimum: 0 }, title: string('Title.', { maxLength: 500 }), url: nullableString('Web address.') }, ['ref', 'iid', 'title', 'url']),

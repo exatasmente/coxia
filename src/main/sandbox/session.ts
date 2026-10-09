@@ -28,7 +28,7 @@ export interface ExecResult {
   outputUnavailable?: true;
   ms: number;
   /** Why the command was not run at all. */
-  refused?: 'empty' | 'size' | 'budget' | 'closed' | 'denied';
+  refused?: 'empty' | 'size' | 'budget' | 'closed' | 'denied' | 'handoff';
 }
 
 /** What a stage's sandbox offers to test an interface. */
@@ -103,7 +103,29 @@ export interface SessionOptions {
   readyMs?: number;
   /** What was asked for to test an interface: the browsers folder, and the display (`start`: a program to start was found; `missing`: none was). */
   gui?: { browsers: string | null; browsersGone?: string; display: 'start' | 'missing' | null };
+  /** The person has the screen for a hand-off (#178): a command is refused, unlogged, without being run, while this answers true. */
+  held?: () => boolean;
+  /** Takes what the person typed during a hand-off out of a command's output, before the pattern-based masking. */
+  mask?: OutputMask;
 }
+
+/** A function over a command's output. */
+export type OutputMask = (text: string) => string;
+
+/**
+ * The end of a command's output as the model reads it: the typed values taken out of the whole text first (a value the cut would split is still found), then the end is kept
+ * and the pattern-based masking runs last, so it cannot reshape a typed value before the exact match. Null when the mask failed: what could not be checked is not shown.
+ */
+export function shownOutput(text: string, mask?: OutputMask): string | null {
+  try {
+    return redact(tail(mask ? mask(text) : text));
+  } catch {
+    return null;
+  }
+}
+
+/** What a command that was refused at the door of a hand-off looks like: not run, not numbered and not in the log. */
+export const handoffRefusal = (n: number, command: string): ExecResult => ({ n, command, exitCode: null, timedOut: false, output: '', ms: 0, refused: 'handoff' });
 
 export interface SessionDeps {
   spawn?: (file: string, args: string[], options: { stdio: ['pipe', 'pipe', 'pipe', 'pipe']; detached: true; env: NodeJS.ProcessEnv }) => ChildProcess;
@@ -255,6 +277,8 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
   const run = (command: string): Promise<ExecResult> =>
     new Promise((resolve) => {
       const n = results.length + 1;
+      // A command queued before the person took the screen is asked again here: the queue may have held it behind a long one.
+      if (o.held?.()) return resolve(handoffRefusal(n, command));
       const record = (r: Omit<ExecResult, 'n'>, mode: 'run' | 'refused'): void => {
         const full: ExecResult = { n, ...r };
         results.push(full);
@@ -285,7 +309,8 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
         spent += ms;
         const text = readTailNoFollow(join(out, `out.${n}`), OUTPUT_READ);
         const timedOut = code === 124 || (code === 137 && ms >= secs * 1000);
-        record({ command, exitCode: code, timedOut, output: text === null ? '' : redact(tail(text)), ...(text === null ? { outputUnavailable: true as const } : {}), ms }, 'run');
+        const output = text === null ? null : shownOutput(text, o.mask);
+        record({ command, exitCode: code, timedOut, output: output ?? '', ...(output === null ? { outputUnavailable: true as const } : {}), ms }, 'run');
       };
       const onLine = (line: string): void => {
         const m = /^done (\d+) (\w+) (\d+)$/.exec(line);
@@ -311,6 +336,8 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
       return `${CTL}/files/${name}`;
     },
     exec: (command) => {
+      // At the door, so a refusal does not wait behind a command that is still running.
+      if (o.held?.()) return Promise.resolve(handoffRefusal(results.length + 1, command));
       const next = queue.then(() => run(command));
       queue = next.catch(() => undefined);
       return next;

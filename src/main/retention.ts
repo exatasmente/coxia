@@ -89,6 +89,8 @@ export function attachmentFiles(base = ATAS): RetentionFile[] {
       try {
         const st = statSync(path);
         if (!st.isFile()) continue;
+        // The recordings of the agents' screens are listed with the other recordings (`conversationRecordingFiles`): a live message names them, which would keep them for ever.
+        if (name.endsWith(RECORDING_EXT)) continue;
         const id = name.split('.')[0];
         files.push({ kind: 'anexos', path, size: st.size, mtimeMs: st.mtimeMs, keep: keep.has(`${conversation.name}/${id}`) });
       } catch {
@@ -114,6 +116,33 @@ export function screenRecordingFiles(base = ATAS, runs: Run[] = runStore().list(
       try {
         const st = lstatSync(path);
         if (st.isFile()) files.push({ kind: 'screens', path, size: st.size, mtimeMs: st.mtimeMs, keep: false });
+      } catch {
+        // the file went away between the listing and the stat: nothing to select
+      }
+    }
+  }
+  return files;
+}
+
+/** The extension a conversation's recording has on disk (`attachmentExt('video')`). */
+const RECORDING_EXT = '.webm';
+
+/**
+ * The recordings of the agents' screens kept in the conversations (#177): the app's own `video` attachments, listed by the folder of the conversation they are in and
+ * never kept for being named by a live message, since the message is where the sweep says it removed them. They follow the workspace's switch and days with the stages'.
+ */
+export function conversationRecordingFiles(base = ATAS): RetentionFile[] {
+  const dir = join(base, 'anexos');
+  if (!existsSync(dir)) return [];
+  const files: RetentionFile[] = [];
+  for (const conversation of readdirSync(dir, { withFileTypes: true })) {
+    if (!conversation.isDirectory()) continue;
+    const folder = join(dir, conversation.name);
+    for (const name of readdirSync(folder)) {
+      if (!/^[a-f0-9]{8,32}\.webm$/.test(name)) continue;
+      try {
+        const st = lstatSync(join(folder, name));
+        if (st.isFile()) files.push({ kind: 'screens', path: join(folder, name), size: st.size, mtimeMs: st.mtimeMs, keep: false });
       } catch {
         // the file went away between the listing and the stat: nothing to select
       }
@@ -219,7 +248,7 @@ function otherWorkspaceRefs(): RetentionRef[] {
 export function scan(days: number, now = Date.now()): Selection {
   const actions = actionRefs();
   const refs = [...(actions ?? []), ...otherWorkspaceRefs()];
-  const files = [...dataFiles(refs), ...attachmentFiles(), ...screenRecordingFiles(), ...sessionFiles()];
+  const files = [...dataFiles(refs), ...attachmentFiles(), ...screenRecordingFiles(), ...conversationRecordingFiles(), ...sessionFiles()];
   const selection = selectRetention(files, refs, { now, days });
   if (actions === null) {
     const sessions = selection.remove.filter((v) => v.file.kind === 'sessoes');
@@ -281,6 +310,7 @@ function inside(path: string, root: string): boolean {
  * recording of that run that was not removed, and the file must be the one its id names.
  */
 export function removeScreenRecording(file: RetentionFile): void {
+  if (isConversationRecording(file.path)) return removeConversationRecording(file);
   const runId = basename(dirname(file.path));
   const id = basename(file.path).replace(/\.webm$/, '');
   const run = runStore().get(runId);
@@ -300,6 +330,38 @@ export function removeScreenRecording(file: RetentionFile): void {
     }
   }
   moveRun({ runs: runStore(), forum: forumStore() }, runId, (r) => markRecordingRemoved(r, id, new Date().toISOString()));
+}
+
+/** Whether the file is in a conversation's folder of attachments, not in a run's evidence. */
+const isConversationRecording = (path: string): boolean => dirname(dirname(path)) === join(ATAS, 'anexos');
+
+/**
+ * Removes the recording of a conversation: the file, through the attachment store's own door, and then the message that names it says so (the ref is marked `removed`, the
+ * post stays). A file that is gone since the preview, or was changed since, is not taken: the sweep removes what it listed.
+ */
+export function removeConversationRecording(file: RetentionFile): void {
+  const thread = basename(dirname(file.path));
+  const name = basename(file.path);
+  if (!/^[a-f0-9]{8,32}\.webm$/.test(name)) throw new Error(t('main.retention.outside'));
+  if (existsSync(file.path)) {
+    const st = lstatSync(file.path);
+    if (!st.isFile()) throw new Error(t('main.retention.notRegular'));
+    if (st.mtimeMs !== file.mtimeMs) throw new Error(t('main.retention.changed'));
+    if (!inside(file.path, join(ATAS, 'anexos'))) throw new Error(t('main.retention.outside'));
+    attachmentFilesStore.dropFile(thread, name);
+  }
+  const id = name.slice(0, -RECORDING_EXT.length);
+  const forum = forumStore();
+  try {
+    for (const m of forum.read(thread, 0, 2000)?.messages ?? []) if (m.attachments?.some((a) => a.id === id && a.kind === 'video' && !a.removed)) forum.markAttachmentRemoved(thread, m.seq, id);
+  } catch (e) {
+    console.error('[retention] could not mark a recording as removed', e instanceof Error ? e.message : e);
+  }
+  try {
+    if (!readdirSync(dirname(file.path)).length) rmSync(dirname(file.path), { recursive: true, force: true });
+  } catch {
+    // the folder is harmless empty; the next sweep tries again
+  }
 }
 
 function removeOne(file: RetentionFile): void {

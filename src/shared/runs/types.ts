@@ -11,17 +11,20 @@ import type { ProcedureUse } from '../procedures';
  * The newest run file format this app reads. Version 2 is a run that holds the app's own screen recording (a `webm` evidence record): an app that does not know the
  * kind refuses such a file as written by a newer app, instead of reading it as invalid. Version 3 is a run whose recording also holds `cuts` or `startedAfterMs` (#176): the beta.4 and
  * beta.5 apps know the recording but their schema allows no other property in it, so they would call such a run invalid; at 3 they say "written by a newer app".
- * Version 4 is a run whose stage records carry `procedures` (the procedures a stage used, #179): an older app's schema allows no other property in a stage record, so it would call
- * such a run invalid; at 4 it says "written by a newer app".
- * Every other run is written as version 1 (`runVersionOf`), so a downgrade loses only the runs that have a recording, and from 3 on only the ones with cuts too, and from 4 on only the ones that used a procedure.
+ * Version 4 is a run whose recording holds a hand-off interval (`handoff`, and a mark of kind `handoff`, #178): the apps before it allow no such property.
+ * Version 5 is a run whose stage records carry `procedures` (the procedures a stage used, #179): an older app's schema allows no other property in a stage record, so it would call
+ * such a run invalid; at 5 it says "written by a newer app".
+ * Every other run is written as version 1 (`runVersionOf`), so a downgrade loses only the runs that have a recording, from 3 on only the ones with cuts too, from 4 on only
+ * the ones with a hand-off, and from 5 on only the ones that used a procedure.
  */
-export const RUN_VERSION = 4;
-export type RunVersion = 1 | 2 | 3 | 4;
+export const RUN_VERSION = 5;
+export type RunVersion = 1 | 2 | 3 | 4 | 5;
 
-/** The format a run is written as: 4 when a stage record holds `procedures`, 3 when a screen recording holds cuts or `startedAfterMs` (the fields v2 does not know), 2 when it holds one without, else 1. The store stamps it on every save, so it follows the content and cannot be forgotten by a move. */
+/** The format a run is written as: 5 when a stage record holds `procedures`, 4 when a screen recording holds a hand-off, 3 when it holds cuts or `startedAfterMs` (the fields v2 does not know), 2 when it holds one without, else 1. The store stamps it on every save, so it follows the content and cannot be forgotten by a move. */
 export const runVersionOf = (run: { evidence?: Run['evidence']; stages?: readonly Pick<StageRecord, 'procedures'>[] }): RunVersion => {
-  if ((run.stages ?? []).some((s) => s.procedures !== undefined)) return 4;
+  if ((run.stages ?? []).some((s) => s.procedures !== undefined)) return 5;
   const pieces = Object.values(run.evidence ?? {}).filter((e) => e.kind === 'webm');
+  if (pieces.some((e) => e.recording?.handoff === true || e.recording?.marks.some((m) => m.kind !== undefined))) return 4;
   if (pieces.some((e) => (e.recording?.cuts?.length ?? 0) > 0 || e.recording?.startedAfterMs !== undefined)) return 3;
   return pieces.length > 0 ? 2 : 1;
 };

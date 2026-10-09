@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { RECORDING_MAX_BYTES, isWebm } from '../shared/screen';
 import {
   ATTACHMENT_LIMITS,
   type AttachmentKind,
@@ -49,6 +50,7 @@ function kindOfExt(path: string): AttachmentKind {
   if (path.endsWith('.pdf')) return 'pdf';
   if (path.endsWith('.json')) return 'json';
   if (path.endsWith('.csv')) return 'csv';
+  if (path.endsWith('.webm')) return 'video';
   return 'text';
 }
 
@@ -88,7 +90,8 @@ export function createAttachmentStore(deps: AttachmentStoreDeps = {}) {
   function sizeOf(thread: string): number {
     const dir = dirOf(thread);
     if (!existsSync(dir)) return 0;
-    return readdirSync(dir).reduce((n, name) => (statSync(join(dir, name)).isFile() ? n + 1 : n), 0);
+    // A recording is the app's, and no part of what a person has attached.
+    return readdirSync(dir).reduce((n, name) => (kindOfExt(name) !== 'video' && statSync(join(dir, name)).isFile() ? n + 1 : n), 0);
   }
 
   /**
@@ -110,6 +113,25 @@ export function createAttachmentStore(deps: AttachmentStoreDeps = {}) {
     const path = fileOf(thread, id, kind);
     writeFileSync(path, bytes, { flag: 'wx' });
     return { id, name: cleanAttachmentName(name), kind, bytes: bytes.length };
+  }
+
+  /**
+   * Stores the app's own recording of an agent's screen in the conversation. This is the only door for a `video`: a person's upload goes through `put`, which knows no video,
+   * and the recording has a ceiling of its own that does not count against the message's (a recording is no part of any message a person sends). Nothing is written when the
+   * bytes are empty, too long or not a WebM file.
+   */
+  function putVideo(thread: string, name: unknown, bytes: Uint8Array): { ok: true; ref: AttachmentRef } | { ok: false; problem: 'empty' | 'too-long' | 'not-webm' | 'write' } {
+    if (bytes.length === 0) return { ok: false, problem: 'empty' };
+    if (bytes.length > RECORDING_MAX_BYTES) return { ok: false, problem: 'too-long' };
+    if (!isWebm(bytes)) return { ok: false, problem: 'not-webm' };
+    const id = newId();
+    try {
+      mkdirSync(dirOf(thread), { recursive: true });
+      writeFileSync(fileOf(thread, id, 'video'), bytes, { flag: 'wx' });
+    } catch {
+      return { ok: false, problem: 'write' };
+    }
+    return { ok: true, ref: { id, name: cleanAttachmentName(name), kind: 'video', bytes: bytes.length } };
   }
 
   /** Deletes one attachment of a conversation; an unknown id is nothing to do. */
@@ -163,7 +185,8 @@ export function createAttachmentStore(deps: AttachmentStoreDeps = {}) {
     return readdirSync(dir)
       .map((name) => {
         const path = join(dir, name);
-        if (!statSync(path).isFile()) return null;
+        // The app's recordings are not among the files a person attached: they are neither counted against a message nor offered to be posted again.
+        if (kindOfExt(name) === 'video' || !statSync(path).isFile()) return null;
         const id = name.split('.')[0];
         return { id, name, kind: kindOfExt(name), bytes: statSync(path).size } satisfies AttachmentRef;
       })
@@ -176,7 +199,8 @@ export function createAttachmentStore(deps: AttachmentStoreDeps = {}) {
    */
   function readForTool(thread: string, id: unknown, offset?: number, limit?: number): AttachmentRead | null {
     const found = find(thread, String(id ?? ''));
-    if (!found) return null;
+    // The frames of a logged-in session are not for the model: a recording is not found by the tool, whatever ref it is given.
+    if (!found || found.kind === 'video') return null;
     const bytes = readFileSync(found.path);
     const ref: AttachmentRef = { id: String(id), name: found.path.split('/').pop() ?? '', kind: found.kind, bytes: bytes.length };
     if (found.kind === 'image') return { ref };
@@ -221,7 +245,7 @@ export function createAttachmentStore(deps: AttachmentStoreDeps = {}) {
       .map((path) => ({ path, size: statSync(path).size, mtimeMs: statSync(path).mtimeMs }));
   }
 
-  return { put, drop, dropAll, dropFile, dropThread, get, list, readForTool, holds, threads, files, dirOf, safeId, sizeOf };
+  return { put, putVideo, drop, dropAll, dropFile, dropThread, get, list, readForTool, holds, threads, files, dirOf, safeId, sizeOf };
 }
 
 export type AttachmentStore = ReturnType<typeof createAttachmentStore>;

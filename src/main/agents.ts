@@ -50,6 +50,7 @@ import { PROCEDURE_TOOL_NAMES, procedureMcpToolName, type ProcedureTools } from 
 import { incomingActivity, incomingText } from './engine/incoming';
 import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME, VIEW_IMAGE_MCP_TOOL_NAME, VIEW_IMAGE_TOOL_NAME, offersViewImage } from './sandbox/tool';
 import { ATTACHMENT_TOOL } from '../shared/attachments';
+import { type ScreenToolset, screenMcpServers, screenMcpToolNames, screenToolImpls, screenToolNames } from './browser/engineTool';
 import { ATTACHMENT_MCP_TOOL_NAME, attachmentMcpServer, attachmentToolImpl } from './attachmentTool';
 import type { SandboxSession } from './sandbox/session';
 
@@ -523,8 +524,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const evidenceOut = req.exec?.outputDir;
   const evidence = req.evidence ? evidenceToolImpls(req.evidence, evidenceOut) : [];
   const procedures = req.procedures ? procedureToolImpls(req.procedures) : [];
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? []), ...procedures];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name), ...(req.procedures ? PROCEDURE_TOOL_NAMES : [])];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? []), ...procedures, ...(req.screen ? screenToolImpls(req.screen) : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name), ...(req.procedures ? PROCEDURE_TOOL_NAMES : []), ...(req.screen ? screenToolNames(req.screen) : [])];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -632,13 +633,15 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // The procedure tools: unlike the tools above, a server that cannot be built does not stop the call. The list is in its prompt; the thread says the tools are not there.
   const procedures = req.procedures ? await procedureMcpServer(req.procedures) : null;
   if (req.procedures && !procedures) req.procedures.unavailable?.();
-  const mcp = vcs || shell || release || attachment || evidence || runner || procedures ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}), ...(runner ?? {}), ...(procedures ?? {}) } : null;
+  // The agent's screen: the app's browser and the confirmation tool, two more in-process servers.
+  const screen = req.screen ? await screenMcpServers(req.screen) : null;
+  const mcp = vcs || shell || release || attachment || evidence || runner || procedures || screen ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}), ...(runner ?? {}), ...(procedures ?? {}), ...(screen ?? {}) } : null;
   const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
   const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
   const options = {
-    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : []), ...(procedures ? PROCEDURE_TOOL_NAMES.map(procedureMcpToolName) : [])], confine }),
+    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : []), ...(procedures ? PROCEDURE_TOOL_NAMES.map(procedureMcpToolName) : []), ...(screen && req.screen ? screenMcpToolNames(req.screen) : [])], confine }),
     ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
     model: req.target.model,
     env,
@@ -1185,6 +1188,8 @@ export interface AgentCall {
   runnerTools?: ToolImpl[];
   /** The workspace's procedure tools, from the call's procedure session; absent: the call has none (a ceremony, a call with no session, the switch off). */
   procedures?: ProcedureTools;
+  /** The agent's screen (the app's browser and the confirmation tool), offered by name to either engine. */
+  screen?: ScreenToolset;
   /** What the live activity calls it (the agent's id). */
   label: string;
   /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
@@ -1295,6 +1300,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       incoming: call.incoming,
       runnerTools: call.runnerTools,
       procedures: call.procedures,
+      screen: call.screen,
     };
     let r: Run<T>;
     try {
@@ -1337,6 +1343,7 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
       exec: undefined,
       release: undefined,
       procedures: undefined,
+      screen: undefined,
     });
     return { ...r, sources: [...e.sources, ...r.sources], partial: true };
   } catch (again) {

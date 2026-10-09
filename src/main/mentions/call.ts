@@ -7,6 +7,7 @@ import type { AgentCall } from '../agents';
 import { prompt as cp, text as cycleWord } from '../cyclePrompts';
 import type { FolderFile } from '../runner/cycleFolder';
 import { fence, threadText } from '../runner/prompt';
+import { type ScreenPrompt, screenRules, shellRules } from '../runner/screenPrompt';
 
 // What an agent is given when a person names it: the question, where it was named, the conversation and (when it runs commands) a throwaway copy of the code.
 // It never writes to the repository: the call has no confinement to write in, so whatever the agent's own permission is, a mention changes no file of the branch.
@@ -30,6 +31,8 @@ export interface MentionInput {
   place: 'run' | 'channel' | 'general' | 'ceremony';
   /** The agent's commands run in a session over a copy of the code: what it is told about it. Absent: no commands. */
   shell?: { host: boolean; network: 'off' | 'registry' | 'open' };
+  /** What the agent is told of its screen, its own hosts and the app's browser; absent for an agent with neither the switch nor a host list. */
+  screen?: ScreenPrompt;
   /** The agent may propose writes on the code host (it reads it): the answer gets a `proposals` field. */
   proposals?: boolean;
   /** The agent is autonomous: a comment and a label change it proposes go out as soon as it answers, and it is told so. */
@@ -169,8 +172,9 @@ export function mentionCall(i: MentionInput): AgentCall {
   const system = [
     cp('runner.mention.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.ref ?? '—', title: i.title ?? '—' }),
     placeLine(i),
-    i.shell ? (i.shell.host ? cp('runner.rules.shell.host') : i.shell.network === 'open' ? cp('runner.rules.shell.open') : i.shell.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
+    i.shell ? shellRules(i.shell, i.screen) : '',
     i.shell ? (i.shell.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
+    screenRules(i.screen),
     i.proposals ? (i.autonomous ? cp('runner.mention.proposalsAuto') : cp('runner.mention.proposals')) : '',
     i.proposals ? labelsLine(i.config) : '',
     cp('runner.rules.data'),
