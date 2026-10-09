@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { STAGE_KINDS } from '../src/shared/config/types';
 import { LIMITS, PROCEDURE_VERSION, contentSize, isOld, normalTitle, sameKey, type ProcedureRecord } from '../src/shared/procedures';
-import { checkContent, describeRefusals, parseRecord, type CheckContext } from '../src/main/procedures/record';
+import { acceptsText, checkContent, describeRefusals, parseRecord, type CheckContext } from '../src/main/procedures/record';
 
 const ctx: CheckContext = { repos: ['api', 'web'], home: '/home/someone' };
 
@@ -342,6 +342,39 @@ describe('parseRecord', () => {
     ['a surface that does not exist', stored({ origin: { by: 'w', createdBy: 'w', surface: 'moon', at: '2026-10-09T10:00:00.000Z' } })],
   ])('refuses %s as invalid', (_name, raw) => {
     expect(parseRecord(raw).status).toBe('invalid');
+  });
+});
+
+describe('acceptsText', () => {
+  const run = { max: LIMITS.stepRun };
+
+  it('accepts a command, a version pin and a placeholder, and refuses what the validator refuses in a record', () => {
+    expect(acceptsText('npm test -- --runInBand', run, '/home/someone')).toBe(true);
+    expect(acceptsText('npm install left-pad@1.3.0', run, '/home/someone')).toBe(true);
+    expect(acceptsText('mysql -p secret', run, '/home/someone')).toBe(false);
+    expect(acceptsText('curl --token abc123def456 https://example.com', run, '/home/someone')).toBe(false);
+    expect(acceptsText('cat /home/someone/notes.txt', run, '/home/someone')).toBe(false);
+    expect(acceptsText('mail someone@example.com', run, '/home/someone')).toBe(false);
+    expect(acceptsText('run job 123456', run, '/home/someone')).toBe(false);
+    expect(acceptsText('deploy abcdef0123456789abcdef0123', run, '/home/someone')).toBe(false);
+  });
+
+  it('holds a text to the size and the characters of its field, and refuses what is not a string or is empty', () => {
+    expect(acceptsText('x'.repeat(LIMITS.stepRun + 1), run, '/home/someone')).toBe(false);
+    expect(acceptsText('x'.repeat(LIMITS.stepRun), run, '/home/someone')).toBe(true);
+    expect(acceptsText('two\nlines', run, '/home/someone')).toBe(false);
+    expect(acceptsText('zero\u200bwidth', run, '/home/someone')).toBe(false);
+    expect(acceptsText('Run: it!', { max: LIMITS.title, title: true }, '/home/someone')).toBe(false);
+    expect(acceptsText('Run it', { max: LIMITS.title, title: true }, '/home/someone')).toBe(true);
+    expect(acceptsText('   ', run, '/home/someone')).toBe(false);
+    expect(acceptsText(42, run, '/home/someone')).toBe(false);
+  });
+
+  it('gives the same answer as a record holding the text in the same field', () => {
+    for (const cmd of ['npm test', 'mysql -p secret', 'echo hello', 'run job 123456']) {
+      const asRecord = checkContent(good({ steps: [{ text: 'Run it', run: cmd }] }), ctx).ok;
+      expect(acceptsText(cmd, run, ctx.home)).toBe(asRecord);
+    }
   });
 });
 

@@ -48,6 +48,8 @@ export interface MentionInput {
   procedures?: string;
   /** The call has the app's browser, so it is also given the draft (see `StageInput.proceduresGui`). */
   proceduresGui?: boolean;
+  /** The call has the app's shell, so it is also given the draft of its commands: the rules say to keep a task fought with commands with `procedures_draft`. Only with `procedures`. */
+  proceduresCmd?: boolean;
 }
 
 /** An issue the answer proposes, read leniently: a title and a body are needed, labels are optional. */
@@ -183,6 +185,7 @@ export function mentionCall(i: MentionInput): AgentCall {
     cp('runner.rules.claims'),
     i.procedures !== undefined ? cp('runner.rules.procedures') : '',
     i.procedures !== undefined && i.proceduresGui ? cp('runner.rules.proceduresGui') : '',
+    i.procedures !== undefined && i.proceduresCmd ? cp('runner.rules.proceduresCmd') : '',
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.agent.instructions).trim(),

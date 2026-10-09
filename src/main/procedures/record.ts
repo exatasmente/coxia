@@ -192,6 +192,18 @@ function text(out: Out, field: string, value: unknown, rule: TextRule, home: str
   return ok && out.refusals.length === before ? s : null;
 }
 
+/** The limits a drafted text is held to: the field's size, and whether it is a title or a `gui` text. */
+export type TextLimits = Pick<TextRule, 'max' | 'title' | 'free' | 'gui'>;
+
+/**
+ * Whether one text, a field of a draft the app built, passes the validator's checks for that field, with the same classes of secret as a saved record. The app uses it on
+ * what it drafts before the text reaches a model or a person; nothing is returned of the refusal, because it would echo the value.
+ */
+export function acceptsText(value: unknown, limits: TextLimits, home: string = homedir()): boolean {
+  const out: Out = { refusals: [] };
+  return text(out, 'text', value, limits, home) !== null;
+}
+
 function key(out: Out, kind: ProcedureKind, value: unknown, ctx: CheckContext, home: string): string | null {
   const bounded = kind === 'gui' || kind === 'repo' || kind === 'cycle';
   const k = text(out, 'key', value, { max: LIMITS.key, free: !bounded }, home);

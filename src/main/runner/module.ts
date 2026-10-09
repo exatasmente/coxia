@@ -20,7 +20,7 @@ import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, onConfigChange, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
 import { sandbox } from '../sandbox/workspace';
-import { proceduresPort } from '../procedures';
+import { procedureOffers, proceduresPort } from '../procedures';
 import { firePluginEvent, liveContext, pluginHold, pluginNotes, pluginRunHooks, releasePluginAsks } from '../plugins/module';
 import { readArtifact } from './cycleFolder';
 import { uploadsOf } from '../evidence/store';
@@ -228,6 +228,8 @@ export const runsModule: Module = (ctx) => {
   openSessions.onClosed((screen) => {
     handoffs.closed(screen.key);
     handoffs.forget(screen.key);
+    // The last turn given for this screen is forgotten with it; an offer it raised stays until it is answered or expires.
+    procedureOffers().forget(screen.key);
   });
   // An agent that is gone, loses its screen or changes its shell, or a workspace that switches the display off, ends the screens that depended on it.
   onConfigChange((config) => void openSessions.reconcile(config));
@@ -284,6 +286,7 @@ export const runsModule: Module = (ctx) => {
     pluginRelease: (runId) => releasePluginAsks(runId),
     pluginNotes: () => pluginNotes(),
     procedures: proceduresPort(),
+    offers: procedureOffers(),
   });
   current = r;
   pluginRunHooks.settled = (id, note) => {

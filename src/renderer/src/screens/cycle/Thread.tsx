@@ -16,6 +16,7 @@ import { MessageAttachments } from './Attachments';
 import { AskCards } from './AskCard';
 import { EvidenceAttachment } from './Evidence';
 import { LiveScreen } from './LiveScreen';
+import { OfferCards } from './OfferCards';
 import { ScreenStrip } from './ScreenStrip';
 import { agentName, agentRole, authorName } from './names';
 import { forumApi, forgetNow, markThreadSeen, useThread } from './forumApi';
@@ -588,6 +589,7 @@ export function Thread({ thread, run = null, team, title, onSendBack, handoffAbo
         )}
       </ol>
       <AskCards asks={handoffAbove ? asks.filter((a) => !isHandoff(a)) : asks} team={team} onWatch={setWatching} />
+      <OfferCards thread={thread} team={team} />
       <ScreenStrip screens={screens} team={team} onWatch={setWatching} />
       <Composer
         thread={thread}

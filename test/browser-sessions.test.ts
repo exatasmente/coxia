@@ -484,6 +484,35 @@ describe('closing a screen', () => {
     expect(s.closedSeen[0].steps.map((x) => x.tool)).toEqual(['screen_handoff']);
   });
 
+  it('keeps a draft mark beside the log of an open screen: 0 at first, per screen, gone with it (#187)', async () => {
+    const s = setup();
+    await s.lease({ thread: 'run-r1', key: callKey('run-r1', 'web') });
+    await s.lease({ thread: 'run-r1', key: callKey('run-r1', 'other') });
+    expect(s.sessions.markOf(callKey('run-r1', 'web'))).toBe(0);
+    s.sessions.mark(callKey('run-r1', 'web'), 4);
+    expect(s.sessions.markOf(callKey('run-r1', 'web'))).toBe(4);
+    expect(s.sessions.markOf(callKey('run-r1', 'other'))).toBe(0);
+    s.sessions.mark(callKey('run-r1', 'gone'), 9);
+    expect(s.sessions.markOf(callKey('run-r1', 'gone'))).toBe(0);
+    await s.sessions.close(callKey('run-r1', 'web'), 'stage');
+    expect(s.sessions.markOf(callKey('run-r1', 'web'))).toBe(0);
+    await s.lease({ thread: 'run-r1', key: callKey('run-r1', 'web') });
+    expect(s.sessions.markOf(callKey('run-r1', 'web'))).toBe(0);
+  });
+
+  it('tells two openings of the same key apart: a screen opened again is another instance, and a closed key has none', async () => {
+    const s = setup();
+    const key = callKey('run-r1', 'web');
+    expect(s.sessions.instanceOf(key)).toBe(0);
+    await s.lease({ thread: 'run-r1', key });
+    const first = s.sessions.instanceOf(key);
+    expect(first).toBeGreaterThan(0);
+    await s.sessions.close(key, 'stage');
+    expect(s.sessions.instanceOf(key)).toBe(0);
+    await s.lease({ thread: 'run-r1', key });
+    expect(s.sessions.instanceOf(key)).toBeGreaterThan(first);
+  });
+
   it('throws the recording away when nothing keeps it, and says "none" in the audit', async () => {
     const s = setup({ noKeep: true });
     await s.lease();

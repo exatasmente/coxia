@@ -54,6 +54,8 @@ export interface SaveRequest {
   stepsFrom?: StepsFrom;
   /** The call that writes it had a hand-off: the record waits for the person's review. */
   handoff?: boolean;
+  /** Who created the record, when it is not the writer: the person's yes to an offer writes what an agent did (#187). A replacement keeps the first creator. */
+  createdBy?: string;
   home?: string;
 }
 
@@ -276,7 +278,7 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
 
     const at = iso(now());
     const person = req.writer.by === 'person';
-    const origin: ProcedureOrigin = { ...req.writer, createdBy: old ? old.origin.createdBy : req.writer.by, ...(req.handoff && !person ? { handoff: true as const } : {}), at };
+    const origin: ProcedureOrigin = { ...req.writer, createdBy: old ? old.origin.createdBy : (req.createdBy ?? req.writer.by), ...(req.handoff && !person ? { handoff: true as const } : {}), at };
     const keyedBy = req.keyedBy ?? (old && sameKey(old.key, content.key) ? old.keyedBy : undefined);
     const base = { v: PROCEDURE_VERSION, ...content };
     let record: ProcedureRecord;

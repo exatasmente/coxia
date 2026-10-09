@@ -110,6 +110,9 @@ describe('saving a gui procedure', () => {
     await w.session.tools.draft?.({});
     await save(w);
     expect(onDisk('p-00000001').waits).toEqual(['On /budget on docs.example.com: wait about 3 s for the page or an element']);
+    // The first save moved the screen's mark (#187): the second draft is of what the screen did after it.
+    w.f.navigate('/summary');
+    w.f.wait(2300);
     await w.session.tools.draft?.({});
     await save(w, { draft: 'd-2', title: 'Update the budget again', waits: ['After Save, wait for the toast; about 3 s'] });
     expect(onDisk('p-00000002').waits).toEqual(['After Save, wait for the toast; about 3 s']);
@@ -149,7 +152,7 @@ describe('saving a gui procedure', () => {
       work(w.f);
       w.f.navigate('https://elsewhere.example.net/', { outcome: 'not-run' });
       await w.session.tools.draft?.({});
-      expect((await save(w, { key: 'bank.example.com' })).text).toMatch(/^Not saved: key must be a site the app's browser was on in this call: docs\.example\.com\./);
+      expect((await save(w, { key: 'bank.example.com' })).text).toMatch(/^Not saved: key must be a site the app's browser visited on this screen: docs\.example\.com\./);
       expect((await save(w, { key: 'elsewhere.example.net' })).text).toMatch(/^Not saved: key must be a site/);
       expect((await save(w, { key: 'Docs.Example.com' })).text).toMatch(/^Saved/);
       expect(onDisk('p-00000001').key).toBe('docs.example.com');
@@ -167,11 +170,13 @@ describe('saving a gui procedure', () => {
     expect(files()).toEqual(['p-00000001.json']);
   });
 
-  it('is for kind gui only: a draft id on another kind is refused', async () => {
+  it('is for kind gui: a screen draft id on another kind is refused (repo and tool take a draft of commands, which this call has none of)', async () => {
     const w = world();
     work(w.f);
     await w.session.tools.draft?.({});
-    expect((await w.session.tools.save({ kind: 'repo', draft: 'd-1', key: 'api', title: 'Run it', steps: [{ text: 'x' }] })).text).toBe('Not saved: a draft is for kind gui only.');
+    expect((await w.session.tools.save({ kind: 'repo', draft: 'd-1', key: 'api', title: 'Run it', steps: [{ text: 'x' }] })).text).toMatch(/^Not saved: a command draft comes from the commands of the app's shell, and this call has none/);
+    expect((await w.session.tools.save({ kind: 'cycle', draft: 'd-1', key: 'development', title: 'Run it', steps: [{ text: 'x' }] })).text).toBe('Not saved: a draft is for kind gui (a draft of the screen) or kind repo or tool (a draft of commands).');
+    expect(files()).toEqual([]);
   });
 
   it('refuses a step, a note or a wait the validator cannot keep, naming the field and never the value (acceptance 6)', async () => {

@@ -353,6 +353,10 @@ export interface BootOptions {
   pluginNotes?: RunnerDeps['pluginNotes'];
   /** The workspace's learned procedures (a port over a folder of the test's); none by default. */
   procedures?: RunnerDeps['procedures'];
+  /** Where the offers to keep a procedure are held (#187); none by default, and then no stage is given a last turn. */
+  offers?: RunnerDeps['offers'];
+  /** The limit of a stage's last turn, in ms. */
+  procedureTurnMs?: number;
 }
 
 /** The workspace config of the tests: the agent cycle on a workspace with one repository, a project of issues and the identity the app commits as. */
@@ -401,6 +405,8 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     pluginRelease: options.pluginRelease,
     pluginNotes: options.pluginNotes,
     procedures: options.procedures,
+    offers: options.offers,
+    procedureTurnMs: options.procedureTurnMs,
   };
   if (options.publish) {
     const { createPublisher } = await import('../../src/main/runner/publish');

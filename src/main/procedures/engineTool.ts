@@ -11,8 +11,8 @@ const handlers = (tools: ProcedureTools): Record<string, (input: unknown) => Pro
   procedures_get: (input) => tools.get(input),
   procedures_save: (input) => tools.save(input),
   procedures_stale: (input) => tools.stale(input),
-  // Only offered when the call has the app's browser (`procedureToolSpecs`); a call that reaches it anyway is told so, as text.
-  procedures_draft: (input) => (tools.draft ? tools.draft(input) : Promise.resolve({ text: 'There is no draft in this call: it has no browser of the app.' })),
+  // Only offered when the call has the app's browser or its shell (`procedureToolSpecs`); a call that reaches it anyway is told so, as text.
+  procedures_draft: (input) => (tools.draft ? tools.draft(input) : Promise.resolve({ text: 'There is no draft in this call: it has no browser of the app and no shell.' })),
 });
 
 export function procedureToolImpls(tools: ProcedureTools): ToolImpl[] {

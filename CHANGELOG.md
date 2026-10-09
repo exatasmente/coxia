@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **An agent with a shell can keep what it worked out as a procedure drafted by the app.** `procedures_draft` is now offered to a call that has a shell, not only to one with the app's browser: it returns the commands that worked, in order, with the ones that failed as candidates for pitfalls, and `procedures_save` of a repo or tool procedure takes the draft's id and the numbers of the steps to keep, so the commands are the app's record and the agent cannot add or change one. The draft is built from the text of the commands alone, never from their output; a command that could carry a secret (a credential, a token, a file such as `.env`, a request header, a script pasted into the shell, a value the person typed or the test environment holds) is left out, and the draft only says how many were left out.
+
+- **When an agent fought a task and kept no procedure, the app gives it one last turn and then offers the draft in the thread.** At the end of a stage that concluded, and after each answer in a conversation, if there was trial and error (a command that failed and a later one of the same program that worked, or at least five steps in the app's browser) and the agent saved, replaced and read no procedure, the same agent is called once more with only the procedure tools: at most three turns and 120 seconds, never failing the stage or the answer, and after the answer is posted so the next message does not wait. The thread says that turn happened and what it cost in tokens, which count in the stage's usage and not as the cost of finding the procedure. If the agent still saves nothing, a card in the thread offers the draft. The card lists what the app recorded of the agent's work (the steps with their commands, the pitfalls, the waits, how many commands were left out for safety) and asks "Keep this as a procedure?". Yes saves exactly that text, under the title in the card's field, as your own write and already reviewed, with the agent as its creator and the cost of the work as the cost of finding it; if the checks refuse it (a title that exists, a limit, a text that could hold a secret) the card says which field and why and stays. No drops the offer. An offer that is not answered goes away after 24 hours, and at most 10 wait in a workspace. The thread says when an offer was made and what became of it (kept as a procedure, or declined). The card is the computer's: a paired browser neither sees nor answers it, and sees only those lines.
+
+### Fixed
+
+- **The draft of a procedure from the app's browser covers the whole screen, not only the last answer.** In a conversation the screen stays open between messages, but `procedures_draft` drafted only the steps the current answer took, so a task done over several answers was drafted in pieces. The draft now starts where the screen opened, and the sites a procedure may be keyed by span the whole screen.
+
 ## [0.9.0-beta.9] - 2026-10-09
 
 ### Fixed
