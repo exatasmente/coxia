@@ -1,6 +1,6 @@
 # Os minutos do dia mostram as perguntas que ficaram sem resposta em dias anteriores
 
-Implementação de 1_SPEC.md (seguindo 2_PLAN.md). Código, testes e catálogos prontos e verificados pelos comandos desta tentativa; a primeira tentativa havia escrito a maior parte do código e esta a retomou, conferiu as mudanças e rodou os gates completos.
+Implementação de 1_SPEC.md (seguindo 2_PLAN.md). Código, testes e catálogos prontos e verificados pelos comandos das tentativas; a primeira tentativa havia escrito a maior parte do código, a segunda conferiu as mudanças e rodou os gates completos, e a terceira fechou o bloqueante da revisão com o teste que faltava.
 
 ## O que foi implementado
 
@@ -17,10 +17,15 @@ Implementação de 1_SPEC.md (seguindo 2_PLAN.md). Código, testes e catálogos 
 
 - `test/minutes-repeat.test.ts` (novo) — o núcleo puro: pareia dias diferentes com textos não idênticos; não pareia quando o estágio mudou; nada em comum → vazio; duas vezes o mesmo dia → não repetida; pergunta resolvida não entra; squads diferentes não pareiam; índice sem estágio pareia pela atividade e o estágio cai de `covered`.
 - `test/minutes-versions.test.ts` — `snapshotOf` guarda o estágio; `mergeDay` o preserva e faz o `covered` de índice antigo.
-- `test/minutes-store.test.ts` — ida e volta do estágio no índice do dia; leitura de índice antigo; `dayView().repeated` com dois dias; `writeDayFile` escreve a seção só com repetidas, depois das versões, e não reescreve o documento do dia antigo; `previousDayAnswers` salta dia sem índice; `crossDayRepeats` só na pergunta que repetiu.
+- `test/minutes-store.test.ts` — ida e volta do estágio no índice do dia; leitura de índice antigo; `dayView().repeated` com dois dias; `writeDayFile` escreve a seção só com repetidas, depois das versões, e não reescreve o documento do dia antigo; `previousDayAnswers` lê até sete dias e salta o dia que a pasta segura sem índice (só o arquivo antigo do dia) e o dia com índice corrompido, sem criar índice para eles — teste novo de 2026-10-09, que fecha o bloqueante da revisão; `crossDayRepeats` só na pergunta que repetiu.
 - `test/same-day.test.ts` — a nota cruzada chega ao prompt, no caminho do cartão novo e no do mesmo dia.
 
-## O que foi rodado nesta tentativa
+## O que foi rodado na tentativa de 2026-10-09 (bloqueante da revisão)
+
+- `npx vitest run test/minutes-store.test.ts` — 28 testes, todos passaram (inclui o teste novo do salto de dia sem índice e do índice corrompido).
+- `npx tsc --noEmit` — passou, sem erros.
+
+## O que foi rodado na tentativa de 2026-10-09 (retomada)
 
 - `npx tsc --noEmit` — passou, sem erros.
 - `npx vitest run` — 312 arquivos, 4899 testes, todos passaram.
@@ -31,4 +36,5 @@ Implementação de 1_SPEC.md (seguindo 2_PLAN.md). Código, testes e catálogos 
 ## Não verificado
 
 - Nenhum critério de aceite foi exercitado na tela com o app rodando: o comportamento da tela foi conferido pela leitura do render do bloco do dia, pelo typecheck e pelos dados do `dayView` nos testes, não por uma sessão interativa de interface. O gate de build do Electron (`electron-vite build`) também não rodou — pertence ao CI.
+- Na tentativa que tratou o bloqueante, a suíte completa de testes e os demais gates não foram rodados de novo (só o arquivo de teste tocado e o typecheck).
 - Os números da issue (127 na semana; 5–8 nos dias de exemplo) continuam sem ser reproduzidos neste ciclo.

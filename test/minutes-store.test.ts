@@ -317,6 +317,17 @@ describe('unanswered questions that repeat across days', () => {
     }
   });
 
+  it('skips a day the folder holds without a day index and a day with a malformed one, and creates no index for them', () => {
+    state.saveState(ceremony({ id: '2026-09-28T094000', cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Can the plan be approved today?' }) }, spoken: ['acme#1'] }));
+    store.dayView('2026-09-28');
+    // A day with only the old single file (no index was ever written for it) and a day with a corrupted index.
+    writeFileSync(join(ATAS, '2026-09-29-pre-daily.md'), 'leftover of an old layout');
+    writeFileSync(join(ATAS, '2026-09-30-pre-daily.versions.json'), '{ not json');
+    expect(store.previousDayAnswers(DAY).map((d) => d.date)).toEqual(['2026-09-28']);
+    expect(existsSync(join(ATAS, '2026-09-29-pre-daily.versions.json'))).toBe(false);
+    expect(readFileSync(join(ATAS, '2026-09-30-pre-daily.versions.json'), 'utf8')).toBe('{ not json');
+  });
+
   it('gives the ceremony the dates the card\'s question-forma was left unanswered on, before today', () => {
     state.saveState(ceremony({ id: '2026-10-01T094000', cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Can the plan be approved today?' }) }, spoken: ['acme#1'] }));
     store.dayView(PREV);
