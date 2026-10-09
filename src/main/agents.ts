@@ -46,7 +46,7 @@ import { EVIDENCE_TOOL_NAMES, evidenceMcpServer, evidenceToolImpls } from './evi
 import { evidenceMcpToolName } from './evidence/tool';
 import type { EvidenceTools } from './evidence/tool';
 import { procedureMcpServer, procedureToolImpls } from './procedures/engineTool';
-import { PROCEDURE_TOOL_NAMES, procedureMcpToolName, type ProcedureTools } from './procedures/tools';
+import { procedureMcpToolName, procedureToolNames, type ProcedureTools } from './procedures/tools';
 import { incomingActivity, incomingText } from './engine/incoming';
 import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME, VIEW_IMAGE_MCP_TOOL_NAME, VIEW_IMAGE_TOOL_NAME, offersViewImage } from './sandbox/tool';
 import { ATTACHMENT_TOOL } from '../shared/attachments';
@@ -525,7 +525,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const evidence = req.evidence ? evidenceToolImpls(req.evidence, evidenceOut) : [];
   const procedures = req.procedures ? procedureToolImpls(req.procedures) : [];
   const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? []), ...procedures, ...(req.screen ? screenToolImpls(req.screen) : [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name), ...(req.procedures ? PROCEDURE_TOOL_NAMES : []), ...(req.screen ? screenToolNames(req.screen) : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name), ...(req.procedures ? procedureToolNames(req.procedures) : []), ...(req.screen ? screenToolNames(req.screen) : [])];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -641,7 +641,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // without the credential-looking variables (the open engine cleans its own environment instead).
   const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
   const options = {
-    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : []), ...(procedures ? PROCEDURE_TOOL_NAMES.map(procedureMcpToolName) : []), ...(screen && req.screen ? screenMcpToolNames(req.screen) : [])], confine }),
+    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : []), ...(procedures && req.procedures ? procedureToolNames(req.procedures).map(procedureMcpToolName) : []), ...(screen && req.screen ? screenMcpToolNames(req.screen) : [])], confine }),
     ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
     model: req.target.model,
     env,

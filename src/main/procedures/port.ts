@@ -1,6 +1,7 @@
 import type { AuditEntry } from '../../shared/auditoria';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { proceduresOn, type ProcedureSurface } from '../../shared/procedures';
+import type { ProcedureScreen } from './screen';
 import { createProcedureSession, type ProcedureSession, type SessionDeps } from './session';
 import { createProcedureStore, type ProcedureStore } from './store';
 
@@ -25,6 +26,8 @@ export interface OpenContext {
   agentsMd?: ReadonlySet<string>;
   /** A system line in the place the call works in (the thread of the run or the conversation). */
   note?: SessionDeps['note'];
+  /** The call's screen, through the adapter: its steps for a draft, and the hand-off's seams. Absent: the call has none. */
+  screen?: ProcedureScreen;
 }
 
 export interface ProceduresPort {
@@ -66,6 +69,7 @@ export function createProceduresPort(deps: PortDeps): ProceduresPort {
         {
           writer: { by: agent.id, surface: ctx.surface, ...(ctx.stage ? { stage: ctx.stage } : {}), ref: ctx.ref, permission: agent.permission, ...(agent.shell ? { shell: agent.shell } : {}) },
           issue: ctx.issue,
+          ...(ctx.screen ? { screen: ctx.screen } : {}),
           workspaceRepos: config.projects.repos.map((r) => r.id),
           select: {
             repos: ctx.repos,

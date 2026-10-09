@@ -1,7 +1,7 @@
 import { loadClaudeSdkModule } from '../claudeSdk';
 import { type ToolImpl, clip } from '../engine/open/tools/types';
 import type { Json } from '../engine/open/types';
-import { PROCEDURES_MCP_SERVER, PROCEDURE_TOOLS, type ProcedureAnswer, type ProcedureTools } from './tools';
+import { PROCEDURES_MCP_SERVER, procedureToolSpecs, type ProcedureAnswer, type ProcedureTools } from './tools';
 
 // The procedure tools in the shapes the two engines take them: ToolImpls for the open engine, one in-process MCP server for the Claude Agent SDK. Both call the same
 // handlers the session gave; a refusal comes back as text for the model, never as a crash.
@@ -11,11 +11,13 @@ const handlers = (tools: ProcedureTools): Record<string, (input: unknown) => Pro
   procedures_get: (input) => tools.get(input),
   procedures_save: (input) => tools.save(input),
   procedures_stale: (input) => tools.stale(input),
+  // Only offered when the call has the app's browser (`procedureToolSpecs`); a call that reaches it anyway is told so, as text.
+  procedures_draft: (input) => (tools.draft ? tools.draft(input) : Promise.resolve({ text: 'There is no draft in this call: it has no browser of the app.' })),
 });
 
 export function procedureToolImpls(tools: ProcedureTools): ToolImpl[] {
   const run = handlers(tools);
-  return PROCEDURE_TOOLS.map((spec) => ({
+  return procedureToolSpecs(tools).map((spec) => ({
     name: spec.name,
     description: spec.description,
     parameters: spec.schema as unknown as Json,
@@ -35,7 +37,7 @@ export async function procedureMcpServer(tools: ProcedureTools): Promise<Record<
     const sdk = await loadClaudeSdkModule();
     const { z } = await import('zod');
     const run = handlers(tools);
-    const made = PROCEDURE_TOOLS.map((spec) => {
+    const made = procedureToolSpecs(tools).map((spec) => {
       const props = (spec.schema as { properties: Record<string, { description?: string }> }).properties;
       const shape = Object.fromEntries(Object.entries(props).map(([name, p]) => [name, p.description ? z.unknown().describe(p.description) : z.unknown()]));
       return sdk.tool(spec.name, spec.description, shape, async (args: Record<string, unknown>) => ({ content: [{ type: 'text' as const, text: (await run[spec.name](args)).text }] }));
