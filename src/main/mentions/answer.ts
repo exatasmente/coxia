@@ -203,7 +203,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       }
       // The agent's screen when no shell session made it: the app's browser on a display of its own, and the confirmation tool where the call has the right to it.
       const ports = deps.screens?.() ?? null;
-      if (!screen && ports) screen = await openCallScreen(ports, screenRequest(deps, place, def, message, stage, watch, null));
+      if (!screen && ports) screen = await openCallScreen(ports, screenRequest(deps, place, def, message, stage, watch, null, abort.signal));
       // A screen that closes under a running answer takes the answer with it: nothing it was doing can go on.
       if (screen?.lease) {
         if (screen.lease.closed.aborted) screenClosed();
@@ -442,7 +442,7 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
 }
 
 /** What the sessions are asked to open the screen of an agent in this place for this answer. */
-function screenRequest(deps: MentionDeps, place: MentionPlace, def: AgentDef, message: ForumMessage, stage: string | null, watch: { pause: () => () => void }, display: { socket: string; kind: 'sandbox' | 'host' } | null, onClose?: () => Promise<void>): CallScreenRequest {
+function screenRequest(deps: MentionDeps, place: MentionPlace, def: AgentDef, message: ForumMessage, stage: string | null, watch: { pause: () => () => void }, display: { socket: string; kind: 'sandbox' | 'host' } | null, signal: AbortSignal, onClose?: () => Promise<void>): CallScreenRequest {
   return {
     key: callKey(place.thread, def.id),
     agent: def,
@@ -455,6 +455,7 @@ function screenRequest(deps: MentionDeps, place: MentionPlace, def: AgentDef, me
     seesImages: modelSeesImages(def),
     pause: watch.pause,
     hasDisplay: display !== null,
+    signal,
     ...(onClose ? { onClose } : {}),
   };
 }
@@ -477,7 +478,7 @@ async function openShell(deps: MentionDeps, place: MentionPlace, def: AgentDef, 
   const ports = deps.screens?.() ?? null;
   const key = callKey(place.thread, def.id);
   const keeps = ports !== null && def.screen === true && grantsFor(def).browser;
-  const request = (display: { socket: string; kind: 'sandbox' | 'host' } | null) => screenRequest(deps, place, def, message, stage, watch, display, () => store.release(key).then(() => undefined));
+  const request = (display: { socket: string; kind: 'sandbox' | 'host' } | null) => screenRequest(deps, place, def, message, stage, watch, display, signal, () => store.release(key).then(() => undefined));
   let screen: CallScreen | null = null;
 
   if (keeps) {

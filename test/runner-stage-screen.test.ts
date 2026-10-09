@@ -114,6 +114,27 @@ describe('the screen of a stage', () => {
     expect(screens.lines.find((l) => l.code === 'runner.screen.closed')).toMatchObject({ thread: `run-${run.id}`, params: { agent: 'planner' } });
   });
 
+  it('hands the stage\'s abort to the screen, so a stage that is cancelled while the browser starts does not wait for it', async () => {
+    screens = fakeScreens({ ownDisplay: '/own/X77' });
+    const asked: (AbortSignal | undefined)[] = [];
+    const acquire = screens.sessions.acquire.bind(screens.sessions);
+    screens.sessions.acquire = (req) => (asked.push(req.signal), acquire(req));
+    const b = await boot({
+      screens: hubFake().hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      configure: (c) => {
+        c.runner.sandbox.display = true;
+        Object.assign(agentOf(c, 'planner'), { screen: true, shell: 'none' });
+      },
+    });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toBeInstanceOf(AbortSignal);
+  });
+
   it('lends the browser the display of the agent\'s own shell session, and the browser ends before the session does', async () => {
     screens = fakeScreens();
     const h = hubFake();

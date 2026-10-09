@@ -60,6 +60,8 @@ export interface AcquireRequest {
   onClose?: () => Promise<void> | void;
   /** The clocks of the call that holds the screen (a stage's watchdog, an answer's): they stand still while a question to the person waits. */
   pause?: () => () => void;
+  /** Aborted when the call is stopped: a screen that is still starting is given up (the browser that comes up late is closed), and nothing is left open for it. */
+  signal?: AbortSignal;
 }
 
 /** What the screen was when it ended, handed to those who learn from it (the procedure memory) before its folder is removed. */
@@ -123,6 +125,8 @@ interface Session {
   mode: ScreenMode;
   /** What the agent's switches were when the screen opened: a change closes it. */
   shell: AgentDef['shell'];
+  /** The network the browser has and whether the agent's logged-in profile was granted, as they were when the screen opened: a change closes it. */
+  setup: string;
   profile: 'own' | 'fresh' | 'none';
   since: number;
   state: 'opening' | 'open' | 'closing';
@@ -148,6 +152,11 @@ interface Session {
   closing: Promise<void> | null;
   /** A close that was asked while the browser was still starting: done as soon as it is up. */
   pendingClose: ScreenEnd | null;
+  /** Gives up the start of the browser (the app is quitting). */
+  startAbort: AbortController;
+  /** Settles when the screen is gone from the registry, whichever way it got there. */
+  ended: Promise<void>;
+  markEnded: () => void;
 }
 
 export interface ScreenSessions {
@@ -169,14 +178,16 @@ export interface ScreenSessions {
   close(key: string, reason?: ScreenEnd): Promise<boolean>;
   closeThread(thread: string, reason?: ScreenEnd): Promise<number>;
   closeAgent(agent: string, reason?: ScreenEnd): Promise<number>;
-  /** The settings changed: closes the screens whose agent is gone, lost the screen or changed its shell, or whose workspace display went off. */
+  /** The settings changed: closes the screens whose agent is gone, lost the screen or changed its shell, whose hosts, logged-in profile or network changed, or whose workspace display went off. */
   reconcile(config: WorkspaceConfig): Promise<number>;
-  /** The app is quitting: every screen ends. */
+  /** The app is quitting: every screen ends, those still starting included (they are waited for). */
   endAll(): Promise<void>;
   /** Told once for each screen that ends, with what it did, before its folder is removed. Returns the way to stop being told. */
   onClosed(fn: (screen: ClosedScreen) => void): () => void;
 }
 
+/** What a screen was opened with that a change of the settings must close it for: the network of its browser, and whether its agent's logged-in profile was granted. */
+const setupOf = (network: unknown, profile: boolean): string => JSON.stringify([network, profile]);
 const modeOf = (shell: AgentDef['shell']): ScreenMode => (shell === 'host' ? 'host' : shell === 'sandbox' ? 'sandbox' : 'none');
 /** A host a page made the browser ask for is not the app's text: only what DNS can write reaches the thread. */
 const safeHost = (h: string): string | null => (/^[a-z0-9]([a-z0-9.-]{0,78}[a-z0-9])?$/.test(h) ? h : null);
@@ -193,6 +204,7 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
   const idleMs = d.idleMs ?? SCREEN_IDLE_MS;
   const openMax = d.openMax ?? SCREEN_OPEN_MAX;
   const sessions = new Map<string, Session>();
+  let quitting = false;
   const listeners = new Set<(screen: ClosedScreen) => void>();
   /** The refusals already said, by key and reason: a conversation says why it has no screen once, not at every message. */
   const said = new Set<string>();
@@ -316,6 +328,7 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       console.error('[browser] could not release what a screen kept', e instanceof Error ? e.message : e);
     }
     sessions.delete(s.key);
+    s.markEnded();
     for (const mark of [...said]) if (mark.startsWith(`${s.key}|`)) said.delete(mark);
     if (reason === 'idle') tell(s, 'idleClosed', { agent: s.agent, minutes: String(Math.round(idleMs / 60_000)) });
     else tell(s, 'closed', { agent: s.agent, reason: t(`main.browser.end.${reason}`) });
@@ -397,6 +410,7 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
   async function acquire(req: AcquireRequest): Promise<Acquired> {
     if (!req.agent.screen) return { ok: false, why: 'agent' };
     if (!d.enabled) return { ok: false, why: 'platform' };
+    if (quitting || req.signal?.aborted) return { ok: false, why: 'closing' };
     const config = d.config();
     if (!config.runner.sandbox.display) {
       tellOnce(req, 'noBrowser', { reason: t('main.browser.noBrowser.disabled') });
@@ -419,11 +433,12 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
     for (const w of grants.withheld) tellOnce(req, 'testWorkspace', { what: withheldText(w) });
     if (!grants.browser) return { ok: false, why: 'withheld' };
 
-    const holders = [...sessions.values()].filter((s) => s.place === 'conversation').length;
-    if (req.place === 'conversation' && holders >= openMax) {
+    const capped = (): boolean => {
+      if (req.place !== 'conversation' || [...sessions.values()].filter((s) => s.place === 'conversation').length < openMax) return false;
       tellOnce(req, 'capped', { max: String(openMax) });
-      return { ok: false, why: 'cap' };
-    }
+      return true;
+    };
+    if (capped()) return { ok: false, why: 'cap' };
 
     const found = d.browsers();
     if (!found.ok) {
@@ -434,9 +449,14 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       tellOnce(req, 'noBrowser', { reason: t('main.browser.noBrowser.noSandbox') });
       return { ok: false, why: 'no-sandbox' };
     }
-    // Another answer may have taken the key while the sandbox was being asked.
+    // Another answer may have taken the key while the sandbox was being asked, or the last place under the cap; the call may have been stopped.
+    if (quitting || req.signal?.aborted) return { ok: false, why: 'closing' };
     if (sessions.has(req.key)) return acquire(req);
+    if (capped()) return { ok: false, why: 'cap' };
 
+    const network = browserNetwork(config.runner.sandbox, req.agent, grants.allowedHosts);
+    let markEnded: () => void = () => undefined;
+    const ended = new Promise<void>((resolve) => (markEnded = resolve));
     const s: Session = {
       key: req.key,
       agent: req.agent.id,
@@ -446,6 +466,7 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       ...(req.issue ? { issue: req.issue } : {}),
       mode: modeOf(req.agent.shell),
       shell: req.agent.shell,
+      setup: setupOf(network, grants.profile),
       profile: 'none',
       since: now(),
       state: 'opening',
@@ -466,6 +487,9 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       onClose: req.onClose,
       closing: null,
       pendingClose: null,
+      startAbort: new AbortController(),
+      ended,
+      markEnded,
     };
     sessions.set(req.key, s);
 
@@ -488,26 +512,58 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       }
     }
 
-    const network = browserNetwork(config.runner.sandbox, req.agent, grants.allowedHosts);
     const display = req.display ? { socket: req.display.socket, name: basename(req.display.socket) } : null;
     let runtime: BrowserRuntime;
+    const starting = d.start({
+      dir: d.dir,
+      config: config.runner.sandbox,
+      network,
+      profile: profileDir,
+      display,
+      browsers: found.browsers,
+      chromium: found.chromium,
+      seesImages: req.seesImages,
+      onFirstRefusal: (host) => {
+        const shown = safeHost(host);
+        if (shown) tell(s, 'firstRefusal', { agent: s.agent, host: shown });
+      },
+    });
+    // A call that is stopped, or an app that quits, gives the start up; the browser that comes up late is closed, and only then is the profile let go.
+    const stop = new Promise<'given-up'>((resolve) => {
+      const fire = (): void => resolve('given-up');
+      for (const sig of [req.signal, s.startAbort.signal]) {
+        if (!sig) continue;
+        if (sig.aborted) fire();
+        else sig.addEventListener('abort', fire, { once: true });
+      }
+    });
     try {
-      runtime = await d.start({
-        dir: d.dir,
-        config: config.runner.sandbox,
-        network,
-        profile: profileDir,
-        display,
-        browsers: found.browsers,
-        chromium: found.chromium,
-        seesImages: req.seesImages,
-        onFirstRefusal: (host) => {
-          const shown = safeHost(host);
-          if (shown) tell(s, 'firstRefusal', { agent: s.agent, host: shown });
-        },
-      });
+      const first = await Promise.race([starting, stop]);
+      if (first === 'given-up') {
+        s.state = 'closing';
+        // Nothing was opened, so there is nothing for `end` to audit or say: a close that comes now just waits for this.
+        s.closing = s.ended;
+        changed(s.key);
+        void starting
+          .then((late) => late.close())
+          .catch(() => undefined)
+          .finally(() => {
+            try {
+              s.releaseProfile?.();
+            } catch {
+              // Let go with the process at the latest.
+            }
+            s.releaseProfile = null;
+            sessions.delete(req.key);
+            s.markEnded();
+            changed(s.key);
+          });
+        return { ok: false, why: 'closing' };
+      }
+      runtime = first;
     } catch (e) {
       sessions.delete(req.key);
+      s.markEnded();
       try {
         s.releaseProfile?.();
       } catch {
@@ -564,6 +620,12 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       console.error('[browser] could not audit a screen', e instanceof Error ? e.message : e);
     }
     changed(s.key);
+    // Stopped while the last of it was being done: the answer does not use the screen, which stays for the idle clock to end.
+    if (req.signal?.aborted) {
+      s.answers = Math.max(0, s.answers - 1);
+      settle(s);
+      return { ok: false, why: 'closing' };
+    }
     return { ok: true, lease: leaseOf(s, context, req.pause) };
   }
 
@@ -606,13 +668,21 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       return closeAll(
         where((s) => {
           const a = config.agents.team.find((x) => x.id === s.agent);
-          return !a || a.screen !== true || a.shell !== s.shell || config.runner.sandbox.display !== true;
+          if (!a || a.screen !== true || a.shell !== s.shell || config.runner.sandbox.display !== true) return true;
+          // The hosts, the logged-in profile and the workspace's network were fixed when the browser started: a screen left open would keep the old ones.
+          const grants = d.grants(a);
+          return s.setup !== setupOf(browserNetwork(config.runner.sandbox, a, grants.allowedHosts), grants.profile);
         }),
         'config',
       );
     },
     async endAll() {
-      await closeAll([...sessions.values()], 'quit');
+      quitting = true;
+      const all = [...sessions.values()];
+      // A screen still starting gives its start up and is waited for, so no browser comes up after the app has said it is done.
+      for (const s of all) if (s.state === 'opening') s.startAbort.abort();
+      await closeAll(all, 'quit');
+      await Promise.all(all.map((s) => s.ended));
     },
     onClosed(fn) {
       listeners.add(fn);

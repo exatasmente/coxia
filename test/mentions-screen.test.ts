@@ -3,7 +3,7 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { callKey } from '../src/shared/browser';
 import { neutralConfig } from '../src/shared/config';
 import type { Run } from '../src/shared/runs';
@@ -199,6 +199,22 @@ describe('stopping and closing', () => {
     // The screen stays, with its idle clock started.
     expect(screens.sessions.has(KEY)).toBe(true);
     expect(screens.sessions.list('squads')[0].closesAt).not.toBeNull();
+  });
+
+  it('gives the screen up when the answer is stopped while the browser is still starting, and closes the browser that comes up late', async () => {
+    let start!: () => void;
+    screens = fakeScreens({ startGate: new Promise<void>((r) => (start = r)) });
+    const { d, engine, stops } = deps();
+    engine.script('turn', () => ({ text: 'unused' }));
+    const answer = answerMentions(noRepo(), say(), d);
+    await vi.waitFor(() => expect(screens.sessions.has(KEY)).toBe(true));
+    expect(stops.stop('squads', 'turn')).toBe(true);
+    // The answer is over at once; it does not wait for a browser it no longer wants.
+    await Promise.race([answer, new Promise((_, reject) => setTimeout(() => reject(new Error('the answer waited for the browser')), 2000))]);
+    start();
+    await vi.waitFor(() => expect(screens.sessions.has(KEY)).toBe(false));
+    expect(screens.log).toContain('close');
+    expect(engine.calls).toHaveLength(0);
   });
 
   it('finds no answer to stop when none is running', () => {

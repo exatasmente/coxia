@@ -545,7 +545,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host') ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock, true) : null;
   let screen: CallScreen | null = null;
   try {
-    screen = await openStageScreen(d, run, stage, agent, session, clock);
+    screen = await openStageScreen(d, run, stage, agent, session, clock, abort.signal);
     return await runStage(d, run, flow, abort, usage, carried, session, clock, screen);
   } finally {
     screen?.release();
@@ -571,12 +571,12 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
  * and the confirmation tool where a stage has a display, a host list or the computer's shell. The stage keeps its run key; what could not be opened has been said in the thread
  * and the stage goes on without it.
  */
-async function openStageScreen(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, session: SandboxSession | null, clock: StageClock): Promise<CallScreen | null> {
+async function openStageScreen(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, session: SandboxSession | null, clock: StageClock, signal: AbortSignal): Promise<CallScreen | null> {
   if (run.docs || !d.sessions || !d.asks) return null;
   const lent = session?.screen && session.gui?.display === 'on' ? { socket: session.screen.socket, kind: session.screen.kind } : null;
   const screen = await openCallScreen(
     { sessions: d.sessions, asks: d.asks },
-    { key: runKey(run.id), thread: runThreadId(run.id), place: 'stage', stage: stage.id, issue: run.issue.iid, display: lent, agent, seesImages: modelSeesImages(agent), pause: clock.pause, hasDisplay: lent !== null },
+    { key: runKey(run.id), thread: runThreadId(run.id), place: 'stage', stage: stage.id, issue: run.issue.iid, display: lent, agent, seesImages: modelSeesImages(agent), pause: clock.pause, hasDisplay: lent !== null, signal },
   );
   // A browser on a display of its own (the agent has no shell session to lend one): the stage's live screen and recording follow that display, as they follow a session's.
   const own = screen.lease?.display;

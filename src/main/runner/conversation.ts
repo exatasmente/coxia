@@ -166,7 +166,7 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
     if (first !== null) {
       say({ kind: 'post', author: { type: 'agent', id: deps.caller.id }, text: clipped(first), stage, public: false });
       if (deps.screens) {
-        screen = await openCallScreen(deps.screens, { key: callKey(thread, deps.called.id), agent: deps.called, thread, place: 'conversation', stage, issue: deps.run.issue.iid, display: null, seesImages: modelSeesImages(deps.called), pause: clock.pause }).catch((e: unknown) => {
+        screen = await openCallScreen(deps.screens, { key: callKey(thread, deps.called.id), agent: deps.called, thread, place: 'conversation', stage, issue: deps.run.issue.iid, display: null, seesImages: modelSeesImages(deps.called), pause: clock.pause, signal: deps.abort.signal }).catch((e: unknown) => {
           console.error('[runner] could not open the screen of a called agent', deps.run.id, e instanceof Error ? e.message : e);
           return null;
         });
