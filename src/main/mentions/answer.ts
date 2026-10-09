@@ -12,7 +12,10 @@ import type { AgentCall } from '../agents';
 import type { ReadConfinement } from '../engine/contract';
 import { callKey } from '../../shared/browser';
 import { type CallScreen, type CallScreenRequest, type ScreenPorts, beginHandoff, modelSeesImages, offerHandoff, openCallScreen, promptFor } from '../browser/callScreen';
+import { countsText } from '../browser/audit';
 import { grantsFor, withheldText } from '../browser/guard';
+import { createHostsTally, safeHost, summaryParams } from '../browser/hosts';
+import type { ProxyDecision } from '../sandbox/proxy';
 import { recordWrite } from '../auditoria';
 import { ATAS } from '../env';
 import { redact } from '../errorlog-core';
@@ -216,7 +219,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         keptShell = opened.kept;
       }
       // The agent's screen when no shell session made it: the app's browser on a display of its own, and the confirmation tool where the call has the right to it.
-      if (!screen && ports) screen = await openCallScreen(ports, screenRequest(deps, place, def, message, stage, watch, null));
+      if (!screen && ports) screen = await openCallScreen(ports, screenRequest(deps, place, def, message, stage, watch, null, abort.signal));
       // The hand-off tool, where the person can take the screen: the app's browser draws on a display that is registered with the live hub.
       offerHandoff(screen, offer, { live: !!screen?.lease && !!ports?.sessions.watched(callKey(place.thread, id)), session: session !== null, host: def.shell === 'host' });
       // A screen that closes under a running answer takes the answer with it: nothing it was doing can go on.
@@ -415,9 +418,34 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
       // A note that cannot be recorded does not stop the answer.
     }
   };
-  // The proxy of a sandbox says what it decided, as a stage's does: a conversation's agent with hosts of its own shows the person which names it asked for.
-  const onProxy = (p: { host: string; port: number; allowed: boolean; why?: string }): void =>
-    say('runner.proxy', { agent: def.id, host: p.host || '—', port: p.port, result: p.allowed ? t('main.runner.proxy.allowed') : t(`main.runner.proxy.refused.${p.why}`) });
+  // The proxy of the session's sandbox is counted, not told tunnel by tunnel: the thread gets one line the first time a host is refused and one summary when the session
+  // closes (a package install opens dozens of tunnels), as the app's browser does, and the audit log gets the summary.
+  const tally = createHostsTally({
+    onFirstRefusal: (h) => {
+      const shown = safeHost(h);
+      if (shown) say('runner.proxy.firstRefusal', { agent: def.id, host: shown });
+    },
+  });
+  tally.beginCall();
+  const onProxy = (p: ProxyDecision): void => tally.decide(p);
+  const summarize = (): void => {
+    const line = summaryParams(tally.summary());
+    if (!line) return;
+    say('runner.proxy.summary', { agent: def.id, allowed: line.allowed, refused: line.refused, hosts: line.hosts });
+    const { allowed, refused } = tally.summary();
+    recordWrite({
+      kind: 'exec',
+      issue: place.run?.issue.iid ?? 0,
+      target: 'network summary',
+      via: 'sandbox',
+      fields: { agent: def.id, thread, hostsAllowed: countsText(allowed), hostsRefused: countsText(refused) },
+      ok: true,
+      code: null,
+      result: 'summary',
+      origin: { actionId: '', kind: 'conversation-proxy', key: `${thread}:${def.id}`, summary: null },
+      by: def.id,
+    });
+  };
   const onExec = (r: { n: number; command: string; exitCode: number | null; timedOut: boolean; ms: number; output: string; refused?: string }, mode?: 'run' | 'refused'): void => {
     say(host ? 'runner.exec.host' : 'runner.exec', { agent: def.id, n: r.n, command: redact(r.command.replace(/\s+/g, ' ')).slice(0, 300), result: r.refused ? t(`main.runner.exec.refused.${r.refused}`) : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }), ms: Math.round(r.ms / 100) / 10, tail: r.output.slice(0, 600) || '—' });
     // A command of a conversation is audited as a stage's is: what ran, where, and how it ended; the log's own scrubbing applies on top.
@@ -458,11 +486,23 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
   const held = (): boolean => bound()?.handoff?.active() ?? false;
   const mask = (text: string): string => bound()?.handoff?.typed.mask(text) ?? text;
   if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, approve, signal, held, mask, ...(display ? { display } : {}) });
-  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, held, mask, agent: { allowedHosts: grants.allowedHosts }, ...(display ? { display } : {}), ...(source.clone ? { clone: source.clone } : {}) });
+  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, held, mask, agent: { allowedHosts: grants.allowedHosts }, ...(display ? { display } : {}), ...(source.clone ? { clone: source.clone } : {}) }).then((session) => {
+    // The summary is written once, when the session ends, whoever ends it.
+    const close = session.close.bind(session);
+    let done = false;
+    session.close = async () => {
+      if (!done) {
+        done = true;
+        summarize();
+      }
+      return close();
+    };
+    return session;
+  });
 }
 
 /** What the sessions are asked to open the screen of an agent in this place for this answer. */
-function screenRequest(deps: MentionDeps, place: MentionPlace, def: AgentDef, message: ForumMessage, stage: string | null, watch: { pause: () => () => void }, display: { socket: string; kind: 'sandbox' | 'host' } | null, onClose?: () => Promise<void>): CallScreenRequest {
+function screenRequest(deps: MentionDeps, place: MentionPlace, def: AgentDef, message: ForumMessage, stage: string | null, watch: { pause: () => () => void }, display: { socket: string; kind: 'sandbox' | 'host' } | null, signal: AbortSignal, onClose?: () => Promise<void>): CallScreenRequest {
   return {
     key: callKey(place.thread, def.id),
     agent: def,
@@ -475,6 +515,7 @@ function screenRequest(deps: MentionDeps, place: MentionPlace, def: AgentDef, me
     seesImages: modelSeesImages(def),
     pause: watch.pause,
     hasDisplay: display !== null,
+    signal,
     ...(onClose ? { onClose } : {}),
   };
 }
@@ -497,7 +538,7 @@ async function openShell(deps: MentionDeps, place: MentionPlace, def: AgentDef, 
   const ports = deps.screens?.() ?? null;
   const key = callKey(place.thread, def.id);
   const keeps = ports !== null && def.screen === true && grantsFor(def).browser;
-  const request = (display: { socket: string; kind: 'sandbox' | 'host' } | null) => screenRequest(deps, place, def, message, stage, watch, display, () => store.release(key).then(() => undefined));
+  const request = (display: { socket: string; kind: 'sandbox' | 'host' } | null) => screenRequest(deps, place, def, message, stage, watch, display, signal, () => store.release(key).then(() => undefined));
   let screen: CallScreen | null = null;
 
   if (keeps) {

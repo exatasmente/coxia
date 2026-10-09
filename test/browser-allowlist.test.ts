@@ -26,6 +26,11 @@ describe('what the app checks of a call before the browser sees it', () => {
     expect(checkArguments('browser_snapshot', undefined)).toEqual({ ok: true, forward: {} });
   });
 
+  it('takes a key with no whitespace or control character in it, but for the Enter and Space aliases at the end', () => {
+    for (const key of ['Enter', 'a', 'Control+S', 'Shift+\n', '\n', '\r', ' ', 'Control+ ', 'Control++', 'ArrowLeft']) expect(checkArguments('browser_press_key', { key }), JSON.stringify(key)).toMatchObject({ ok: true });
+    for (const key of ['\t', '\u0000', '\u001b', '\u00a0', '\u2028', '\u0085', 'a\tb', ' Enter', 'Control +S', 'Enter\n\n', '\n\n']) expect(checkArguments('browser_press_key', { key }), JSON.stringify(key)).toEqual({ ok: false, problem: { code: 'type', name: 'key' } });
+  });
+
   it('keeps the reason for itself: it is read, never forwarded', () => {
     expect(checkArguments('browser_click', { target: 'e2', element: 'Next', reason: 'to see the next page' })).toEqual({ ok: true, forward: { target: 'e2', element: 'Next' }, reason: 'to see the next page' });
     expect(checkArguments('browser_click', { target: 'e2', reason: 'x'.repeat(201) })).toEqual({ ok: false, problem: { code: 'size', name: 'reason' } });

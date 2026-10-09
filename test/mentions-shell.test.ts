@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { neutralConfig } from '../src/shared/config';
 import type { RepoConfig } from '../src/shared/config/types';
 import { createForumStore, type ForumStore } from '../src/main/forum-core';
+import { listAudit } from '../src/main/auditoria';
 import { answerMentions } from '../src/main/mentions/answer';
 import type { MentionPlace } from '../src/main/mentions/place';
 import { fakeEngine, fakeSandbox } from './helpers/runner';
@@ -57,19 +58,40 @@ describe('the commands of a mention outside a run', () => {
     expect(sandbox.opened[0].session.closed).toBe(true);
   });
 
-  it('gives the sandbox the agent\'s own hosts, and says in the thread what its proxy decided', async () => {
+  it('gives the sandbox the agent\'s own hosts, and says in the thread the first refusal of each host and one summary when the session ends, not a line per tunnel', async () => {
     const sandbox = fakeSandbox();
     const engine = fakeEngine();
-    engine.script('turn', () => ({ text: 'Read.' }));
+    engine.script('turn', () => {
+      const onProxy = sandbox.opened[0].options.onProxy;
+      for (let i = 0; i < 30; i++) onProxy?.({ host: 'app.example.com', port: 443, allowed: true });
+      for (let i = 0; i < 12; i++) onProxy?.({ host: 'other.example.com', port: 443, allowed: false, why: 'host' });
+      onProxy?.({ host: 'third.example.com', port: 443, allowed: false, why: 'host' });
+      onProxy?.({ host: 'Not A Host!', port: 443, allowed: false, why: 'bad-request' });
+      return { text: 'Read.' };
+    });
     const withHosts = config('sandbox');
     withHosts.agents.team.find((a) => a.id === 'turn')!.allowedHosts = ['app.example.com'];
     await answerMentions(place([repo('api')]), message(), { forum, config: () => withHosts, engine, sandbox, env: () => ({ fallbackCwd: root }) });
-    const options = sandbox.opened[0].options;
-    expect(options.agent?.allowedHosts).toEqual(['app.example.com']);
-    options.onProxy?.({ host: 'app.example.com', port: 443, allowed: true });
-    options.onProxy?.({ host: 'other.example.com', port: 443, allowed: false, why: 'host' });
-    const lines = forum.read('squads', 0, 100)?.messages.filter((m) => m.code === 'runner.proxy') ?? [];
-    expect(lines.map((m) => [m.params?.agent, m.params?.host, m.params?.port])).toEqual([['turn', 'app.example.com', 443], ['turn', 'other.example.com', 443]]);
+    expect(sandbox.opened[0].options.agent?.allowedHosts).toEqual(['app.example.com']);
+    const lines = (code: string) => forum.read('squads', 0, 200)?.messages.filter((m) => m.code === code) ?? [];
+    expect(lines('runner.proxy')).toHaveLength(0);
+    expect(lines('runner.proxy.firstRefusal').map((m) => m.params)).toEqual([{ agent: 'turn', host: 'other.example.com' }, { agent: 'turn', host: 'third.example.com' }]);
+    expect(lines('runner.proxy.summary').map((m) => m.params)).toEqual([{ agent: 'turn', allowed: 30, refused: 14, hosts: 'other.example.com, third.example.com' }]);
+    // The audit log gets the same summary, as counts.
+    const audited = listAudit().filter((e) => e.origin.kind === 'conversation-proxy');
+    expect(audited).toHaveLength(1);
+    expect(audited[0].fields).toMatchObject({ agent: 'turn', hostsAllowed: 'app.example.com=30', hostsRefused: expect.stringContaining('other.example.com=12') });
+  });
+
+  it('writes no summary for a session whose proxy refused nothing', async () => {
+    const sandbox = fakeSandbox();
+    const engine = fakeEngine();
+    engine.script('turn', () => {
+      sandbox.opened[0].options.onProxy?.({ host: 'app.example.com', port: 443, allowed: true });
+      return { text: 'Read.' };
+    });
+    await answerMentions(place([repo('api')]), message(), { forum, config: () => config('sandbox'), engine, sandbox, env: () => ({ fallbackCwd: root }) });
+    expect(forum.read('squads', 0, 200)?.messages.filter((m) => m.code === 'runner.proxy.summary')).toHaveLength(0);
   });
 
   it('copies only what git knows of a repository, and lends it the clone\'s dependencies read-only through the sandbox', async () => {

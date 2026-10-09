@@ -26,11 +26,13 @@ export function ensureAgentThread(forum: ForumStore, agent: Pick<AgentDef, 'id' 
 /**
  * Deletes the direct conversation of an agent and the files it holds. Only a conversation of kind `agent` goes: the store can delete any thread, and this is the
  * door that keeps a run's thread, a general one and a channel out of its reach. The files go first, so a call that was cut short is finished by the next one. True when
- * there was a conversation to delete.
+ * there was a conversation to delete. `beforeDelete` is told the thread's id first, so what is open on it can be ended.
  */
-export function deleteAgentThread(forum: ForumStore, attachments: Pick<AttachmentStore, 'dropThread'>, agentId: string): boolean {
+export function deleteAgentThread(forum: ForumStore, attachments: Pick<AttachmentStore, 'dropThread'>, agentId: string, beforeDelete?: (thread: string) => void): boolean {
   const id = agentThreadId(agentId);
   if (forum.summary(id)?.kind !== 'agent') return false;
+  // The screen an agent has open in this conversation goes with it (the recording of a conversation that is gone is kept nowhere).
+  beforeDelete?.(id);
   attachments.dropThread(id);
   forum.deleteThread(id);
   return true;

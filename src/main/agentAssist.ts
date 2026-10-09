@@ -31,6 +31,7 @@ import { redact } from './errorlog-core';
 import { forumStore } from './forum';
 import { deleteAgentThread, ensureAgentThread } from './forum-channels';
 import type { Module } from './module';
+import { screenSessions } from './runner/module';
 import { sandbox } from './sandbox/workspace';
 import { getConfig, updateConfig } from './workspaceConfig';
 
@@ -187,7 +188,7 @@ export async function saveAssistDraft(raw: unknown): Promise<{ id: string }> {
         draft: true,
       });
     });
-    if (existing) deleteAgentThread(forum, attachmentStore(), id);
+    if (existing) deleteAgentThread(forum, attachmentStore(), id, endScreensOn);
     ensureAgentThread(forum, { id, name }, config.language);
     return { id };
   } catch (e) {
@@ -195,13 +196,16 @@ export async function saveAssistDraft(raw: unknown): Promise<{ id: string }> {
   }
 }
 
+/** A conversation is being emptied: the screens its agent has open on it end first. */
+const endScreensOn = (thread: string): void => void screenSessions()?.closeThread(thread, 'thread').catch(() => undefined);
+
 /** Concludes the assistant: the conversation of the test is emptied and begun again, and the draft stays in the team until the editor saves it. Only a draft. */
 export function concludeAssistDraft(raw: unknown): { id: string } {
   try {
     const config = getConfig();
     const draft = draftOf(config, stringOf(raw));
     const forum = forumStore();
-    deleteAgentThread(forum, attachmentStore(), draft.id);
+    deleteAgentThread(forum, attachmentStore(), draft.id, endScreensOn);
     ensureAgentThread(forum, { id: draft.id, name: draft.name }, config.language);
     return { id: draft.id };
   } catch (e) {

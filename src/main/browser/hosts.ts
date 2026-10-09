@@ -8,6 +8,22 @@ import type { ProxyDecision } from '../sandbox/proxy';
 export const NO_HOST = '(not a tunnel)';
 const OTHER = '(other hosts)';
 
+/** A host a page or a command made the proxy refuse is not the app's text: only what DNS can write reaches the thread. */
+export const safeHost = (h: string): string | null => (/^[a-z0-9]([a-z0-9.-]{0,78}[a-z0-9])?$/.test(h) ? h : null);
+
+/** The line of a summary: how many tunnels were allowed and refused, and the hosts refused most often (at most five, only names that can be shown). */
+export function summaryParams(summary: HostsSummary): { allowed: number; refused: number; hosts: string } | null {
+  const sum = (m: Record<string, number>): number => Object.values(m).reduce((a, b) => a + b, 0);
+  const refused = sum(summary.refused);
+  if (refused === 0) return null;
+  const hosts = Object.entries(summary.refused)
+    .sort((a, b) => b[1] - a[1])
+    .map(([h]) => safeHost(h))
+    .filter((h): h is string => h !== null)
+    .slice(0, 5);
+  return { allowed: sum(summary.allowed), refused, hosts: hosts.join(', ') || '—' };
+}
+
 export interface HostsSummary {
   allowed: Record<string, number>;
   refused: Record<string, number>;

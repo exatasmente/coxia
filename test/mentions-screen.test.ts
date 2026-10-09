@@ -3,7 +3,7 @@
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { callKey } from '../src/shared/browser';
 import { neutralConfig } from '../src/shared/config';
 import type { Run } from '../src/shared/runs';
@@ -158,6 +158,31 @@ describe('where an agent gets no screen', () => {
   });
 });
 
+describe('which calls get the app\'s browser (acceptance 1, for conversations)', () => {
+  const places: [string, MentionPlace][] = [
+    ['a direct conversation', { thread: 'squads', kind: 'channel', squad: null, owner: 'turn', repos: [], ref: 'app#7', title: 'The thing' }],
+    ['a squad channel', { thread: 'squads', kind: 'channel', squad: { id: 's1', name: 'One' } as never, repos: [], ref: 'app#7', title: 'The thing' }],
+    ['a general thread', { thread: 'squads', kind: 'general', repos: [], ref: 'app#7', title: 'The thing' }],
+    ['a ceremony', { thread: 'squads', kind: 'ceremony', repos: [], ref: 'app#7', title: 'Daily' }],
+  ];
+  const rows = places.flatMap(([name, place]) =>
+    (['none', 'allowlist', 'sandbox', 'host'] as const).flatMap((shell) => [true, false].map((workspace) => ({ name, place, shell, workspace }))),
+  );
+  it.each(rows)('$name, shell $shell, the workspace\'s display $workspace', async ({ place, shell, workspace }) => {
+    screens = fakeScreens({ configure: (c) => void (c.runner.sandbox.display = workspace) });
+    const cfg = config({ shell: shell as never });
+    cfg.runner.sandbox.display = workspace;
+    const { d, engine } = deps({ config: () => cfg });
+    engine.script('turn', () => ({ text: 'Said.' }));
+    await answerMentions(place, say(), d);
+    const gets = place.kind !== 'ceremony' && workspace;
+    expect(!!engine.calls[0].screen?.browser).toBe(gets);
+    expect(screens.starts).toHaveLength(gets ? 1 : 0);
+    // The confirmation tool follows the shell on the computer, with or without a screen; a ceremony has none of it.
+    if (place.kind === 'ceremony') expect(engine.calls[0].screen).toBeUndefined();
+  });
+});
+
 describe('stopping and closing', () => {
   it('stops one answer of the agent, tells the thread, and leaves the screen open', async () => {
     screens = fakeScreens();
@@ -175,6 +200,22 @@ describe('stopping and closing', () => {
     // The screen stays, with its idle clock started.
     expect(screens.sessions.has(KEY)).toBe(true);
     expect(screens.sessions.list('squads')[0].closesAt).not.toBeNull();
+  });
+
+  it('gives the screen up when the answer is stopped while the browser is still starting, and closes the browser that comes up late', async () => {
+    let start!: () => void;
+    screens = fakeScreens({ startGate: new Promise<void>((r) => (start = r)) });
+    const { d, engine, stops } = deps();
+    engine.script('turn', () => ({ text: 'unused' }));
+    const answer = answerMentions(noRepo(), say(), d);
+    await vi.waitFor(() => expect(screens.sessions.has(KEY)).toBe(true));
+    expect(stops.stop('squads', 'turn')).toBe(true);
+    // The answer is over at once; it does not wait for a browser it no longer wants.
+    await Promise.race([answer, new Promise((_, reject) => setTimeout(() => reject(new Error('the answer waited for the browser')), 2000))]);
+    start();
+    await vi.waitFor(() => expect(screens.sessions.has(KEY)).toBe(false));
+    expect(screens.log).toContain('close');
+    expect(engine.calls).toHaveLength(0);
   });
 
   it('finds no answer to stop when none is running', () => {

@@ -58,7 +58,7 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
 
-function setup(over: { config?: (c: WorkspaceConfig) => void; test?: boolean; startFails?: BrowserStartError | Error; browsers?: SessionDeps['browsers']; startGate?: Promise<void>; keep?: 'kept' | 'not'; noKeep?: boolean; noHub?: boolean; hubOpens?: boolean } = {}) {
+function setup(over: { config?: (c: WorkspaceConfig) => void; test?: boolean; startFails?: BrowserStartError | Error; browsers?: SessionDeps['browsers']; startGate?: Promise<void>; sandboxGate?: () => Promise<void>; keep?: 'kept' | 'not'; noKeep?: boolean; noHub?: boolean; hubOpens?: boolean } = {}) {
   const clock = fakeClock();
   const config = neutralConfig();
   config.runner.sandbox.display = true;
@@ -96,7 +96,10 @@ function setup(over: { config?: (c: WorkspaceConfig) => void; test?: boolean; st
     enabled: true,
     config: () => config,
     browsers: over.browsers ?? (() => ({ ok: true, browsers: '/b', chromium: '/b/chrome' })),
-    sandboxReady: async () => true,
+    sandboxReady: async () => {
+      await over.sandboxGate?.();
+      return true;
+    },
     dir: join(root, 'sandbox'),
     grants: (agent) => screenGrants(agent, over.test ?? false),
     openProfile: (agent, owner) => openProfile(root, agent, owner, { locks }),
@@ -576,6 +579,27 @@ describe('what closes the screens of a group', () => {
     expect(s.audit.filter((e) => e.kind === 'screen-close').every((e) => (e.fields as Record<string, string>).reason === 'config')).toBe(true);
   });
 
+  it.each([
+    ['its hosts change', (c: WorkspaceConfig) => void (c.agents.team.find((a) => a.id === 'web')!.allowedHosts = ['app.example.com'])],
+    ['its logged-in browser is switched on', (c: WorkspaceConfig) => void (c.agents.team.find((a) => a.id === 'web')!.browserProfile = true)],
+    ['the workspace\'s network changes', (c: WorkspaceConfig) => void ((c.runner.sandbox.network = 'registry'), (c.runner.sandbox.registryHosts = ['registry.example.com']))],
+  ])('closes the open screen, saying so, when %s, and leaves the screen of an agent the change does not touch', async (_name, change) => {
+    const s = setup();
+    const base = neutralConfig();
+    const team = (id: string) => ({ ...base.agents.team[0], id, screen: true, shell: 'sandbox' }) as AgentDef;
+    s.config.agents.team = [...s.config.agents.team, team('web'), team('ops')];
+    await s.lease({ key: callKey('t', 'web'), thread: 't', agent: agentOf({ shell: 'sandbox' }) });
+    await s.lease({ key: callKey('t', 'ops'), thread: 't', agent: agentOf({ id: 'ops', shell: 'sandbox' }) });
+    const next = structuredClone(s.config);
+    change(next);
+    const closed = await s.sessions.reconcile(next);
+    // A change to the workspace's network reaches every screen; one agent's own switches reach that agent's.
+    expect(closed).toBe(change.toString().includes('runner') ? 2 : 1);
+    if (closed === 1) expect(s.sessions.list().map((x) => x.key)).toEqual(['call:t:ops']);
+    expect(s.audit.filter((e) => e.kind === 'screen-close').every((e) => (e.fields as Record<string, string>).reason === 'config')).toBe(true);
+    expect(codes(s)).toContain('runner.screen.closed');
+  });
+
   it('leaves everything open when the settings changed in something that does not matter to a screen', async () => {
     const s = setup();
     s.config.agents.team = [...s.config.agents.team, { ...s.config.agents.team[0], id: 'web', screen: true, shell: 'none' } as AgentDef];
@@ -621,5 +645,79 @@ describe('the logged-in browser', () => {
     const lease = await s.lease({ agent: agentOf({ id: 'Web/..', browserProfile: true }) });
     expect(lease.profile).toBe('fresh');
     expect(s.lines.find((l) => l.code === 'runner.screen.profileFailed')?.params.reason).toMatch(/id/);
+  });
+});
+
+describe('the lifecycle of a screen that is starting', () => {
+  const settled = (p: Promise<unknown>): Promise<boolean> => Promise.race([p.then(() => true), new Promise<boolean>((r) => setTimeout(() => r(false), 30))]);
+
+  it('checks the cap again once the sandbox has answered, so two answers that began together do not both take the last place', async () => {
+    let gate: Promise<void> = Promise.resolve();
+    const s = setup({ sandboxGate: () => gate });
+    for (let i = 0; i < SCREEN_OPEN_MAX - 1; i++) await s.lease({ key: callKey(`c${i}`, 'web'), thread: `c${i}` });
+    let ready!: () => void;
+    gate = new Promise<void>((r) => (ready = r));
+    const a = s.sessions.acquire(s.req({ key: callKey('x1', 'web'), thread: 'x1' }));
+    const b = s.sessions.acquire(s.req({ key: callKey('x2', 'web'), thread: 'x2' }));
+    ready();
+    const got = await Promise.all([a, b]);
+    expect(got.filter((r) => r.ok)).toHaveLength(1);
+    expect(got.filter((r) => !r.ok)).toEqual([{ ok: false, why: 'cap' }]);
+    expect(s.sessions.list()).toHaveLength(SCREEN_OPEN_MAX);
+  });
+
+  it('gives a start up when the call is stopped, closes the browser that comes up late and lets the profile go', async () => {
+    let start!: () => void;
+    const s = setup({ startGate: new Promise<void>((r) => (start = r)) });
+    const stop = new AbortController();
+    const pending = s.sessions.acquire(s.req({ agent: agentOf({ browserProfile: true }), signal: stop.signal }));
+    await vi.waitFor(() => expect(s.sessions.has(callKey('general', 'web'))).toBe(true));
+    stop.abort();
+    expect(await pending).toEqual({ ok: false, why: 'closing' });
+    // The browser has not come up yet: the profile is still held, and the key with it.
+    expect(s.locks.holder(join(root, 'browser', 'web'))).not.toBeNull();
+    start();
+    await vi.waitFor(() => expect(s.sessions.has(callKey('general', 'web'))).toBe(false));
+    expect(s.runtimes[0].closed).toBe(true);
+    expect(s.locks.holder(join(root, 'browser', 'web'))).toBeNull();
+    expect(s.audit.filter((e) => e.kind === 'screen-open' || e.kind === 'screen-close')).toEqual([]);
+    expect((await s.sessions.acquire(s.req())).ok).toBe(true);
+  });
+
+  it('does not begin to start for a call that was stopped already', async () => {
+    const s = setup();
+    const stop = new AbortController();
+    stop.abort();
+    expect(await s.sessions.acquire(s.req({ signal: stop.signal }))).toEqual({ ok: false, why: 'closing' });
+    expect(s.runtimes).toHaveLength(0);
+  });
+
+  it('gives up when the call is stopped while the sandbox is being asked', async () => {
+    let ready!: () => void;
+    const gate = new Promise<void>((r) => (ready = r));
+    const s = setup({ sandboxGate: () => gate });
+    const stop = new AbortController();
+    const pending = s.sessions.acquire(s.req({ signal: stop.signal }));
+    stop.abort();
+    ready();
+    expect(await pending).toEqual({ ok: false, why: 'closing' });
+    expect(s.runtimes).toHaveLength(0);
+    expect(s.sessions.has(callKey('general', 'web'))).toBe(false);
+  });
+
+  it('waits at quit for a screen that is still starting, and no browser is left up behind it', async () => {
+    let start!: () => void;
+    const s = setup({ startGate: new Promise<void>((r) => (start = r)) });
+    const pending = s.sessions.acquire(s.req());
+    await vi.waitFor(() => expect(s.sessions.has(callKey('general', 'web'))).toBe(true));
+    const ending = s.sessions.endAll();
+    expect(await settled(ending)).toBe(false);
+    start();
+    await ending;
+    expect(await pending).toEqual({ ok: false, why: 'closing' });
+    expect(s.runtimes[0].closed).toBe(true);
+    expect(s.sessions.has(callKey('general', 'web'))).toBe(false);
+    // And nothing opens after the app said it was done.
+    expect(await s.sessions.acquire(s.req())).toEqual({ ok: false, why: 'closing' });
   });
 });

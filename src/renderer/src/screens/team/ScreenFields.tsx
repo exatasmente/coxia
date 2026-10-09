@@ -36,6 +36,7 @@ export function ScreenFieldsView({ draft, set, hostsError, agent, status }: Prop
       <Toggle checked={draft.screen} onChange={(screen) => set({ screen })} label={t('ui.team.f.screen')} />
       <p className="small muted">{t('ui.team.f.screenHint')}</p>
       {draft.screen && draft.shell !== 'none' && <p className="small muted">{t('ui.team.f.screenShell')}</p>}
+      {draft.screen && host && <p className="small muted" role="note">{t('ui.team.f.screenHost')}</p>}
       {draft.screen && status && !status.available && <p className="small muted" role="status">{t('ui.team.screen.noSandbox')}</p>}
       {draft.screen && status?.available && gui?.display === 'off' && <p className="small muted" role="status">{t('ui.team.screen.displayOff')}</p>}
       {draft.screen && status?.available && gui?.chromium && <p className="small muted" role="status">{t(CHROMIUM_LABEL[gui.chromium])}</p>}

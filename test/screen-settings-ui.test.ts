@@ -68,6 +68,12 @@ describe('the settings of the app\'s browser in the agent editor', () => {
     expect(fields({ screen: false, shell: 'sandbox' })).not.toContain(t('ui.team.f.screenShell'));
   });
 
+  it('says plainly that the holds are not a bound against the commands of an agent that runs on the computer', () => {
+    expect(fields({ screen: true, shell: 'host' })).toContain(t('ui.team.f.screenHost'));
+    expect(fields({ screen: true, shell: 'sandbox' })).not.toContain(t('ui.team.f.screenHost'));
+    expect(fields({ screen: false, shell: 'host' })).not.toContain(t('ui.team.f.screenHost'));
+  });
+
   it('tells whether this computer can start the app\'s browser, once the switch is on', () => {
     expect(fields({ screen: true }, status({ browsers: 'ready', display: 'ready', chromium: 'ready' }))).toContain(t(CHROMIUM_LABEL.ready));
     expect(fields({ screen: true }, status({ browsers: 'unset', display: 'ready', chromium: 'unset' }))).toContain(t(CHROMIUM_LABEL.unset));

@@ -186,3 +186,19 @@ describe('the screen recordings group of the retention sweep', () => {
     saveSettings(settings);
   });
 });
+
+describe('the logged-in browser profiles', () => {
+  it('are in no retention group: a profile file older than the days is neither listed nor removed', () => {
+    const file = join(ATAS, 'browser', 'scout', 'Default', 'Cookies');
+    mkdirSync(join(ATAS, 'browser', 'scout', 'Default'), { recursive: true });
+    writeFileSync(file, 'a session');
+    const old = new Date(Date.now() - 400 * DAY);
+    utimesSync(file, old, old);
+    const preview = previewRetention(7);
+    expect(JSON.stringify(preview)).not.toContain('Cookies');
+    expect(JSON.stringify(preview)).not.toContain('browser');
+    applyRetention(7, null);
+    expect(readFileSync(file, 'utf8')).toBe('a session');
+    rmSync(join(ATAS, 'browser'), { recursive: true, force: true });
+  });
+});

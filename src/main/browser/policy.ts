@@ -23,6 +23,23 @@ export const CHROMIUM_FLAGS = [
   '--force-webrtc-ip-handling-policy=disable_non_proxied_udp',
 ] as const;
 
+/**
+ * What Chromium may not open, whoever asks it to: the files of its sandbox (the profile is among them), its own pages (they show cookies and saved data) and its tools. The agent's
+ * shell session shares the display, and an X client can drive the browser with the keyboard; the browser's own policy is what stops it from going there. `about:blank` and the
+ * error pages Playwright relies on are not in the list.
+ */
+export const CHROMIUM_POLICY = { URLBlocklist: ['file://*', 'chrome://*', 'chrome-untrusted://*', 'chrome-search://*', 'devtools://*', 'view-source:*'] } as const;
+/**
+ * The policy's file name in the session's `ctl` folder, and where Chromium reads managed policies from inside the browser's sandbox: the builds Playwright downloads read
+ * different folders (Chromium's own, Chrome for Testing's, Chrome's), and the policy is put in each.
+ */
+export const CHROMIUM_POLICY_FILE = 'chromium-policy.json';
+export const CHROMIUM_POLICY_DESTS = ['/etc/chromium/policies/managed/coxia.json', '/etc/opt/chrome_for_testing/policies/managed/coxia.json', '/etc/opt/chrome/policies/managed/coxia.json'] as const;
+/** The top-level names of `/etc` the policy folders live under: not linked to the real `/etc`, since a path cannot be made through a link into a read-only folder. */
+export const CHROMIUM_POLICY_ETC_NAMES = ['chromium', 'opt'] as const;
+/** Where the real `/etc` is bound when `/etc` is rebuilt to hold the policy. */
+const HOST_ETC = '/.coxia-etc';
+
 export interface SystemFolders {
   roDirs: string[];
   links: [string, string][];
@@ -59,6 +76,11 @@ export interface BrowserSandboxSpec {
   network: EffectiveNetwork['mode'];
   /** Binds a shared network needs to resolve names. */
   resolver: [string, string][];
+  /**
+   * The names `/etc` holds, when the browser's managed policy is to be put there: `/etc` is then a folder of links to the real one (bound beside it) with the policy file in it.
+   * Absent: `/etc` is the read-only bind it always was and no policy applies.
+   */
+  etc?: { name: string; link: string | null }[];
   /** The biggest file the browser may write, in MiB. */
   fileMb: number;
   /** The size of /tmp and /dev/shm in MiB. */
@@ -90,10 +112,18 @@ export function browserEnv(spec: BrowserSandboxSpec): Record<string, string> {
  */
 export function browserBwrapArgs(spec: BrowserSandboxSpec): string[] {
   const a: string[] = ['--unshare-user', '--unshare-ipc', '--unshare-pid', ...(spec.network === 'open' ? [] : ['--unshare-net']), '--unshare-uts', '--unshare-cgroup-try', '--disable-userns', '--die-with-parent', '--clearenv'];
-  for (const dir of spec.system.roDirs) a.push('--ro-bind', dir, dir);
+  const rebuilt = spec.etc && spec.etc.length > 0;
+  for (const dir of spec.system.roDirs) a.push('--ro-bind', dir, rebuilt && dir === '/etc' ? HOST_ETC : dir);
   for (const [name, target] of spec.system.links) a.push('--symlink', target, name);
   const tmp = String(spec.tmpMb * 1024 * 1024);
   a.push('--proc', '/proc', '--dev', '/dev', '--size', tmp, '--tmpfs', '/dev/shm', '--remount-ro', '/dev', '--size', tmp, '--tmpfs', '/tmp');
+  if (rebuilt && spec.etc) {
+    // A name the sandbox binds a file over itself (the resolver) is not linked: the bind would follow the link into the read-only folder.
+    const own = new Set(spec.resolver.map(([, dest]) => dest));
+    a.push('--size', String(1024 * 1024), '--tmpfs', '/etc');
+    for (const e of spec.etc) if (!own.has(`/etc/${e.name}`)) a.push('--symlink', e.link ?? `${HOST_ETC}/${e.name}`, `/etc/${e.name}`);
+    for (const dest of CHROMIUM_POLICY_DESTS) a.push('--ro-bind', `${spec.sessionDir}/ctl/${CHROMIUM_POLICY_FILE}`, dest);
+  }
   // The display's socket alone, at its own name: the agent's shell session keeps the rest of its display folder.
   if (spec.display) a.push('--bind', spec.display.socket, `/tmp/.X11-unix/${spec.display.name}`);
   a.push('--bind', spec.profile, spec.profile);

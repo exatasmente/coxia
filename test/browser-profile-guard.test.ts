@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SECRET_GLOBS, SECRET_READ_DENY, noSecrets, redactSecretResults, secretPath, withoutSecretFiles } from '../src/main/agents';
-import { ATAS } from '../src/main/env';
+import { ATAS, DATA_ROOT } from '../src/main/env';
 import { browserRoot, ensureProfile } from '../src/main/browser/profile';
 import { readTool } from '../src/main/engine/open/tools/read';
 import { globTool, grepTool } from '../src/main/engine/open/tools/search';
@@ -15,6 +15,9 @@ import type { ToolContext, ToolImpl } from '../src/main/engine/open/tools/types'
 const NEEDLE = 'session-token-value-1234';
 let profile: string;
 let ctx: ToolContext;
+// The profile of an agent of a workspace that is not the running one: the same data folder, so the same machine's cookies.
+const OTHER = join(DATA_ROOT, 'workspaces', 'other-workspace');
+const otherCookies = join(OTHER, 'browser', 'scout', 'Default', 'Cookies');
 
 beforeAll(() => {
   profile = ensureProfile(ATAS, 'scout');
@@ -29,6 +32,10 @@ beforeAll(() => {
   mkdirSync(join(ATAS, 'browser-notes'), { recursive: true });
   writeFileSync(join(ATAS, 'browser-notes', 'plan.md'), `a plan with ${NEEDLE} in it\n`);
   symlinkSync(join(profile, 'Default', 'Cookies'), join(ATAS, 'memory', 'innocent.txt'));
+  mkdirSync(join(OTHER, 'browser', 'scout', 'Default'), { recursive: true });
+  writeFileSync(otherCookies, NEEDLE);
+  writeFileSync(join(OTHER, 'notes.md'), `notes of the other workspace with ${NEEDLE}\n`);
+  symlinkSync(otherCookies, join(ATAS, 'memory', 'other.txt'));
   ctx = { cwd: ATAS, roots: [ATAS], isSecret: (p) => secretPath(p, ATAS), secretGlobs: SECRET_GLOBS, outputMax: 30_000, env: { PATH: process.env.PATH ?? '' }, bashPrefixes: [], ripgrep: 'auto' };
 });
 
@@ -36,6 +43,7 @@ afterAll(() => {
   rmSync(browserRoot(ATAS), { recursive: true, force: true });
   rmSync(join(ATAS, 'memory'), { recursive: true, force: true });
   rmSync(join(ATAS, 'browser-notes'), { recursive: true, force: true });
+  rmSync(OTHER, { recursive: true, force: true });
 });
 
 async function run(tool: ToolImpl, input: Record<string, unknown>, c: ToolContext = ctx): Promise<string> {
@@ -55,10 +63,20 @@ describe('the rule shared by both engines', () => {
     expect(secretPath(join(ATAS, 'browser-notes', 'plan.md'))).toBe(false);
   });
 
+  it('refuses the profiles of the other workspaces of the data folder as well, by name or by a link, and not their other files', () => {
+    expect(secretPath(join(OTHER, 'browser'))).toBe(true);
+    expect(secretPath(otherCookies)).toBe(true);
+    expect(secretPath(join(OTHER, 'browser', 'scout', 'Default', 'does-not-exist-yet'))).toBe(true);
+    expect(secretPath(join('memory', 'other.txt'), ATAS)).toBe(true);
+    expect(secretPath(join(OTHER, 'notes.md'))).toBe(false);
+    expect(secretPath(join(DATA_ROOT, 'workspaces', 'browser', 'x'))).toBe(false);
+  });
+
   it('puts the folder among the SDK deny rules and the globs of the open engine, as an absolute path', () => {
     const glob = SECRET_GLOBS.find((g) => g.startsWith('//') && g.endsWith('/browser/**'));
     expect(glob).toBeDefined();
     expect(SECRET_READ_DENY).toContain(`Read(${glob})`);
+    expect(glob).toContain('/workspaces/*/browser/**');
   });
 });
 
@@ -72,6 +90,8 @@ describe('the Claude SDK path', () => {
     expect(await denied('Grep', { pattern: 'token', path: 'browser' })).toBe(true);
     expect(await denied('Grep', { pattern: 'token', path: browserRoot(ATAS) })).toBe(true);
     expect(await denied('Glob', { pattern: 'browser/**/*' })).toBe(true);
+    expect(await denied('Read', { file_path: otherCookies })).toBe(true);
+    expect(await denied('Grep', { pattern: 'token', path: join(OTHER, 'browser') })).toBe(true);
     expect(await denied('Read', { file_path: join(ATAS, 'memory', 'notes.md') })).toBe(false);
     expect(await denied('Grep', { pattern: 'token', path: 'browser-notes' })).toBe(false);
   });
@@ -118,5 +138,13 @@ describe('the open engine path', () => {
     expect(await run(grepTool, { pattern: NEEDLE, path: 'browser' })).not.toContain(NEEDLE);
     expect(await run(grepTool, { pattern: NEEDLE, path: 'browser', output_mode: 'content' }, offCtx())).not.toContain(NEEDLE);
     expect(await run(readTool, { file_path: 'memory/notes.md' })).toContain(NEEDLE);
+  });
+
+  it('refuses a Read by absolute path into the profile of another workspace, even where the data folder is a root', async () => {
+    const wide: ToolContext = { ...ctx, roots: [DATA_ROOT] };
+    await expect(run(readTool, { file_path: otherCookies }, wide)).rejects.toThrow();
+    await expect(run(readTool, { file_path: 'memory/other.txt' }, wide)).rejects.toThrow();
+    expect(await run(readTool, { file_path: join(OTHER, 'notes.md') }, wide)).toContain(NEEDLE);
+    expect(await run(grepTool, { pattern: NEEDLE, path: join(OTHER, 'browser') }, wide)).not.toContain(NEEDLE);
   });
 });
