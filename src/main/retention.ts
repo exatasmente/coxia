@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { appendFileSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, rmSync, statSync, unlinkSync } from 'node:fs';
+import { appendFileSync, closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, rmSync, rmdirSync, statSync, unlinkSync } from 'node:fs';
 import { join, basename, dirname, sep } from 'node:path';
 import {
   retentionLabel,
@@ -13,6 +13,12 @@ import {
 } from '../shared/retention';
 import { getSettings } from './config';
 import { createAttachmentStore } from './attachments';
+import { dropEvidence, evidencePath } from './evidence/store';
+import { forumStore } from './forum';
+import { moveRun } from './runs-forum';
+import { runStore } from './runs';
+import { markRecordingRemoved } from '../shared/runs';
+import type { Run } from '../shared/runs';
 import { purgeTrash } from './minutesStore';
 import { firstPromptOf } from './custo-core';
 import { ATAS, DATA_ROOT, WORKSPACE_ID } from './env';
@@ -87,6 +93,29 @@ export function attachmentFiles(base = ATAS): RetentionFile[] {
         files.push({ kind: 'anexos', path, size: st.size, mtimeMs: st.mtimeMs, keep: keep.has(`${conversation.name}/${id}`) });
       } catch {
         // the file went away between the listing and the stat (a message deleted, a person took the file out): nothing to select
+      }
+    }
+  }
+  return files;
+}
+
+/**
+ * The screen recordings of the stages (#157): the app's own `webm` pieces of evidence, listed through the runs' records, never by walking the evidence folder, so
+ * another piece of evidence can not be taken for one. A recording the sweep already removed (its record says so) or whose file is gone is not listed. Retention is
+ * off by default and these follow the workspace's switch and days like the other groups.
+ */
+export function screenRecordingFiles(base = ATAS, runs: Run[] = runStore().list()): RetentionFile[] {
+  const files: RetentionFile[] = [];
+  for (const run of runs) {
+    for (const record of Object.values(run.evidence ?? {})) {
+      if (record.kind !== 'webm' || !record.recording || record.removed) continue;
+      const path = evidencePath(base, run.id, record);
+      if (!path) continue;
+      try {
+        const st = lstatSync(path);
+        if (st.isFile()) files.push({ kind: 'screens', path, size: st.size, mtimeMs: st.mtimeMs, keep: false });
+      } catch {
+        // the file went away between the listing and the stat: nothing to select
       }
     }
   }
@@ -190,7 +219,7 @@ function otherWorkspaceRefs(): RetentionRef[] {
 export function scan(days: number, now = Date.now()): Selection {
   const actions = actionRefs();
   const refs = [...(actions ?? []), ...otherWorkspaceRefs()];
-  const files = [...dataFiles(refs), ...attachmentFiles(), ...sessionFiles()];
+  const files = [...dataFiles(refs), ...attachmentFiles(), ...screenRecordingFiles(), ...sessionFiles()];
   const selection = selectRetention(files, refs, { now, days });
   if (actions === null) {
     const sessions = selection.remove.filter((v) => v.file.kind === 'sessoes');
@@ -246,7 +275,35 @@ function inside(path: string, root: string): boolean {
   }
 }
 
+/**
+ * Removes a screen recording: only the app's copy of the file, then the record is marked as removed by retention. Another piece of evidence, the run's other
+ * records and any copy in a cycle folder or on a code host are not touched. The record decides what the file is, not the path the sweep listed: it must still be a
+ * recording of that run that was not removed, and the file must be the one its id names.
+ */
+export function removeScreenRecording(file: RetentionFile): void {
+  const runId = basename(dirname(file.path));
+  const id = basename(file.path).replace(/\.webm$/, '');
+  const run = runStore().get(runId);
+  const record = run?.evidence?.[id];
+  // Gone since the preview (the person deleted it, or an earlier sweep marked it): nothing to do.
+  if (!run || !record || record.kind !== 'webm' || !record.recording || record.removed) return;
+  if (existsSync(file.path)) {
+    const st = lstatSync(file.path);
+    if (!st.isFile()) throw new Error(t('main.retention.notRegular'));
+    if (st.mtimeMs !== file.mtimeMs) throw new Error(t('main.retention.changed'));
+    if (!inside(file.path, join(ATAS, 'evidence')) || evidencePath(ATAS, runId, record) !== file.path) throw new Error(t('main.retention.outside'));
+    dropEvidence(ATAS, runId, record);
+    try {
+      rmdirSync(dirname(file.path));
+    } catch {
+      // other pieces of the run are in the folder: it stays
+    }
+  }
+  moveRun({ runs: runStore(), forum: forumStore() }, runId, (r) => markRecordingRemoved(r, id, new Date().toISOString()));
+}
+
 function removeOne(file: RetentionFile): void {
+  if (file.kind === 'screens') return removeScreenRecording(file);
   // An attachment is removed by its own door (the store resolves the name inside the conversation's folder): the sweep walks the folder and has no ref for
   // what it found. A file that went away before this point is nothing to do, not a failure.
   if (file.kind === 'anexos') {

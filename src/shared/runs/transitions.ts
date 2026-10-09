@@ -1035,6 +1035,19 @@ export function deleteEvidence(run: Run, id: string, at: string): Transition {
   return { run: out, messages: [] };
 }
 
+/**
+ * Retention removed the file of the app's own screen recording: the run keeps the record, marked, so the stage says "removed by retention" instead of showing an
+ * error. Nothing else of the run changes, and what was copied elsewhere is never touched.
+ */
+export function markRecordingRemoved(run: Run, id: string, at: string): Transition {
+  const record = run.evidence?.[id];
+  if (!record?.recording) throw new RunError('unknown-evidence', { id });
+  const out = clone(run, at);
+  out.evidence = { ...(out.evidence ?? {}), [id]: { ...structuredClone(record), removed: 'retention' } };
+  log(out, at, 'evidence-removed', record.stage, 'app', `${id}: retention`);
+  return { run: out, messages: [] };
+}
+
 /** A comment the runner posted was deleted from the tracker (after the person said yes to the proposal). The run keeps the record. */
 export function recordCommentRemoved(run: Run, key: string, at: string): Transition {
   if (!run.comments[key]) throw new RunError('unknown-comment', { key });
