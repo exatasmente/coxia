@@ -1,3 +1,5 @@
+import type { HandoffCard } from './handoff';
+
 // What the renderer and the main process both know about an agent's screen and the app's browser: the constants of its sessions and the shapes that cross between the two. Pure
 // types and constants; the behaviour is in `src/main/browser/`.
 
@@ -98,13 +100,13 @@ export type ConfirmKind = (typeof CONFIRM_KINDS)[number];
 export type AskDecision = 'yes' | 'no' | 'site';
 export const ASK_DECISIONS: readonly AskDecision[] = ['yes', 'no', 'site'];
 
-/** A step held for the person, or a confirmation the agent asked for, waiting for an answer. */
+/** A step held for the person, a confirmation the agent asked for, or the agent's request to hand the screen over (#178), waiting for an answer. */
 export interface PendingAsk {
   id: string;
   /** The screen it belongs to (`run:<id>` or `call:<thread>:<agent>`). */
   key: string;
   agent: string;
-  kind: 'hold' | 'confirm';
+  kind: 'hold' | 'confirm' | 'handoff';
   /** Why a step is held; `agent` for a confirmation the agent asked for. */
   why: HoldWhy | 'agent';
   /** The step in the app's words; null for a confirmation (the agent's own sentence is `agentWords`). */
@@ -116,6 +118,8 @@ export interface PendingAsk {
   confirmKind?: ConfirmKind;
   /** ISO time it started waiting. */
   since: string;
+  /** Only on a request to hand the screen over: `agentWords` is what the agent needs of the person, and this is the rest of the card. */
+  handoff?: HandoffCard;
 }
 
 /** A site that holds something in an agent's logged-in browser, as Settings lists it: counts only, never a name of a cookie or a value. */

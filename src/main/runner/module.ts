@@ -39,6 +39,7 @@ import { type ScreenSessions, createScreenSessions } from '../browser/sessions';
 import { type NativeImageLike, createFrameEncoder } from '../screen/frame';
 import { type EncoderHost, createEncoderHost } from '../screen/encoderHost';
 import { realEncoderEnv } from '../screen/encoderWindow';
+import { type HandoffService, createHandoffService } from '../screen/handoff';
 import { type ScreenHub, createScreenHub } from '../screen/hub';
 import { type GateAction, type IssueSource, type Runner, RunnerError, createRunner } from './service';
 
@@ -84,11 +85,14 @@ export const screenHub = (): ScreenHub | null => screens;
 
 let asks: ScreenAsks | null = null;
 let sessions: ScreenSessions | null = null;
+let handoff: HandoffService | null = null;
 
 /** The questions the app's screens ask the person (a held step, a confirmation); null until the module registered. */
 export const screenAsks = (): ScreenAsks | null => asks;
 /** The open screens of the agents that have one, and the way to open, reuse and close them; null until the module registered. */
 export const screenSessions = (): ScreenSessions | null => sessions;
+/** The hand-off of an agent's screen to the person (#178); null until the module registered. */
+export const handoffService = (): HandoffService | null => handoff;
 
 /** The app is closing: no live screen is read or sent to after this, and the browsers of the open screens are asked to end. */
 export const endLiveScreens = (): void => {
@@ -186,6 +190,28 @@ export const runsModule: Module = (ctx) => {
     changed: (key) => ctx.emit({ type: 'module', name: SCREEN_EVENT, payload: { key } }),
   });
   sessions = openSessions;
+  // The agent hands its screen to the person: the wait, the three moves of the person and what each leaves (a line, an audit entry, a step, a notice).
+  const handoffs = createHandoffService({
+    hub,
+    asks: askStore,
+    say: (thread, stage, code, params) => {
+      try {
+        forumStore().append(thread, { kind: 'system', author: { type: 'app' }, code, params, ...(stage ? { stage } : {}) });
+      } catch (e) {
+        console.error('[runner] could not record a note on the screen', e instanceof Error ? e.message : e);
+      }
+    },
+    notify: (n) => ctx.notify(n),
+    notifications: () => getConfig().notifications,
+    masks: (key) => openSessions.masksOf(key),
+    step: (key, step) => openSessions.recordStep(key, step),
+  });
+  handoff = handoffs;
+  // A screen that ends takes a request still waiting for it, and what is remembered of its hand-offs, with it.
+  openSessions.onClosed((screen) => {
+    handoffs.closed(screen.key);
+    handoffs.forget(screen.key);
+  });
   // An agent that is gone, loses its screen or changes its shell, or a workspace that switches the display off, ends the screens that depended on it.
   onConfigChange((config) => void openSessions.reconcile(config));
   const r = createRunner({

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ASK_DECISIONS, ASK_TIMEOUT_MS, type AskDecision, type ConfirmKind, type HeldAnswer, type HoldWhy, type PendingAsk, type StepWords } from '../../shared/browser';
+import type { HandoffCard } from '../../shared/handoff';
 import { t } from '../../shared/i18n';
 import { type AnsweredThrough, type AuditSink, type ScreenPlace, auditScreen } from './audit';
 import type { HoldGate } from './intermediary';
@@ -41,6 +42,25 @@ export interface AskResult {
   note?: string;
 }
 
+/** A request to hand the screen over, as the list shows it (#178). The service that owns it decides when it ends; the list only holds the entry. */
+export interface ShownHandoff {
+  id: string;
+  key: string;
+  agent: string;
+  /** What the agent needs of the person, as it wrote it. */
+  what: string;
+  why?: string;
+  paths: HandoffCard['paths'];
+  since?: string;
+}
+
+/** The entry of a request in the list: it can change (the screen was taken) and goes away. */
+export interface ShownAsk {
+  set(patch: Partial<Pick<HandoffCard, 'taken'>>): void;
+  /** Takes the entry out of the list. Idempotent. */
+  remove(): void;
+}
+
 export interface ScreenAsksDeps {
   /** Told with every pending question of every screen whenever the list changes (the event the card and the viewer read). */
   changed(asks: PendingAsk[]): void;
@@ -72,6 +92,11 @@ export interface ScreenAsks {
    * anything else it counts as a plain yes. Throws `AskGone` for a question that no longer waits.
    */
   answer(id: string, decision: AskDecision, through: Exclude<AnsweredThrough, 'none'>, note?: string): PendingAsk;
+  /**
+   * Lists a request to hand the screen over. Only the list and the event: the wait, the limits and the answer are the hand-off service's (an `answer` to this id is gone),
+   * since its limit must tell an expiry from a decline and its end must tell the agent which.
+   */
+  show(ask: ShownHandoff): ShownAsk;
   /** Declines every pending question of a screen (it is closing), without waiting. Returns how many. */
   declineAll(key: string): number;
   /** Whether the person gave a pass for unclassifiable steps on this site, for this screen. */
@@ -132,11 +157,13 @@ interface Waiting {
 
 export function createScreenAsks(d: ScreenAsksDeps): ScreenAsks {
   const waiting = new Map<string, Waiting>();
+  /** Requests to hand the screen over, listed beside the questions and never answered through `answer`. */
+  const shown = new Map<string, PendingAsk>();
   const passes = new Map<string, Set<string>>();
   const sink: AuditSink | undefined = d.audit;
   const publish = (): void => {
     try {
-      d.changed([...waiting.values()].map((w) => w.item));
+      d.changed([...[...waiting.values()].map((w) => w.item), ...shown.values()]);
     } catch {
       // A failing listener must not decide an answer.
     }
@@ -201,7 +228,34 @@ export function createScreenAsks(d: ScreenAsksDeps): ScreenAsks {
         auditScreen.confirmed({ ...who(ask), kind: ask.confirmKind, words: ask.words, ...(ask.site ? { site: ask.site } : {}), answer, through }, sink),
       );
     },
-    list: (key) => [...waiting.values()].map((w) => w.item).filter((a) => key === undefined || a.key === key),
+    list: (key) => [...[...waiting.values()].map((w) => w.item), ...shown.values()].filter((a) => key === undefined || a.key === key),
+    show(ask) {
+      const item: PendingAsk = {
+        id: ask.id,
+        key: ask.key,
+        agent: ask.agent,
+        kind: 'handoff',
+        why: 'agent',
+        step: null,
+        site: '',
+        agentWords: ask.what,
+        since: ask.since ?? (d.now?.() ?? new Date()).toISOString(),
+        handoff: { ...(ask.why ? { why: ask.why } : {}), taken: false, paths: ask.paths },
+      };
+      shown.set(item.id, item);
+      publish();
+      return {
+        set(patch) {
+          const current = shown.get(item.id);
+          if (!current?.handoff) return;
+          shown.set(item.id, { ...current, handoff: { ...current.handoff, ...patch } });
+          publish();
+        },
+        remove() {
+          if (shown.delete(item.id)) publish();
+        },
+      };
+    },
     answer(id, decision, through, note = '') {
       const w = waiting.get(id);
       if (!w) throw new AskGone();

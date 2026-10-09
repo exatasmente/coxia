@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SCREEN_AUDIT_KINDS, type AuditEntry } from '../src/shared/auditoria';
 import { CATALOGS } from '../src/shared/i18n';
-import { auditScreen, countsText, screenCloseEntry, screenConfirmEntry, screenHoldEntry, screenOpenEntry, screenUseEntry, siteOf } from '../src/main/browser/audit';
+import { auditScreen, countsText, screenCloseEntry, screenConfirmEntry, screenHandoffEntry, screenHoldEntry, screenOpenEntry, screenUseEntry, siteOf } from '../src/main/browser/audit';
 import { listAudit } from '../src/main/auditoria';
 
 // What an agent's virtual screen writes to the audit log: the five kinds, their fields, and what they can never hold.
@@ -67,6 +67,28 @@ describe('the entries', () => {
   });
 });
 
+describe('the entry of a hand-off (#178)', () => {
+  it('says who handed the screen over, what was asked, how it ended and from when to when, and where the commands run', () => {
+    const e = screenHandoffEntry({ ...who, mode: 'host', what: 'log in to the site', outcome: 'done', from: '2026-10-09T10:00:00.000Z', to: '2026-10-09T10:02:30.000Z' });
+    expect(e).toMatchObject({ kind: 'screen-handoff', via: 'host', ok: true, result: 'done', by: 'scout', target: 'screen:call:team-chat:scout' });
+    expect(e.fields).toEqual({ agent: 'scout', place: 'conversation', what: 'log in to the site', outcome: 'done', from: '2026-10-09T10:00:00.000Z', to: '2026-10-09T10:02:30.000Z' });
+  });
+
+  it('is not ok for every end but done, and has empty times when the person never took the screen', () => {
+    for (const outcome of ['declined', 'expired', 'unavailable', 'aborted'] as const) {
+      const e = screenHandoffEntry({ ...who, mode: 'sandbox', what: 'log in', outcome, from: '', to: '' });
+      expect(e).toMatchObject({ ok: false, result: outcome, fields: { outcome, from: '', to: '' } });
+    }
+  });
+
+  it('has no field for a keystroke or a typed value: what the caller adds is dropped, and a credential in the words is scrubbed', () => {
+    const hostile = { ...who, mode: 'sandbox', what: 'log in, use Bearer abcdefghijklmnop1234', outcome: 'done', from: 'a', to: 'b', typed: 'hunter2', keys: 'abc' } as unknown as Parameters<typeof screenHandoffEntry>[0];
+    const e = screenHandoffEntry(hostile);
+    expect(JSON.stringify(e)).not.toMatch(/hunter2|abcdefghijklmnop1234|"keys"/);
+    expect(Object.keys(e.fields).sort()).toEqual(['agent', 'from', 'outcome', 'place', 'to', 'what']);
+  });
+});
+
 describe('what the log never holds', () => {
   it('reduces a site to its host: no path, query, fragment, port or credentials', () => {
     expect(siteOf('https://User:Pass@App.Example.com:8443/a/b?q=1#c')).toBe('app.example.com');
@@ -98,6 +120,7 @@ describe('the log', () => {
     auditScreen.held({ ...who, why: 'submit', step: 'click Send with Authorization: Bearer abcdefghijklmnop1234', site: 'app.example.com', answer: 'yes', through: 'window' });
     auditScreen.confirmed({ ...who, kind: 'other', words: 'do it', answer: 'yes', through: 'window' });
     auditScreen.used({ ...who, from: '2026-10-09T10:00:00.000Z', to: '2026-10-09T10:01:00.000Z' });
+    auditScreen.handedOver({ ...who, mode: 'sandbox', what: 'log in', outcome: 'done', from: '2026-10-09T10:00:00.000Z', to: '2026-10-09T10:01:00.000Z' });
     const rows = listAudit().filter((r) => r.origin.kind === 'screen');
     expect(rows.map((r) => r.kind).sort()).toEqual([...SCREEN_AUDIT_KINDS].sort());
     expect(JSON.stringify(rows)).not.toContain('abcdefghijklmnop1234');

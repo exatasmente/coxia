@@ -441,6 +441,17 @@ describe('closing a screen', () => {
     expect(s.sessions.stepsOf(callKey('run-r1', 'web'))).toEqual([]);
   });
 
+  it('takes a step that is not a call of the browser (the hand-off, #178) into the log, and none for a screen that is not open', async () => {
+    const s = setup();
+    await s.lease({ thread: 'run-r1', key: callKey('run-r1', 'web') });
+    s.sessions.recordStep(callKey('run-r1', 'web'), { tool: 'screen_handoff', site: '', path: '', class: 'free', outcome: 'ok', ms: 4 });
+    s.sessions.recordStep(callKey('run-r1', 'gone'), { tool: 'screen_handoff', site: '', path: '', class: 'free', outcome: 'ok', ms: 4 });
+    expect(s.sessions.stepsOf(callKey('run-r1', 'web'))).toMatchObject([{ n: 1, tool: 'screen_handoff', class: 'free', outcome: 'ok', site: '', path: '' }]);
+    expect(s.sessions.stepsOf(callKey('run-r1', 'web'))[0]).not.toHaveProperty('name');
+    await s.sessions.close(callKey('run-r1', 'web'), 'stage');
+    expect(s.closedSeen[0].steps.map((x) => x.tool)).toEqual(['screen_handoff']);
+  });
+
   it('throws the recording away when nothing keeps it, and says "none" in the audit', async () => {
     const s = setup({ noKeep: true });
     await s.lease();

@@ -12,6 +12,7 @@
   "ui.audit.kind.release": "Release step",
   "ui.audit.kind.screenClose": "Screen closed",
   "ui.audit.kind.screenConfirm": "Screen confirmation",
+  "ui.audit.kind.screenHandoff": "Screen handed to a person",
   "ui.audit.kind.screenHold": "Step held on a screen",
   "ui.audit.kind.screenOpen": "Screen opened",
   "ui.audit.kind.screenUse": "Screen used by a person",

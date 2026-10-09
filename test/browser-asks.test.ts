@@ -301,3 +301,57 @@ describe('through the intermediary: the three answers, and the pass', () => {
     await fourth;
   });
 });
+
+// A request to hand the screen over (#178) is listed beside the questions and is not one: the service that owns it keeps the promise and the limits, so `answer` has nothing to
+// answer and a screen's questions being declined does not take it away.
+describe('a request to hand the screen over', () => {
+  const request = { id: 'hand-1', key: ctx.key, agent: 'coder', what: 'log in to the site', why: 'the report is behind it', paths: { browser: true, shell: 'sandbox' as const } };
+
+  it('is listed with the agent\'s words and the card\'s parts, published, and not reported as a question that waits', () => {
+    const asks = make();
+    const shown = asks.show(request);
+    expect(asks.list()).toEqual([
+      { id: 'hand-1', key: ctx.key, agent: 'coder', kind: 'handoff', why: 'agent', step: null, site: '', agentWords: 'log in to the site', since: '2026-10-09T10:00:00.000Z', handoff: { why: 'the report is behind it', taken: false, paths: { browser: true, shell: 'sandbox' } } },
+    ]);
+    expect(asks.list('call:other:coder')).toEqual([]);
+    expect(changes).toHaveLength(1);
+    expect(told).toEqual([]);
+    shown.remove();
+    expect(asks.list()).toEqual([]);
+    expect(changes).toHaveLength(2);
+    shown.remove();
+    expect(changes).toHaveLength(2);
+  });
+
+  it('changes when the screen is taken, and a change after it was removed does nothing', () => {
+    const asks = make();
+    const shown = asks.show({ ...request, why: undefined });
+    shown.set({ taken: true });
+    expect(asks.list()[0].handoff).toEqual({ taken: true, paths: { browser: true, shell: 'sandbox' } });
+    expect(changes).toHaveLength(2);
+    shown.remove();
+    shown.set({ taken: false });
+    expect(asks.list()).toEqual([]);
+    expect(changes).toHaveLength(3);
+  });
+
+  it('is listed with the questions of the same screen, and neither takes the other away', async () => {
+    const asks = make();
+    const held = asks.hold(submit);
+    const shown = asks.show(request);
+    expect(asks.list(ctx.key).map((a) => a.kind)).toEqual(['hold', 'handoff']);
+    expect(asks.declineAll(ctx.key)).toBe(1);
+    expect(await held).toEqual({ answer: 'closed' });
+    expect(asks.list().map((a) => a.kind)).toEqual(['handoff']);
+    shown.remove();
+  });
+
+  it('is not answered through the questions\' door, and does not count against the screen\'s limit', () => {
+    const asks = make();
+    asks.show(request);
+    expect(() => asks.answer('hand-1', 'yes', 'window')).toThrow(AskGone);
+    expect(asks.list()).toHaveLength(1);
+    for (let i = 0; i < MAX_PENDING_PER_SCREEN; i++) void asks.hold(submit);
+    expect(asks.list().filter((a) => a.kind === 'hold')).toHaveLength(MAX_PENDING_PER_SCREEN);
+  });
+});

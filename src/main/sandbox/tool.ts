@@ -1,4 +1,5 @@
 // i18n-lint: allow-file what the Shell tool tells a model: English by design, like the other tool texts of the engines
+import { HANDOFF_HELD_TEXT } from '../../shared/handoff';
 import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
 import { MAX_IMAGE_BYTES } from '../imageType';
 import type { EvidenceTools } from '../evidence/tool';
@@ -34,7 +35,7 @@ export function renderExec(r: ExecResult): string {
   if (r.refused === 'size') return `The command is longer than ${SHELL_COMMAND_MAX} bytes.`;
   if (r.refused === 'budget') return 'The time this stage may spend running commands is used up.';
   if (r.refused === 'closed') return 'The sandbox has ended; no more commands run in this stage.';
-  if (r.refused === 'handoff') return 'The person has the screen; wait for the hand-off result.';
+  if (r.refused === 'handoff') return HANDOFF_HELD_TEXT;
   if (r.refused === 'denied') return `The person did not allow this command; it did not run.${r.output ? ` Their note: ${r.output}` : ''}`;
   const head = r.timedOut ? `[command ${r.n} timed out after ${Math.round(r.ms / 1000)}s]` : r.exitCode === null ? `[command ${r.n} did not run to an exit]` : `[command ${r.n}: exit code ${r.exitCode}, ${Math.max(1, Math.round(r.ms / 100) / 10)}s]`;
   return `${head}\n${r.outputUnavailable ? '(output unavailable)' : r.output || '(no output)'}`;

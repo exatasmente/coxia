@@ -178,6 +178,30 @@ export const screenUseEntry = (o: ScreenUsed): Omit<AuditEntry, 'at'> => ({
   result: 'used',
 });
 
+/** How a hand-off ended: the four results the agent can be given, or `aborted` when nobody was left to be given one. */
+export type HandoffOutcome = 'done' | 'declined' | 'expired' | 'unavailable' | 'aborted';
+
+export interface ScreenHandedOver extends Who {
+  mode: ScreenMode;
+  /** What the agent asked of the person, as it wrote it. */
+  what: string;
+  outcome: HandoffOutcome;
+  /** ISO times of the interval in which the person held the screen; empty when they never took it. Never what they did or typed. */
+  from: string;
+  to: string;
+}
+
+export const screenHandoffEntry = (o: ScreenHandedOver): Omit<AuditEntry, 'at'> => ({
+  ...base(o),
+  kind: 'screen-handoff',
+  target: `screen:${o.key}`,
+  via: o.mode,
+  fields: { agent: o.agent, place: o.place, what: words(o.what, 300), outcome: o.outcome, from: o.from.slice(0, 40), to: o.to.slice(0, 40) },
+  ok: o.outcome === 'done',
+  code: null,
+  result: o.outcome,
+});
+
 /** The writer of the log; replaced in tests. It never throws: the log must not turn a screen's work into a failure. */
 export type AuditSink = (entry: Omit<AuditEntry, 'at'>) => void;
 
@@ -189,4 +213,5 @@ export const auditScreen = {
   held: (o: ScreenHeld, sink: AuditSink = toLog): void => sink(screenHoldEntry(o)),
   confirmed: (o: ScreenConfirmed, sink: AuditSink = toLog): void => sink(screenConfirmEntry(o)),
   used: (o: ScreenUsed, sink: AuditSink = toLog): void => sink(screenUseEntry(o)),
+  handedOver: (o: ScreenHandedOver, sink: AuditSink = toLog): void => sink(screenHandoffEntry(o)),
 };

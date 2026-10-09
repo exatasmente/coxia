@@ -25,6 +25,7 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   'screen-hold': { key: 'ui.audit.kind.screenHold' },
   'screen-confirm': { key: 'ui.audit.kind.screenConfirm' },
   'screen-use': { key: 'ui.audit.kind.screenUse' },
+  'screen-handoff': { key: 'ui.audit.kind.screenHandoff' },
 };
 
 function Row({ e }: { e: AuditEntry }) {

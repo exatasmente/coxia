@@ -12,6 +12,7 @@
   "ui.audit.kind.release": "Passo da release",
   "ui.audit.kind.screenClose": "Tela fechada",
   "ui.audit.kind.screenConfirm": "Confirmação na tela",
+  "ui.audit.kind.screenHandoff": "Tela entregue a uma pessoa",
   "ui.audit.kind.screenHold": "Passo retido numa tela",
   "ui.audit.kind.screenOpen": "Tela aberta",
   "ui.audit.kind.screenUse": "Tela usada por uma pessoa",

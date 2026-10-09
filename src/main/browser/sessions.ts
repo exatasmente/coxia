@@ -12,7 +12,7 @@ import { BrowserStartError, type BrowserRuntime, type BrowserStartOptions } from
 import { type MaskSet, createMaskSet } from './mask';
 import { type OpenedProfile, ProfileError } from './profile';
 import { browserNetwork } from './policy';
-import { type StepLog, createStepLog } from './stepLog';
+import { type StepInput, type StepLog, createStepLog } from './stepLog';
 
 // The screens of the agents that have one: a registry of open sessions, one per screen key. A session holds the app's browser (the server, the browser and the profile lock), the
 // intermediary the agent's calls pass through, the display it draws on and the clocks that end it. It is opened by the first answer of an agent that has a screen, reused by the next
@@ -157,6 +157,8 @@ export interface ScreenSessions {
   keysOfAgent(agent: string): string[];
   /** The steps the app's browser took on an open screen, for the procedure memory; empty when there is none. */
   stepsOf(key: string): readonly StepEntry[];
+  /** Adds a step that is not a call of the app's browser (the hand-off, #178) to an open screen's log; nothing when there is no such screen. */
+  recordStep(key: string, step: StepInput): void;
   /** The masks of an open screen: the place where what the page shows is filtered before the agent reads it. */
   masksOf(key: string): MaskSet | null;
   /** The person used the screen: its idle clock starts over. */
@@ -576,6 +578,9 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
     keysOfAgent: (agent) => where((s) => s.agent === agent).map((s) => s.key),
     stepsOf: (key) => sessions.get(key)?.log.entries() ?? [],
     masksOf: (key) => sessions.get(key)?.masks ?? null,
+    recordStep(key, step) {
+      sessions.get(key)?.log.add(step);
+    },
     touch,
     close,
     closeThread: (thread, reason = 'thread') => closeAll(where((s) => s.thread === thread), reason),
