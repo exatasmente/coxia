@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A retried QA stage can cite the evidence an earlier attempt kept.** A QA attempt that picked the stage up again was told to cite the evidence already kept by its id, and then failed for every scenario that did, since only what the attempt itself kept counted: retrying could not finish the stage. A scenario is now backed by any evidence the same stage kept in the run; the app's own screen recording and a piece the retention sweep removed still back nothing.
+
 ## [0.9.0-beta.4] - 2026-10-08
 
 ### Added
