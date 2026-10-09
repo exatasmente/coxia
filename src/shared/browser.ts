@@ -131,3 +131,28 @@ export interface ProfileSite {
 export type SitesRefusal = 'agent' | 'site' | 'open' | 'busy' | 'browser' | 'failed';
 export type SitesResult = { ok: true; sites: ProfileSite[] } | { ok: false; why: SitesRefusal; detail?: string };
 export type RevokeResult = { ok: true; removed: boolean; sites: ProfileSite[] } | { ok: false; why: SitesRefusal; detail?: string };
+
+/** The event the main process sends when the list of pending questions changes: it carries the questions and no page text. */
+export const SCREEN_ASKS_EVENT = 'screen-asks';
+
+/** What a conversation or a stage lists of an open screen: for the strip above the message box, the Watch button and the closing time. */
+export interface OpenScreenInfo {
+  key: string;
+  agent: string;
+  thread: string;
+  /** A stage's screen, or an agent's in a conversation (or in a run's thread). */
+  place: 'stage' | 'conversation';
+  /** ISO time it opened. */
+  since: string;
+  /** ISO time it closes by itself if nothing keeps it; null while something does (an answer, a step, a question). */
+  closesAt: string | null;
+  /** The size of the display in pixels; 0 while the viewer has none to show. */
+  width: number;
+  height: number;
+  /** Someone is controlling it from the desktop. */
+  control: boolean;
+  recording: 'on' | 'waiting' | 'stopped';
+  /** The agent's logged-in browser, a fresh one because that is in use, or no browser profile at all. */
+  profile: 'own' | 'fresh' | 'none';
+  pending: PendingAsk[];
+}

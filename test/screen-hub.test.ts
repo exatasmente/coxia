@@ -15,6 +15,7 @@ function setup(over: { enabled?: boolean; connectFails?: boolean; own?: boolean;
   const encoded: number[] = [];
   const changed: string[] = [];
   const notes: { thread: string; stage: string; code: string; params: Record<string, string> }[] = [];
+  const touched: string[] = [];
   const used: { key: string; agent: string; thread: string; from: number; to: number }[] = [];
   // The timers of the hub, by hand: the burst of input is closed when the clock says so.
   const timers: { ms: number; fn: () => void; live: boolean }[] = [];
@@ -39,6 +40,7 @@ function setup(over: { enabled?: boolean; connectFails?: boolean; own?: boolean;
     changed: (key) => changed.push(key),
     note: (thread, stage, code, params) => notes.push({ thread, stage, code, params }),
     used: (u) => used.push(u),
+    activity: (key) => touched.push(key),
     schedule: (ms, fn) => {
       const timer = { ms, fn, live: true };
       timers.push(timer);
@@ -50,7 +52,7 @@ function setup(over: { enabled?: boolean; connectFails?: boolean; own?: boolean;
   const quiet = () => {
     for (const timer of timers.splice(0)) if (timer.live) timer.fn();
   };
-  return { conn, clock, encoded, changed, notes, used, timers, quiet, connect, hub, open };
+  return { conn, clock, encoded, changed, notes, used, touched, timers, quiet, connect, hub, open };
 }
 
 describe('a live screen', () => {
@@ -1021,5 +1023,16 @@ describe('screens by key', () => {
     expect(s.hub.state('call:general:dev')).not.toBeNull();
     s.hub.endAll();
     expect(s.hub.state('call:general:dev')).toBeNull();
+  });
+
+  it('tells the screen\'s owner each time the person uses it, and not when someone only watches', async () => {
+    const s = setup({ own: true });
+    await s.hub.open(call);
+    await s.hub.frame('call:general:dev', 0, 640);
+    expect(s.touched).toEqual([]);
+    await s.hub.control('call:general:dev', true);
+    await s.hub.input('call:general:dev', [move(1, 1)]);
+    await s.hub.control('call:general:dev', false);
+    expect(s.touched).toEqual(['call:general:dev', 'call:general:dev', 'call:general:dev']);
   });
 });

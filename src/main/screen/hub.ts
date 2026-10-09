@@ -39,6 +39,8 @@ export interface ScreenHubDeps {
   changed?: (key: string) => void;
   /** A line the app writes in the screen's conversation (a system line with a catalog code and its parameters); `stage` is empty outside a run's stage. */
   note?: (thread: string, stage: string, code: string, params: Record<string, string>) => void;
+  /** The person used the screen (took control, gave it back, sent input): a screen that closes when idle starts its clock over. */
+  activity?: (key: string) => void;
   /** A burst of the person's use of the screen ended: from when to when, in ms of the clock. What they did is not reported. */
   used?: (use: { key: string; agent: string; thread: string; from: number; to: number }) => void;
   /** Calls `fn` after `ms`; returns what cancels it. The burst of input and the recording's look at the screen are timed by it. */
@@ -146,6 +148,13 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       deps.note?.(live.thread, live.stage, code, { agent: live.agent, ...params });
     } catch {
       // A line that cannot be written is not the stage's to know.
+    }
+  };
+  const touched = (key: string): void => {
+    try {
+      deps.activity?.(key);
+    } catch {
+      // A listener that fails is not the person's to know.
     }
   };
   const changed = (key: string): void => {
@@ -375,6 +384,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
         say(live, 'runner.screen.controlOff');
       }
       changed(key);
+      touched(key);
       return { ok: true };
     },
     async input(k, events) {
@@ -397,6 +407,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       const sent = await live.conn.fakeInput(plan.events);
       if (!sent.ok) return { ok: false, delivered: 0, rejected: rejected + plan.accepted };
       const at = now();
+      touched(live.key);
       if (live.burst && at - live.burst.last > BURST_GAP_MS) closeBurst(live);
       live.burst = live.burst ? { from: live.burst.from, last: at } : { from: at, last: at };
       live.cancelBurst?.();

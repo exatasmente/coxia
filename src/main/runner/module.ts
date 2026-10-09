@@ -13,7 +13,7 @@ import { failureText, noteRetroIssue } from '../retroIssues';
 import { runStore } from '../runs';
 import { git } from '../conflictGit';
 import { vcsProvider, vcsReady } from '../vcs';
-import { getConfig, rc, updateConfig } from '../workspaceConfig';
+import { getConfig, onConfigChange, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
 import { sandbox } from '../sandbox/workspace';
 import { firePluginEvent, liveContext, pluginHold, pluginNotes, pluginRunHooks, releasePluginAsks } from '../plugins/module';
@@ -25,9 +25,15 @@ import { createPublisher } from './publish';
 import { applyDocsFlow, startDocsRun } from '../harness/docsRun';
 import { docsStatus } from '../harness/status';
 import { docsFlowOf } from '../../shared/config/squads';
-import { parseKey } from '../../shared/browser';
+import { SCREEN_ASKS_EVENT, parseKey } from '../../shared/browser';
 import { SCREEN_EVENT } from '../../shared/screen';
 import { auditScreen } from '../browser/audit';
+import { type ScreenAsks, askNotice, createScreenAsks } from '../browser/asks';
+import { grantsFor } from '../browser/guard';
+import { startBrowser } from '../browser/launch';
+import { openProfile } from '../browser/profile';
+import { resolveBrowsers } from '../browser/resolve';
+import { type ScreenSessions, createScreenSessions } from '../browser/sessions';
 import { type NativeImageLike, createFrameEncoder } from '../screen/frame';
 import { type EncoderHost, createEncoderHost } from '../screen/encoderHost';
 import { realEncoderEnv } from '../screen/encoderWindow';
@@ -74,8 +80,17 @@ let encoders: EncoderHost | null = null;
 /** The live screens of this process's runner; null until the module registered. */
 export const screenHub = (): ScreenHub | null => screens;
 
-/** The app is closing: no live screen is read or sent to after this. */
+let asks: ScreenAsks | null = null;
+let sessions: ScreenSessions | null = null;
+
+/** The questions the app's screens ask the person (a held step, a confirmation); null until the module registered. */
+export const screenAsks = (): ScreenAsks | null => asks;
+/** The open screens of the agents that have one, and the way to open, reuse and close them; null until the module registered. */
+export const screenSessions = (): ScreenSessions | null => sessions;
+
+/** The app is closing: no live screen is read or sent to after this, and the browsers of the open screens are asked to end. */
 export const endLiveScreens = (): void => {
+  void sessions?.endAll();
   screens?.endAll();
   encoders?.shutdown();
 };
@@ -115,6 +130,8 @@ export const runsModule: Module = (ctx) => {
     enabled: process.platform === 'linux',
     encoder: createFrameEncoder({ nativeImage: nativeImage as unknown as NativeImageLike }),
     sink: () => encoderHost.sink(),
+    // The person used the screen: a screen that closes when idle starts its clock over.
+    activity: (key) => sessions?.touch(key),
     // The intervals in which the person used the screen go to the audit log: from and to only, never what was done.
     used: ({ key, agent, from, to }) => {
       const parsed = parseKey(key);
@@ -132,6 +149,43 @@ export const runsModule: Module = (ctx) => {
     },
   });
   screens = hub;
+  // The questions the screens ask: a card in the conversation reads them from the event, and a notification opens the conversation.
+  const askStore = createScreenAsks({
+    changed: (pending) => ctx.emit({ type: 'module', name: SCREEN_ASKS_EVENT, payload: { asks: pending } }),
+    asked: (ask) => {
+      if (!getConfig().notifications) return;
+      const key = parseKey(ask.key);
+      const notice = askNotice(ask);
+      if (key?.kind === 'call') ctx.notify({ ...notice, onClick: { type: 'open', screen: { name: 'forum', thread: key.thread } } });
+      else if (key) ctx.notify({ ...notice, onClick: { type: 'open', screen: { name: 'run', id: key.run } } });
+      else ctx.notify({ ...notice, onClick: { type: 'navigate', to: 'today' } });
+    },
+  });
+  asks = askStore;
+  const openSessions = createScreenSessions({
+    enabled: process.platform === 'linux',
+    config: getConfig,
+    browsers: () => resolveBrowsers(getConfig().runner.sandbox, HOME, [DATA_ROOT]),
+    sandboxReady: async () => (await sandbox.status(false)).available,
+    dir: join(ATAS, 'sandbox'),
+    grants: grantsFor,
+    // The profile is never put where a worktree or a project is.
+    openProfile: (agent, owner) => openProfile(ATAS, agent, owner, { avoid: rc().repos.map((x) => x.path) }),
+    start: (options) => startBrowser(options),
+    asks: askStore,
+    hub,
+    say: (thread, stage, code, params) => {
+      try {
+        forumStore().append(thread, { kind: 'system', author: { type: 'app' }, code, params, ...(stage ? { stage } : {}) });
+      } catch (e) {
+        console.error('[runner] could not record a note on the screen', e instanceof Error ? e.message : e);
+      }
+    },
+    changed: (key) => ctx.emit({ type: 'module', name: SCREEN_EVENT, payload: { key } }),
+  });
+  sessions = openSessions;
+  // An agent that is gone, loses its screen or changes its shell, or a workspace that switches the display off, ends the screens that depended on it.
+  onConfigChange((config) => void openSessions.reconcile(config));
   const r = createRunner({
     sandbox,
     screens: hub,
