@@ -3,6 +3,7 @@ import type { EvidenceView } from '../../../../shared/evidence';
 import { evidenceDataUrl, isEvidenceImage } from '../../../../shared/evidence';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
+import { ZoomViewer } from '../ZoomViewer';
 import { runsApi } from './runsApi';
 
 // The evidence a run kept, as the person handles it: the list of a stage with a thumbnail or a card, opening it in full and downloading it, and deleting it. Reading the
@@ -40,6 +41,24 @@ function useEvidenceUrl(runId: string, record: EvidenceView | null): { url: stri
     };
   }, [runId, record]);
   return { url, error };
+}
+
+/** An image of evidence that opens full screen on a click, with the zoom and drag of the diagrams. */
+function EvidenceImage({ url, title, className }: { url: string; title: string; className: string }) {
+  const t = useT();
+  const [full, setFull] = useState(false);
+  return (
+    <>
+      <button type="button" className="cy-evidence-zoom" aria-label={t('ui.cycle.evidenceBlock.fullAria', { title })} title={t('ui.diagram.expand')} onClick={() => setFull(true)}>
+        <img className={className} src={url} alt={title} />
+      </button>
+      {full && (
+        <ZoomViewer title={title} onClose={() => setFull(false)}>
+          {(style) => <img className="cy-evidence-full" style={style} src={url} alt={title} draggable={false} />}
+        </ZoomViewer>
+      )}
+    </>
+  );
 }
 
 /** One piece of evidence: the image (or a card for anything else), with open, download and delete. */
@@ -87,7 +106,7 @@ function EvidenceItem({ runId, record, onRemoved }: { runId: string; record: Evi
         <div className="cy-evidence-view">
           {readFailed && <p className="small error">{t('ui.cycle.evidenceBlock.failed')}</p>}
           {!url && !readFailed && <p className="small faint"><span className="spinner" aria-hidden="true" /> {t('ui.cycle.evidenceBlock.loading')}</p>}
-          {url && <img className="cy-evidence-image" src={url} alt={record.title} />}
+          {url && <EvidenceImage className="cy-evidence-image" url={url} title={record.title} />}
         </div>
       )}
       <div className="row cy-evidence-actions">
@@ -178,7 +197,7 @@ export function EvidenceAttachment({ runId, attachment }: { runId: string; attac
       <button type="button" className="cy-evidence-link" aria-pressed={open} onClick={() => setOpen((v) => !v)}>{t('ui.cycle.evidence.attachment')}: {attachment.name || attachment.id}</button>
       <span className="faint small"> · {size(t, attachment.bytes)}</span>
       <button type="button" className="btn cy-mini" onClick={() => void download()}>{t('ui.cycle.evidenceBlock.download')}</button>
-      {open && image && url && <img className="cy-evidence-thumb" src={url} alt={attachment.name} />}
+      {open && image && url && <EvidenceImage className="cy-evidence-thumb" url={url} title={attachment.name || attachment.id} />}
       {failed && <span className="small error">{t('ui.cycle.evidenceBlock.failed')}</span>}
     </span>
   );
@@ -220,7 +239,7 @@ function EvidenceCite({ runId, record, id }: { runId: string; record: EvidenceVi
       ) : (
         <a className="cy-evidence-link" href="#" onClick={(e) => { e.preventDefault(); setOpen((v) => !v); }}>{record.id} · {record.title}</a>
       )}
-      {open && url && image && <img className="cy-evidence-thumb" src={url} alt={record.title} />}
+      {open && url && image && <EvidenceImage className="cy-evidence-thumb" url={url} title={record.title} />}
       {open && !image && <span className="faint small"> ({t('ui.cycle.evidence.attachment')})</span>}
     </span>
   );

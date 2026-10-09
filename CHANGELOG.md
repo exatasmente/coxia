@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **An image of evidence opens full screen.** Clicking an image of evidence (in the stage's evidence list, in a message of the conversation or under a QA scenario) shows it over the app, with the controls of a full screen diagram: zoom with the wheel, a pinch or + and −, drag to move, 0 to fit and Esc to close.
+
 ## [0.9.0-beta.3] - 2026-10-08
 
 ### Fixed

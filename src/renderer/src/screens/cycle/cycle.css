@@ -142,6 +142,9 @@
 .cy-evidence-cite { display: inline-flex; align-items: center; gap: 6px; }
 .cy-evidence-link { background: transparent; border: 0; color: var(--link); font: inherit; cursor: pointer; padding: 0; text-decoration: underline; text-align: left; }
 .cy-evidence-thumb { display: block; margin-top: 4px; max-width: 240px; max-height: 180px; border-radius: 8px; border: 1px solid var(--line-3); }
+.cy-evidence-zoom { display: block; align-self: flex-start; max-width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.cy-evidence-zoom > img { display: block; max-width: 100%; }
+.cy-evidence-full { max-width: 92vw; max-height: 78vh; object-fit: contain; transform-origin: center; transition: transform 60ms linear; user-select: none; }
 .cy-evidence-attach { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .cy-evidence-attachments { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 0; }
 
