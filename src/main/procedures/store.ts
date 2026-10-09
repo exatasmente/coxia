@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { StageUsage } from '../../shared/runs/types';
 import {
@@ -30,6 +30,7 @@ export const DELETED_FILE = 'deleted.json';
 export const proceduresPath = (dir: string): string => join(dir, MEMORY_DIR, PROCEDURES_DIR);
 
 const FILE = /^(p-[0-9a-f]{8})\.json$/;
+const TMP_STALE_MS = 60 * 60 * 1000;
 
 export interface Writer {
   by: string;
@@ -172,6 +173,17 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
     return parsed.status === 'newer' ? parsed : { status: 'invalid' };
   }
 
+  // A write that died between the temporary file and the move leaves `<file>.tmp-<pid>` behind; one older than an hour is no write in progress.
+  function sweep(name: string): void {
+    if (!/^(?:p-[0-9a-f]{8}\.json|deleted\.json)\.tmp-\d+$/.test(name)) return;
+    try {
+      const path = join(root, name);
+      if (now() - statSync(path).mtimeMs > TMP_STALE_MS) rmSync(path, { force: true });
+    } catch {
+      // A file that cannot be inspected or removed is left for the next listing.
+    }
+  }
+
   function list(): { records: ProcedureRecord[]; skipped: number } {
     if (!existsSync(root)) return { records: [], skipped: 0 };
     const records: ProcedureRecord[] = [];
@@ -193,7 +205,10 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
     }
     for (const name of names) {
       const m = FILE.exec(name);
-      if (!m) continue;
+      if (!m) {
+        sweep(name);
+        continue;
+      }
       const got = read(m[1]);
       if (got.status === 'ok') records.push(got.record);
       else skipped++;

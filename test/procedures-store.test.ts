@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync as renameSyncReal, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync as renameSyncReal, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -276,6 +276,24 @@ describe('save: a replacement', () => {
     store.finishUse({ at: '2026-10-09T10:40:00.000Z', ref: 'app#1', usage: usage(1), read: [okOne.id], stale: [], replaced: [], created: [] });
     const kept = store.save(req({ id: okOne.id, revision: 1, writer: { by: 'person', surface: 'person' }, input: content({ title: 'Another task, reworded' }) }));
     expect(kept.ok && kept.record).toMatchObject({ state: 'ok', lastVerified: '2026-10-09T10:40:00.000Z', reviewed: true });
+  });
+});
+
+describe('leftovers of a write that died', () => {
+  it('a temporary file older than an hour is removed when the store lists; a younger one is left', () => {
+    const store = make();
+    const r = created(store);
+    const old = `${fileOf(r.id)}.tmp-4242`;
+    const young = `${fileOf(r.id)}.tmp-4343`;
+    const foreign = join(proceduresPath(ws), 'notes.tmp-1');
+    for (const [path, ageMs] of [[old, 2 * 3600_000], [young, 10 * 60_000], [foreign, 2 * 3600_000]] as const) {
+      writeFileSync(path, '{');
+      utimesSync(path, (clock - ageMs) / 1000, (clock - ageMs) / 1000);
+    }
+    expect(store.list().records).toHaveLength(1);
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(young)).toBe(true);
+    expect(existsSync(foreign)).toBe(true);
   });
 });
 
