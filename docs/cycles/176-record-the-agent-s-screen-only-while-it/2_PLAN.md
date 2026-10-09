@@ -91,18 +91,19 @@ Two clocks: the **real** clock (the stage's) and the **media** clock (the video'
 | `test/helpers/screen.ts` | the fake connection gets `inUse()` and a `windows` switch (default: a window is mapped, so the #157 tests keep their meaning) |
 | `test/screen-hub.test.ts` | no frame is read or fed while no window is mapped, and the encoder is not even opened; the video starts at the frame in which the window first appears (ts 0); an empty screen after a window closed feeds nothing; no recording plus `{ ok: false, reason: 'unused' }` when a window never appears, and `no-frame` (not `unused`) when a window was seen and its frame could not be read; the same for a display that died; one line only through the executor |
 | `test/screen-recorder.test.ts` | a gap over 3 s becomes 1 s of media and one cut; a gap of exactly 3 s is kept; the tail is compressed the same way; unfed offers move nothing; the time limit is on the media clock (a long still stretch no longer stops the recording, and a long video of changes still does); the cuts are capped and the mapping stays exact past the cap; marks are converted, widened, snapped to a cut and dropped after the end; the truncation loop drops the cuts past the end; `durationMs`/`realMs`/`cuts` in the meta and the `Duration` of the file |
-| `test/webm-mux.test.ts` | unchanged in behaviour (the muxer takes media times); one case that the media duration is what `Duration` holds |
+| `test/webm-mux.test.ts` | unchanged (the muxer takes media times); the `Duration` of the file is checked in `screen-recorder.test.ts` |
 | `test/screen-recorder.test.ts` (the mapping) | `realAtMedia` and `mediaAtReal` are inverses outside the cuts and agree inside them |
 | `test/runner-screen-recording.test.ts` | an `unused` outcome writes exactly one `runner.screen.notKept` line with the new reason, keeps no evidence, and the stage does not fail |
 | `test/recording-player-ui.test.ts` | the ticks render at their place with their label; the real time line and the duration with the real time render only when there are cuts; a recording without cuts renders exactly as before; labels in both languages |
-| `test/evidence-recording.test.ts` | the run-file schema accepts the new fields and refuses a malformed cut |
+| `test/runs-store.test.ts` | the run-file schema accepts the new fields and refuses a malformed cut; the format version of the run file (1, 2, 3; a 4 is `newer`; deleting the recording takes the run back down) |
+| `test/live-screen-ui.test.ts` | the viewer says it waits for a window while the screen is bare |
 | i18n | the new keys are in both catalogs (`npm run i18n:lint`, which also refuses repeated keys) |
 
 **#157 tests whose expectation was the old behaviour, to be updated** (the list is checked against the real failures when they run):
 
 - `screen-recorder.test.ts`: "is a WebM whose duration is the stage's time, also after a still stretch past the last frame" (10 minutes of still tail is now 1 s); "waits for the frame being handed over" (`durationMs` 5000); the two mark tests that finish 60 s and 10 s after one frame; "stops at the time limit, also on a screen that never changes".
 - `screen-hub.test.ts`: "ends as a WebM of the whole stage" (`durationMs: 9500`) and "keeps the recording of a display that died" (`durationMs: 5000`).
-- `evidence-recording.test.ts`, `runner-screen-recording.test.ts`: only if they assert a `durationMs` that came from a long tail.
+- `runner-screen-recording.test.ts`: the `durationMs` that came from a long tail. (`evidence-recording.test.ts` needed no change.)
 
 ## 5. Order of the commits
 
@@ -148,4 +149,6 @@ Read from the code of `release/0.9.0` (0.9.0-beta.4, which holds #157): `hub.ts`
 - `realMs` and `cuts` are written only when a cut exists, and `realMs` is always `durationMs` plus the cuts, also for a recording that stopped at a limit (no separate rule for the time limit).
 - A mark wholly before the first frame is dropped (there is no video to point to); the plan only said what happens after the end.
 - The mapping tests sit in `test/screen-recorder.test.ts`, not in a file of their own.
+- The tests of the run file's schema and of its format version are in `test/runs-store.test.ts` (where #157 put its recording tests), not in `evidence-recording.test.ts`, which is unchanged; `webm-mux.test.ts` is unchanged too.
+- The review of the first build changed: the run file is format 3 for a recording with `cuts` or `startedAfterMs`; the first look after a bare screen reads afresh (not from the viewer's 400 ms cache); `finish` takes one last look before it calls a screen unused; a root with more than 64 children, none of the 64 at the top drawn, is "in use"; `inUse()` has one deadline; the recorder's clock starts at the first frame the encoder took; `startedAfterMs` is kept and the player says it; the live state is `waiting` while the screen is bare (`recording: 'on' | 'waiting' | 'stopped'`).
 - A video that ends at the time limit has no tail cut: it ends exactly at the limit, as in #157.
