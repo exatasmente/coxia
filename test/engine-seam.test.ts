@@ -99,6 +99,9 @@ describe('a role mapped to an openai-compatible provider', () => {
       expect(Object.keys(sel.pool?.activities ?? {})).toEqual(['screen']);
       expect(new Set([sel.pool?.primary.key, ...(sel.pool?.fallbacks.map((m) => m.key) ?? [])]).size).toBe(2);
       expect(sel.capabilities).toEqual({ tools: true, jsonSchema: false, contextWindow: 32768 });
+      // The mode the call was resolved to goes with the pool; without one the pool is a switch pool, what it was before the modes.
+      expect(sel.pool?.mode).toBeUndefined();
+      for (const mode of ['fallback', 'switch', 'delegate'] as const) expect(agents.openSelection(engineFor('deep'), '/tmp', false, false, mode).pool?.mode).toBe(mode);
     } finally {
       cfg.updateConfig((c) => {
         c.llm.roles.deep = { provider: 'local', model: 'qwen3:8b' };

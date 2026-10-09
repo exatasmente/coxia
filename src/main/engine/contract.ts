@@ -1,7 +1,7 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { intlLocale, t } from '../../shared/i18n';
 import type { AttachmentRef } from '../../shared/attachments';
-import type { Activity, AgentToolsConfig, EngineId, LlmRole } from '../../shared/config/types';
+import type { Activity, AgentToolsConfig, EngineId, LlmRole, PoolMode } from '../../shared/config/types';
 import type { RunActivity } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import type { UsageReport } from '../../shared/runs/usage';
@@ -256,6 +256,11 @@ export interface EngineRequest {
   beat?: () => void;
   /** Called when the call moves to another model of its pool, so the thread can say it. */
   onPool?: (notice: PoolNotice) => void;
+  /**
+   * How the target's pool is used (agent, then stage, then workspace; see `resolvePoolMode`). Only the open engine reads it: the Claude SDK takes an entry of the pool
+   * at the start of a call and nothing more. Absent: `switch`, which is how a pool behaved before the modes.
+   */
+  poolMode?: PoolMode;
   /** Where the engine reports what it is doing (tool calls, narration, blocked calls); the run's own states are reported by `run`. */
   activity?: RunActivity;
   /**

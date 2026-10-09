@@ -251,6 +251,58 @@ describe('a reading agent of a run on the open engine', () => {
   });
 });
 
+describe('how the pool of an agent is used, on the open engine', () => {
+  let modeRuns = 0;
+  // A reads a file (an explore turn) and answers; B is the list of explore only. In `switch` the turn after the read is B's, otherwise A keeps it.
+  const modes = async (agentMode: 'switch' | 'fallback' | 'delegate' | undefined, stageMode: 'switch' | 'fallback' | 'delegate' | undefined, workspaceMode: 'switch' | 'fallback' | 'delegate' | undefined): Promise<{ a: number; b: number }> => {
+    const { restRegistry } = await import('../src/main/engine/open/rest');
+    const { updateConfig } = await import('../src/main/workspaceConfig');
+    restRegistry.clear();
+    const n = (modeRuns += 1);
+    const firstId = `modefirst${n}`;
+    const secondId = `modesecond${n}`;
+    const first = await fakeOpenAI((req) => (req.n === 1 ? toolStep([{ id: 'r1', name: 'Read', args: { file_path: join(root, 'src/a.ts') } }]) : toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }])));
+    const second = await fakeOpenAI(() => toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }]));
+    try {
+      updateConfig((c) => {
+        c.llm.providers.push(newProvider({ id: firstId, kind: 'openai-compatible', baseUrl: first.url, structured: 'tool' }), newProvider({ id: secondId, kind: 'openai-compatible', baseUrl: second.url, structured: 'tool' }));
+        if (workspaceMode) c.llm.poolMode = workspaceMode;
+        else delete c.llm.poolMode;
+        return c;
+      });
+      const agent = newAgent({ id: 'reviewer', permission: 'read', ...(agentMode ? { poolMode: agentMode } : {}), model: { role: null, provider: firstId, model: 'model-a', activities: { explore: [{ provider: secondId, model: 'model-b' }] } } });
+      const r = await runAgent<{ fala: string }>({ agent, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'reviewer', maxTurns: 4, ...(stageMode ? { stagePoolMode: stageMode } : {}) });
+      expect(r.data).toEqual({ fala: 'done' });
+      return { a: first.chats().length, b: second.chats().length };
+    } finally {
+      restRegistry.clear();
+      updateConfig((c) => {
+        delete c.llm.poolMode;
+        c.llm.providers = c.llm.providers.filter((p) => p.id !== firstId && p.id !== secondId);
+        return c;
+      });
+      await first.close();
+      await second.close();
+    }
+  };
+
+  it('uses the default, delegate, when nothing says: the main model keeps the explore turn', async () => {
+    expect(await modes(undefined, undefined, undefined)).toEqual({ a: 2, b: 0 });
+  });
+
+  it('switch sends the turn after a read to the list of explore, and it comes from the agent, the stage or the workspace', async () => {
+    expect(await modes('switch', undefined, undefined)).toEqual({ a: 1, b: 1 });
+    expect(await modes(undefined, 'switch', undefined)).toEqual({ a: 1, b: 1 });
+    expect(await modes(undefined, undefined, 'switch')).toEqual({ a: 1, b: 1 });
+  });
+
+  it('the agent wins over the stage, and the stage over the workspace', async () => {
+    expect(await modes('fallback', 'switch', 'switch')).toEqual({ a: 2, b: 0 });
+    expect(await modes(undefined, 'fallback', 'switch')).toEqual({ a: 2, b: 0 });
+    expect(await modes('switch', 'fallback', 'fallback')).toEqual({ a: 1, b: 1 });
+  });
+});
+
 describe('an agent whose model has spares, on the open engine', () => {
   it('moves to the next model when the first is busy, tells the caller and the live activity, and finishes the stage there', async () => {
     const { restRegistry } = await import('../src/main/engine/open/rest');

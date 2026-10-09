@@ -5,7 +5,8 @@ import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { UsageReport } from '../shared/runs/usage';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult, TurnOptions } from '../shared/types';
-import type { AgentDef, AgentToolsConfig } from '../shared/config/types';
+import type { AgentDef, AgentToolsConfig, PoolMode } from '../shared/config/types';
+import { resolvePoolMode } from '../shared/config/poolMode';
 import { toolsForAgent } from '../shared/config/team';
 import type { AttachmentRef } from '../shared/attachments';
 import type { ModelRole } from '../shared/settings';
@@ -504,7 +505,7 @@ function openMember(t: ResolvedRole): PoolMemberSpec {
  * What the open engine needs to reach the provider a role is mapped to, and the models its pool may move the call to. Only models of the open engine are in the pool:
  * an entry that belongs to the Claude engine is chosen at the start of a stage, never in the middle of an open session.
  */
-export function openSelection(t: ResolvedRole, cwd: string, isolated = false, bare = false): OpenEngineSelection {
+export function openSelection(t: ResolvedRole, cwd: string, isolated = false, bare = false, mode?: PoolMode): OpenEngineSelection {
   const first = openMember(t);
   const open = (list: ResolvedRole[] | undefined): PoolMemberSpec[] => (list ?? []).filter((r) => r.engine === 'open').map(openMember);
   const activities = Object.fromEntries(
@@ -518,7 +519,7 @@ export function openSelection(t: ResolvedRole, cwd: string, isolated = false, ba
   const overrides = getConfig().llm.scoreOverrides;
   return {
     provider: first.config,
-    ...(pooled ? { pool: { name: t.role, primary: { key: first.key, label: first.label, provider: first.provider }, fallbacks, activities, ...(overrides ? { scoreOverrides: overrides } : {}) } } : {}),
+    ...(pooled ? { pool: { name: t.role, primary: { key: first.key, label: first.label, provider: first.provider }, fallbacks, activities, ...(overrides ? { scoreOverrides: overrides } : {}), ...(mode ? { mode } : {}) } } : {}),
     ...(first.capabilities ? { capabilities: first.capabilities } : {}),
     structured: t.structured,
     docs: openDocs(cwd, t.role, isolated, bare),
@@ -551,7 +552,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const hook = openEngineFromEnv();
   // A bare call gets empty lists the same way, on either path; so does a call that has only the procedure tools.
   const noDocs = !!(req.bare || req.procedureOnly);
-  const selection = hook ? (req.isolated || noDocs ? { ...hook, docs: openDocs(req.cwd, req.target.role, true, noDocs) } : hook) : openSelection(req.target, req.cwd, req.isolated, noDocs);
+  const selection = hook ? (req.isolated || noDocs ? { ...hook, docs: openDocs(req.cwd, req.target.role, true, noDocs) } : hook) : openSelection(req.target, req.cwd, req.isolated, noDocs, req.poolMode);
   const tool = wantsVcsTool(req);
   // One `ViewImage`, the sandbox's: a stage that keeps evidence gets it with evidence ids added.
   const looks = offersViewImage(req.exec, req.evidence);
@@ -838,8 +839,10 @@ async function runOnce<T>(
   const id = agent?.id ?? role;
   const ask: CommandAsk | undefined = role === 'teams' ? undefined : { rules: agent?.allowedCommands ?? [], request: (command) => ceremonyCommands.ask(id, command, extra.abortController?.signal) };
   const tools = agent ? toolsForAgent(getConfig(), agent) : getConfig().agents.tools;
+  // A ceremony has no stage: the system agent of the role, then the workspace.
+  const poolMode = resolvePoolMode({ agent: agent?.poolMode, workspace: getConfig().llm.poolMode });
   return withPool<T>(resolved, { resume: resumeEngine, notify: (n) => activity?.tool(poolNoticeText(n)) }, (target) =>
-    runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads, tools), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', tools, ask }),
+    runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads, tools), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', tools, ask, poolMode }),
   );
 }
 
@@ -1271,6 +1274,8 @@ export interface AgentCall {
   onUsage?: (usage: UsageReport) => void;
   /** Called when the call moves to another model of its role's pool: where the caller says it in its thread. */
   onPool?: (notice: PoolNotice) => void;
+  /** The `poolMode` of the stage the call works for (the cycle model's), between the agent's own and the workspace's. */
+  stagePoolMode?: PoolMode;
 }
 
 // What a reader of a run may use: the tools the agent uses (its own when it names them, else the workspace's), as the ceremonies get them, and no shell beyond the
@@ -1380,6 +1385,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           beat: call.beat,
           onUsage: call.onUsage,
           onPool: call.onPool,
+          poolMode: resolvePoolMode({ agent: call.agent.poolMode, stage: call.stagePoolMode, workspace: getConfig().llm.poolMode }),
           incoming: only ? undefined : call.incoming,
           runnerTools: only ? undefined : call.runnerTools,
           procedures: call.procedures,

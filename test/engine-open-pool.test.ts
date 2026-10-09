@@ -10,7 +10,7 @@ import { type PoolMember, type PoolSwitch } from '../src/main/engine/open/pool';
 import { MAX_REST_MS, restRegistry } from '../src/main/engine/open/rest';
 import { readSession } from '../src/main/engine/open/session';
 import type { ToolImpl } from '../src/main/engine/open/tools/types';
-import type { Activity, ScoreOverrides } from '../src/shared/config/types';
+import type { Activity, PoolMode, ScoreOverrides } from '../src/shared/config/types';
 import { type Fake, type Step, errorStep, fakeOpenAI, textStep, toolStep } from './helpers/fakeOpenAI';
 
 let dir: string;
@@ -45,6 +45,7 @@ interface Setup {
   activities?: Partial<Record<Activity, PoolMember[]>>;
   tools?: ToolImpl[];
   scoreOverrides?: ScoreOverrides;
+  mode?: PoolMode;
   over?: Partial<OpenRunParams>;
 }
 
@@ -53,7 +54,7 @@ function run(s: Setup, events: PoolSwitch[] = []) {
     role: 'deep',
     prompt: 'do it',
     client: s.primary.client,
-    pool: { name: 'deep', primary: { key: s.primary.key, label: s.primary.label, provider: s.primary.provider }, fallbacks: s.fallbacks ?? [], activities: s.activities, ...(s.scoreOverrides ? { scoreOverrides: s.scoreOverrides } : {}) },
+    pool: { name: 'deep', primary: { key: s.primary.key, label: s.primary.label, provider: s.primary.provider }, fallbacks: s.fallbacks ?? [], activities: s.activities, ...(s.scoreOverrides ? { scoreOverrides: s.scoreOverrides } : {}), ...(s.mode ? { mode: s.mode } : {}) },
     capabilities: { images: s.primary.images },
     cwd: dir,
     allowedTools: (s.tools ?? []).map((t) => t.name),
@@ -294,6 +295,102 @@ describe('the activity of a turn', () => {
     expect(events).toMatchObject([{ from: { label: 'model-a' }, to: { label: 'model-b' }, activity: 'explore' }]);
     expect(a.chats()).toHaveLength(2);
     expect(b.chats()).toHaveLength(2);
+  });
+});
+
+describe('the way a pool is used', () => {
+  // a is the model in use; b is the list of shell and a spare.
+  const lists = (b: PoolMember) => ({ fallbacks: [b], activities: { shell: [b] } as Partial<Record<Activity, PoolMember[]>> });
+
+  it('fallback: a turn of shell with a list of shell stays on the model in use, and the other list is never used', async () => {
+    const a = await server([call('run'), said('done')]);
+    const b = await server([said('unused')]);
+    const events: PoolSwitch[] = [];
+    const r = await run({ primary: member(a, 'a'), ...lists(member(b, 'b')), mode: 'fallback', tools: [tool('run', 'shell')] }, events);
+    expect(r.data).toBe('done');
+    expect(events).toEqual([]);
+    expect(a.chats()).toHaveLength(2);
+    expect(b.chats()).toHaveLength(0);
+  });
+
+  it('fallback: a busy model passes the call to a spare, as in every mode', async () => {
+    const a = await server([call('run'), BUSY]);
+    const b = await server([said('done')]);
+    const events: PoolSwitch[] = [];
+    const r = await run({ primary: member(a, 'a'), ...lists(member(b, 'b')), mode: 'fallback', tools: [tool('run', 'shell')] }, events);
+    expect(r.data).toBe('done');
+    expect(events.map((e) => [e.from.label, e.to.label, e.reason])).toEqual([['model-a', 'model-b', 'rate_limit']]);
+  });
+
+  it('fallback: the spare that took over stays, and the list of an activity is not consulted when it is back', async () => {
+    const a = await server([call('run'), BUSY]);
+    const b = await server([call('look'), said('done')]);
+    const events: PoolSwitch[] = [];
+    const r = await run({ primary: member(a, 'a'), fallbacks: [member(b, 'b')], activities: { shell: [member(a, 'a')] }, mode: 'fallback', tools: [tool('run', 'shell'), tool('look', 'explore')] }, events);
+    expect(r.data).toBe('done');
+    expect(events).toHaveLength(1);
+    expect(a.chats()).toHaveLength(2);
+  });
+
+  it('fallback: a turn that answers a screenshot never goes to a model known not to see, even when it is the one in use', async () => {
+    const a = await server([call('snap'), said('a should not answer')]);
+    const b = await server([said('seen')]);
+    const events: PoolSwitch[] = [];
+    const r = await run({ primary: member(a, 'a', { images: false }), fallbacks: [member(b, 'b', { images: true })], activities: { shell: [member(a, 'a')] }, mode: 'fallback', tools: [tool('snap', 'screen', true)] }, events);
+    expect(r.data).toBe('seen');
+    expect(events[0]).toMatchObject({ reason: 'activity', activity: 'screen' });
+    expect(a.chats()).toHaveLength(1);
+  });
+
+  it('fallback: the role\'s own list for the start of a stage (write) is the one the model in use belongs to', async () => {
+    const a = await server([said('unused')]);
+    const b = await server([said('done')]);
+    const events: PoolSwitch[] = [];
+    // The list of write puts b first; a, the model the call started on, is not in it: the first that is not resting answers.
+    const r = await run({ primary: member(a, 'a'), fallbacks: [member(b, 'b')], activities: { write: [member(b, 'b')], shell: [member(a, 'a')] }, mode: 'fallback' }, events);
+    expect(r.data).toBe('done');
+    expect(a.chats()).toHaveLength(0);
+  });
+
+  it('delegate keeps the main model fixed like fallback: no switch by activity', async () => {
+    const a = await server([call('run'), call('look'), said('done')]);
+    const b = await server([said('unused')]);
+    const events: PoolSwitch[] = [];
+    const r = await run({ primary: member(a, 'a'), ...lists(member(b, 'b')), mode: 'delegate', tools: [tool('run', 'shell'), tool('look', 'explore')] }, events);
+    expect(r.data).toBe('done');
+    expect(events).toEqual([]);
+    expect(b.chats()).toHaveLength(0);
+  });
+
+  it('switch is what a pool did before the modes: each turn goes to the list of its activity', async () => {
+    for (const mode of ['switch', undefined] as const) {
+      restRegistry.clear();
+      const a = await server([call('run'), said('done')]);
+      const b = await server([call('look')]);
+      const events: PoolSwitch[] = [];
+      const r = await run({ primary: member(a, 'a'), activities: { shell: [member(b, 'b')] }, mode, tools: [tool('run', 'shell'), tool('look', 'explore')] }, events);
+      expect(r.data).toBe('done');
+      expect(events.map((e) => [e.from.label, e.to.label, e.activity])).toEqual([['model-a', 'model-b', 'shell'], ['model-b', 'model-a', 'explore']]);
+    }
+  });
+
+  it('switch and delegate without a list for explore, edit, shell or screen are a fallback: the model in use stays on the write list', async () => {
+    for (const mode of ['switch', 'delegate'] as const) {
+      restRegistry.clear();
+      const a = await server([call('run'), said('done')]);
+      const b = await server([said('unused')]);
+      const events: PoolSwitch[] = [];
+      const r = await run({ primary: member(a, 'a'), fallbacks: [member(b, 'b')], activities: { write: [member(a, 'a'), member(b, 'b')] }, mode, tools: [tool('run', 'shell')] }, events);
+      expect(r.data).toBe('done');
+      expect(events).toEqual([]);
+    }
+  });
+
+  it('a lone model with lists of activities only is still a straight pass', async () => {
+    const a = await server([call('run'), said('done')]);
+    const r = await run({ primary: member(a, 'a'), activities: { shell: [member(a, 'a')] }, mode: 'delegate', tools: [tool('run', 'shell')] });
+    expect(r.data).toBe('done');
+    expect(a.chats()).toHaveLength(2);
   });
 });
 

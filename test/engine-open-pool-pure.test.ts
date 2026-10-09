@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityOf, allMembers, candidatesFor, eligible, listFor, meetsFloor, pickMember, type MemberFacts, type PoolLists } from '../src/main/engine/open/pool';
+import { PoolClient, activityOf, allMembers, candidatesFor, eligible, listFor, meetsFloor, pickMember, type MemberFacts, type PoolLists, type PoolMember } from '../src/main/engine/open/pool';
 
 const m = (key: string, extra: Partial<MemberFacts> = {}): MemberFacts => ({ key, ...extra });
 const A = m('a');
@@ -124,5 +124,47 @@ describe('the quality floor of a turn', () => {
     expect(meetsFloor(m('x', { model: 'deepseek-ai/DeepSeek-V4.1-Flash' }), 'shell')).toBe(true);
     expect(meetsFloor(m('x', { model: 'XiaomiMiMo/MiMo-V2.6-Flash' }), 'shell')).toBe(false);
     expect(meetsFloor(m('x', { model: 'XiaomiMiMo/MiMo-V2.6-Flash' }), 'screen')).toBe(true);
+  });
+});
+
+describe('the route of a pool client', () => {
+  const member = (key: string, extra: Partial<PoolMember> = {}): PoolMember => ({ key, label: key, client: {} as never, ...extra });
+  const A = member('a');
+  const B = member('b');
+  const C = member('c', { images: true });
+  const pool = (activities: Partial<Record<'write' | 'shell' | 'explore' | 'edit' | 'screen', PoolMember[]>>) => ({ name: 'deep', primary: { key: 'a', label: 'a' }, fallbacks: [B], activities });
+  const need = (activity: 'write' | 'shell' | 'screen' | 'explore') => ({ activity, tools: true, tokens: 100 });
+
+  it('activity: a turn is served from the list of its activity', () => {
+    const client = new PoolClient(A, pool({ shell: [C] }), { route: 'activity' });
+    expect(client.peek(need('shell')).key).toBe('c');
+    expect(client.peek(need('explore')).key).toBe('a');
+  });
+
+  it('fixed: every turn reads the write list, and the list of an activity is not the main model\'s', () => {
+    const client = new PoolClient(A, pool({ shell: [C] }), { route: 'fixed' });
+    expect(client.peek(need('shell')).key).toBe('a');
+    expect(client.peek(need('explore')).key).toBe('a');
+    expect(client.pooled).toBe(true);
+  });
+
+  it('fixed: the list of write, when there is one, replaces the role\'s list', () => {
+    const client = new PoolClient(A, pool({ write: [C, A] }), { route: 'fixed' });
+    expect(client.peek(need('write')).key).toBe('a');
+    expect(new PoolClient(A, pool({ write: [C] }), { route: 'fixed' }).peek(need('write')).key).toBe('c');
+  });
+
+  it('fixed: a screen turn skips a model known not to see, and with nobody who sees it stays in the list', () => {
+    const blind = member('a', { images: false });
+    const keeps = new PoolClient(blind, { ...pool({}), primary: { key: 'a', label: 'a' }, fallbacks: [member('b', { images: false })] }, { route: 'fixed' });
+    expect(keeps.peek(need('screen')).key).toBe('a');
+    const sees = new PoolClient(blind, { ...pool({}), fallbacks: [C] }, { route: 'fixed' });
+    expect(sees.peek(need('screen')).key).toBe('c');
+  });
+
+  it('fixed: a model alone in the write list is a straight pass, whatever the other lists hold', () => {
+    const client = new PoolClient(A, { name: 'deep', primary: { key: 'a', label: 'a' }, fallbacks: [], activities: { shell: [B] } }, { route: 'fixed' });
+    expect(client.pooled).toBe(false);
+    expect(client.peek(need('shell')).key).toBe('a');
   });
 });

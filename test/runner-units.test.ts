@@ -5,7 +5,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { setLanguage } from '../src/shared/i18n';
 import type { ForumMessage } from '../src/shared/forum';
 import { CYCLES_DIR, MEMORY_FILE, cycleFolderOf, ensureMemory, issueRecord, readFolder, slugOf, tidyArtifact, writeArtifact, writeIssueRecord, writeMemory } from '../src/main/runner/cycleFolder';
-import { pendingAnswer, pendingHandoff } from '../src/main/runner/executor';
+import { pendingAnswer, pendingHandoff, stagePoolModeOf } from '../src/main/runner/executor';
+import { neutralConfig } from '../src/shared/config';
 import { WorktreeError, branchDiff, branchStat, commitAll, commitIdentity, commitMessage, commitSummary, createWorktree, looksEnglish, declaredCommands, defaultBranch, headSha, pullRequestTitle, repoIdentity } from '../src/main/runner/git';
 import { fence, threadText } from '../src/main/runner/prompt';
 import { MACHINE, git, withMachineIdentity } from './helpers/conflictRepos';
@@ -23,6 +24,31 @@ describe('names of branches and folders', () => {
     expect(slugOf('x'.repeat(39) + ' y z')).toBe('x'.repeat(39));
     expect(slugOf('../../etc/passwd')).toBe('etc-passwd');
     expect(cycleFolderOf(101, 'Add the Thing')).toBe(`${CYCLES_DIR}/101-add-the-thing`);
+  });
+});
+
+describe('the pool mode of a stage of the run', () => {
+  const stage = (id: string, poolMode?: 'fallback' | 'switch' | 'delegate') => ({ id, label: id, match: [], kind: 'development' as const, rank: 1, ...(poolMode ? { poolMode } : {}) });
+  const config = () => {
+    const c = neutralConfig();
+    c.devCycle.stages = [stage('build', 'switch'), stage('plain')];
+    c.devCycle.flows = { core: [stage('build', 'fallback')], release: [stage('cut', 'delegate')], docs: [stage('write', 'fallback')] };
+    return c;
+  };
+
+  it('is read from the stage list the run follows: the workspace\'s, a squad\'s, the release run\'s, the documentation run\'s', () => {
+    const c = config();
+    expect(stagePoolModeOf(c, {}, 'build')).toBe('switch');
+    expect(stagePoolModeOf(c, { squad: 'core' }, 'build')).toBe('fallback');
+    expect(stagePoolModeOf(c, { subject: {} as never }, 'cut')).toBe('delegate');
+    expect(stagePoolModeOf(c, { docs: {} as never }, 'write')).toBe('fallback');
+  });
+
+  it('is absent for a stage that says nothing, a stage that is not there, and a squad without a flow of its own (the workspace\'s applies)', () => {
+    const c = config();
+    expect(stagePoolModeOf(c, {}, 'plain')).toBeUndefined();
+    expect(stagePoolModeOf(c, {}, 'gone')).toBeUndefined();
+    expect(stagePoolModeOf(c, { squad: 'other' }, 'build')).toBe('switch');
   });
 });
 

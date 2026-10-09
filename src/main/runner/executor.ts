@@ -1,10 +1,10 @@
 import { offersViewImage } from '../sandbox/tool';
 import { existsSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
+import { docsFlowOf, flowStagesOf, releaseFlowOf, squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
 import { workingTeam } from '../../shared/config/team';
-import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
+import type { AgentDef, PoolMode, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { runKey } from '../../shared/browser';
@@ -172,6 +172,15 @@ export function pickAgent(config: WorkspaceConfig, run: Run, flow: FlowStage[]):
   const agent = config.agents.team.find((a) => a.id === stage.agent);
   if (!agent) throw new StageError('unknown-agent', { agent: stage.agent });
   return { agent, stage, kind: outputKindOf(stage.kind) };
+}
+
+/**
+ * The pool mode the cycle model sets on a stage of the run, read from the live stage list the run follows (a release run's, a documentation run's, the squad's or the
+ * workspace's). The run's flow snapshot does not carry it: the choice of how a pool is used is no part of the flow a run was started on.
+ */
+export function stagePoolModeOf(config: WorkspaceConfig, run: Pick<Run, 'subject' | 'docs' | 'squad'>, stageId: string): PoolMode | undefined {
+  const stages = run.subject ? releaseFlowOf(config) : run.docs ? docsFlowOf(config) : flowStagesOf(config, run.squad);
+  return stages?.find((s) => s.id === stageId)?.poolMode;
 }
 
 /** The last note another stage left for `agent` that it has not answered with a post since. */
@@ -993,6 +1002,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     evidence,
     onLooked,
     label: agent.id,
+    stagePoolMode: stagePoolModeOf(config, run, stage.id),
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
     procedures: procedures?.tools,
     abort,

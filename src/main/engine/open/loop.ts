@@ -28,6 +28,7 @@ import { globTool, grepTool } from './tools/search';
 import { type ToolContext, type ToolImage, type ToolImpl, ToolError } from './tools/types';
 import type { ChatMessage, Completion, ContentPart, Json, ToolCall, ToolChoice, ToolDef } from './types';
 import type { Activity } from '../../../shared/config/types';
+import { effectivePoolMode } from '../../../shared/config/poolMode';
 import { t } from '../../../shared/i18n';
 import { incomingActivity, incomingText } from '../incoming';
 
@@ -282,9 +283,13 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     tools: p.capabilities?.tools,
     contextWindow: p.capabilities?.contextWindow,
   };
+  // How the pool is used. Without lists for explore, edit, shell or screen only a busy model moves the call (`fallback`); a pool the engine is given without a mode
+  // is a `switch` one. `switch` sends each turn to its activity's list, the other two keep the model in use on the role's `write` list.
+  const mode = p.pool?.mode ? effectivePoolMode(p.pool.mode, p.pool.activities) : 'switch';
   const pool =
     p.poolClient ??
     new PoolClient(primary, p.pool, {
+      route: mode === 'switch' ? 'activity' : 'fixed',
       onSwitch: (e) => {
         if (persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'switch', at: now().toISOString(), from: e.from.label, to: e.to.label, reason: e.reason, until: e.until, activity: e.activity }]);
         events.onSwitch?.(e);

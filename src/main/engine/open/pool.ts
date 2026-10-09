@@ -1,6 +1,6 @@
 // The pool of models a call may move between. The first half is pure: which list serves a turn, which members of it can take the turn, which one is picked; it
 // knows nothing of clients or of the clock. `PoolClient` below puts those choices in front of the clients of the members.
-import { ACTIVITIES, type Activity, type ScoreOverrides } from '../../../shared/config/types';
+import { ACTIVITIES, type Activity, type PoolMode, type ScoreOverrides } from '../../../shared/config/types';
 import { t } from '../../../shared/i18n';
 import { floorFor, scoreFor } from '../../../shared/modelScores';
 import { ProviderBusyError } from '../contract';
@@ -124,6 +124,8 @@ export interface OpenPool {
   activities?: Partial<Record<Activity, PoolMember[]>>;
   /** The person's floors and scores (`llm.scoreOverrides`), over the table the app ships. */
   scoreOverrides?: ScoreOverrides;
+  /** How the pool is used. Absent: `switch`, what a pool did before the modes existed (the app always says). */
+  mode?: PoolMode;
 }
 
 /** Why a call moved to another model. `resting`: the one in use was already resting from a refusal elsewhere; `activity`: the new list does not hold it. */
@@ -141,9 +143,16 @@ export interface PoolSwitch {
 /** The refusals that move a call to the next model, after the retries of the client. A timeout does not: the next model would wait as long. */
 const BUSY: ReadonlySet<ErrorKind> = new Set(['rate_limit', 'overloaded', 'server']);
 
+/**
+ * activity: each turn goes to the list of its activity (`switch`). fixed: the model in use stays on the role's `write` list whatever the turn is for, and only a busy
+ * model moves it (`fallback`, and the main model of `delegate`); the other lists belong to sub-agents.
+ */
+export type PoolRoute = 'activity' | 'fixed';
+
 export interface PoolClientOptions {
   registry?: RestRegistry;
   onSwitch?: (e: PoolSwitch) => void;
+  route?: PoolRoute;
 }
 
 /**
@@ -173,12 +182,14 @@ export class PoolClient {
       const list = same(pool?.activities?.[a]);
       if (list?.length) activities[a] = list;
     }
-    this.lists = { main: [primary, ...(same(pool?.fallbacks) ?? []).filter((m) => m.key !== primary.key)], activities };
+    const full: PoolLists<PoolMember> = { main: [primary, ...(same(pool?.fallbacks) ?? []).filter((m) => m.key !== primary.key)], activities };
+    // A fixed route reads one list only: the other activities' lists are not this model's to switch to.
+    this.lists = opts.route === 'fixed' ? { main: listFor(full, 'write'), activities: {} } : full;
   }
 
   /** False when there is nowhere to move to. */
   get pooled(): boolean {
-    return allMembers(this.lists).length > 1;
+    return allMembers(this.lists).some((m) => m.key !== this.primary.key);
   }
 
   /** The model in use. */
