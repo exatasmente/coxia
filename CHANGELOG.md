@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.3] - 2026-10-08
+
 ### Fixed
 
 - **Images of evidence now show on the computer.** Opening an image a run kept as evidence (in the stage's evidence list, in a message of the conversation or from a QA scenario) showed nothing on the desktop: the app's content policy refuses an image from a `blob:` address, and the screen built one; only the paired browser showed the image. The image is now shown from a `data:` address, which both allow. Downloading a piece of evidence was not affected.
@@ -316,7 +318,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.2...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.3...HEAD
+[0.9.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.2...v0.9.0-beta.3
 [0.9.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.1...v0.9.0-beta.2
 [0.9.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.8.0...v0.9.0-beta.1
 [0.8.0]: https://github.com/exatasmente/coxia/compare/v0.7.0...v0.8.0
