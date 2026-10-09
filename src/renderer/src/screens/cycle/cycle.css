@@ -311,4 +311,8 @@
 .cy-rec-mark { position: absolute; top: 2px; bottom: 2px; min-width: 8px; padding: 0; border: 0; border-radius: 4px; background: var(--blue-solid); cursor: pointer; }
 .cy-rec-mark:hover { background: var(--ink); }
 .cy-rec-mark:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.cy-rec-cuts { position: relative; height: 18px; border-radius: 6px; border: 1px solid var(--line); background: var(--chip-quiet-bg); }
+.cy-rec-cut { position: absolute; top: 1px; bottom: 1px; width: 6px; margin-left: -3px; padding: 0; border: 0; border-radius: 3px; background: var(--amber-ink); cursor: pointer; }
+.cy-rec-cut:hover { background: var(--ink); }
+.cy-rec-cut:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .cy-evidence-removed { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--chip-quiet-bg); color: var(--muted); }

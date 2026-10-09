@@ -9,7 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - **The screen recording of a stage starts when the agent first uses the screen.** It used to start when the stage's virtual display opened, so a stage whose agent took minutes to open a window began with minutes of black. The recording now starts with the first window mapped on the screen and holds nothing of the screen while it is empty again. A stage whose agent never opened a window keeps no recording and says so once in the conversation ("no window was opened on the screen"), as it does for any recording that was not kept.
-- **A stretch of the screen recording where nothing happens is shortened.** A gap of more than 3 seconds between two pictures now plays as a pause of about 1 second, so a stage that waited for ten minutes does not give ten minutes of still picture. The recording keeps where it cut, and the person's marks stay right on the strip; the length it shows is the video's. (The earlier rule, that an idle stretch plays as a still picture, no longer holds.)
+- **A stretch of the screen recording where nothing happens is shortened.** A gap of more than 3 seconds between two pictures now plays as a pause of about 1 second, so a stage that waited for ten minutes does not give ten minutes of still picture. The recording keeps where it cut: the player shows a tick at each cut with the time it left out, the stage's own time next to the video's length and the stage's time at the point being played, and the person's marks stay right on the strip. (The earlier rule, that an idle stretch plays as a still picture, no longer holds.)
 
 ## [0.9.0-beta.4] - 2026-10-08
 
