@@ -167,11 +167,13 @@ describe('saving a gui procedure', () => {
     expect(files()).toEqual(['p-00000001.json']);
   });
 
-  it('is for kind gui only: a draft id on another kind is refused', async () => {
+  it('is for kind gui: a screen draft id on another kind is refused (repo and tool take a draft of commands, which this call has none of)', async () => {
     const w = world();
     work(w.f);
     await w.session.tools.draft?.({});
-    expect((await w.session.tools.save({ kind: 'repo', draft: 'd-1', key: 'api', title: 'Run it', steps: [{ text: 'x' }] })).text).toBe('Not saved: a draft is for kind gui only.');
+    expect((await w.session.tools.save({ kind: 'repo', draft: 'd-1', key: 'api', title: 'Run it', steps: [{ text: 'x' }] })).text).toMatch(/^Not saved: a command draft comes from the commands of the app's shell, and this call has none/);
+    expect((await w.session.tools.save({ kind: 'cycle', draft: 'd-1', key: 'development', title: 'Run it', steps: [{ text: 'x' }] })).text).toBe('Not saved: a draft is for kind gui (a draft of the screen) or kind repo or tool (a draft of commands).');
+    expect(files()).toEqual([]);
   });
 
   it('refuses a step, a note or a wait the validator cannot keep, naming the field and never the value (acceptance 6)', async () => {
