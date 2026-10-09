@@ -78,7 +78,8 @@ const REASON: Record<RefusalCode, string> = {
   size: `is more than ${LIMITS.content} characters in all`,
 };
 
-const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
+// C0, C1, the line separators, every format character (zero width, bidi overrides, joiners) and the tag block: all of them can hide text from the person who reviews it.
+const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\p{Cf}\u{E0000}-\u{E007F}]/u;
 const TITLE_CHARS = /^[\p{L}\p{N} .,\-/()']+$/u;
 const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
 const DIGIT_RUN = /\d(?:[\s.-]?\d){5,}/;
@@ -91,6 +92,39 @@ const SLUG = /^[a-z0-9][a-z0-9._-]*$/;
 const PINNED = /([\w.-])@v?\d+(?:\.\d+){1,2}(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?(?![\w@-]|\.\w)/g;
 const ISO_DATE = /(?<![\d.-])\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?(?![\d-])/g;
 const withoutPinsAndDates = (s: string): string => s.replace(PINNED, '$1').replace(ISO_DATE, 'DATE');
+
+// A secret given as the value of a flag. `--pass-through` and `--port 5432` are not: the name must be followed by a separator and a value, and a placeholder is the value
+// to write.
+const SECRET_FLAG = /(?<![\w-])--?(?:password|passwd|pwd|pass|token|secret|api[-_]?key|access[-_]?key|auth\w*)(?:[-_](?:token|key|secret|pass(?:word)?))?[ =:]+(\S[^]*)/gi;
+const PLACEHOLDER = /^["']?(?:<[^<>]*>|\$\{\w+\}|\$\w+)(?=["']?(?:\s|$))/;
+const PORT_LIKE = /^\d+(?::\d+)*(?:-\d+)?(?:\/\w+)?$/;
+// Clients whose `-p` is the password, not the port (psql and redis-cli take the port there and are not listed).
+const PASSWORD_CLIENTS = new Set(['mysql', 'mysqldump', 'mysqladmin', 'mysqlsh', 'mysqlimport', 'mysqlcheck', 'mariadb', 'mariadb-dump', 'mongo', 'mongosh', 'mongodump', 'mongorestore', 'sqlcmd', 'sshpass']);
+const WRAPPERS = new Set(['sudo', 'env', 'time', 'nohup', 'exec', 'command']);
+
+const placeholder = (value: string): boolean => PLACEHOLDER.test(value);
+
+function hasPasswordFlag(s: string): boolean {
+  for (const m of s.matchAll(SECRET_FLAG)) if (!placeholder(m[1])) return true;
+  for (const seg of s.split(/\s*(?:&&|\|\||[|;&])\s*/)) {
+    const tokens = seg.trim().split(/\s+/);
+    let i = 0;
+    while (i < tokens.length && (WRAPPERS.has(tokens[i]) || /^\w+=/.test(tokens[i]))) i++;
+    const cmd = (tokens[i] ?? '').split('/').pop()!.replace(/\.exe$/i, '').toLowerCase();
+    const strict = PASSWORD_CLIENTS.has(cmd) || tokens.slice(i + 1).includes('login');
+    for (let j = i + 1; j < tokens.length; j++) {
+      const glued = /^-p(.+)$/.exec(tokens[j]);
+      if (glued && !glued[1].startsWith('-')) {
+        const v = glued[1];
+        // `-pv`, `-pr`: a cluster of short flags (mkdir -pv); a port mapping (-p8080:80). Neither is a password, except after a client that takes it there.
+        if (placeholder(v) || (!strict && (PORT_LIKE.test(v) || /^[A-Za-z]{1,4}$/.test(v)))) continue;
+        return true;
+      }
+      if (tokens[j] === '-p' && strict && j + 1 < tokens.length && !tokens[j + 1].startsWith('-') && !placeholder(tokens.slice(j + 1).join(' '))) return true;
+    }
+  }
+  return false;
+}
 
 const hasOpaqueToken = (text: string): boolean => text.split(/\s+/).some((w) => w.length >= 20 && /\d/.test(w) && /\p{L}/u.test(w));
 
@@ -149,9 +183,12 @@ function text(out: Out, field: string, value: unknown, rule: TextRule, home: str
   if (URL_QUERY.test(s)) refuse(out, field, 'url-query');
   if (rule.free !== false && DIGIT_RUN.test(plain)) refuse(out, field, 'digits');
   if (rule.free !== false && hasOpaqueToken(plain)) refuse(out, field, 'token');
+  if (hasPasswordFlag(s)) refuse(out, field, 'credential');
   if (rule.gui && quotesTooMuch(s)) refuse(out, field, 'quote');
   // What `redact` would change and no class above named: a credential-shaped string, an assignment to a secret-looking name.
-  if (out.refusals.length === before && redact(plain, home) !== plain) refuse(out, field, 'credential');
+  // A placeholder after `=` or `:` is what the refusals ask for, so the net reads the text without it.
+  const net = plain.replace(/[=:](?:<[^<>]*>|\$\{\w+\}|\$\w+)(?=["']?(?:\s|$))/g, ' ');
+  if (out.refusals.length === before && redact(net, home) !== net) refuse(out, field, 'credential');
   return ok && out.refusals.length === before ? s : null;
 }
 

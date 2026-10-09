@@ -222,6 +222,54 @@ describe('checkContent: what a record never holds', () => {
     expect(r.ok).toBe(false);
   });
 
+  // A secret given as the value of a flag: the command of a step is what a person copies and runs.
+  const runOf = (run: string): Record<string, unknown> => good({ steps: [{ text: 'Run it', run }] });
+  it.each([
+    'mysql -u root -p hunter2',
+    'mysql -uroot -phunter2',
+    'db --password swordfish',
+    'db --password=swordfish',
+    'db --passwd swordfish',
+    'deploy --token abc',
+    'deploy --api-key abc',
+    'deploy --api_key=abc',
+    'deploy --access-key abc',
+    'deploy --secret abc',
+    'deploy --auth-token abc',
+    'deploy --authorization abc',
+    'docker login -u me -p swordfish',
+    'sudo mongosh -u me -p swordfish',
+    'mysql -p 12345 && echo done',
+    'tool -pswordfish',
+  ])('refuses a password given as a flag value: %s', (run) => {
+    expect(codes(runOf(run)), run).toContain('steps[0].run:credential');
+  });
+
+  it.each([
+    'db --password <value>',
+    'db --password=<value>',
+    'db --password <your password>',
+    'db --token $TOKEN',
+    'db --token "${TOKEN}"',
+    'mysql -u root -p<value>',
+    'mysql -p $DB_PASSWORD',
+    'mysql -u root -p',
+    'mysql -p -u root',
+    'db --port 5432',
+    'db --pass-through',
+    'db --passthrough yes',
+    'docker run -p 8080:80 image',
+    'docker run -p8080:80 image',
+    'ssh -p 22 host',
+    'ssh -p22 host',
+    'psql -p 5432 -h host',
+    'mkdir -p out/dir',
+    'mkdir -pv out',
+    'git log --pretty oneline',
+  ])('accepts a command that is not a secret: %s', (run) => {
+    expect(codes(runOf(run)), run).toEqual([]);
+  });
+
   it('a gui step or note that quotes more than 40 characters is refused; a short label is not', () => {
     const label = 'a'.repeat(41);
     expect(codes(gui('Click the button "Save"'))).toEqual([]);
