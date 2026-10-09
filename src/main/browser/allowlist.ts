@@ -309,6 +309,11 @@ function checkValue(prop: Prop, value: unknown, name: string): ArgProblem | null
 export function checkArguments(toolName: string, args: unknown): Checked {
   const tool = exposedTool(toolName);
   if (!tool) return { ok: false, problem: { code: 'unknown-tool' } };
+  return checkToolArguments(tool, args);
+}
+
+/** The same check for a tool of the app's own that is not a browser tool (the confirmation tool), against its own table row. */
+export function checkToolArguments(tool: ExposedTool, args: unknown): Checked {
   if (args === undefined || args === null) args = {};
   if (typeof args !== 'object' || Array.isArray(args)) return { ok: false, problem: { code: 'not-object' } };
   const record = args as Record<string, unknown>;

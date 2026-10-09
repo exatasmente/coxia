@@ -48,6 +48,7 @@ import type { EvidenceTools } from './evidence/tool';
 import { incomingActivity, incomingText } from './engine/incoming';
 import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME, VIEW_IMAGE_MCP_TOOL_NAME, VIEW_IMAGE_TOOL_NAME, offersViewImage } from './sandbox/tool';
 import { ATTACHMENT_TOOL } from '../shared/attachments';
+import { type ScreenToolset, screenMcpServers, screenMcpToolNames, screenToolImpls, screenToolNames } from './browser/engineTool';
 import { ATTACHMENT_MCP_TOOL_NAME, attachmentMcpServer, attachmentToolImpl } from './attachmentTool';
 import type { SandboxSession } from './sandbox/session';
 
@@ -520,8 +521,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // The output folder of the session that is running: a host stage names its own, a sandbox has `/coxia/out` and the tools' own wording stands.
   const evidenceOut = req.exec?.outputDir;
   const evidence = req.evidence ? evidenceToolImpls(req.evidence, evidenceOut) : [];
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name)];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? []), ...(req.screen ? screenToolImpls(req.screen) : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name), ...(req.screen ? screenToolNames(req.screen) : [])];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -626,13 +627,15 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   if (req.evidence && !evidence) throw new Error(t('main.evidence.error.tool-missing'));
   // The app tools of a stage that talks while it works (SendMessage, CallAgent) or of a called agent (AskConversation), as an in-process MCP server.
   const runner = req.runnerTools?.length ? await runnerMcpServer(req.runnerTools) : null;
-  const mcp = vcs || shell || release || attachment || evidence || runner ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}), ...(runner ?? {}) } : null;
+  // The agent's screen: the app's browser and the confirmation tool, two more in-process servers.
+  const screen = req.screen ? await screenMcpServers(req.screen) : null;
+  const mcp = vcs || shell || release || attachment || evidence || runner || screen ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}), ...(runner ?? {}), ...(screen ?? {}) } : null;
   const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
   const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
   const options = {
-    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : [])], confine }),
+    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : []), ...(screen && req.screen ? screenMcpToolNames(req.screen) : [])], confine }),
     ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
     model: req.target.model,
     env,
@@ -1177,6 +1180,8 @@ export interface AgentCall {
   incoming?: (delivered: (text: string) => void) => Promise<string | null>;
   /** The app tools of a stage that talks (`SendMessage`, `CallAgent`) or of a called agent (`AskConversation`); the engine offers each one by its name. */
   runnerTools?: ToolImpl[];
+  /** The agent's screen (the app's browser and the confirmation tool), offered by name to either engine. */
+  screen?: ScreenToolset;
   /** What the live activity calls it (the agent's id). */
   label: string;
   /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
@@ -1286,6 +1291,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       onUsage: call.onUsage,
       incoming: call.incoming,
       runnerTools: call.runnerTools,
+      screen: call.screen,
     };
     let r: Run<T>;
     try {
@@ -1327,6 +1333,7 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
       read: undefined,
       exec: undefined,
       release: undefined,
+      screen: undefined,
     });
     return { ...r, sources: [...e.sources, ...r.sources], partial: true };
   } catch (again) {

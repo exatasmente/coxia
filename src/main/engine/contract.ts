@@ -6,6 +6,7 @@ import type { ResolvedRole } from '../config-resolve';
 import type { UsageReport } from '../../shared/runs/usage';
 import type { SandboxSession } from '../sandbox/session';
 import type { EvidenceTools } from '../evidence/tool';
+import type { ScreenToolset } from '../browser/engineTool';
 
 // The contract between the ceremonies (main/agents.ts `run`) and an agent engine.
 // An engine takes one structured request and returns the model's JSON answer plus the sources it read; it never knows about ceremonies.
@@ -177,6 +178,8 @@ export interface EngineRequest {
    * tools (runner/tools.ts). The engine offers each one when its name is in `allowedTools`; absent: the call gets none of them.
    */
   runnerTools?: import('./open/tools/types').ToolImpl[];
+  /** The agent's screen: the app's browser tools and the confirmation tool, offered by both engines by their names. Absent: the call has none. */
+  screen?: ScreenToolset;
 }
 
 export type EngineRunner = <T>(request: EngineRequest) => Promise<Run<T>>;

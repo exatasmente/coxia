@@ -82,7 +82,7 @@ const SHOWN_HOSTS = 5;
 /** How long the server may take for a tool (ms): a navigation is allowed the server's own 60 s and a wait up to its 30. */
 const timeoutFor = (tool: string): number => (tool === 'browser_navigate' ? 75_000 : tool === 'browser_wait_for' ? 40_000 : 30_000);
 
-const problemText = (p: ArgProblem): string => {
+export const problemText = (p: ArgProblem): string => {
   if (p.code === 'unknown-tool') return t('main.browser.reason.unknownTool');
   if (p.code === 'not-object') return t('main.browser.reason.argument.notObject');
   const key = p.code === 'unknown-property' ? 'unknown' : p.code === 'not-a-ref' ? 'notRef' : p.code;
