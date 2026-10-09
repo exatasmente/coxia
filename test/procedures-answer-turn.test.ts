@@ -18,6 +18,8 @@ import { createProcedureOffers, type ProcedureOffers } from '../src/main/procedu
 import { createProceduresPort } from '../src/main/procedures/port';
 import { createProcedureStore } from '../src/main/procedures/store';
 import { runWrapUp } from '../src/main/procedures/wrapup';
+import type { HandoffService } from '../src/main/screen/handoff';
+import { createTypedValues } from '../src/main/screen/typedValues';
 import { getConfig } from '../src/main/workspaceConfig';
 import { type FakeSandbox, fakeEngine, fakeSandbox } from './helpers/runner';
 import { type FakeScreens, fakeScreens } from './helpers/screenSessions';
@@ -176,6 +178,36 @@ describe('an answer that fought a command and kept nothing', () => {
     await answerMentions(place(), say(), d);
     await settled();
     expect(turnCalls(engine)).toHaveLength(2);
+  });
+});
+
+describe('what the person typed in a hand-off', () => {
+  it('is still refused by field in the detached turn, plain or encoded, and is forgotten when the turn ends', async () => {
+    const typed = createTypedValues();
+    // The hand-off as the answer sees it: the values are forgotten the moment the answer ends, as the real call's `end` does.
+    const handoff = { begin: () => ({ typed, request: async () => null, active: () => false, end: () => typed.clear() }), hadHandoff: () => false } as unknown as HandoffService;
+    const { d, engine } = world({}, { screens: () => ({ sessions: screens!.sessions, asks: screens!.asks, handoff }) });
+    const saves: string[] = [];
+    engine.script('turn', async (call) => {
+      if (call.procedureOnly) {
+        // the answer is over, so the call's own values are gone: the turn's save still cannot hold them
+        await new Promise((r) => setTimeout(r, 20));
+        expect(typed.hits('maple 4 sunset')).toBe(false);
+        saves.push((await call.procedures!.save({ kind: 'tool', key: 'npm', title: 'Run the tests', steps: [{ text: 'Log in with maple 4 sunset' }] })).text);
+        saves.push((await call.procedures!.save({ kind: 'tool', key: 'npm', title: 'Run the tests', steps: [{ text: 'Open login?pw=maple%204%20sunset' }] })).text);
+        return { note: '' };
+      }
+      typed.add(['maple 4 sunset']);
+      await fight(call);
+      return { text: 'Done.' };
+    });
+    await answerMentions(place(), say(), d);
+    await settled();
+    expect(turnCalls(engine)).toHaveLength(1);
+    expect(saves).toHaveLength(2);
+    for (const text of saves) expect(text).toMatch(/^Not saved: steps\[0\]\.text holds text the person typed|^Not saved: .*holds text the person typed/);
+    expect(JSON.stringify(saves)).not.toContain('Saved p-');
+    expect(createProcedureStore(root).list().records).toEqual([]);
   });
 });
 

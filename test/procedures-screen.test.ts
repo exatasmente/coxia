@@ -10,6 +10,22 @@ import { fakeSteps } from './helpers/screenSteps';
 
 const KEY = 'call:t-1:agent';
 
+describe('what the person typed', () => {
+  it('is read from a copy once frozen, which the call\'s own clear leaves and a release forgets', () => {
+    const typed = createTypedValues();
+    typed.add(['maple 4 sunset']);
+    const screen = procedureScreen({ key: KEY, typed, browser: true });
+    expect(screen.typedIn('x maple 4 sunset')).toBe(true);
+    screen.freeze();
+    typed.clear();
+    expect(screen.typedIn('x maple 4 sunset')).toBe(true);
+    expect(screen.typedIn('x maple%204%20sunset')).toBe(true);
+    screen.release();
+    expect(screen.typedIn('x maple 4 sunset')).toBe(false);
+    expect(() => screen.release()).not.toThrow();
+  });
+});
+
 describe('the steps of a screen', () => {
   it('are all the steps the app\'s browser took since the screen opened, the ones an earlier answer left in a screen kept between messages included (#187)', () => {
     const f = fakeSteps(KEY);

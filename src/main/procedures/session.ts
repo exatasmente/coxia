@@ -95,6 +95,10 @@ export interface ProcedureSession {
   finish(outcome: 'done' | 'failed'): ProcedureUse[];
   /** The last turn is over: a record it created gets the baseline of the work (what finding it cost). The turn's reads are not uses of the work. */
   finishTurn(): void;
+  /** A turn that outlives the call's hand-off keeps what the person typed readable, in memory, until `release`: the save of that turn is refused by field as the call's own was. */
+  freezeTyped(): void;
+  /** The turn is over: the copy of what was typed is forgotten. Idempotent. */
+  release(): void;
 }
 
 /** What `procedures_list` returns at most: the rest is named in a closing line. */
@@ -671,6 +675,8 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     },
     usage: () => used,
     readIds: () => [...read],
+    freezeTyped: () => ctx.screen?.freeze(),
+    release: () => ctx.screen?.release(),
     finishTurn() {
       if (!created.size) return;
       try {

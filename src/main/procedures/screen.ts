@@ -43,6 +43,10 @@ export interface ProcedureScreen {
   handedOff(): boolean;
   /** Whether a text holds something the person typed in this call's hand-offs, in any form the app masks. */
   typedIn(text: string): boolean;
+  /** Keeps a copy of what was typed, so `typedIn` still answers after the call's own values are forgotten. In memory only; `release` forgets it. */
+  freeze(): void;
+  /** Forgets the copy. Idempotent. */
+  release(): void;
 }
 
 /** A navigation the proxy or the address check turned away did not reach the site it names. */
@@ -69,6 +73,7 @@ export function procedureScreen(source: ScreenSource): ProcedureScreen {
     const mark = markOf();
     return entries().filter((e) => e.n > mark);
   };
+  let frozen: { hits(text: string): boolean; clear(): void } | null = null;
   return {
     key,
     browser: source.browser,
@@ -91,6 +96,13 @@ export function procedureScreen(source: ScreenSource): ProcedureScreen {
     },
     visited: () => [...new Set(entries().filter((e) => e.site && !(e.outcome === 'not-run' && NAVIGATES.has(e.tool))).map((e) => e.site.toLowerCase()))],
     handedOff: () => typed?.had === true || active?.() === true || (handoff?.hadHandoff(key) ?? false),
-    typedIn: (text) => typed?.hits(text) ?? false,
+    typedIn: (text) => (frozen ? frozen.hits(text) : (typed?.hits(text) ?? false)),
+    freeze() {
+      frozen ??= typed?.snapshot() ?? null;
+    },
+    release() {
+      frozen?.clear();
+      frozen = null;
+    },
   };
 }

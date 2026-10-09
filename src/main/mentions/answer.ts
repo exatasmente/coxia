@@ -402,6 +402,8 @@ function giveLastTurn(deps: MentionDeps, session: ProcedureSession, ports: Scree
       }
       if (offers.turned(key, mark)) return false;
     }
+    // The call's typed values are forgotten when its answer ends, which comes before the turn does: the turn keeps a copy in memory, and forgets it when it is over.
+    session.freezeTyped();
     const task = (deps.wrapUp ?? runWrapUp)(
       {
         engine: deps.engine,
@@ -416,9 +418,13 @@ function giveLastTurn(deps: MentionDeps, session: ProcedureSession, ports: Scree
       },
       { agent: w.agent, session, plan, ref: w.about, thread: w.place.thread, ...(w.stage ? { stage: w.stage } : {}), cwd: w.cwd },
     );
-    void task.catch(() => undefined).finally(() => session.finish('done'));
+    void task.catch(() => undefined).finally(() => {
+      session.finish('done');
+      session.release();
+    });
     return true;
   } catch (e) {
+    session.release();
     console.error('[mentions] could not plan the last turn', e instanceof Error ? e.message : e);
     return false;
   }
