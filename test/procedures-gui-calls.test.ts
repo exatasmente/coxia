@@ -115,6 +115,7 @@ describe('an agent mentioned in a conversation', () => {
     expect(withScreen.engine.calls[0].system).toContain(base);
     expect(withScreen.engine.calls[0].system).toContain(gui);
     expect(withScreen.engine.calls[0].system).toContain('procedures_draft');
+    expect(gui).toMatch(/whole screen from when it opened|tela inteira desde que ela abriu/);
     const without = world({ agent: { screen: false } });
     without.engine.script('turn', () => ({ text: 'Done.' }));
     await answerMentions(place(), say(), without.d);
@@ -140,6 +141,7 @@ describe('an agent mentioned in a conversation', () => {
     await answerMentions(place(), say(), d);
     expect(second).toContain('1. Open /earlier on docs.example.com');
     expect(second).toContain('2. Open /later on docs.example.com');
+    expect(second).toContain('on this screen since it opened, in all your answers');
   });
 
   it('starts the next draft of the screen after the steps a save used, and after the steps seen when it read the procedure it followed (#187)', async () => {

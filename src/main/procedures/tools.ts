@@ -86,7 +86,7 @@ export const SAVE_DESCRIPTION = saveDescription(GUI_WITHOUT_DRAFT);
 export const SAVE_WITH_DRAFT_DESCRIPTION = saveDescription(GUI_WITH_DRAFT);
 
 const SCREEN_DRAFT =
-  "Returns the app's draft of what you did on the screen in this call, so you can keep it as a gui procedure: one step per action the app's browser took, in order, each naming the control by its role and visible label and the page as a path, " +
+  "Returns the app's draft of what was done on the screen, from when it opened (all your answers on it, not only this one) or from the last draft you saved, so you can keep it as a gui procedure: one step per action the app's browser took, in order, each naming the control by its role and visible label and the page as a path, " +
   'with nothing you or the person typed (a typed value reads <value>), the waits the app measured, and the actions that did not work as candidates for pitfalls. It is built by the app from its own log; you review it and ' +
   'save it with procedures_save (kind gui, its draft id). If you followed a procedure that the draft differs from, the draft says so and saving replaces that one. ' +
   'It has nothing when the browser took no step.';

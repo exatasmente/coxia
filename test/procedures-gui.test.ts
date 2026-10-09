@@ -110,6 +110,9 @@ describe('saving a gui procedure', () => {
     await w.session.tools.draft?.({});
     await save(w);
     expect(onDisk('p-00000001').waits).toEqual(['On /budget on docs.example.com: wait about 3 s for the page or an element']);
+    // The first save moved the screen's mark (#187): the second draft is of what the screen did after it.
+    w.f.navigate('/summary');
+    w.f.wait(2300);
     await w.session.tools.draft?.({});
     await save(w, { draft: 'd-2', title: 'Update the budget again', waits: ['After Save, wait for the toast; about 3 s'] });
     expect(onDisk('p-00000002').waits).toEqual(['After Save, wait for the toast; about 3 s']);
@@ -149,7 +152,7 @@ describe('saving a gui procedure', () => {
       work(w.f);
       w.f.navigate('https://elsewhere.example.net/', { outcome: 'not-run' });
       await w.session.tools.draft?.({});
-      expect((await save(w, { key: 'bank.example.com' })).text).toMatch(/^Not saved: key must be a site the app's browser was on in this call: docs\.example\.com\./);
+      expect((await save(w, { key: 'bank.example.com' })).text).toMatch(/^Not saved: key must be a site the app's browser visited on this screen: docs\.example\.com\./);
       expect((await save(w, { key: 'elsewhere.example.net' })).text).toMatch(/^Not saved: key must be a site/);
       expect((await save(w, { key: 'Docs.Example.com' })).text).toMatch(/^Saved/);
       expect(onDisk('p-00000001').key).toBe('docs.example.com');
