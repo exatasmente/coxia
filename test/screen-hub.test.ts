@@ -1113,6 +1113,28 @@ describe('a hand-off interval', () => {
     expect((after as { seq: number }).seq).toBeGreaterThan(2);
   });
 
+  it('does not serve a phone the picture the person\'s read took under the interval, even when it was still under way when the interval ended', async () => {
+    const s = setup();
+    await s.open();
+    s.hub.beginInterval('r-1', noop);
+    // The person\'s read is in the display when the interval ends.
+    s.conn.hold = () => undefined;
+    const person = s.hub.frame('r-1', 0, 640, 'person');
+    await Promise.resolve();
+    s.hub.endInterval('r-1', 'back');
+    await vi.waitFor(() => expect(s.hub.held('r-1')).toBe(false));
+    const grabs = s.conn.grabs;
+    // A phone asking now would have joined the person's read under way.
+    const web = s.hub.frame('r-1', 0, 640, 'web');
+    await Promise.resolve();
+    s.conn.release();
+    await person;
+    const got = await web;
+    expect(got).toMatchObject({ state: 'frame' });
+    // The phone\'s picture is its own read, made after the interval.
+    expect(s.conn.grabs).toBe(grabs + 1);
+  });
+
   it('does not cache a read that crosses either end of the interval', async () => {
     const s = setup();
     await s.open();
