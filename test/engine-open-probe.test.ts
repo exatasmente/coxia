@@ -142,3 +142,38 @@ describe('probeOpenAIProvider', () => {
     expect(r.capabilities.streaming).toBe(false);
   });
 });
+
+describe('probeOpenAIProvider: the catalog', () => {
+  it('reads the listing into catalog facts and writes what the probe found over the tested model', async () => {
+    const models = [
+      { id: 'fake-model', metadata: { context_length: 65536, pricing: { input_tokens: 0.3, output_tokens: 1.2, cache_read_tokens: 0.06 }, tags: ['reasoning'] } },
+      { id: 'other', metadata: { context_length: 32768, pricing: { input_tokens: 0.1, output_tokens: 0.4 }, tags: ['vision'] } },
+      { id: 'bare' },
+    ];
+    fake = await fakeOpenAI(capable, { models });
+    const r = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(r.catalog.map((m) => m.id)).toEqual(['fake-model', 'other', 'bare']);
+    // The tested model: tools, schema and image come from the probe, the price from the listing.
+    expect(r.catalog[0]).toMatchObject({ price: { input: 0.3, output: 1.2, cacheRead: 0.06 }, contextWindow: 65536, tools: true, structured: true, vision: true, reasoning: true });
+    // The others keep what the listing said and null for the rest: nobody calls the other models.
+    expect(r.catalog[1]).toMatchObject({ vision: true, tools: null, structured: null });
+    expect(r.catalog[2]).toMatchObject({ price: null, vision: null, tools: null });
+    expect(fake.chats()).toHaveLength(4);
+  });
+
+  it('keeps at most 300 models and survives a listing in another shape', async () => {
+    fake = await fakeOpenAI(capable, { models: Array.from({ length: 320 }, (_, i) => ({ id: `m-${i}` })) });
+    expect((await probeOpenAIProvider(fake.url, '', 'm-0')).catalog).toHaveLength(300);
+    await fake.close();
+    fake = await fakeOpenAI(capable, { models: [{ id: 'fake-model', metadata: 'oops', pricing: 3 }] });
+    const r = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(r.ok).toBe(true);
+    expect(r.catalog).toHaveLength(1);
+  });
+
+  it('leaves the catalog empty when the listing fails', async () => {
+    fake = await fakeOpenAI(capable, { modelsStatus: 500 });
+    const r = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(r.catalog).toEqual([]);
+  });
+});

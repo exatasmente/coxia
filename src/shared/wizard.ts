@@ -2,6 +2,7 @@ import type { VcsProbeResult } from './vcs';
 import type { AgentDef, CeremonyId, EngineId, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, VcsKind, WorkspaceConfig } from './config/types';
 import { LLM_ROLES, defaultEngine } from './config/types';
 import type { SdkLocationView } from './configView';
+import type { CatalogModel } from './modelCatalog';
 import { ENV_NAME, SECRET_MAX_LENGTH, SECRET_REF, type SecretInput, type SecretSourceType } from './secrets';
 
 // Everything the setup wizard's screens and the main process agree on: the steps, the presets, the pure helpers (recommendations, remote
@@ -233,6 +234,8 @@ export interface ProviderTestResult {
   capabilities: ProviderCapabilities | null;
   /** Open engine: the models the server lists. */
   models: string[];
+  /** Open engine: what the listing says of each model (price, window, capabilities; null where it said nothing). The tested model carries what the test found. */
+  catalog: CatalogModel[];
   /** The model answered the test prompt (SDK engines). */
   answered: boolean;
   ms: number;

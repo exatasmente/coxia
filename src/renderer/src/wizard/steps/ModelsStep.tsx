@@ -124,7 +124,7 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
         }));
       }
     } catch (e) {
-      setTests((all) => ({ ...all, [p.id]: { running: false, result: { ok: false, engine: p.engine, code: 'failed', detail: errorText(e), messages: [], capabilities: null, models: [], answered: false, ms: 0 } } }));
+      setTests((all) => ({ ...all, [p.id]: { running: false, result: { ok: false, engine: p.engine, code: 'failed', detail: errorText(e), messages: [], capabilities: null, models: [], catalog: [], answered: false, ms: 0 } } }));
     }
   };
 

@@ -118,7 +118,7 @@ const TEST_PROMPT = 'Reply with the single word OK.';
 const TEST_TIMEOUT_MS = 90_000;
 
 function failure(engine: ProviderTestResult['engine'], code: ProviderTestResult['code'], detail: string, started: number): ProviderTestResult {
-  return { ok: false, engine, code, detail, messages: [], capabilities: null, models: [], answered: false, ms: Date.now() - started };
+  return { ok: false, engine, code, detail, messages: [], capabilities: null, models: [], catalog: [], answered: false, ms: Date.now() - started };
 }
 
 function modelFor(p: LlmProvider, requested: string | undefined): string {
@@ -145,6 +145,7 @@ async function testOpen(p: LlmProvider, model: string, started: number): Promise
     messages: r.messages,
     capabilities: r.ok ? { chat: caps.chat, tools: caps.tools, jsonSchema: caps.jsonSchema, streaming: caps.streaming, reasoning: caps.reasoning, contextWindow: caps.contextWindow ?? null, ...(caps.images !== undefined ? { images: caps.images } : {}) } : null,
     models: r.models.ids.slice(0, 300),
+    catalog: r.catalog,
     answered: r.chat.ok,
     ms: Date.now() - started,
   };
@@ -177,7 +178,7 @@ async function testSdk(p: LlmProvider, model: string, started: number): Promise<
       answered = m.subtype === 'success' && !m.is_error;
       detail = m.subtype === 'success' ? String(m.result ?? '') : m.subtype;
     }
-    return { ok: answered, engine: 'claude-sdk', code: answered ? 'ok' : 'failed', detail: answered ? '' : detail.slice(0, 400), messages: [], capabilities: null, models: [], answered, ms: Date.now() - started };
+    return { ok: answered, engine: 'claude-sdk', code: answered ? 'ok' : 'failed', detail: answered ? '' : detail.slice(0, 400), messages: [], capabilities: null, models: [], catalog: [], answered, ms: Date.now() - started };
   } catch (e) {
     const aborted = ctl.signal.aborted;
     return failure('claude-sdk', aborted ? 'unreachable' : 'failed', aborted ? 'timeout' : e instanceof Error ? e.message.slice(0, 400) : String(e), started);

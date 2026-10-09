@@ -7,6 +7,7 @@ import { validate } from './schema';
 import { parseToolArguments } from './text';
 import type { Json } from './types';
 import { t } from '../../../shared/i18n';
+import { type CatalogModel, MAX_CATALOG_MODELS, parseCatalog } from '../../../shared/modelCatalog';
 
 export interface ProbeStep {
   ok: boolean;
@@ -36,6 +37,9 @@ export interface ProbeResult {
   jsonSchema: ProbeStep;
   images: ProbeStep;
   capabilities: ProbeCapabilities;
+  // What the listing says of each model (price, window, capabilities), up to MAX_CATALOG_MODELS. The probe's own findings are written over the tested model's
+  // entry; every other model keeps null for what the listing did not say.
+  catalog: CatalogModel[];
   // Human readable lines for the wizard, in the requested language.
   messages: string[];
   ms: number;
@@ -96,11 +100,20 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
     jsonSchema: { ok: false },
     images: { ok: false },
     capabilities: { chat: false, tools: false, jsonSchema: false, streaming: false, reasoning: false },
+    catalog: [],
     messages,
     ms: 0,
   };
   const finish = (): ProbeResult => {
     result.ms = Date.now() - started;
+    const entry = result.catalog.find((m) => m.id === model);
+    // The probe called this model: what it found is better than what the listing said, but only for a step that ran (chat answered).
+    if (entry && result.ok) {
+      entry.tools = result.capabilities.tools;
+      entry.structured = result.capabilities.jsonSchema;
+      if (result.capabilities.images !== undefined) entry.vision = result.capabilities.images;
+      if (result.capabilities.reasoning) entry.reasoning = true;
+    }
     return result;
   };
 
@@ -110,6 +123,7 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
     const { ids, raw } = await client.listModels(opts.signal);
     result.reachable = true;
     result.models = { ok: true, ids, modelListed: ids.includes(model), ms: Date.now() - startedAt };
+    result.catalog = parseCatalog(raw).slice(0, MAX_CATALOG_MODELS);
     messages.push(msg(lang, 'probeModelsOk', { count: ids.length }));
     if (!ids.includes(model) && ids.length) messages.push(msg(lang, 'probeModelMissing', { model, hint: ids.slice(0, 3).join(', ') }));
     const ctx = contextOf(raw, model);
