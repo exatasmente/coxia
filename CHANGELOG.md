@@ -10,6 +10,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A terminal session can read the workspace's state through a local server.** Settings › Workspaces gains a per-workspace opt-in ("Terminal state server", schema 24); with it on, the panel shows the exact server entry to add to a project's `.mcp.json` (the same `{mcpServers}` shape the app itself reads) and offers, once per project folder, to merge that entry into the file beside the project's other entries, never replacing a same-name entry that runs a different program (the person confirms the write in the dialog; opting out never touches the file). A session with the entry gets the app's read tools over standard input and output — the workspace's cycles, its runs (stage, status and the question one waits for), one run's conversation without system lines, its evidence, its activities memory and the learned procedures — each answer masked the way the app masks its own, rebuilt from the files at every call, answering other workspaces nothing, and working with the app closed. Nothing is served before the opt-in, and no tool writes.
 
+## [0.9.0-beta.10] - 2026-10-09
+
+### Added
+
+- **An agent with a shell can keep what it worked out as a procedure drafted by the app.** `procedures_draft` is now offered to a call that has a shell, not only to one with the app's browser: it returns the commands that worked, in order, with the ones that failed as candidates for pitfalls, and `procedures_save` of a repo or tool procedure takes the draft's id and the numbers of the steps to keep, so the commands are the app's record and the agent cannot add or change one. The draft is built from the text of the commands alone, never from their output; a command that could carry a secret (a credential, a token, a file such as `.env`, a request header, a script pasted into the shell, a value the person typed or the test environment holds) is left out, and the draft only says how many were left out.
+
+- **When an agent fought a task and kept no procedure, the app gives it one last turn and then offers the draft in the thread.** At the end of a stage that concluded, and after each answer in a conversation, if there was trial and error (a command that failed and a later one of the same program that worked, or at least five steps in the app's browser) and the agent saved, replaced and read no procedure, the same agent is called once more with only the procedure tools: at most three turns and 120 seconds, never failing the stage or the answer, and after the answer is posted so the next message does not wait. The thread says that turn happened and what it cost in tokens, which count in the stage's usage and not as the cost of finding the procedure. If the agent still saves nothing, a card in the thread offers the draft. The card lists what the app recorded of the agent's work (the steps with their commands, the pitfalls, the waits, how many commands were left out for safety) and asks "Keep this as a procedure?". Yes saves exactly that text, under the title in the card's field, as your own write and already reviewed, with the agent as its creator and the cost of the work as the cost of finding it; if the checks refuse it (a title that exists, a limit, a text that could hold a secret) the card says which field and why and stays. No drops the offer. An offer that is not answered goes away after 24 hours, and at most 10 wait in a workspace. The thread says when an offer was made and what became of it (kept as a procedure, or declined). The card is the computer's: a paired browser neither sees nor answers it, and sees only those lines.
+
+### Fixed
+
+- **The draft of a procedure from the app's browser covers the whole screen, not only the last answer.** In a conversation the screen stays open between messages, but `procedures_draft` drafted only the steps the current answer took, so a task done over several answers was drafted in pieces. The draft now starts where the screen opened, and the sites a procedure may be keyed by span the whole screen.
+
 ## [0.9.0-beta.9] - 2026-10-09
 
 ### Fixed
@@ -423,7 +435,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.9...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.10...HEAD
+[0.9.0-beta.10]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.9...v0.9.0-beta.10
 [0.9.0-beta.9]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.8...v0.9.0-beta.9
 [0.9.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.7...v0.9.0-beta.8
 [0.9.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.6...v0.9.0-beta.7

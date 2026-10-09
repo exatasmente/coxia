@@ -6,8 +6,8 @@ import { type StepLog, createStepLog } from '../../src/main/browser/stepLog';
 
 export interface FakeSteps {
   log: StepLog;
-  /** The sessions' view of the log, by key: only the key it was made for has steps. */
-  sessions: { stepsOf(key: string): readonly StepEntry[] };
+  /** The sessions' view of the log and its draft mark, by key: only the key it was made for has steps. */
+  sessions: { stepsOf(key: string): readonly StepEntry[]; markOf(key: string): number; mark(key: string, n: number): void; instanceOf(key: string): number };
   navigate(url: string, over?: Partial<Pick<StepEntry, 'outcome' | 'ms'>>): StepEntry;
   back(): StepEntry;
   click(role: string, name: string, over?: Partial<Pick<StepEntry, 'outcome' | 'ms' | 'site' | 'path' | 'class' | 'held'>>): StepEntry;
@@ -23,12 +23,18 @@ export interface FakeSteps {
 export function fakeSteps(key = 'call:t-1:agent', start = 'https://docs.example.com/'): FakeSteps {
   let clock = Date.parse('2026-10-09T10:00:00Z');
   const log = createStepLog(undefined, () => (clock += 1000));
+  let marked = 0;
   let page = new URL(start);
   const add = (tool: string, over: Partial<StepEntry> = {}): StepEntry =>
     log.add({ tool, site: over.site ?? page.hostname, path: over.path ?? (page.pathname === '/' ? '' : page.pathname), class: 'free', outcome: 'ok', ms: 10, ...over });
   return {
     log,
-    sessions: { stepsOf: (k) => (k === key ? log.entries() : []) },
+    sessions: {
+      stepsOf: (k) => (k === key ? log.entries() : []),
+      markOf: (k) => (k === key ? marked : 0),
+      mark: (k, n) => void (k === key && (marked = n)),
+      instanceOf: (k) => (k === key ? 1 : 0),
+    },
     navigate(url, over = {}) {
       const target = new URL(url, page);
       const refused = over.outcome === 'not-run';

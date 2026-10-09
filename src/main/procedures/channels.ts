@@ -1,13 +1,15 @@
 import type { AuditEntry } from '../../shared/auditoria';
 import type { WorkspaceConfig } from '../../shared/config/types';
 import { isProcedureId, proceduresOn, type ProcedureRecord } from '../../shared/procedures';
-import { statsOf, summarize, type ProcedureDelete, type ProcedureGet, type ProcedureListView, type ProcedureStatsView, type ProcedureWrite } from '../../shared/proceduresView';
+import { statsOf, summarize, type OfferView, type ProcedureDelete, type ProcedureGet, type ProcedureListView, type ProcedureStatsView, type ProcedureWrite } from '../../shared/proceduresView';
 import { procedureAuditEntry, type ProcedureAuditInput } from './audit';
+import type { OfferDecline, ProcedureOffers } from './offers';
 import type { ProcedureStore, SaveResult, Writer } from './store';
 
 // What the Procedures view asks of the app. The reads (list, get, stats) are open to a paired browser; every write is the desktop window's, and webPolicy.ts closes the
 // whole `procedures:` prefix except those three. The person's writes go through the same store and the same validator as an agent's, are marked as the person's and
-// reviewed, and are audited with no issue and no thread line. They work whatever the workspace switch says: it only governs the agents' side.
+// reviewed, and are audited with no issue and no thread line. They work whatever the workspace switch says: it only governs the agents' side. The three channels of the offers
+// to keep a procedure (#187) are the desktop window's too, and so is the card they serve: the prefix pattern denies them to a paired browser from the day they exist.
 
 export interface ChannelDeps {
   store: ProcedureStore;
@@ -16,6 +18,8 @@ export interface ChannelDeps {
   now?(): number;
   /** The person's home folder, for the validator; the machine's by default. */
   home?: string;
+  /** The offers held in memory; absent in a build that has none, and the channels then answer as if there were none. */
+  offers?: ProcedureOffers;
 }
 
 const PERSON: Writer = { by: 'person', surface: 'person' };
@@ -30,6 +34,12 @@ export interface ProcedureChannels {
   delete(id: unknown): ProcedureDelete;
   review(id: unknown): ProcedureWrite;
   restore(id: unknown, revision: unknown): ProcedureWrite;
+  /** The offers waiting in a thread (all of them with no thread), for the card. */
+  offers(thread?: unknown): OfferView[];
+  /** Yes to an offer, under the title on the card. */
+  offerKeep(offerId: unknown, title?: unknown): ProcedureWrite;
+  /** No to an offer. */
+  offerDecline(offerId: unknown): OfferDecline;
 }
 
 export function createProcedureChannels(deps: ChannelDeps): ProcedureChannels {
@@ -61,6 +71,8 @@ export function createProcedureChannels(deps: ChannelDeps): ProcedureChannels {
     audit({ op, record: r.record });
     return { ok: true, record: r.record };
   };
+
+  const GONE: OfferDecline = { ok: false, code: 'gone' };
 
   return {
     list() {
@@ -125,6 +137,18 @@ export function createProcedureChannels(deps: ChannelDeps): ProcedureChannels {
       const rev = typeof revision === 'number' && Number.isInteger(revision) ? revision : undefined;
       const input = { kind: r.kind, key: r.key, ...r.previous };
       return written('restore', store.save({ input, id: want, revision: rev, writer: PERSON, repos: repos(), stepsFrom: r.stepsFrom, home: deps.home }));
+    },
+
+    offers(thread) {
+      return deps.offers?.list(typeof thread === 'string' && thread ? thread : undefined) ?? [];
+    },
+
+    offerKeep(offerId, title) {
+      return deps.offers?.keep(offerId, title) ?? { ok: false, code: 'gone', text: 'This offer is no longer there.' };
+    },
+
+    offerDecline(offerId) {
+      return deps.offers?.decline(offerId) ?? GONE;
     },
   };
 }

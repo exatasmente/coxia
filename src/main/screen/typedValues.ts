@@ -148,6 +148,8 @@ export interface TypedValues {
   mask(text: string): string;
   /** Whether any form of any value is in the text. */
   hits(text: string): boolean;
+  /** A copy of the forms as they are now, for a reader that outlives the call (the last turn of a conversation): `clear` on the copy forgets it, and the original's `clear` leaves it. */
+  snapshot(): { hits(text: string): boolean; clear(): void };
   /** A hand-off interval was taken in this call; stays true after `clear`. */
   readonly had: boolean;
   /** Forgets the values (the forms too), keeps `had`. */
@@ -166,6 +168,10 @@ export function createTypedValues(): TypedValues {
     },
     mask: (text) => masker(text),
     hits: (text) => forms.some((f) => text.includes(f)),
+    snapshot() {
+      let copy = [...forms];
+      return { hits: (text) => copy.some((f) => text.includes(f)), clear: () => void (copy = []) };
+    },
     get had() {
       return had;
     },

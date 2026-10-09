@@ -133,6 +133,12 @@ export interface EngineRequest {
    * Set by `askBare` only; the engine's own transport of the structured answer (`final_answer` on the open engine) stays, since it is not a capability.
    */
   bare?: boolean;
+  /**
+   * The call has the procedure tools and nothing else: no native tool, no shell, no code host, no screen, no documentation, no MCP server but the app's own (#187). Set by
+   * `runAgent` for the one last turn of a work that may be kept as a procedure. The Claude SDK is told `tools: []` (its built-ins off; its in-process servers stay); the
+   * open engine is not, because there `tools: []` drops the app's tools with the rest, so it gets an allow-list of the procedure names alone.
+   */
+  procedureOnly?: boolean;
   /** The `ReleaseAction` tool of a release run's agent: one step of the release, answered in text. Absent for every other call. */
   release?: (input: unknown) => Promise<string>;
   /**

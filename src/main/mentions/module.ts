@@ -12,7 +12,7 @@ import { type Module } from '../module';
 import { runStore } from '../runs';
 import { sandbox } from '../sandbox/workspace';
 import { getConfig, rc } from '../workspaceConfig';
-import { proceduresPort } from '../procedures';
+import { procedureOffers, proceduresPort } from '../procedures';
 import { answerMentions, type MentionDeps } from './answer';
 import { placeOfThread } from './place';
 import { proposeMention } from './propose';
@@ -74,6 +74,8 @@ export const mentionsModule: Module = () => {
     env: () => ({ fallbackCwd: rc().projectsRoot ?? ATAS }),
     propose: proposeMention,
     procedures: proceduresPort(),
+    // The last turn of an answer that had trial and error and kept nothing, and the card it may leave (#187).
+    offers: procedureOffers(),
     // What the answer is told of the activities of the workspace, read from the record of the running workspace and cut by what the message named.
     memory: (place, message) => {
       const run = place.kind === 'run' ? place.run : null;

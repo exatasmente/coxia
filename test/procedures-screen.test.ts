@@ -10,17 +10,64 @@ import { fakeSteps } from './helpers/screenSteps';
 
 const KEY = 'call:t-1:agent';
 
-describe('the steps of a call', () => {
-  it('are the steps the app\'s browser took since the call began, not the ones an earlier answer left in a screen kept between messages', () => {
+describe('what the person typed', () => {
+  it('is read from a copy once frozen, which the call\'s own clear leaves and a release forgets', () => {
+    const typed = createTypedValues();
+    typed.add(['maple 4 sunset']);
+    const screen = procedureScreen({ key: KEY, typed, browser: true });
+    expect(screen.typedIn('x maple 4 sunset')).toBe(true);
+    screen.freeze();
+    typed.clear();
+    expect(screen.typedIn('x maple 4 sunset')).toBe(true);
+    expect(screen.typedIn('x maple%204%20sunset')).toBe(true);
+    screen.release();
+    expect(screen.typedIn('x maple 4 sunset')).toBe(false);
+    expect(() => screen.release()).not.toThrow();
+  });
+});
+
+describe('the steps of a screen', () => {
+  it('are all the steps the app\'s browser took since the screen opened, the ones an earlier answer left in a screen kept between messages included (#187)', () => {
     const f = fakeSteps(KEY);
     f.navigate('/old');
     f.click('button', 'Earlier');
     const screen = procedureScreen({ key: KEY, sessions: f.sessions, browser: true });
-    expect(screen.steps()).toEqual([]);
+    expect(screen.steps().map((s) => s.n)).toEqual([1, 2]);
     f.navigate('/budget');
     f.click('button', 'Save');
-    expect(screen.steps().map((s) => s.tool)).toEqual(['browser_navigate', 'browser_click']);
-    expect(screen.steps().map((s) => s.n)).toEqual([3, 4]);
+    expect(screen.steps().map((s) => s.tool)).toEqual(['browser_navigate', 'browser_click', 'browser_navigate', 'browser_click']);
+    expect(screen.steps().map((s) => s.n)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('start after the mark of the screen, which a call that begins later sees as well', () => {
+    const f = fakeSteps(KEY);
+    f.navigate('/old');
+    f.click('button', 'Earlier');
+    f.sessions.mark(KEY, 2);
+    f.navigate('/budget');
+    const screen = procedureScreen({ key: KEY, sessions: f.sessions, browser: true });
+    expect(screen.steps().map((s) => s.n)).toEqual([3]);
+    f.sessions.mark(KEY, 3);
+    expect(screen.steps()).toEqual([]);
+  });
+
+  it('know the last step of the screen and move the mark forward to a step, never back, and quietly when there is no screen', () => {
+    const f = fakeSteps(KEY);
+    const screen = procedureScreen({ key: KEY, sessions: f.sessions, browser: true });
+    expect(screen.lastStep()).toBe(0);
+    f.navigate('/a');
+    f.click('button', 'Save');
+    f.navigate('/b');
+    expect(screen.lastStep()).toBe(3);
+    screen.advance(2);
+    expect(f.sessions.markOf(KEY)).toBe(2);
+    expect(screen.steps().map((s) => s.n)).toEqual([3]);
+    screen.advance(1);
+    expect(f.sessions.markOf(KEY)).toBe(2);
+    screen.advance(screen.lastStep());
+    expect(screen.steps()).toEqual([]);
+    expect(() => procedureScreen({ key: KEY, browser: true }).advance(5)).not.toThrow();
+    expect(procedureScreen({ key: KEY, browser: true }).lastStep()).toBe(0);
   });
 
   it('are none when there is no log: no sessions, another key, or a log that throws', () => {
@@ -28,7 +75,7 @@ describe('the steps of a call', () => {
     f.navigate('/a');
     expect(procedureScreen({ key: KEY, browser: true }).steps()).toEqual([]);
     expect(procedureScreen({ key: 'call:t-2:agent', sessions: f.sessions, browser: true }).steps()).toEqual([]);
-    const broken = procedureScreen({ key: KEY, sessions: { stepsOf: () => { throw new Error('gone'); } }, browser: true });
+    const broken = procedureScreen({ key: KEY, sessions: { stepsOf: () => { throw new Error('gone'); }, markOf: () => { throw new Error('gone'); }, mark: () => undefined }, browser: true });
     expect(broken.steps()).toEqual([]);
     expect(broken.visited()).toEqual([]);
   });
@@ -48,6 +95,17 @@ describe('the hosts a call visited', () => {
     f.navigate('https://sheets.example.com/a');
     f.navigate('https://elsewhere.example.net/', { outcome: 'not-run' });
     f.handoff();
+    expect(screen.visited()).toEqual(['docs.example.com', 'sheets.example.com']);
+  });
+
+  it('span the whole screen, not the steps after its mark', () => {
+    const f = fakeSteps(KEY);
+    const screen = procedureScreen({ key: KEY, sessions: f.sessions, browser: true });
+    f.navigate('https://docs.example.com/a');
+    f.navigate('https://sheets.example.com/b');
+    f.sessions.mark(KEY, 2);
+    f.navigate('https://docs.example.com/c');
+    expect(screen.steps().map((s) => s.n)).toEqual([3]);
     expect(screen.visited()).toEqual(['docs.example.com', 'sheets.example.com']);
   });
 

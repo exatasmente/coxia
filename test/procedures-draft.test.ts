@@ -226,6 +226,8 @@ describe('procedures_draft', () => {
     expect(procedureToolNames(withDraft)).toEqual(['procedures_list', 'procedures_get', 'procedures_save', 'procedures_stale', DRAFT_TOOL]);
     const save = procedureToolSpecs(withDraft).find((t) => t.name === 'procedures_save');
     expect(save?.description).toContain('call procedures_draft');
+    // The draft is of the whole screen, not of one answer (#187).
+    expect(procedureToolSpecs(withDraft).find((t) => t.name === DRAFT_TOOL)?.description).toContain('from when it opened (all your answers on it');
     expect(PROCEDURE_TOOLS.find((t) => t.name === 'procedures_save')?.description).toContain('not available in this call');
     expect(procedureToolImpls(withDraft).map((i) => i.name)).toContain(DRAFT_TOOL);
     expect(procedureToolImpls(without).map((i) => i.name)).not.toContain(DRAFT_TOOL);
@@ -275,7 +277,7 @@ describe('procedures_draft', () => {
   it('has nothing to draft for work done through the shell: the app\'s browser took no step (acceptance 4, first half)', async () => {
     const f = fakeSteps(KEY);
     const { session } = make(f);
-    expect((await session.tools.draft?.({}))?.text).toMatch(/^Nothing to draft: the app's browser took no step/);
+    expect((await session.tools.draft?.({}))?.text).toMatch(/^Nothing to draft: the app's browser took no new step/);
     f.read();
     expect((await session.tools.draft?.({}))?.text).toMatch(/^Nothing to keep/);
   });

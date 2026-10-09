@@ -515,8 +515,9 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read. The hook carries no
   // `docs`, which the bridge would fill with the defaults (CLAUDE.md up the tree, ~/.claude): an isolated call gets its own lists whichever way the selection came.
   const hook = openEngineFromEnv();
-  // A bare call gets empty lists the same way, on either path.
-  const selection = hook ? (req.isolated || req.bare ? { ...hook, docs: openDocs(req.cwd, req.target.role, true, req.bare) } : hook) : openSelection(req.target, req.cwd, req.isolated, req.bare);
+  // A bare call gets empty lists the same way, on either path; so does a call that has only the procedure tools.
+  const noDocs = !!(req.bare || req.procedureOnly);
+  const selection = hook ? (req.isolated || noDocs ? { ...hook, docs: openDocs(req.cwd, req.target.role, true, noDocs) } : hook) : openSelection(req.target, req.cwd, req.isolated, noDocs);
   const tool = wantsVcsTool(req);
   // One `ViewImage`, the sandbox's: a stage that keeps evidence gets it with evidence ids added.
   const looks = offersViewImage(req.exec, req.evidence);
@@ -643,6 +644,8 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const options = {
     ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : []), ...(procedures && req.procedures ? procedureToolNames(req.procedures).map(procedureMcpToolName) : []), ...(screen && req.screen ? screenMcpToolNames(req.screen) : [])], confine }),
     ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
+    // `tools: []` turns off the SDK's built-in tools and leaves the in-process servers; the strict config keeps out every server the person has set up themselves.
+    ...(req.procedureOnly ? { tools: [], strictMcpConfig: true } : {}),
     model: req.target.model,
     env,
     ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
@@ -1190,6 +1193,11 @@ export interface AgentCall {
   procedures?: ProcedureTools;
   /** The agent's screen (the app's browser and the confirmation tool), offered by name to either engine. */
   screen?: ScreenToolset;
+  /**
+   * The one last turn of a work that may be kept as a procedure (#187): the call gets the procedure tools and nothing else, whatever the agent's permission, shell or
+   * screen, and reads no documentation. Everything else the call carries is dropped, as in the wrap-up of a call that ran out of turns; `procedures` stays.
+   */
+  procedureOnly?: boolean;
   /** What the live activity calls it (the agent's id). */
   label: string;
   /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
@@ -1267,7 +1275,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
     const modelRole = call.agent.model.role ?? 'deep';
     // The documentation of the repositories goes in the system text, the same for both engines; a failure to read it never fails the call.
-    const docs = call.docs ? await harnessSection(call.docs, call.agent, { cwd: call.cwd, contextWindow: target.capabilities?.contextWindow }).catch((e: unknown) => {
+    const only = call.procedureOnly === true;
+    const docs = call.docs && !only ? await harnessSection(call.docs, call.agent, { cwd: call.cwd, contextWindow: target.capabilities?.contextWindow }).catch((e: unknown) => {
       console.error('[agent] could not build the documentation section', e instanceof Error ? e.message : e);
       return '';
     }) : '';
@@ -1278,29 +1287,31 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       target,
       system: [call.system, docs].filter(Boolean).join('\n\n'),
       cwd: call.cwd,
-      allowedTools: [...allowedTools, ...rules],
-      extraDirs: call.confine ? [] : extraDirs(call.cwd, modelRole, { claude: false }),
+      allowedTools: only ? [] : [...allowedTools, ...rules],
+      extraDirs: call.confine || only ? [] : extraDirs(call.cwd, modelRole, { claude: false }),
       isolated: true,
-      shell: { rules, patterns: shell.patterns },
+      shell: only ? { rules: [], patterns: shell.patterns } : { rules, patterns: shell.patterns },
       extra: { maxTurns: call.maxTurns },
       activity,
-      confine: call.confine,
-      read: call.readRoot,
-      tracker,
+      // Nothing of the code host, no file confinement to carry (no file tool), no sandbox, evidence, release, attachments, mailbox, runner tool or screen: only `procedures`.
+      confine: only ? undefined : call.confine,
+      read: only ? undefined : call.readRoot,
+      tracker: only ? 'none' : tracker,
       tools,
-      exec: call.exec ? withActivity(call.exec, activity) : undefined,
-      evidence: call.evidence,
-      onLooked: call.onLooked,
+      exec: call.exec && !only ? withActivity(call.exec, activity) : undefined,
+      evidence: only ? undefined : call.evidence,
+      onLooked: only ? undefined : call.onLooked,
       ...(call.resume ? { resume: call.resume.session } : {}),
-      release: call.release,
-      attachments: call.attachments,
+      release: only ? undefined : call.release,
+      attachments: only ? undefined : call.attachments,
       abort: call.abort,
       beat: call.beat,
       onUsage: call.onUsage,
-      incoming: call.incoming,
-      runnerTools: call.runnerTools,
+      incoming: only ? undefined : call.incoming,
+      runnerTools: only ? undefined : call.runnerTools,
       procedures: call.procedures,
-      screen: call.screen,
+      screen: only ? undefined : call.screen,
+      ...(only ? { procedureOnly: true } : {}),
     };
     let r: Run<T>;
     try {
