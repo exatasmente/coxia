@@ -290,6 +290,9 @@ describe('the hand-off of a stage', () => {
     expect(options?.mask).toBe(handoff.calls[at].typed.mask);
     expect(seen.developer.screen?.handoff).toBeTruthy();
     expect(seen.developer.screen?.typed).toBe(handoff.calls[at].typed);
+    // The agent is told, because the tool is offered; a stage that is not offered it is not told.
+    expect(seen.developer.system).toContain('screen_handoff');
+    expect(seen.reviewer.system).not.toContain('screen_handoff');
   });
 
   it('gives a host session the same gate and mask, and words the warning for the computer\'s shell', async () => {

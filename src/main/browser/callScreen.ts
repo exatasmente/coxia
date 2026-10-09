@@ -92,6 +92,7 @@ export function promptFor(screen: CallScreen | null, agent: Pick<AgentDef, 'scre
     browser: screen?.lease ? { tools: screen.lease.browser.tools().map((x) => x.name), profile: screen.lease.profile } : screen?.refusal ? { refusal: screen.refusal } : null,
     display,
     confirm: !!screen?.toolset?.confirm,
+    handoff: !!screen?.toolset?.handoff,
   });
 }
 

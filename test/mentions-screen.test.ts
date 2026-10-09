@@ -259,6 +259,7 @@ describe('the hand-off in a conversation', () => {
     expect(handoff.begun[0]).toMatchObject({ key: KEY, thread: 'squads', place: 'conversation', stage: '', agent: 'turn', about: 'app#7 The thing', paths: { browser: true, shell: 'sandbox' } });
     const call = engine.calls[0];
     expect(call.screen?.handoff).toBeTruthy();
+    expect(call.system).toContain('screen_handoff');
     expect(call.screen?.typed).toBe(handoff.calls[0].typed);
     const options = sandbox.opened[0].options;
     // The session reads the answer that has it now, so the gate is not the call object's own function but follows it.

@@ -219,6 +219,81 @@ describe('a mention call of an agent with the screen', () => {
   });
 });
 
+describe('the hand-off text (#178, rule 22)', () => {
+  const setup = (language: 'en' | 'pt-BR') => {
+    const config = configFor(language);
+    updateConfig(() => config);
+    return config;
+  };
+  const prompt = (config: WorkspaceConfig, agent: AgentDef, handoff: boolean, display = false) =>
+    screenPromptOf({ agent, workspace: config.runner.sandbox, allowedHosts: [], browser: lease(), display, confirm: true, handoff }) as ScreenPrompt;
+
+  it('is added in English to a stage and to a mention call when the tool is offered, and says what to do with each answer', () => {
+    const config = setup('en');
+    const agent = agentWith(config, { screen: true, shell: 'none' });
+    const stage = systemText(stageInput(config, agent, { screen: prompt(config, agent, true) }));
+    const mention = mentionCall({ agent, config, message: postOf('@developer look'), thread: [], files: [], cwd: '/tmp', place: 'general', screen: prompt(config, agent, true) }).system ?? '';
+    for (const text of [stage, mention]) {
+      expect(text).toContain('hand your screen to the person with screen_handoff');
+      expect(text).toContain('Never ask for a password, a code or any other secret in the conversation');
+      expect(text).toContain('read the page again and go on');
+      expect(text).toContain('shows as [secret]');
+      expect(text).toContain('do not call it again');
+      expect(text).not.toContain('{');
+    }
+  });
+
+  it('is added in Portuguese too', () => {
+    const config = setup('pt-BR');
+    const agent = agentWith(config, { screen: true, shell: 'none' });
+    const text = systemText(stageInput(config, agent, { screen: prompt(config, agent, true) }));
+    expect(text).toContain('Você pode passar a sua tela para a pessoa com screen_handoff');
+    expect(text).toContain('Nunca peça uma senha');
+    expect(text).not.toContain('{');
+  });
+
+  it('is absent when the tool is not offered, in both languages', () => {
+    for (const language of ['en', 'pt-BR'] as const) {
+      const config = setup(language);
+      const agent = agentWith(config, { screen: true, shell: 'none' });
+      const text = systemText(stageInput(config, agent, { screen: prompt(config, agent, false) }));
+      expect(text, language).not.toContain('screen_handoff');
+      expect(text, language).not.toContain('[secret]');
+    }
+  });
+
+  it('points an agent that has the browser and a shell session on one display to the browser, and says it only then', () => {
+    const config = setup('en');
+    const agent = agentWith(config, { screen: true, shell: 'sandbox' });
+    const both = systemText(stageInput(config, agent, { sandbox: { network: 'off', reader: true, gui, look: true }, screen: prompt(config, agent, true, true) }));
+    expect(both).toContain('use the app\'s browser and not a program of your own');
+    const browserOnly = systemText(stageInput(config, agentWith(config, { screen: true, shell: 'none' }), { screen: prompt(config, agent, true, false) }));
+    expect(browserOnly).toContain('screen_handoff');
+    expect(browserOnly).not.toContain('not a program of your own');
+  });
+
+  it('gives an agent with no switch the hand-off words when it is offered the tool, and keeps the prompt of one that is not', () => {
+    const config = setup('en');
+    const agent = agentWith(config, { shell: 'sandbox' });
+    const offered = screenPromptOf({ agent, workspace: config.runner.sandbox, allowedHosts: [], browser: null, display: true, confirm: true, handoff: true }) as ScreenPrompt;
+    const text = systemText(stageInput(config, agent, { sandbox: { network: 'off', reader: true, gui, look: true }, screen: offered }));
+    expect(text).toContain('screen_handoff');
+    expect(text).not.toContain("You have the app's browser");
+    expect(text).not.toContain('not a program of your own');
+    expect(screenPromptOf({ agent, workspace: config.runner.sandbox, allowedHosts: [], browser: null, display: true, confirm: true, handoff: false })).toBeUndefined();
+  });
+
+  it('reads the tool from the call\'s own toolset', () => {
+    const config = setup('en');
+    const agent = agentWith(config, { screen: true, shell: 'none' });
+    const browser = { tools: () => [{ name: 'browser_snapshot' }], call: async () => ({ text: '', images: [], isError: false }) } as never;
+    const lease0 = { key: 'k', browser, context: {} as never, profile: 'none' as const, display: null, closed: new AbortController().signal, release: () => undefined };
+    const asked = (handoff: boolean) => promptFor({ toolset: { browser, confirm: (async () => ({ answer: 'yes' })) as never, ...(handoff ? { handoff: { request: async () => 'done' as const, active: () => false } } : {}) }, lease: lease0, refusal: null, release: () => undefined }, agent, config.runner.sandbox, grantsFor(agent), false);
+    expect(asked(true)?.handoff).toBe(true);
+    expect(asked(false)?.handoff).toBe(false);
+  });
+});
+
 describe('the catalogs', () => {
   const keys = Object.keys(CATALOGS.en).filter((k) => /^prompt\.sdd\.runner\.rules\.(screen|shell\.hosts|gui\.screen|gui\.host\.screen)/.test(k));
   it('have every new text in both languages, with the same placeholders', () => {

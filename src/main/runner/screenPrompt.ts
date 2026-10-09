@@ -19,6 +19,8 @@ export interface ScreenPrompt {
   display: boolean;
   /** The confirmation tool is offered. */
   confirm: boolean;
+  /** The hand-off tool is offered (#178): the agent is told when to use it and what to do with each answer. */
+  handoff: boolean;
 }
 
 /** The fact of the agent's network, from the workspace's setting and the agent's own hosts (the table of rule 25). */
@@ -63,14 +65,16 @@ export function screenPromptOf(o: {
   browser: { tools: string[]; profile: 'own' | 'fresh' | 'none' } | { refusal: string } | null;
   display: boolean;
   confirm: boolean;
+  /** The hand-off tool is offered. It gives an agent with no switch and no host list a prompt of its own: the tool is its to use, and so are the words about it. */
+  handoff?: boolean;
 }): ScreenPrompt | undefined {
   const ownHosts = o.agent.shell === 'host' ? [] : o.allowedHosts;
-  if (o.agent.screen !== true && ownHosts.length === 0) return undefined;
+  if (o.agent.screen !== true && ownHosts.length === 0 && o.handoff !== true) return undefined;
   const browser: ScreenPrompt['browser'] =
     o.browser && 'tools' in o.browser
       ? { ok: true, tools: o.browser.tools, profile: o.browser.profile === 'own' ? 'own' : o.agent.browserProfile === true ? 'busy' : 'none' }
       : { ok: false, reason: o.browser && 'refusal' in o.browser ? o.browser.refusal : refusalText('unavailable') };
-  return { screen: o.agent.screen === true, browser, ownHosts, network: networkFor(o.workspace, o.agent, ownHosts), display: o.display, confirm: o.confirm };
+  return { screen: o.agent.screen === true, browser, ownHosts, network: networkFor(o.workspace, o.agent, ownHosts), display: o.display, confirm: o.confirm, handoff: o.handoff === true };
 }
 
 /** The sentence that says which shell the agent has, in the words of its network: the plain ones, or the one that lists the agent's own hosts. */
@@ -80,7 +84,7 @@ export function shellRules(s: { host?: boolean; network: 'off' | 'registry' | 'o
   return s.network === 'open' ? cp('runner.rules.shell.open') : s.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell');
 }
 
-/** The part of the prompt about the app's browser, the hosts it may reach and the confirmation tool; empty for an agent with none of the switches. */
+/** The part of the prompt about the app's browser, the hosts it may reach, the confirmation tool and the hand-off; empty for an agent with none of the switches. */
 export function screenRules(p?: ScreenPrompt): string {
   if (!p) return '';
   const parts: string[] = [];
@@ -95,5 +99,10 @@ export function screenRules(p?: ScreenPrompt): string {
     }
   }
   if (p.confirm) parts.push(cp('runner.rules.screen.confirm'));
+  if (p.handoff) {
+    parts.push(cp('runner.rules.screenHandoff'));
+    // An agent that has the app's browser and a shell session on the same display is pointed at the path where what the person typed is hidden.
+    if (p.screen && p.browser.ok && p.display) parts.push(cp('runner.rules.screenHandoff.both'));
+  }
   return parts.join(' ');
 }
