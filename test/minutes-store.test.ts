@@ -263,6 +263,69 @@ describe('deleting minutes', () => {
   });
 });
 
+describe('unanswered questions that repeat across days', () => {
+  const PREV = '2026-10-01';
+  const QUESTION = (text: string) => [{ ref: 'acme#1', question: text, stage: 'Doing' } as const];
+
+  it('keeps the stage of the activity a question was asked about in the day index', () => {
+    state.saveState(ceremony({ id: A, cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Ship it?' }) }, spoken: ['acme#1'] }));
+    expect(store.dayView(DAY).versions[0].snapshot.unanswered).toEqual([{ ref: 'acme#1', question: 'Ship it?', stage: 'Doing' }]);
+  });
+
+  it('lists the question repeated from an earlier day in the day view, with both dates, and omits the section when there is none', () => {
+    state.saveState(ceremony({ id: '2026-10-01T094000', cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Can the plan be approved today?' }) }, spoken: ['acme#1'] }));
+    state.saveState(ceremony({ id: '2026-10-01T141000', cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1') }, spoken: [] }));
+    store.dayView(PREV);
+    state.saveState(ceremony({ id: A, cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Was the plan approved?' }) }, spoken: ['acme#1'] }));
+    const day = store.dayView(DAY);
+    expect(day.repeated).toEqual([{ ref: 'acme#1', question: 'Was the plan approved?', stage: 'Doing', dates: [PREV, DAY], count: 2 }]);
+  });
+
+  it('does not rewrite an earlier day\'s document when today is saved, and shows the section only on days with a repetition', async () => {
+    state.saveState(ceremony({ id: '2026-10-01T094000', cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1') }, spoken: [] }));
+    store.dayView(PREV);
+    // No earlier day holds the question: no section on either day.
+    await saver.saveMinutes(minutes({ decisions: [decision()] }), '', [0], '2026-10-01T141000');
+    const earlierText = readFileSync(join(ATAS, `${PREV}-pre-daily.md`), 'utf8');
+    expect(earlierText).not.toContain('Perguntas repetidas sem resposta');
+    state.saveState(ceremony({ id: '2026-10-02T094000', cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1') }, spoken: [] }));
+    await saver.saveMinutes(minutes(), '', [], '2026-10-02T094000');
+    expect(readFileSync(join(ATAS, `${PREV}-pre-daily.md`), 'utf8')).toBe(earlierText);
+  });
+
+  it('writes the repetition into the generated document, after the versions of the day', async () => {
+    state.saveState(ceremony({ id: '2026-10-01T094000', cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Can the plan be approved today?' }) }, spoken: ['acme#1'] }));
+    state.saveState(ceremony({ id: A, cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Was the plan approved?' }) }, spoken: ['acme#1'] }));
+    const result = await saver.saveMinutes(minutes({ unanswered: [...QUESTION('Was the plan approved?')] }), '', [], A);
+    const text = readFileSync(result.ataPath, 'utf8');
+    const dayText = readFileSync(join(ATAS, `${DAY}-pre-daily.md`), 'utf8');
+    expect(dayText).toContain('## Perguntas repetidas sem resposta');
+    expect(dayText).toContain('Was the plan approved? (acme#1)');
+    expect(dayText).toContain('2 dias');
+    expect(dayText.indexOf('Was the plan approved? (acme#1)')).toBeGreaterThan(dayText.indexOf('Versão'));
+    expect(text).not.toContain('Perguntas repetidas sem resposta');
+  });
+
+  it('takes at most the 7 most recent days with an index, and skips the days without one', () => {
+    // Eight ceremonies on five earlier days; only those with an index are read, at most 7.
+    store.dayView(PREV);
+    const days = store.previousDayAnswers(DAY, 7);
+    expect(days.length).toBeLessThanOrEqual(7);
+    for (const d of days) {
+      expect(() => Date.parse(d.date)).not.toThrow();
+      expect(d.date < DAY).toBe(true);
+    }
+  });
+
+  it('gives the ceremony the dates the card\'s question-forma was left unanswered on, before today', () => {
+    state.saveState(ceremony({ id: '2026-10-01T094000', cards: [card('acme#1')], turns: { 'acme#1': turn('acme#1', { question: 'Can the plan be approved today?' }) }, spoken: ['acme#1'] }));
+    store.dayView(PREV);
+    expect(store.crossDayRepeats(card('acme#1'), DAY)).toEqual([PREV]);
+    // A card whose activity was not left unanswered: nothing to say.
+    expect(store.crossDayRepeats(card('acme#2'), DAY)).toEqual([]);
+  });
+});
+
 describe('the trash', () => {
   async function trashed(versions: number[] | 'all' = [1]) {
     state.saveState(ceremony({ id: A, cards: [card('acme#1')], decisions: [decision()] }));

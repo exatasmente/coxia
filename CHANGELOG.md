@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The minutes of a day name the unanswered questions that repeat.** Every question left without an answer in a ceremony is already in the minutes; what was missing was seeing that the same question-form (same activity, same stage — not the same wording) came back on other days. The minutes of the day now cross the question with the days before it (the last 7 days that have minutes; never across squads) and, when it repeats, a new section — on screen and in the generated document — shows each repeated question with its activity, the dates it was left unanswered on and how many days. A day without repetitions shows nothing, the minutes already written are not rewritten, and a question that was answered today no longer counts as unanswered today. The ceremony itself is told the same: the turn prompt now carries a line saying the decision was already left unanswered on the days it repeats, so the agent does not present it as new subject matter.
+
 ## [0.9.0-beta.2] - 2026-10-08
 
 ### Added
