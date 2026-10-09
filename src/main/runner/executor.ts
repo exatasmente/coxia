@@ -981,8 +981,11 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // What QA claims to have executed is checked against what the stage's sandbox ran; with no sandbox every scenario was only read.
   // Only what the agent ran itself backs a claim: the app's own commands before QA are context, not the agent's evidence.
   if (kind === 'qa') output.scenarios = judgeScenarios(output, kind, session, ran);
+  // A scenario is backed by what this stage kept, in this attempt or an earlier one: an attempt that picks the stage up again is told to cite the evidence already
+  // kept by its id. The app's own recording and a piece the retention sweep removed back nothing.
+  const backing = new Set([...keptIds, ...Object.values(run.evidence ?? {}).filter((e) => e.stage === stage.id && !e.recording && !e.removed).map((e) => e.id)]);
   const scenariosWithoutEvidence = kind === 'qa' && evidence
-    ? output.scenarios.filter((scenario) => scenario.result !== 'not-run' && !scenario.evidenceIds?.some((id) => keptIds.includes(id)))
+    ? output.scenarios.filter((scenario) => scenario.result !== 'not-run' && !scenario.evidenceIds?.some((id) => backing.has(id)))
     : [];
   if (scenariosWithoutEvidence.length) throw new StageError('qa-evidence-missing', { scenarios: scenariosWithoutEvidence.map((scenario) => scenario.name).join(', ') });
   // Everything that ran in the stage's sandbox, in order: the app's own commands before QA, then the agent's. A called agent that wrote ran in its own session over

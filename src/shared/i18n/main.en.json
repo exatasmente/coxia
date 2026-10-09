@@ -1200,6 +1200,7 @@
   "main.forum.code.runner.pr.refused": "The {crLong} was not opened: {reason}",
   "main.forum.code.runner.publish.failed": "Publishing on the code host failed: {reason}",
   "main.forum.code.runner.evidence.uploadFailed": "The evidence cited in \"{title}\" could not be sent to the host: {reason}",
+  "main.forum.code.runner.evidence.unknown": "{agent} cited {id}, which is not evidence kept in this run, so the citation was dropped.",
   "main.runner.comment.heldDetail": "Checked before posting and held: {problems}. Read it before saying yes.",
   "main.runner.comment.proposalTitle": "{ref}: something waits for your yes in Actions",
   "main.runner.comment.noId": "the code host did not say what it made",

@@ -1200,6 +1200,7 @@
   "main.forum.code.runner.pr.refused": "O {crLong} não foi aberto: {reason}",
   "main.forum.code.runner.publish.failed": "A publicação no host de código falhou: {reason}",
   "main.forum.code.runner.evidence.uploadFailed": "A comprovação citada em \"{title}\" não pôde ser enviada ao host: {reason}",
+  "main.forum.code.runner.evidence.unknown": "{agent} citou {id}, que não é uma comprovação guardada nesta execução, então a citação foi descartada.",
   "main.runner.comment.heldDetail": "Conferido antes de postar e retido: {problems}. Leia antes de dizer sim.",
   "main.runner.comment.proposalTitle": "{ref}: algo espera o seu sim em Ações",
   "main.runner.comment.noId": "o host de código não disse o que criou",
