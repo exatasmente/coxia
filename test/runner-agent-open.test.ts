@@ -10,7 +10,7 @@ import { confinedHooks, readConfinedHooks, type Denial } from '../src/main/runne
 import { newProvider } from '../src/shared/config/defaults';
 import { newAgent } from '../src/shared/config/team';
 import type { PoolNotice } from '../src/main/engine/contract';
-import { type Fake, type Step, errorStep, fakeOpenAI, toolStep } from './helpers/fakeOpenAI';
+import { type Fake, type Step, errorStep, fakeOpenAI, textStep, toolStep } from './helpers/fakeOpenAI';
 
 let fake: Fake;
 let root: string;
@@ -248,6 +248,109 @@ describe('a reading agent of a run on the open engine', () => {
     expect(inside.denials).toEqual([]);
     const refused = await readerRun([{ id: 'r1', name: 'Read', args: { file_path: join(docs, 'guide.md') } }]);
     expect(refused.denials.map((d) => d.code)).toEqual(['outside']);
+  });
+});
+
+describe('the sub-agents an agent is offered in delegate mode, on the open engine', () => {
+  let delegateRuns = 0;
+  // The principal is served by `first`, the list of shell by `second`; both are scripted by the caller. Everything is torn down after the run.
+  const delegated = async <R,>(opts: { principal: (req: { n: number }) => Step; sub?: (req: { n: number }) => Step; agent: (providers: { first: string; second: string }) => ReturnType<typeof newAgent>; tools?: (c: import('../src/shared/config/types').WorkspaceConfig) => void; call?: Partial<Parameters<typeof runAgent>[0]> }, then: (seen: { first: Fake; second: Fake }) => R | Promise<R>): Promise<R> => {
+    const { restRegistry } = await import('../src/main/engine/open/rest');
+    const { updateConfig } = await import('../src/main/workspaceConfig');
+    restRegistry.clear();
+    const n = (delegateRuns += 1);
+    const ids = { first: `delfirst${n}`, second: `delsecond${n}` };
+    const first = await fakeOpenAI(opts.principal);
+    const second = await fakeOpenAI(opts.sub ?? (() => toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'unused' } }])));
+    try {
+      updateConfig((c) => {
+        c.llm.providers.push(newProvider({ id: ids.first, kind: 'openai-compatible', baseUrl: first.url, structured: 'tool' }), newProvider({ id: ids.second, kind: 'openai-compatible', baseUrl: second.url, structured: 'tool' }));
+        opts.tools?.(c);
+        return c;
+      });
+      await runAgent<{ fala: string }>({ agent: opts.agent(ids), prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'dev', maxTurns: 6, ...opts.call }, ['npm test']);
+      return await then({ first, second });
+    } finally {
+      restRegistry.clear();
+      updateConfig((c) => {
+        c.agents.tools.subagents = true;
+        c.llm.providers = c.llm.providers.filter((p) => p.id !== ids.first && p.id !== ids.second);
+        return c;
+      });
+      await first.close();
+      await second.close();
+    }
+  };
+  const done = () => toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }]);
+  const toolsOf = (f: Fake, i = 0) => (f.chats()[i].body?.tools as { function: { name: string; parameters: any } }[]).map((t) => t.function);
+  const writer = (extra: object = {}, lists = true) => (ids: { first: string; second: string }) =>
+    newAgent({ id: 'dev', permission: 'worktree', ...extra, model: { role: null, provider: ids.first, model: 'model-a', ...(lists ? { activities: { shell: [{ provider: ids.second, model: 'model-b' }] } } : {}) } });
+  const hooks = (denials: Denial[] = []) => ({ confine: { root, hooks: confinedHooks({ root, commands: ['npm test'], onDenied: (d) => denials.push(d) }) } });
+
+  it('offers Agent to an agent that writes, with the kinds its tools and lists allow', async () => {
+    await delegated({ principal: done, agent: writer(), call: hooks() }, ({ first }) => {
+      const tools = toolsOf(first);
+      const agent = tools.find((t) => t.name === 'Agent');
+      expect(agent).toBeDefined();
+      // shell: it has a list and Bash; edit has no list.
+      expect(agent!.parameters.properties.kind.enum).toEqual(['explore', 'shell']);
+      expect(tools.map((t) => t.name).sort()).toEqual(['Agent', 'Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', 'final_answer']);
+    });
+  });
+
+  it('changes nothing for a pool without a list for an activity, in fallback or switch with the same lists, or with the switch of sub-agents off', async () => {
+    const plain = ['Bash', 'Edit', 'Glob', 'Grep', 'Read', 'Write', 'final_answer'];
+    await delegated({ principal: done, agent: writer({}, false), call: hooks() }, ({ first }) => expect(toolsOf(first).map((t) => t.name).sort()).toEqual(plain));
+    await delegated({ principal: done, agent: writer({ poolMode: 'fallback' }), call: hooks() }, ({ first }) => expect(toolsOf(first).map((t) => t.name).sort()).toEqual(plain));
+    // `switch` gives the model the lists, not sub-agents.
+    await delegated({ principal: done, agent: writer({ poolMode: 'switch' }), call: hooks() }, ({ first }) => expect(toolsOf(first).map((t) => t.name).sort()).toEqual(plain));
+    // The stage and the workspace say it the same way.
+    await delegated({ principal: done, agent: writer(), call: { ...hooks(), stagePoolMode: 'fallback' } }, ({ first }) => expect(toolsOf(first).map((t) => t.name).sort()).toEqual(plain));
+    await delegated({ principal: done, agent: writer(), call: hooks(), tools: (c) => void (c.agents.tools.subagents = false) }, ({ first }) => expect(toolsOf(first).map((t) => t.name).sort()).toEqual(plain));
+  });
+
+  it('does not offer it to a call that only has the procedure tools, nor to the Claude engine', async () => {
+    await delegated({ principal: done, agent: writer(), call: { ...hooks(), procedureOnly: true } }, ({ first }) => expect(toolsOf(first).map((t) => t.name)).not.toContain('Agent'));
+    const { delegatesWork } = await import('../src/main/agents');
+    const resolved = (engine: 'open' | 'claude-sdk', pool: boolean) => ({ engine, pool: pool ? { fallbacks: [], activities: { shell: [{ engine }] } } : undefined }) as never;
+    expect(delegatesWork(resolved('open', true), 'delegate')).toBe(true);
+    expect(delegatesWork(resolved('claude-sdk', true), 'delegate')).toBe(false);
+    expect(delegatesWork(resolved('open', false), 'delegate')).toBe(false);
+    expect(delegatesWork(resolved('open', true), 'fallback')).toBe(false);
+    // A list whose models are all of the Claude engine is not one the open engine will see.
+    expect(delegatesWork({ engine: 'open', pool: { fallbacks: [], activities: { shell: [{ engine: 'claude-sdk' }] } } } as never, 'delegate')).toBe(false);
+  });
+
+  it('a sub-agent of a writer runs under the same confinement: its command is refused by the same guard, and it has no Write or Edit', async () => {
+    const denials: Denial[] = [];
+    await delegated(
+      {
+        principal: (req) => (req.n === 1 ? toolStep([{ id: 'a1', name: 'Agent', args: { description: 'go', prompt: 'publish it', kind: 'shell' } }]) : done()),
+        sub: (req) => (req.n === 1 ? toolStep([{ id: 's1', name: 'Bash', args: { command: 'npm publish' } }, { id: 's2', name: 'Bash', args: { command: 'npm test' } }]) : req.n === 2 ? toolStep([{ id: 'sf', name: 'Read', args: { file_path: '.env' } }, { id: 'sg', name: 'Glob', args: { pattern: '*' } }]) : textStep('sub done')),
+        agent: writer(),
+        call: hooks(denials),
+      },
+      ({ second }) => {
+        const tools = toolsOf(second).map((t) => t.name).sort();
+        expect(tools).toEqual(['Bash', 'Glob', 'Grep', 'Read']);
+        // `npm publish` is not in the stage's commands; the guard that stops the principal stops the sub-agent.
+        expect(denials.map((d) => d.code)).toContain('command');
+        // The secret file is refused by the same filter on the sub-agent's reads.
+        const results = (second.chats()[2].body?.messages as { role: string; content: string }[]).filter((m) => m.role === 'tool').map((m) => m.content);
+        expect(results.join('\n')).toMatch(/segredo|secret/i);
+      },
+    );
+  });
+
+  it('gives a reader no edit and no shell kind, whatever the lists say, and no Write or Bash tool', async () => {
+    const reader = (ids: { first: string; second: string }) =>
+      newAgent({ id: 'dev', permission: 'read', model: { role: null, provider: ids.first, model: 'model-a', activities: { shell: [{ provider: ids.second, model: 'model-b' }], edit: [{ provider: ids.second, model: 'model-b' }] } } });
+    await delegated({ principal: done, agent: reader, call: { readRoot: { root, roots: [], hooks: readConfinedHooks({ root, roots: [] }) } } }, ({ first }) => {
+      const tools = toolsOf(first);
+      expect(tools.find((t) => t.name === 'Agent')!.parameters.properties.kind.enum).toEqual(['explore']);
+      expect(tools.map((t) => t.name)).not.toContain('Write');
+      expect(tools.map((t) => t.name)).not.toContain('Bash');
+    });
   });
 });
 

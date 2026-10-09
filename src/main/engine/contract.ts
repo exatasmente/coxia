@@ -98,13 +98,14 @@ export function poolBusyParams(e: { pool: string; models: string[]; until: numbe
 
 /**
  * A call moved from one model of its pool to another. `reason` is the refusal that made it (the model was busy; `resting` is one that was already resting from a
- * refusal elsewhere) or `activity` (the next turn belongs to a list that does not hold the model in use). `until` is when the model left behind is back (epoch ms), null
- * when it is not resting.
+ * refusal elsewhere), `activity` (the next turn belongs to a list that does not hold the model in use) or `delegate` (the main model handed a task to a sub-agent that
+ * runs on another model: nothing was left behind, `from` is the main model and `activity` the kind of the sub-agent). `until` is when the model left behind is back
+ * (epoch ms), null when it is not resting.
  */
 export interface PoolNotice {
   from: { label: string; provider?: string };
   to: { label: string; provider?: string };
-  reason: 'rate_limit' | 'overloaded' | 'server' | 'resting' | 'activity';
+  reason: 'rate_limit' | 'overloaded' | 'server' | 'resting' | 'activity' | 'delegate';
   until: number | null;
   activity: Activity;
 }
@@ -119,18 +120,22 @@ export function poolNoticeParams(e: PoolNotice): Record<string, string> {
     to: nameOf(e.to, e.from),
     time: e.until === null ? '' : clockOf(e.until),
     activity: t(`main.engine.pool.activity.${e.activity}`),
+    // What a sub-agent was handed (a delegation names the work, not the kind of turn).
+    ...(e.reason === 'delegate' ? { work: t(`main.engine.pool.work.${e.activity}`) } : {}),
   };
 }
 
-/** The key of the thread line of a switch (under `main.forum.code.`): the model was busy, or the turn asked for another list. */
-export const poolNoticeCode = (e: PoolNotice): 'runner.model.switched' | 'runner.model.moved' => (e.reason === 'activity' || e.until === null ? 'runner.model.moved' : 'runner.model.switched');
+/** The key of the thread line of a switch (under `main.forum.code.`): the model was busy, the turn asked for another list, or a sub-agent runs on another model. */
+export const poolNoticeCode = (e: PoolNotice): 'runner.model.switched' | 'runner.model.moved' | 'runner.model.delegated' =>
+  e.reason === 'delegate' ? 'runner.model.delegated' : e.reason === 'activity' || e.until === null ? 'runner.model.moved' : 'runner.model.switched';
 
 /** The thread line of a switch: the code under `main.forum.code.` and its params, with the agent whose call moved. */
 export const poolNoticeLine = (agent: string, e: PoolNotice): { code: string; params: Record<string, string> } => ({ code: poolNoticeCode(e), params: { agent, ...poolNoticeParams(e) } });
 
 /** One line saying a switch, for the live activity of a call that has no thread to say it in. */
 export function poolNoticeText(e: PoolNotice): string {
-  return t(poolNoticeCode(e) === 'runner.model.switched' ? 'main.engine.pool.switched' : 'main.engine.pool.moved', poolNoticeParams(e));
+  const code = poolNoticeCode(e);
+  return t(code === 'runner.model.switched' ? 'main.engine.pool.switched' : code === 'runner.model.delegated' ? 'main.engine.pool.delegated' : 'main.engine.pool.moved', poolNoticeParams(e));
 }
 
 /** The read-only shell the agent may use: SDK permission rules plus the allow-list the hook enforces (see agents.ts). */

@@ -37,6 +37,26 @@ describe('a switch of model, in words', () => {
     expect(poolNoticeText(moved)).not.toContain('rests until');
   });
 
+  it('says a delegation: the main model handed the kind of work to a sub-agent on another model, with no time and no rest', () => {
+    const handed: PoolNotice = { from: { label: 'model-a', provider: 'p1' }, to: { label: 'model-b', provider: 'p2' }, reason: 'delegate', until: null, activity: 'edit' };
+    expect(poolNoticeCode(handed)).toBe('runner.model.delegated');
+    setLanguage('en');
+    expect(poolNoticeText(handed)).toBe('The main model (model-a (p1)) handed editing to a sub-agent (model-b (p2)).');
+    setLanguage('pt-BR');
+    expect(poolNoticeText(handed)).toContain('subagente');
+    expect(poolNoticeText(handed)).toContain('a edição');
+    const line = poolNoticeLine('developer', handed);
+    expect(line.code).toBe('runner.model.delegated');
+    expect(line.params).toMatchObject({ agent: 'developer', from: 'model-a (p1)', to: 'model-b (p2)', work: 'a edição' });
+    expect(messageText(line)).toContain('developer');
+    for (const kind of ['explore', 'edit', 'shell', 'screen'] as const) {
+      for (const lang of ['pt-BR', 'en'] as const) {
+        setLanguage(lang);
+        expect(poolNoticeText({ ...handed, activity: kind }), `${lang} ${kind}`).not.toMatch(/main\.engine\.pool/);
+      }
+    }
+  });
+
   it('has every key in both catalogs, with the same placeholders', () => {
     const keys = Object.keys(CATALOGS.en).filter((k) => k.startsWith('main.engine.pool.') || k.startsWith('main.forum.code.runner.model.'));
     expect(keys.length).toBeGreaterThanOrEqual(10);

@@ -186,6 +186,22 @@ describe('a stage that goes wrong', () => {
     expect(b.runner.get(run.id)!.status).toBe('gate');
   });
 
+  it('says in the thread of the run that the main model handed work to a sub-agent on another model', async () => {
+    const b = await boot();
+    easy(b);
+    b.engine.script('refiner', (call) => {
+      call.onPool?.({ from: { label: 'model-a', provider: 'prov-a' }, to: { label: 'model-b', provider: 'prov-a' }, reason: 'delegate', until: null, activity: 'shell' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    const lines = b.thread(run).filter((m) => m.code?.startsWith('runner.model.'));
+    expect(lines.map((m) => m.code)).toEqual(['runner.model.delegated']);
+    expect(lines[0]).toMatchObject({ kind: 'system', stage: 'refine', params: { agent: 'refiner', from: 'model-a', to: 'model-b', work: 'os comandos' } });
+    expect(messageText(lines[0])).toContain('subagente');
+    expect(b.runner.get(run.id)!.status).toBe('gate');
+  });
+
   it('fails when the agent ran past the limit, stopping it', async () => {
     const b = await boot({ timeoutMs: 40 });
     easy(b);

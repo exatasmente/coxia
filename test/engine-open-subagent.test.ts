@@ -8,7 +8,9 @@ import type { PoolMember, PoolSwitch } from '../src/main/engine/open/pool';
 import { restRegistry } from '../src/main/engine/open/rest';
 import { readSession, type UsageRecord } from '../src/main/engine/open/session';
 import { KIND_ACTIVITIES, KIND_TURNS, SUB_KINDS, modelOfKind, offeredKinds, toolsOfKind, type SubKind } from '../src/main/engine/open/subagent';
+import { type ScreenToolset, screenToolImpls } from '../src/main/browser/engineTool';
 import type { ToolImpl } from '../src/main/engine/open/tools/types';
+import { HANDOFF_HELD_TEXT } from '../src/shared/handoff';
 import type { Activity, PoolMode } from '../src/shared/config/types';
 import { type Fake, type FakeRequest, type Step, errorStep, fakeOpenAI, textStep, toolStep } from './helpers/fakeOpenAI';
 
@@ -115,8 +117,8 @@ describe('a sub-agent of a kind', () => {
     const back = usageOf(a.chats()[1]).filter((m) => m.role === 'tool');
     expect(back).toHaveLength(1);
     expect(back[0].content).toBe('ran it: all green');
-    // No switch of the principal's model.
-    expect(events).toEqual([]);
+    // The principal's model did not move; the thread is told once that the work went to another model.
+    expect(events).toMatchObject([{ from: { label: 'model-a', provider: 'prov-a' }, to: { label: 'model-b', provider: 'prov-b' }, reason: 'delegate', until: null, activity: 'shell' }]);
   });
 
   it('is a subset of its parent\'s tools whatever the kind: the parent offers what it has, the sub-agent a filter of it', async () => {
@@ -205,8 +207,22 @@ describe('a sub-agent of a kind', () => {
     const events: PoolSwitch[] = [];
     const r = await run({ primary: member(a, 'a'), activities: { shell: [member(b1, 'b1'), member(b2, 'b2')] }, tools: [tool('Sh', 'shell')], write: true }, events);
     expect(r.data).toBe('principal done');
-    expect(events.map((e) => [e.from.label, e.to.label, e.reason])).toEqual([['model-b1', 'model-b2', 'rate_limit']]);
+    expect(events.map((e) => [e.from.label, e.to.label, e.reason])).toEqual([['model-a', 'model-b1', 'delegate'], ['model-b1', 'model-b2', 'rate_limit']]);
     expect(b2.chats()).toHaveLength(1);
+  });
+
+  it('says it once for a kind and a model, and not at all when the sub-agent runs on the model the principal is on', async () => {
+    const twice = toolStep([{ id: 'c1', name: 'Agent', args: { description: 'go', prompt: 'one', kind: 'shell' } }, { id: 'c2', name: 'Agent', args: { description: 'go', prompt: 'two', kind: 'shell' } }], { usageTokens: [10, 2] });
+    const a = await server([twice, textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server(() => textStep('sub done', { usageTokens: [10, 2] }));
+    const events: PoolSwitch[] = [];
+    await run({ primary: member(a, 'a'), activities: { shell: [member(b, 'b')] }, tools: [tool('Sh', 'shell')], write: true }, events);
+    expect(events.filter((e) => e.reason === 'delegate')).toHaveLength(1);
+    // The same model (the list holds the principal's own): nothing to say.
+    const c = await server([delegating('shell'), textStep('sub done', { usageTokens: [10, 2] }), textStep('principal done', { usageTokens: [10, 2] })]);
+    const same: PoolSwitch[] = [];
+    await run({ primary: member(c, 'c'), activities: { shell: [member(c, 'c')] }, tools: [tool('Sh', 'shell')], write: true }, same);
+    expect(same).toEqual([]);
   });
 
   it('skips a model of the list that is resting when it starts', async () => {
@@ -272,14 +288,36 @@ describe('a sub-agent of a kind', () => {
     expect(JSON.stringify(a.chats().map((c) => c.body?.messages))).toContain('a word from the person');
   });
 
-  it('a screen sub-agent calls the very tools of the principal: no second session is opened', async () => {
-    let calls = 0;
-    const snap: ToolImpl = { ...tool('Snap', 'screen'), async run() { calls++; return { response: 'ok', render: () => 'shot' }; } };
+  it('a screen sub-agent drives the stage\'s own screen: the same browser, the same hand-off, and a hold counts as if the principal had asked', async () => {
+    const calls: { tool: string; held: boolean }[] = [];
+    let holding = false;
+    let handoffs = 0;
+    const set: ScreenToolset = {
+      browser: {
+        tools: () => [{ name: 'browser_click', kind: 'act', description: 'click', properties: {}, required: [] }],
+        call: async (tool, _args, options) => {
+          calls.push({ tool, held: options?.held?.() ?? false });
+          return { text: 'clicked', images: [], isError: false } as never;
+        },
+      },
+      confirm: (async () => ({ answer: 'yes' })) as never,
+      handoff: { request: async () => { handoffs++; holding = true; return 'done'; }, active: () => holding } as never,
+    };
     const a = await server([delegating('screen'), textStep('principal done', { usageTokens: [10, 2] })]);
-    const b = await server((req) => (req.body?.messages.at(-1).role === 'tool' ? textStep('sub done', { usageTokens: [10, 2] }) : toolStep([{ id: 'c', name: 'Snap', args: {} }], { usageTokens: [10, 2] })));
-    await run({ primary: member(a, 'a'), activities: { screen: [member(b, 'b', { images: true })] }, tools: [snap] });
-    expect(calls).toBe(1);
-    expect(names(b.chats()[0])).toEqual(['Snap']);
+    const steps = [
+      toolStep([{ id: 'c1', name: 'browser_click', args: {} }], { usageTokens: [10, 2] }),
+      toolStep([{ id: 'c2', name: 'screen_handoff', args: { what: 'log in' } }], { usageTokens: [10, 2] }),
+      // The person has the screen now: the confirmation is refused, exactly as it is for the principal.
+      toolStep([{ id: 'c3', name: 'screen_confirm', args: { kind: 'send', words: 'send it' } }], { usageTokens: [10, 2] }),
+      textStep('sub done', { usageTokens: [10, 2] }),
+    ];
+    const b = await server((req) => steps[req.n - 1]);
+    await run({ primary: member(a, 'a'), activities: { screen: [member(b, 'b', { images: true })] }, tools: screenToolImpls(set) });
+    expect(names(b.chats()[0])).toEqual(['browser_click', 'screen_confirm', 'screen_handoff']);
+    expect(calls).toEqual([{ tool: 'browser_click', held: false }]);
+    expect(handoffs).toBe(1);
+    const refused = usageOf(b.chats()[3]).filter((m) => m.role === 'tool').at(-1)!.content as string;
+    expect(refused).toContain(HANDOFF_HELD_TEXT);
   });
 });
 

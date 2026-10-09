@@ -352,6 +352,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   // --- tools
   // Sub-agents that change something (edit, shell, screen) run one at a time, in the order they were asked: a chain of promises per loop.
   let mutating: Promise<unknown> = Promise.resolve();
+  const delegatedTo = new Set<string>();
   const inOrder = <R,>(work: () => Promise<R>): Promise<R> => {
     const result = mutating.then(work);
     mutating = result.catch(() => undefined);
@@ -361,6 +362,14 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     // A sub-agent of a kind runs on the list of its own activity when the pool has one; without it, and for a plain sub-agent, on the principal's pool.
     const own = kind ? modelOfKind(kind, p.pool) : null;
     let model = own?.pool.primary.label ?? pool.member.label;
+    // The thread hears when a sub-agent runs on another model than the main one: once per kind and model in the session.
+    if (own && own.pool.primary.key !== pool.member.key) {
+      const told = `${kind}|${own.pool.primary.key}`;
+      if (!delegatedTo.has(told)) {
+        delegatedTo.add(told);
+        events.onSwitch?.({ from: { label: pool.member.label, provider: pool.member.provider }, to: { label: own.pool.primary.label, provider: own.pool.primary.provider }, reason: 'delegate', until: null, activity: kind as SubKind });
+      }
+    }
     const sub = async (): Promise<OpenRunResult<string>> =>
       runOpen<string>({
         ...p,

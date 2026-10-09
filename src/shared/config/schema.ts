@@ -249,7 +249,7 @@ const agentTools = object('Tools pre-approved for agents. Writes, web and secret
   trackerMcp: boolean('Issue tracker MCP tools.'),
   trackerMcpServer: string('MCP server that offers the issue tools; empty: none.', { maxLength: 100 }),
   vcsCli: boolean('Read-only use of the VCS CLI.'),
-  subagents: boolean('Subagents in the unblock ceremony.'),
+  subagents: boolean('Subagents: delegating reading in the unblock ceremony and, in runs, the sub-agents a model hands edits, commands and the screen to when its pool is used by delegation (llm.poolMode).'),
 });
 
 const agentDef = object(

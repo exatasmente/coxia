@@ -643,7 +643,7 @@
   "ui.team.tools.skills": "Skills",
   "ui.team.tools.skills.hint": "The Claude Code skills of the configured folders.",
   "ui.team.tools.subagents": "Subagents",
-  "ui.team.tools.subagents.hint": "Delegating a broad search to a subagent, in the ceremonies.",
+  "ui.team.tools.subagents.hint": "Delegating a broad search to a subagent in the ceremonies and, in runs, handing edits, commands and the screen to sub-agents when the pool of models is used by delegation.",
   "ui.team.tools.trackerMcp": "Tracker MCP tools",
   "ui.team.tools.trackerMcp.hint": "The issue tracker's own tools, when a server is configured.",
   "ui.team.tools.trackerMcpServer": "Tracker MCP server",

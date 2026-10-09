@@ -643,7 +643,7 @@
   "ui.team.tools.skills": "Skills",
   "ui.team.tools.skills.hint": "As skills do Claude Code das pastas configuradas.",
   "ui.team.tools.subagents": "Subagentes",
-  "ui.team.tools.subagents.hint": "Delegar uma busca ampla a um subagente, nas cerimônias.",
+  "ui.team.tools.subagents.hint": "Delegar uma busca ampla a um subagente nas cerimônias e, nas execuções, passar edição, comandos e tela a subagentes quando o conjunto de modelos é usado por delegação.",
   "ui.team.tools.trackerMcp": "Ferramentas MCP do rastreador",
   "ui.team.tools.trackerMcp.hint": "As ferramentas do próprio rastreador, quando há um servidor configurado.",
   "ui.team.tools.trackerMcpServer": "Servidor MCP do rastreador",

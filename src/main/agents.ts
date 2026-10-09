@@ -6,7 +6,7 @@ import { destination } from '../shared/destination';
 import type { UsageReport } from '../shared/runs/usage';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult, TurnOptions } from '../shared/types';
 import type { AgentDef, AgentToolsConfig, PoolMode } from '../shared/config/types';
-import { resolvePoolMode } from '../shared/config/poolMode';
+import { effectivePoolMode, resolvePoolMode } from '../shared/config/poolMode';
 import { toolsForAgent } from '../shared/config/team';
 import type { AttachmentRef } from '../shared/attachments';
 import type { ModelRole } from '../shared/settings';
@@ -24,7 +24,7 @@ import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { scrubShellHooks } from './engine/scrubShell';
 import { type DocSources, type OpenEngineSelection, type PoolMemberSpec, type SelectionPool, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
 import { memberKey, withPool, withoutPool } from './modelPick';
-import { ACTIVITIES } from '../shared/config/types';
+import { ACTIVITIES, type Activity } from '../shared/config/types';
 import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
 import { crossDayRepeats } from './minutesStore';
 import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchangedTurn } from './sameDay';
@@ -499,6 +499,21 @@ function openMember(t: ResolvedRole): PoolMemberSpec {
       ? { capabilities: { ...(c ? { tools: c.tools, jsonSchema: c.jsonSchema } : {}), ...(contextWindow !== null ? { contextWindow } : {}), ...(images !== undefined ? { images } : {}) } }
       : {}),
   };
+}
+
+/**
+ * Whether the call may hand work to sub-agents of a kind: the model it runs on is of the open engine, and its pool is used by `delegate` with a list of its own for at
+ * least one activity (`switch` and `delegate` without one are a plain fallback and change nothing, `Agent` included). The lists counted are the ones the open
+ * engine will see: the entries of the Claude engine wait for the start of a stage.
+ */
+export function delegatesWork(picked: ResolvedRole, mode: PoolMode): boolean {
+  if (picked.engine !== 'open') return false;
+  const lists: Partial<Record<Activity, ResolvedRole[]>> = {};
+  for (const a of ACTIVITIES) {
+    const open = (picked.pool?.activities[a] ?? []).filter((r) => r.engine === 'open');
+    if (open.length) lists[a] = open;
+  }
+  return effectivePoolMode(mode, lists) === 'delegate';
 }
 
 /**
@@ -1339,6 +1354,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
     const modelRole = call.agent.model.role ?? 'deep';
     const only = call.procedureOnly === true;
+    const poolMode = resolvePoolMode({ agent: call.agent.poolMode, stage: call.stagePoolMode, workspace: getConfig().llm.poolMode });
     // A round that continues an earlier call runs on the engine that holds its session (a session of the open engine is not one the SDK knows, and the other way
     // round); a start picks the first model of the pool that is not resting. The thread hears when the call does not open on the first one.
     const r = await withPool<T>(
@@ -1364,7 +1380,9 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           target: picked,
           system: [call.system, docs].filter(Boolean).join('\n\n'),
           cwd: call.cwd,
-          allowedTools: only ? [] : [...allowedTools, ...rules],
+          // `Agent` for a call that delegates, whoever it is (a writer included): the switch of the agent's tools that governs sub-agents decides, and its sub-agents have
+          // only tools the call has. A call whose pool does not delegate gets the tools it got before.
+          allowedTools: only ? [] : [...allowedTools, ...(tools.subagents && delegatesWork(picked, poolMode) && !allowedTools.includes('Agent') ? ['Agent'] : []), ...rules],
           extraDirs: call.confine || only ? [] : extraDirs(call.cwd, modelRole, { claude: false }),
           isolated: true,
           shell: only ? { rules: [], patterns: shell.patterns } : { rules, patterns: shell.patterns },
@@ -1385,7 +1403,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           beat: call.beat,
           onUsage: call.onUsage,
           onPool: call.onPool,
-          poolMode: resolvePoolMode({ agent: call.agent.poolMode, stage: call.stagePoolMode, workspace: getConfig().llm.poolMode }),
+          poolMode,
           incoming: only ? undefined : call.incoming,
           runnerTools: only ? undefined : call.runnerTools,
           procedures: call.procedures,

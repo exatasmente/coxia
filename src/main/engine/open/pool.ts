@@ -128,8 +128,11 @@ export interface OpenPool {
   mode?: PoolMode;
 }
 
-/** Why a call moved to another model. `resting`: the one in use was already resting from a refusal elsewhere; `activity`: the new list does not hold it. */
-export type SwitchReason = 'rate_limit' | 'overloaded' | 'server' | 'resting' | 'activity';
+/**
+ * Why a call moved to another model. `resting`: the one in use was already resting from a refusal elsewhere; `activity`: the new list does not hold it; `delegate`: a
+ * sub-agent of a kind runs on another model than the main one (the main one did not move).
+ */
+export type SwitchReason = 'rate_limit' | 'overloaded' | 'server' | 'resting' | 'activity' | 'delegate';
 
 export interface PoolSwitch {
   from: { label: string; provider?: string };
