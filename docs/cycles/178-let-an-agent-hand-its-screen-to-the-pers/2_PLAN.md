@@ -106,7 +106,7 @@ New: `typed-values`, `maskExact` (copied), `handoff-service`, `handoff-ui`, `han
 ## 8. Risks and what the maintainer must decide
 
 1. **Names from #177 may differ** (`screenTools`, `ctx`, `ScreenAsks`, `MaskSet`, `StepLog`, the key shape). The first step of phase A reads the merged code; this plan is edited with the code, not around it.
-2. **The recording now holds what the person typed, in clear, and `runs:evidence` is open to a paired browser** (`src/main/webPolicy.ts` lists no evidence channel). The warning says the interval is recorded and kept with the run's evidence. If the maintainer wants a hand-off recording to be playable on the computer only, that is a check inside the evidence handler (the policy is per channel, not per record): **a decision for the main session before commit 11**.
+2. **The recording now holds what the person typed, in clear, and `runs:evidence` is open to a paired browser** (`src/main/webPolicy.ts` lists no evidence channel). The warning says the interval is recorded and kept with the run's evidence. If the maintainer wants a hand-off recording to be playable on the computer only, that is a check inside the evidence handler (the policy is per channel, not per record): **decided by the maintainer on 2026-10-09: a hand-off recording plays on the paired browser too, like any other recording**; no check is added to the evidence handler.
 3. **The step record.** Spec rule 16 writes "handed the screen over: {what}"; #179's spec makes the interval a contentless step. This plan follows #179 (no `name`; `what` stays in the thread and the audit). Say if the other is wanted.
 4. **The tool call waits for up to 15 minutes plus the time the person holds the screen.** The open engine has no per-tool timeout (`src/main/engine/open/client.ts:242` limits a model request, not a tool); whether the Claude SDK's MCP client times out a long call is **not verified** and is the first check of commit 6 (a `Shell` call waiting on a host approval is the precedent). If it does, the tool must return `expired` before that bound.
 5. **Reconstructing the typed text from keys can miss** (a dead key, autofill, a caret moved by the mouse, a code split over several boxes joined by the page, a value under 4 characters): the masker is exact-match and the guarantee on the shell path stays best effort (spec rules 28, 29).
@@ -130,6 +130,8 @@ New: `typed-values`, `maskExact` (copied), `handoff-service`, `handoff-ui`, `han
 | D10 | The wait limits are constants; no setting, no schema bump | A setting (spec open question 3) |
 | D11 | The notice target carries both `id` and `thread` | A new push screen name |
 | D12 | The warning is composed from `paths` in `src/shared/handoff.ts`, every time | Remembering the acknowledgement per agent |
+
+Maintainer answers at gate 2 (waived), 2026-10-09: a recording that holds a hand-off interval stays playable on a paired browser, like any other recording (rejected: computer only, a check inside the evidence handler). The other choices of section 8 stand as the plan writes them.
 
 ## 10. What was and was not verified
 
