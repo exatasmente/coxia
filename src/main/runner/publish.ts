@@ -465,7 +465,11 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
     const where = x.target === 'issue' ? { project: projects(run).issue, iid: trackIid(run) } : await prOf(run, provider);
     if (!where) {
-      say(run, 'runner.review.waiting', { round: x.key.replace(/^\D+/, '') || '1' });
+      // Once per comment record: the sweep repeats until the pull request exists, and the thread must not gain a line each time.
+      if (!run.comments[x.key]?.waitingSaid) {
+        say(run, 'runner.review.waiting', { round: x.key.replace(/^\D+/, '') || '1' });
+        moveRun(d, runId, (r) => recordCommentWaiting(r, x.key, now()));
+      }
       return;
     }
 

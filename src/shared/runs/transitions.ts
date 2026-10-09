@@ -101,7 +101,7 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
       run.error = { code: 'no-event', stage: stageId, detail: null };
       log(run, at, 'failed', stageId, 'app', 'no-event');
       messages.push({ ...base, kind: 'system', code: 'run.stage.noEvent', params: { stage: stage.label } });
-    } else if (!prRecorded(run)) {
+    } else if (stage.waitsFor.kind === 'pr-merged' && !prRecorded(run)) {
       // A wait for the pull request's merge holds nothing before that pull request is recorded on the run: without it the wait could never fire, and the
       // person would read a "waiting" run that no host event can end. Failing closed: the guard is provider-free, so a linked pull request has to be
       // resolved into a record first (the runner does it before the last stage of the flow ends).

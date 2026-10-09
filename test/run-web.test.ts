@@ -32,7 +32,7 @@ describe('the run screen in a browser', () => {
     const question = { by: 'developer', holder: null, kind: 'agent' as const, text: 'x', askedAt: '', stage: 'plan' };
     const seen = new Set<RunActionId>();
     for (const status of RUN_STATUSES) {
-      for (const question_ of [null, question, { ...question, kind: 'squad' as const }]) {
+      for (const question_ of [null, question, { ...question, kind: 'squad' as const }, { ...question, kind: 'pr-retry' as const, bases: ['release/0.8.0', 'main'], targetBranch: 'release/0.8.0', baseGone: true }]) {
         for (const a of runActions({ status, question: question_ })) {
           seen.add(a.id);
           expect(webAccess(CHANNEL[a.id]), `${status}/${a.id}`).toBe('allow');
