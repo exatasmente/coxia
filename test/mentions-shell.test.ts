@@ -57,6 +57,21 @@ describe('the commands of a mention outside a run', () => {
     expect(sandbox.opened[0].session.closed).toBe(true);
   });
 
+  it('gives the sandbox the agent\'s own hosts, and says in the thread what its proxy decided', async () => {
+    const sandbox = fakeSandbox();
+    const engine = fakeEngine();
+    engine.script('turn', () => ({ text: 'Read.' }));
+    const withHosts = config('sandbox');
+    withHosts.agents.team.find((a) => a.id === 'turn')!.allowedHosts = ['app.example.com'];
+    await answerMentions(place([repo('api')]), message(), { forum, config: () => withHosts, engine, sandbox, env: () => ({ fallbackCwd: root }) });
+    const options = sandbox.opened[0].options;
+    expect(options.agent?.allowedHosts).toEqual(['app.example.com']);
+    options.onProxy?.({ host: 'app.example.com', port: 443, allowed: true });
+    options.onProxy?.({ host: 'other.example.com', port: 443, allowed: false, why: 'host' });
+    const lines = forum.read('squads', 0, 100)?.messages.filter((m) => m.code === 'runner.proxy') ?? [];
+    expect(lines.map((m) => [m.params?.agent, m.params?.host, m.params?.port])).toEqual([['turn', 'app.example.com', 443], ['turn', 'other.example.com', 443]]);
+  });
+
   it('copies only what git knows of a repository, and lends it the clone\'s dependencies read-only through the sandbox', async () => {
     const r = repo('web');
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: r.path });

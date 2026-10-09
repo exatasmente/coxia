@@ -56,6 +56,16 @@ describe('a stage with a sandbox', () => {
     expect(b.engine.calls.filter((c) => !['developer', 'qa'].includes(c.agent.id)).every((c) => c.exec === undefined)).toBe(true);
   });
 
+  it('opens the sandbox for the agent that works the stage, with the hosts that agent was given and for a host agent none', async () => {
+    const sandbox = fakeSandbox();
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'developer', 'sandbox'); shellOf(c, 'qa', 'sandbox'); c.agents.team.find((a) => a.id === 'developer')!.allowedHosts = ['app.example.com']; } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    expect(sandbox.opened.map((o) => [o.options.agent?.allowedHosts ?? null])).toEqual([[['app.example.com']], [null]]);
+  });
+
   it('does not make one for an agent with no commands or with the list, which runs as it always did', async () => {
     const sandbox = fakeSandbox();
     const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'developer', 'allowlist'); c.runner.commands = ['npm test']; } });

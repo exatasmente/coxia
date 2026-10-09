@@ -2,7 +2,8 @@ import { accessSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, r
 import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { RunnerSandbox } from '../../shared/config/types';
+import type { AgentDef, RunnerSandbox } from '../../shared/config/types';
+import { effectiveNetwork } from '../../shared/network';
 import { readOnlyPathProblem } from '../../shared/sandboxPaths';
 import type { SandboxGuiStatus, SandboxStatus } from '../../shared/sandbox';
 import { t } from '../../shared/i18n';
@@ -13,7 +14,7 @@ import { SandboxError } from './errors';
 import { gitMounts } from './gitView';
 import { bwrapArgs } from './policy';
 import { invalidateSandboxStatus, sandboxStatus } from './probe';
-import { type ProxyDecision, createRegistryProxy } from './proxy';
+import { type ProxyDecision, type ProxyOptions, createRegistryProxy } from './proxy';
 import { type ExecResult, type SandboxSession, type SessionDeps, openSession } from './session';
 import { type HostSessionDeps, type HostSessionOptions, openHostSession } from './host';
 import { type HostDisplay, startHostDisplay } from './display';
@@ -56,6 +57,11 @@ export interface OpenOptions {
    * worktree's. Ignored when the tree is a worktree, whose clone git names.
    */
   clone?: string;
+  /**
+   * The agent the sandbox is for: its own list of hosts (`allowedHosts`) meets the workspace's network setting (see `effectiveNetwork`). Absent, or without a list: the
+   * workspace's setting alone, as before. Not used by `openHost`: an agent on the computer has the computer's own network.
+   */
+  agent?: Pick<AgentDef, 'allowedHosts'>;
 }
 
 /** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders; to test an interface it asks, like a sandbox, for the browsers folder and (a QA stage) a display. */
@@ -88,6 +94,8 @@ export interface SandboxServiceOptions {
   startDisplay?: (program: string) => Promise<HostDisplay | null>;
   /** The environment a host command starts from (default: the app's, with the login PATH). */
   hostEnv?: () => Promise<NodeJS.ProcessEnv>;
+  /** How the proxy resolves a name and opens a connection (default: the real ones); for a test. */
+  proxyDeps?: Pick<ProxyOptions, 'resolve' | 'open'>;
 }
 
 /** Why a machine cannot make a sandbox, in words (the detail is what the backend itself said). */
@@ -239,10 +247,12 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         const clone = git.clone ?? opts.clone ?? null;
         const deps = clone ? dependencyBinds(tree ?? worktree, worktree, clone) : { binds: [], outside: [] };
         for (const name of deps.outside) opts.onNote?.({ code: 'runner.sandbox.depsOutside', params: { name } });
-        const registry = opts.config.network === 'registry';
-        const openNet = opts.config.network === 'open';
+        // The workspace's setting, met by the agent's own list: the proxy carries the hosts of both, or only the agent's when the workspace is open.
+        const net = effectiveNetwork(opts.config, opts.agent);
+        const registry = net.mode === 'proxy';
+        const openNet = net.mode === 'open';
         if (registry) {
-          const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: opts.config.registryHosts, onDecision: opts.onProxy });
+          const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: net.hosts, onDecision: opts.onProxy, ...o.proxyDeps });
           cleanup.push(() => proxy.close());
         }
         const { browsers, browsersGone } = browsersOf(opts.config);
@@ -260,7 +270,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           system: systemLayout(),
           roBinds,
           pathDirs,
-          network: registry ? 'proxy' : openNet ? 'open' : 'off',
+          network: net.mode,
           limits: opts.config.limits,
           tmpMb: 512,
           ...(browsers || xvfb ? { gui: { browsers, xvfb } } : {}),

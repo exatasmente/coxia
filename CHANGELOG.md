@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **An agent can have a list of hosts of its own.** `allowedHosts` in an agent of the team (exact names, HTTPS on port 443, at most 20) gives the sandbox of that agent, in a stage and in a conversation, a window to those hosts through the app's filtering proxy, on top of the workspace's network setting: with the network off the agent reaches only its hosts, with the registry on it reaches the registry's and its own, and with the network open the list narrows it to its hosts. An agent without the list keeps the workspace's setting, and an agent set to run on the computer is not affected. A conversation now shows in the thread what the proxy decided about each request, as a stage does. The list is set in the configuration file; a paired browser can shorten it and never add a host.
+
 ## [0.9.0-beta.6] - 2026-10-09
 
 ### Fixed
