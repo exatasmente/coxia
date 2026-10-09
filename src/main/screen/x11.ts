@@ -91,6 +91,8 @@ export interface X11Deps {
   /** Time limits in ms. */
   requestMs?: number;
   imageMs?: number;
+  /** How long the socket may take to accept; defaults to `requestMs`. */
+  connectMs?: number;
 }
 
 function defaultIsSocket(path: string): boolean {
@@ -176,9 +178,19 @@ export async function connectX11(path: string, deps: X11Deps = {}): Promise<X11C
   const imageMs = deps.imageMs ?? IMAGE_MS;
   const socket = await new Promise<Socket>((resolve, reject) => {
     const s = (deps.connect ?? ((p) => createConnection({ path: p })))(path);
-    const fail = (e: Error): void => reject(new X11Error('connect', e.message));
+    // A path the agent left behind may be a socket nobody accepts on: the stage does not wait on it.
+    const timer = setTimeout(() => {
+      s.off('error', fail);
+      s.destroy();
+      reject(new X11Error('timeout', 'connect'));
+    }, deps.connectMs ?? requestMs);
+    const fail = (e: Error): void => {
+      clearTimeout(timer);
+      reject(new X11Error('connect', e.message));
+    };
     s.once('error', fail);
     s.once('connect', () => {
+      clearTimeout(timer);
       s.off('error', fail);
       resolve(s);
     });

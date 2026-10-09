@@ -65,6 +65,13 @@ describe('connecting', () => {
     await expect(connectX11(path, { isSocket: () => true })).rejects.toMatchObject({ code: 'connect' });
   });
 
+  it('gives up on a socket that never accepts, and destroys it', async () => {
+    const { Socket } = await import('node:net');
+    const stuck = new Socket();
+    await expect(connectX11('/never', { isSocket: () => true, connect: () => stuck, connectMs: 40 })).rejects.toMatchObject({ code: 'timeout' });
+    expect(stuck.destroyed).toBe(true);
+  });
+
   it('refuses a setup that failed, that claims more than 64 KiB and that is not little-endian', async () => {
     for (const o of [{ setupStatus: 0 }, { setupStatus: 2 }, { setupClaims: 17000 }, { imageOrder: 1 }] satisfies FakeXOptions[]) {
       const x = await startFakeX(o);
