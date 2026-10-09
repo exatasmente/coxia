@@ -69,7 +69,7 @@ describe('the run store', () => {
     const store = createRunStore(dir);
     const run = store.create(fresh());
     const path = join(dir, `${run.id}.json`);
-    const newer = JSON.stringify({ ...run, version: 6, somethingNew: true });
+    const newer = JSON.stringify({ ...run, version: 7, somethingNew: true });
     writeFileSync(path, newer);
     expect(store.get(run.id)).toBeNull();
     expect(store.list()).toEqual([]);
@@ -294,9 +294,9 @@ describe('the version of a run file', () => {
     expect(onDisk(run.id).version).toBe(1);
   });
 
-  it('refuses a 6 as written by a newer app and anything else that is not a version', () => {
+  it('refuses a 7 as written by a newer app and anything else that is not a version', () => {
     const run = JSON.parse(JSON.stringify(fresh()));
-    expect(parseRun({ ...run, version: 6 })).toMatchObject({ ok: false, reason: 'newer' });
+    expect(parseRun({ ...run, version: 7 })).toMatchObject({ ok: false, reason: 'newer' });
     expect(parseRun({ ...run, version: 0 })).toMatchObject({ ok: false, reason: 'invalid' });
     expect(parseRun({ ...run, version: 1.5 })).toMatchObject({ ok: false, reason: 'invalid' });
     expect(parseRun({ ...run, version: '1' })).toMatchObject({ ok: false, reason: 'invalid' });

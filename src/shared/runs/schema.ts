@@ -294,7 +294,7 @@ const docsRun = object('What the run is about when it drafts the documentation o
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
-    version: { type: 'integer', description: 'Version of this file format: 5 when a stage of the run used a procedure, 4 when a screen recording of the run holds a hand-off, 3 when it holds cuts or the time it started after the screen opened, 2 when the run holds one without, else 1.', enum: [1, 2, 3, 4, 5] },
+    version: { type: 'integer', description: 'Version of this file format: 6 when the run is blocked by its pull request (a pr-retry question, a pr-open-failed error or a comment that said it waits), 5 when a stage of the run used a procedure, 4 when a screen recording of the run holds a hand-off, 3 when it holds cuts or the time it started after the screen opened, 2 when the run holds one without, else 1.', enum: [1, 2, 3, 4, 5, 6] },
     rev: { type: 'integer', description: 'Grows by one on every save.', minimum: 0 },
     id: string('Run id.', { pattern: RUN_ID.source }),
     issue: object('The issue.', { ref: string('How the cards write it.', { minLength: 1, maxLength: 200 }), iid: { type: 'integer', description: 'Issue number.', minimum: 0 }, title: string('Title.', { maxLength: 500 }), url: nullableString('Web address.') }, ['ref', 'iid', 'title', 'url']),

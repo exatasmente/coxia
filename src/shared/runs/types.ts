@@ -14,14 +14,26 @@ import type { ProcedureUse } from '../procedures';
  * Version 4 is a run whose recording holds a hand-off interval (`handoff`, and a mark of kind `handoff`, #178): the apps before it allow no such property.
  * Version 5 is a run whose stage records carry `procedures` (the procedures a stage used, #179): an older app's schema allows no other property in a stage record, so it would call
  * such a run invalid; at 5 it says "written by a newer app".
+ * Version 6 is a run blocked by its pull request (#160): a question of kind `pr-retry` (or its `bases`, `targetBranch`, `baseGone`), an error with code `pr-open-failed`, or a comment
+ * with `waitingSaid`. An older app's schema has closed enums and no other property in those records, so it would call such a run invalid; at 6 it says "written by a newer app".
  * Every other run is written as version 1 (`runVersionOf`), so a downgrade loses only the runs that have a recording, from 3 on only the ones with cuts too, from 4 on only
- * the ones with a hand-off, and from 5 on only the ones that used a procedure.
+ * the ones with a hand-off, from 5 on only the ones that used a procedure, and from 6 on only the ones blocked by their pull request.
  */
-export const RUN_VERSION = 5;
-export type RunVersion = 1 | 2 | 3 | 4 | 5;
+export const RUN_VERSION = 6;
+export type RunVersion = 1 | 2 | 3 | 4 | 5 | 6;
 
-/** The format a run is written as: 5 when a stage record holds `procedures`, 4 when a screen recording holds a hand-off, 3 when it holds cuts or `startedAfterMs` (the fields v2 does not know), 2 when it holds one without, else 1. The store stamps it on every save, so it follows the content and cannot be forgotten by a move. */
-export const runVersionOf = (run: { evidence?: Run['evidence']; stages?: readonly Pick<StageRecord, 'procedures'>[] }): RunVersion => {
+/** The format a run is written as: 6 when the run is blocked by its pull request (a `pr-retry` question, a `pr-open-failed` error, or a `waitingSaid` comment), 5 when a stage record holds `procedures`, 4 when a screen recording holds a hand-off, 3 when it holds cuts or `startedAfterMs` (the fields v2 does not know), 2 when it holds one without, else 1. The store stamps it on every save, so it follows the content and cannot be forgotten by a move. */
+export const runVersionOf = (run: {
+  evidence?: Run['evidence'];
+  stages?: readonly Pick<StageRecord, 'procedures'>[];
+  question?: Pick<PendingQuestion, 'kind' | 'bases' | 'targetBranch' | 'baseGone'> | null;
+  error?: Pick<RunFailure, 'code'> | null;
+  comments?: Record<string, Pick<CommentRecord, 'waitingSaid'>>;
+}): RunVersion => {
+  const q = run.question;
+  if (q && (q.kind === 'pr-retry' || q.bases !== undefined || q.targetBranch !== undefined || q.baseGone !== undefined)) return 6;
+  if (run.error?.code === 'pr-open-failed') return 6;
+  if (Object.values(run.comments ?? {}).some((c) => c.waitingSaid !== undefined)) return 6;
   if ((run.stages ?? []).some((s) => s.procedures !== undefined)) return 5;
   const pieces = Object.values(run.evidence ?? {}).filter((e) => e.kind === 'webm');
   if (pieces.some((e) => e.recording?.handoff === true || e.recording?.marks.some((m) => m.kind !== undefined))) return 4;

@@ -51,13 +51,33 @@ describe('recordProcedures', () => {
 describe('the run format', () => {
   it('is 5 only when a stage record holds the field, whatever else the run holds', () => {
     const run = fresh();
-    expect(RUN_VERSION).toBe(5);
+    expect(RUN_VERSION).toBe(6);
     expect(runVersionOf(run)).toBe(1);
     expect(runVersionOf(recordProcedures(run, run.stage, [use(1)], at(1)).run)).toBe(5);
     // A recording with cuts is 3 by itself; with a procedure the run is 5.
     expect(runVersionOf({ evidence: { 'ev-1': recording } })).toBe(3);
     expect(runVersionOf({ evidence: { 'ev-1': recording }, stages: [{ procedures: [use(1)] }] })).toBe(5);
     expect(runVersionOf({ stages: [{}, {}] })).toBe(1);
+  });
+
+  // #160: a run blocked by its pull request carries values an older app's closed enums and strict records would call invalid, so it is written as 6.
+  it('is 6 when the run is blocked by its pull request, whatever else it holds, and only then', () => {
+    const run = fresh();
+    expect(runVersionOf(run)).toBe(1);
+    const question = (extra: Record<string, unknown>) => ({ ...run.question, ...extra }) as unknown as NonNullable<Run['question']>;
+    expect(runVersionOf({ question: question({ kind: 'pr-retry' }) })).toBe(6);
+    expect(runVersionOf({ question: question({ kind: 'agent', bases: ['main'] }) })).toBe(6);
+    expect(runVersionOf({ question: question({ kind: 'agent', targetBranch: 'release/1.0.0' }) })).toBe(6);
+    expect(runVersionOf({ question: question({ kind: 'agent', baseGone: true }) })).toBe(6);
+    expect(runVersionOf({ question: question({ kind: 'agent' }) })).toBe(1);
+    expect(runVersionOf({ error: { code: 'pr-open-failed' } })).toBe(6);
+    expect(runVersionOf({ error: { code: 'stage-failed' } })).toBe(1);
+    expect(runVersionOf({ comments: { pr: { waitingSaid: true } } })).toBe(6);
+    expect(runVersionOf({ comments: { pr: {} } })).toBe(1);
+    // It wins over a procedure and a recording; a run with procedures and none of these stays at 5.
+    expect(runVersionOf({ error: { code: 'pr-open-failed' }, stages: [{ procedures: [use(1)] }] })).toBe(6);
+    expect(runVersionOf({ evidence: { 'ev-1': recording }, comments: { pr: { waitingSaid: true } } })).toBe(6);
+    expect(runVersionOf({ error: { code: 'stage-failed' }, comments: { pr: {} }, stages: [{ procedures: [use(1)] }] })).toBe(5);
   });
 
   it('is stamped by the store on every save and follows the content', () => {
@@ -85,7 +105,7 @@ describe('the run format', () => {
     expect(with_({ revision: 0 }).ok).toBe(false);
     expect(with_({ title: 'x'.repeat(81) }).ok).toBe(false);
     expect(with_({ steps: [] }).ok).toBe(false);
-    const newer = parseRun({ ...base, version: 6 });
+    const newer = parseRun({ ...base, version: 7 });
     expect(newer).toMatchObject({ ok: false, reason: 'newer' });
   });
 
