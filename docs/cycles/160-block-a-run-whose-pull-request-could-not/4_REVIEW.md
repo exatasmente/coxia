@@ -1,34 +1,32 @@
-# Revisão: a corrida cujo pull request o anfitrião recusou não fica mais esperando às cegas
+# Review: the run the host refused to open stops where the person can act, and the review waits once
 
-## O que foi verificado
+## What was checked this round
 
-- Diff inteiro contra 1_SPEC.md e 2_PLAN.md, arquivo por arquivo, incluindo os trechos cortados no diff (test/runner-pr-blocked.test.ts e src/shared/i18n/tmp-del.json lidos por inteiro).
-- Portões e testes na worktree: `npx tsc --noEmit` (falha), `npx vitest run` em runner-pr-blocked/runner-flow/run-view (4 falhas, 53 passando nos arquivos transformados), `node scripts/public-audit.mjs` (limpo) e `npm run i18n:lint` (falha).
-- A vitest completa e o theme-audit não rodaram nesta revisão; os achados abaixo já decidem o veredito. A tela do retry (RunActions) não foi exercida em navegador; o comportamento da tabela de ações está coberto pelos testes puros de run-view e run-web, que passam.
+Only the blockers of the previous rounds and the standing gates; nothing already
+accepted is reopened. Checked in the worktree, by reading the changed files and by
+running the gates.
 
-## Bloqueantes
+Confirmed resolved from the earlier rounds:
 
-1. **A guarda da espera vale para toda espera, não só pr-merged** (src/shared/runs/transitions.ts, o `else if (!prRecorded(run))` no `enter()`): falta checar `stage.waitsFor.kind === 'pr-merged'`. Como está, qualquer espera (time, label, linked-done, reply) falha a corrida com `pr-open-failed` quando não há pull request gravado. Três testes existentes do runner-flow falham hoje por isso ("waits for a time...", "a wait on a linked issue...", "holds a run that asked another squad..."). Muda o comportamento de fluxos que a issue não toca.
-2. **Chaves de catálogo inexistentes**: `main.runs.stage.prBlocked`, `main.runs.stage.prBaseGone` e `main.runs.stage.prRetry`, usadas em `failPr` (publish.ts) e `prRetryAnswered` (transitions.ts), não existem nem em main.en.json nem em main.pt-BR.json — o texto bloqueado e a linha de retry do thread saem como chave crua. O i18n:lint não acusa porque falta nos dois lados (o lint só aponta divergência entre catálogos).
-3. **runner.pr.failed perdeu o {branch}**: `failPr` passa `{ branch, reason }`, mas o texto em EN e PT continua sem `{branch}`; o critério de aceite de que a linha do thread nomeia a branch alvo fica sem efeito.
-4. **Catálogo pt-BR incompleto**: faltam `main.forum.code.run.stage.noPullRequest`, `ui.cycle.action.retryPr` e `ui.cycle.error.prOpenFailed`; `main.forum.code.runner.review.waiting` em PT não ganhou a redação once-per-round; i18n:lint vermelho nestes três.
-5. **src/shared/i18n/tmp-del.json commitado**: lixo de rascunho (declarações sem sentido) marcado para apagar e não apagado.
-6. **test/runner-pr-blocked.test.ts é rascunho e não compila**: o segundo teste tem corpo `...` (TS1128/TS1109 em tsc e na transformação do vitest, linhas 147–149), e os testes referem identificadores indefinidos (`failingForge`, `openTheGate`); o falso wire-in `failingOnce` também não usa o caminho do fakeForge que os demais testes de runner usam.
+- The wait guard in `enter()` is now scoped to `pr-merged` waits and only fires when the run's own description record is `refused`; a draft or a `proposed` record still lets the stage wait, and the runner records a linked pull request (`ensurePr`) before the final `stageDone`. The existing waiting flows are no longer touched by it.
+- All previously missing and unsorted catalog keys exist in both languages, including `main.runs.stage.prBlocked` / `prBaseGone` / `prRetry`, `run.stage.noPullRequest`, `ui.cycle.action.retryPr`, `ui.cycle.error.prOpenFailed` and the once-per-round wording of `runner.review.waiting`; `runner.pr.failed` carries `{branch}`. `i18n:lint` passes.
+- `runs:retryPr` is in `EXTERNAL_EFFECT` in `webPolicy.ts` and pinned by the policy list in `test/runs-policy.test.ts`, which passes.
+- The draft file `src/shared/i18n/tmp-del.json` no longer exists.
+- The CHANGELOG `Unreleased` entry is there, with neutral terminology (`{crLong}`, no other host's wording); the host-terms check passes.
+- `test/runner-pr-blocked.test.ts` is a real file now: the blocked run in `question`/`pr-retry` with the host's answer and the bases, the retry through the audited door resuming the flow, the refused-record guard closed, the linked pull request recorded before the wait, the recovery of the failed run, and the once-per-round waiting line. All green.
 
-## Teste que falta para comportamento novo
+## Blockers this round
 
-Nenhum dos sete comportamentos da tabela do 2_PLAN.md está provado por teste passando: o arquivo que devia contê-los não compila e não cobre (422 de ramo base inexistente, retryPr até o fim do fluxo, ensurePr de pull request vinculado, recuperação do failed, e a linha "aguardando" uma vez por rodada — que também não menciona `waiting` em nenhum lugar de runner-review.test.ts). Passam hoje: o caso novo da guarda no runner-flow ("never starts the pr-merged wait"), o runActions de pr-retry (run-view), o canal no run-web e os testes prerexistentes que a mudança não toca.
+1. **`test/runner-flow.test.ts` does not compile**, so `npx tsc --noEmit` and the full suite are red: the new guard test (l.214) is not `async` but awaits (l.217), which breaks the whole file in the transform. The behaviors it should prove (the guard closed, and the recovery into the wait) are therefore not proven by a passing test.
+2. **`test/run-web.test.ts:38` fails**: the "no refused button in a browser" check asserts `allow` for every action the run screen offers, and the new `retryPr` action classifies as `external` (a direct host write behind the switch, on purpose). The test models the old policy and needs the `external` exception for `retryPr`, the same way `runs:startRelease` is treated on line 52.
+3. **`test/web-server.test.ts:334` fails**: the pinned `EXTERNAL_EFFECT` list does not include `runs:retryPr`, which `webPolicy.ts` now exports — same classification as confirmed on purpose in the security fix of round 2; the pinned list needs it.
 
-## O que está bom e não reabre
+Full suite status: 309 of 312 files pass; the three above are the whole red set. `npx tsc --noEmit` is then also red, only from blocker 1. `i18n:lint`, `theme-audit` and `public-audit` are clean.
 
-- O desenho segue o plano aprovado: blocked como `question`/`pr-retry` reusando a superfície bloqueada do core, bases com o alvo primeiro e o padrão depois, baseGone derivado de VcsError 4xx/invalid e da comparação da base gravada com o default re-lido (nunca parsing da mensagem), ensurePr antes do stageDone que entra na espera, `waitingSaid` persistido no registro do comentário, retry pela porta auditada, `answer()`/`answerPost` recusando pergunta pr-retry, sem caixa de texto na tela e no thread. Nada disso volta.
-- public-audit limpo.
+## Not verified
 
-## Sugestões menores
+- The retry screen in a browser (the base-choice buttons in `RunActions.tsx`): not exercised in a browser. The action table and the channel policy are covered by the pure tests, and the blocked state is the run's question, observable through them.
 
-- O filtro que esconde `retryPr` da lista de botões fica escrito em dois lugares (o bloco do PrRetryChoice e o `.filter` do doIt); quando a lista de ações crescer mais, vale centralizar.
-- `runner.review.waiting` em PT continua no texto antigo; resolva junto do bloqueante de catálogo pt-BR.
+## Verdict
 
-## Veredito
-
-Devolvido ao implementador para corrigir os seis bloqueantes; a revisão das próximas rodadas confere só estes pontos e não reabre o que está bom.
+Returned to the implementer for the three red tests above; the code behavior this issue asked for is in place and proven where the suite runs. The next round checks only that the suite is green again with the policy exception written where each pinned list expects it.
