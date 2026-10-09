@@ -85,6 +85,12 @@ describe('a working stage with a sandbox', () => {
     // The agent of a stage with no shell is given no draft: the other stages of the run had none to make.
     const developer = b.engine.calls.find((c) => c.agent.id === 'developer');
     expect(developer?.procedures?.draft).toBeUndefined();
+    // The rules about commands are told to the stage that has a shell and to no other, and the screen rule to neither (no browser).
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa');
+    expect(qa?.system).toContain(cycleWords('runner.rules.procedures'));
+    expect(qa?.system).toContain(cycleWords('runner.rules.proceduresCmd'));
+    expect(qa?.system).not.toContain(cycleWords('runner.rules.proceduresGui'));
+    expect(developer?.system).not.toContain(cycleWords('runner.rules.proceduresCmd'));
   });
 });
 
@@ -159,17 +165,36 @@ describe('an agent answering in a conversation with a shell', () => {
     const call = engine.calls[0];
     expect(call.procedures?.draft).toBeTypeOf('function');
     expect(call.procedures?.has).toEqual({ screen: false, commands: true });
-    // The screen rule is about the app's browser: an agent without one is not told to draft a site.
+    // The screen rule is about the app's browser: an agent without one is not told to draft a site. The commands rule is told to the one with a shell.
     expect(call.system).not.toContain(gui);
+    expect(call.system).toContain(cycleWords('runner.rules.proceduresCmd'));
   });
 
-  it('has no draft for an agent with neither a shell nor a browser, and none in a ceremony', async () => {
+  it('tells both rules to an agent with a shell and a browser, and only the screen rule to one with a browser alone', async () => {
+    screens = fakeScreens();
+    const both = world();
+    both.engine.script('turn', () => ({ text: 'Done.' }));
+    await answerMentions(place(), say(), both.d);
+    expect(both.engine.calls[0].procedures?.has).toEqual({ screen: true, commands: true });
+    expect(both.engine.calls[0].system).toContain(cycleWords('runner.rules.proceduresGui'));
+    expect(both.engine.calls[0].system).toContain(cycleWords('runner.rules.proceduresCmd'));
+    const browserOnly = world({ shell: 'none' });
+    browserOnly.engine.script('turn', () => ({ text: 'Done.' }));
+    await answerMentions(place(), say(), browserOnly.d);
+    expect(browserOnly.engine.calls[0].procedures?.has).toEqual({ screen: true, commands: false });
+    expect(browserOnly.engine.calls[0].system).toContain(cycleWords('runner.rules.proceduresGui'));
+    expect(browserOnly.engine.calls[0].system).not.toContain(cycleWords('runner.rules.proceduresCmd'));
+  });
+
+  it('has no draft for an agent with neither a shell nor a browser, no rule about one, and none in a ceremony', async () => {
     screens = fakeScreens();
     const bare = world({ shell: 'none', screen: false });
     bare.engine.script('turn', () => ({ text: 'Done.' }));
     await answerMentions(place(), say(), bare.d);
     expect(bare.engine.calls[0].procedures).toBeDefined();
     expect(bare.engine.calls[0].procedures?.draft).toBeUndefined();
+    expect(bare.engine.calls[0].system).not.toContain(cycleWords('runner.rules.proceduresCmd'));
+    expect(bare.engine.calls[0].system).not.toContain(cycleWords('runner.rules.proceduresGui'));
 
     const ceremony = world();
     ceremony.engine.script('turn', () => ({ text: 'Done.' }));

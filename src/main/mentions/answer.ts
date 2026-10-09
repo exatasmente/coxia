@@ -285,6 +285,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         memory: deps.memory?.(place, message) || undefined,
         procedures: procedures?.list.text,
         proceduresGui: procedures?.has.screen === true,
+        proceduresCmd: procedures?.has.commands === true,
       });
       if (procedures) {
         call.procedures = procedures.tools;

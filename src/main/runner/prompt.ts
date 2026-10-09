@@ -85,6 +85,8 @@ export interface StageInput {
   procedures?: string;
   /** The call has the app's browser, so it is also given the draft: the rules say to keep a screen task with `procedures_draft`. Only with `procedures`. */
   proceduresGui?: boolean;
+  /** The call has the app's shell, so it is also given the draft of its commands: the rules say to keep a task fought with commands with `procedures_draft`. Only with `procedures`. */
+  proceduresCmd?: boolean;
   /** The stage changes the branch and the repository has AGENTS.md instructions that must stay true. */
   docsKeep?: boolean;
   /** The stage carries the workspace's test environment: it is told what that means (masked values, blocked images). */
@@ -168,6 +170,7 @@ export function systemText(i: StageInput): string {
     cp('runner.rules.focus'),
     i.procedures !== undefined ? cp('runner.rules.procedures') : '',
     i.procedures !== undefined && i.proceduresGui ? cp('runner.rules.proceduresGui') : '',
+    i.procedures !== undefined && i.proceduresCmd ? cp('runner.rules.proceduresCmd') : '',
     // The folder of the stage's evidence is named as this stage has it: the sandbox's `/coxia/out`, or the real folder a host session saves in.
     i.evidence ? cp(i.sandbox?.host && i.sandbox.gui?.out ? 'runner.rules.evidence.host' : 'runner.rules.evidence', { out: i.sandbox?.gui?.out ?? OUT }) : '',
     i.docsKeep ? cp('runner.docs.keep') : '',

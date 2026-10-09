@@ -821,6 +821,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     shared: d.sharedMemory?.(run) ?? '',
     procedures: procedures?.list.text,
     proceduresGui: procedures?.has.screen === true,
+    proceduresCmd: procedures?.has.commands === true,
     docsKeep: documented && writes,
     plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),
