@@ -60,12 +60,19 @@ const GIT_READ = new Set(['status', 'log', 'diff', 'show', 'branch', 'remote', '
 const SHELL_STATE = new Set(['export', 'set', 'unset', 'source', '.']);
 // The words the validator also reads in a command: `sudo env time nohup exec command` come before the program.
 const WRAPPERS = new Set(['sudo', 'env', 'time', 'nohup', 'exec', 'command']);
+// The options each wrapper takes before the program: `flags` stand alone, `valued` take the next word. An option not listed is left in place, so the "program" reads as `-x`
+// and the command is left out instead of its value being read as a program.
+const WRAPPER_OPTIONS: Record<string, { flags: Set<string>; valued: Set<string> }> = {
+  env: { flags: new Set(['-i', '--ignore-environment', '-0', '-v']), valued: new Set(['-u', '--unset']) },
+  sudo: { flags: new Set(['-E', '-n', '-H', '-S', '-b']), valued: new Set(['-u', '-g']) },
+  time: { flags: new Set(['-p']), valued: new Set() },
+};
 const SEGMENT = /\s*(?:&&|\|\||[|;&])\s*/;
 const ASSIGNMENT = /^[A-Za-z_]\w*=/;
 // A value that holds a substitution or a stray quote is not stripped: the command then starts with an assignment and is left out.
 const LEADING_ASSIGNMENT = /^[A-Za-z_]\w*=(?:"[^"]*"|'[^']*'|[^\s"'`$()&|;<>]*)\s+/;
 const LEADING_CD = /^cd\s+(?:"[^"]*"|'[^']*'|[^\s"'`$()&|;<>]+)\s*&&\s*/;
-const PLAIN_PROGRAM = /^[\w.+@-]+$/;
+const PLAIN_PROGRAM = /^[\w.+@][\w.+@-]*$/;
 const PLAIN_SUBCOMMAND = /^[a-z][\w:-]*$/i;
 
 // Carriers: what mentions a place or a word where a secret lives. A command with one is left out whole, which errs toward leaving out (`npm run test:token` goes too).
@@ -73,6 +80,11 @@ const CARRIERS: RegExp[] = [
   /\.env\b|\.npmrc|\.netrc|\.aws\b|\.ssh\b|id_rsa|id_ed25519|\.pem\b|credentials|secret/i,
   /authorization|bearer|cookie|api[-_]?key|passw|token/i,
   /:\/\/[^\s/@:]+:[^\s/@]*@/,
+  // A `user:pw@host` login in any argument, with or without a scheme.
+  /(?:^|[\s=,'"])[\w.%+-]+:[^\s/@:'"]+@[\w.-]+/,
+  // Flags that take a login, a key or a connection string. `--pass-through` and `--key-file` are not them.
+  /(?<![\w-])--(?:pw|pwd|pass|passphrase|auth|credentials|dsn)(?![\w-])/i,
+  /(?<![\w-])--key(?:[ =]+\S)/i,
   /<</,
 ];
 const NET_CLIENTS = new Set(['curl', 'wget', 'http', 'https', 'xh']);
@@ -81,6 +93,9 @@ const NET_PAYLOAD_LONG = /^--(?:header|user|data|form|cookie|oauth2-bearer|post-
 const NET_PAYLOAD_SHORT = /^-[A-Za-z]*[HudFb]/;
 
 const collapse = (s: string): string => s.replace(/\s+/g, ' ').trim();
+
+// `env` and the options it takes (`-i`, `-u NAME`, `--`) before the program or the assignments.
+const ENV_PREFIX = /^env(?:\s+(?:-i|--ignore-environment|-0|-v|--|(?:-u|--unset)\s+\S+|--unset=\S+))*\s+/;
 
 /** The command without a leading `cd <path> &&`, `env`, and the environment assignments before the program. */
 function strip(command: string): string {
@@ -91,8 +106,9 @@ function strip(command: string): string {
       s = s.slice(cd[0].length);
       continue;
     }
-    if (/^env\s+/.test(s)) {
-      s = s.replace(/^env\s+/, '');
+    const env = ENV_PREFIX.exec(s);
+    if (env) {
+      s = s.slice(env[0].length);
       continue;
     }
     const as = LEADING_ASSIGNMENT.exec(s);
@@ -104,11 +120,30 @@ function strip(command: string): string {
   }
 }
 
-/** The words of the first segment of a chain, after the wrappers and assignments that come before the program. */
+/** The words of a segment of a chain, after the wrappers (and their options) and assignments that come before the program. */
 function wordsOf(command: string): string[] {
   const tokens = (command.split(SEGMENT)[0] ?? '').trim().split(/\s+/).filter(Boolean);
   let i = 0;
-  while (i < tokens.length && (WRAPPERS.has(tokens[i]) || ASSIGNMENT.test(tokens[i]))) i++;
+  for (;;) {
+    const t = tokens[i];
+    if (t === undefined) break;
+    if (ASSIGNMENT.test(t)) {
+      i++;
+      continue;
+    }
+    if (!WRAPPERS.has(t)) break;
+    i++;
+    const opts = WRAPPER_OPTIONS[t];
+    while (opts && i < tokens.length && tokens[i].startsWith('-')) {
+      if (tokens[i] === '--') {
+        i++;
+        break;
+      }
+      if (opts.flags.has(tokens[i])) i++;
+      else if (opts.valued.has(tokens[i])) i += 2;
+      else break;
+    }
+  }
   return tokens.slice(i);
 }
 
@@ -134,7 +169,24 @@ function netPayload(command: string): boolean {
   return false;
 }
 
-const carries = (command: string): boolean => CARRIERS.some((re) => re.test(command)) || netPayload(command);
+// A `NAME=value` word anywhere in the command: the value may be a secret. A `--flag=value` is not one: the name must start a word.
+const ASSIGNMENT_ANYWHERE = /(^|[\s;&|(])[A-Za-z_]\w*=\S/;
+const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh']);
+const CONTAINER_CLIENTS = new Set(['docker', 'podman', 'nerdctl']);
+
+/** Whether a segment hands its payload to another command or carries an environment: a nested command cannot be read here. */
+function nested(segment: string): boolean {
+  const words = wordsOf(segment);
+  const program = baseName(words[0]);
+  const args = words.slice(1);
+  if (program === 'eval' || program === 'export') return true;
+  if (SHELLS.has(program)) return args.some((w) => /^-[A-Za-z]*c[A-Za-z]*$/.test(w));
+  if (CONTAINER_CLIENTS.has(program)) return args.some((w) => /^(?:-e|--env|--env-file)(?:$|[=\s])/.test(w) || /^-e\S/.test(w));
+  return false;
+}
+
+const carries = (command: string): boolean =>
+  CARRIERS.some((re) => re.test(command)) || ASSIGNMENT_ANYWHERE.test(command) || command.split(SEGMENT).some(nested) || netPayload(command);
 
 const slugOf = (name: string): string => name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
 

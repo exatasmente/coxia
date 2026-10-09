@@ -123,6 +123,60 @@ describe('the environment and the folder a command starts from', () => {
     expect(d.steps).toEqual([]);
     expect(d.leftOut).toBe(4);
   });
+
+  // A value of the environment can sit anywhere, not only before the program: none of these may reach a step, a pitfall or a count of anything but `leftOut`.
+  const hidden = [
+    'npm ci && PGPASS=hunter2 node migrate.js',
+    'npm run build; DBPW=hunter2 npm run b',
+    'time DBPW=hunter2 npm run d',
+    'nohup DBPW=hunter2 npm run x',
+    'sudo FOO=abc123xyz789 npm run build',
+    'docker run -e DB_PW=hunter2 img',
+    'docker run --env DB_PW=hunter2 img',
+    'docker run --env-file prod.list img',
+    "bash -c 'DBPW=hunter2 npm run i'",
+    'sh -c "npm run j --pw hunter2"',
+    'eval "$(tool)"',
+    'mycli --user bob --pw hunter2',
+    'mycli --pwd hunter2',
+    'mycli --pass hunter2',
+    'mycli --passphrase hunter2',
+    'mycli --key hunter2',
+    'mycli --key=hunter2',
+    'mycli --auth hunter2',
+    'mycli --credentials hunter2',
+    'mycli --dsn hunter2',
+    'mycli postgres:hunter2@db.example.com',
+    'sudo -p hunter2 npm test',
+  ];
+
+  it.each(hidden)('leaves out and counts %j', (command) => {
+    n = 0;
+    const d = draft([ok(command), ok('npm test')]);
+    expect(d.steps.map((s) => s.run)).toEqual(['npm test']);
+    expect(d.leftOut).toBe(1);
+    expect(JSON.stringify(d)).not.toContain('hunter2');
+  });
+
+  it.each(['npm run build', 'npm test -- --run', 'git push --force-with-lease', 'node scripts/x.mjs --out=dist', 'sudo -u deploy npm ci', 'env -i npm test', 'time npm run build'])('still drafts %j', (command) => {
+    n = 0;
+    const d = draft([ok(command)]);
+    expect(d.steps).toHaveLength(1);
+    expect(d.leftOut).toBe(0);
+  });
+
+  it('strips the options of env with the assignments after them, and the value goes with them', () => {
+    n = 0;
+    const d = draft([ok('env -i DBPW=hunter2 npm test'), ok('env -u HOME -- DBPW=hunter2 npm run build')]);
+    expect(d.steps.map((s) => s.run)).toEqual(['npm test', 'npm run build']);
+    expect(JSON.stringify(d)).not.toContain('hunter2');
+  });
+
+  it('reads the program only after the wrappers and their options', () => {
+    expect(programOf('env -i -u HOME npm test')).toBe('npm');
+    expect(programOf('sudo -u bob -E npm test')).toBe('npm');
+    expect(programOf('time -p npm test')).toBe('npm');
+  });
 });
 
 describe('what a command may carry (acceptance 2)', () => {
