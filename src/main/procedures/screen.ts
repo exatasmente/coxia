@@ -6,6 +6,9 @@ import type { TypedValues } from '../screen/typedValues';
 // The one file of the procedure memory that knows the agent's screen (#177, #178). The session, the draft and the tools read a call's screen through `ProcedureScreen`, so a
 // rename on the browser's side is a fix here and nowhere else. Types only are imported: nothing here starts a browser or reads a display.
 
+/** What the offers need of the screens: the draft mark of an open screen, read and moved. */
+export type ScreenMarks = Pick<ScreenSessions, 'markOf' | 'mark'>;
+
 /** What the procedure memory is given of a call's screen: where its steps are, whether the call has the app's browser, and the hand-off's two seams. */
 export interface ScreenSource {
   /** The screen's key: `run:<id>` for a stage, `call:<thread>:<agent>` for an agent in a conversation. */

@@ -1,8 +1,10 @@
+import type { AuditEntry } from '../../shared/auditoria';
 import type { WorkspaceConfig } from '../../shared/config/types';
 import type { ProcedureStep, StepsFrom } from '../../shared/procedures';
 import type { OfferView, ProcedureWrite } from '../../shared/proceduresView';
 import type { StageUsage } from '../../shared/runs/types';
-import type { ScreenSessions } from '../browser/sessions';
+import { procedureAuditEntry, type ProcedureAuditInput } from './audit';
+import type { ScreenMarks } from './screen';
 import type { ProcedureStore, Writer } from './store';
 
 // The offers to keep a procedure (#187): what the app drafted from the work of a call, when nobody saved one, held in memory until the person says yes or no. Never on disk: an
@@ -62,14 +64,18 @@ export interface OffersDeps {
   store: ProcedureStore;
   config(): WorkspaceConfig;
   /** The screens, when there are any: a yes or a no on a screen draft moves its mark. A getter, as the sessions start after the app does. */
-  sessions?(): Pick<ScreenSessions, 'markOf' | 'mark'> | null;
+  sessions?(): ScreenMarks | null;
   now?(): number;
   hex?(): string;
   /** The person's home folder, for the validator; the machine's by default. */
   home?: string;
+  /** The audit log. An offer raised, a no and a yes are each a line; none holds a step, a pitfall or a wait. */
+  audit?(entry: Omit<AuditEntry, 'at'>): void;
 }
 
 export interface ProcedureOffers {
+  /** Called after an offer is raised, kept or declined, so the card can be read again. Returns the way to stop. */
+  onChange(fn: () => void): () => void;
   /** Holds an offer. A newer one for the same thread, agent, kind and key replaces the old; beyond `OFFER_MAX_PENDING` the oldest goes. */
   raise(input: OfferInput): Offer;
   /** The offers still held, oldest first, as the card shows them; one thread's when `thread` is given. */
@@ -91,6 +97,25 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
   const hex = deps.hex ?? (() => Math.floor(Math.random() * 0x1_0000_0000).toString(16).padStart(8, '0'));
   const held: Offer[] = [];
   const turns = new Set<string>();
+  const listeners = new Set<() => void>();
+  const changed = (): void => {
+    for (const fn of listeners) {
+      try {
+        fn();
+      } catch {
+        // a listener that fails does not undo the answer
+      }
+    }
+  };
+
+  const audit = (o: Offer, by: string, input: Omit<ProcedureAuditInput, 'by' | 'surface' | 'issue' | 'ref'>): void => {
+    try {
+      deps.audit?.(procedureAuditEntry({ ...input, by, surface: o.writer.surface, issue: o.issue, ref: o.writer.ref ?? o.thread }));
+    } catch {
+      // The answer already took place; a failing log must not turn it into a reported failure.
+    }
+  };
+  const aboutOffer = (o: Offer): ProcedureAuditInput['offer'] => ({ id: o.offerId, kind: o.kind, key: o.key, title: o.title });
 
   // Expiry is checked where the offers are read, so nothing runs on a timer.
   const purge = (): void => {
@@ -134,6 +159,11 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
   });
 
   return {
+    onChange(fn) {
+      listeners.add(fn);
+      return () => void listeners.delete(fn);
+    },
+
     raise(input) {
       purge();
       const same = held.findIndex((o) => o.thread === input.thread && o.agent === input.agent && o.kind === input.kind && o.key.toLowerCase() === input.key.toLowerCase());
@@ -141,6 +171,8 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
       const offer: Offer = { ...input, offerId: `o-${hex()}`, at: now() };
       held.push(offer);
       while (held.length > OFFER_MAX_PENDING) held.shift();
+      audit(offer, offer.agent, { op: 'offer', offer: aboutOffer(offer) });
+      changed();
       return offer;
     },
 
@@ -163,12 +195,18 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
         ...(o.keyedBy ? { keyedBy: o.keyedBy } : {}),
         home: deps.home,
       });
-      if (!r.ok) return { ok: false, code: r.code, text: r.text, ...(r.refusals ? { refusals: r.refusals } : {}), ...(r.id ? { id: r.id } : {}) };
+      if (!r.ok) {
+        // A refusal is audited by its code and the fields it named, never by the text that was refused.
+        audit(o, 'person', { op: 'refused', code: r.code, fields: r.refusals?.map((x) => x.field) ?? [] });
+        return { ok: false, code: r.code, text: r.text, ...(r.refusals ? { refusals: r.refusals } : {}), ...(r.id ? { id: r.id } : {}) };
+      }
       // The cost of finding the procedure is the work's, not the person's reading of it.
       deps.store.finishUse({ at: new Date(now()).toISOString(), ref: o.writer.ref ?? '', usage: o.usage, read: [], stale: [], replaced: [], created: [r.record.id] });
       moveMark(o);
       drop(o);
       const stored = deps.store.get(r.record.id);
+      audit(o, 'person', { op: 'save', record: r.record });
+      changed();
       return { ok: true, record: stored.status === 'ok' ? stored.record : r.record };
     },
 
@@ -177,6 +215,8 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
       if (!o) return { ok: false, code: 'gone' };
       moveMark(o);
       drop(o);
+      audit(o, 'person', { op: 'decline', offer: aboutOffer(o) });
+      changed();
       return { ok: true };
     },
 

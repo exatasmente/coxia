@@ -3,6 +3,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
+import type { AuditEntry } from '../src/shared/auditoria';
 import { neutralConfig } from '../src/shared/config';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { StageUsage } from '../src/shared/runs/types';
@@ -16,6 +17,8 @@ let store: ProcedureStore;
 let config: WorkspaceConfig;
 let marks: Map<string, number>;
 let offers: ProcedureOffers;
+let audits: Omit<AuditEntry, 'at'>[];
+let changes: number;
 
 const T0 = Date.parse('2026-10-09T10:00:00Z');
 const usage: StageUsage = { promptTokens: 9000, completionTokens: 400, cachedTokens: 0, calls: 7, costUsd: null };
@@ -49,9 +52,12 @@ beforeEach(() => {
   clock = T0;
   counter = 0;
   marks = new Map();
+  audits = [];
+  changes = 0;
   config = { ...neutralConfig(), projects: { ...neutralConfig().projects, repos: [{ id: 'api', path: '/tmp/api', remoteUrl: null, vcsId: null, projectPath: null }] } };
   store = createProcedureStore(ws, { now: () => clock, hex: () => (++counter).toString(16).padStart(8, '0') });
-  offers = createProcedureOffers({ store, config: () => config, sessions: fakeSessions, now: () => clock, hex: () => (++counter + 0x100).toString(16).padStart(8, '0') });
+  offers = createProcedureOffers({ store, config: () => config, sessions: fakeSessions, now: () => clock, hex: () => (++counter + 0x100).toString(16).padStart(8, '0'), audit: (e) => void audits.push(e) });
+  offers.onChange(() => void changes++);
 });
 
 describe('raising an offer', () => {
@@ -231,5 +237,73 @@ describe('the last turn of a screen mark', () => {
     offers.raise(screen());
     offers.forget('call:t-1:writer');
     expect(offers.list()).toHaveLength(1);
+  });
+});
+
+describe('the audit and the change signal', () => {
+  it('writes a line when an offer is raised, by the agent, with the id, kind, key and title and no step, pitfall or wait', () => {
+    const o = offers.raise(input({ waits: ['About 30 s after the packages'] }));
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ kind: 'procedure', target: 'procedures:offer', via: 'stage', by: 'writer', ok: true, result: 'offered to keep', origin: { key: 'app#123' } });
+    expect(audits[0].fields).toEqual({ agent: 'writer', surface: 'stage', offer: o.offerId, kind: 'repo', key: 'api', title: 'Run the tests' });
+    const text = JSON.stringify(audits);
+    for (const secret of ['npm ci', 'Install the packages', 'The suite needs', 'About 30 s']) expect(text).not.toContain(secret);
+  });
+
+  it('writes the existing save line for a yes, as the person, and a decline line for a no', () => {
+    const a = offers.keep(offers.raise(input()).offerId, 'Run the tests');
+    expect(audits[1]).toMatchObject({ target: 'procedures:save', by: 'person', via: 'stage', ok: true, result: 'saved' });
+    expect(audits[1].fields).toMatchObject({ id: a.ok ? a.record.id : '', revision: '1', kind: 'repo', key: 'api', title: 'Run the tests', agent: 'person' });
+    const b = offers.raise(input({ key: 'web' }));
+    offers.decline(b.offerId);
+    expect(audits.at(-1)).toMatchObject({ target: 'procedures:decline', by: 'person', ok: true, result: 'declined the offer' });
+    expect(audits.at(-1)?.fields).toMatchObject({ offer: b.offerId, kind: 'repo', key: 'web' });
+  });
+
+  it('audits a refusal by its code and fields, never by the title or the key', () => {
+    const o = offers.raise(input({ steps: [{ text: 'Log in', run: 'tool --password hunter2' }] }));
+    const r = offers.keep(o.offerId, 'Run the tests');
+    expect(r.ok).toBe(false);
+    const line = audits.at(-1);
+    expect(line).toMatchObject({ target: 'procedures:save', ok: false, result: 'refused', by: 'person' });
+    expect(line?.fields.fields).toMatch(/steps\[\d\]/);
+    expect(JSON.stringify(line)).not.toContain('hunter2');
+    expect(line?.fields).not.toHaveProperty('title');
+    expect(line?.fields).not.toHaveProperty('key');
+  });
+
+  it('keeps going when the log fails', () => {
+    const noisy = createProcedureOffers({ store, config: () => config, now: () => clock, audit: () => { throw new Error('disk full'); } });
+    const o = noisy.raise(input());
+    expect(noisy.keep(o.offerId, 'Run the tests').ok).toBe(true);
+  });
+
+  it('tells the listeners after a raise, a yes and a no, and not after an answer that did nothing', () => {
+    const a = offers.raise(input());
+    expect(changes).toBe(1);
+    offers.keep(a.offerId, 'Run the tests');
+    expect(changes).toBe(2);
+    const b = offers.raise(input({ key: 'web' }));
+    expect(changes).toBe(3);
+    offers.keep(b.offerId, 'Run the tests');
+    expect(changes).toBe(3);
+    offers.decline(b.offerId);
+    expect(changes).toBe(4);
+    offers.decline(b.offerId);
+    offers.keep('o-ffffffff', 'x');
+    expect(changes).toBe(4);
+  });
+
+  it('lets a listener stop and does not mind one that throws', () => {
+    let seen = 0;
+    const stop = offers.onChange(() => void seen++);
+    offers.onChange(() => {
+      throw new Error('broken');
+    });
+    offers.raise(input());
+    stop();
+    offers.raise(input({ key: 'web' }));
+    expect(seen).toBe(1);
+    expect(changes).toBe(2);
   });
 });
