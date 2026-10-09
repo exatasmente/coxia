@@ -42,6 +42,11 @@ export function neutralPlugins(): PluginsConfig {
   return { dir: null, list: [], confirmSeconds: 30 };
 }
 
+/** A workspace with a test environment that hands a stage nothing: the person fills it in, per workspace. */
+export function neutralTestEnvironment(): TestEnvironment {
+  return { variables: [], secrets: [] };
+}
+
 export function neutralConfig(): WorkspaceConfig {
   return {
     schemaVersion: CONFIG_SCHEMA_VERSION,
@@ -124,6 +129,10 @@ export function withConfigDefaults(partial: DeepPartial<WorkspaceConfig> | Recor
     vcs: c.vcs.map((v) => ({ ...VCS_DEFAULTS, ...v })),
     devCycle: { ...c.devCycle, stageMapping: c.devCycle.stageMapping.map((r) => ({ ...r, name: r.name ?? '' })), comments: Object.fromEntries(Object.entries(c.devCycle.comments ?? {}).map(([id, tpl]) => [id, { ...tpl, sections: tpl.sections ?? [], technicalDetail: tpl.technicalDetail ?? false }])) },
     squads: Array.isArray(c.squads) ? c.squads.map(newSquad) : [],
+    agents: { ...c.agents, team: ensureSystemAgents(Array.isArray(c.agents.team) ? c.agents.team.map(newAgent) : [], c.agents.roles) },
+  };
+}
+ [],
     agents: { ...c.agents, team: ensureSystemAgents(Array.isArray(c.agents.team) ? c.agents.team.map(newAgent) : [], c.agents.roles) },
   };
 }

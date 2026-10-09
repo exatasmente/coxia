@@ -14,7 +14,7 @@ import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA, ID } from './schema';
 import { DOCS_COMMENT_EVENTS, DOCS_FLOW_KEY, RELEASE_COMMENT_EVENTS, RELEASE_FLOW_KEY, RUN_KIND_FLOW_KEYS, isRunKindFlowKey } from './squads';
 import { isSystemId } from './team';
-import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
+import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, ENV_NAME, LLM_ROLES, SECRET_REF, TEST_ENV_REF_PREFIX, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
 
 export interface ConfigIssue {
   path: string;
@@ -154,8 +154,43 @@ function runnerRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: Config
   sandboxRules(r.sandbox, errors, warnings);
 }
 
+// What a stage of the workspace may receive while it exercises the app under development: names and refs held to the store's grammar, hosts to the
+// registry's, and no entry that promises a private address it did not also allow. The references are validated, never resolved: nothing of the store
+// exists here.
+function testEnvRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const env = c.testEnvironment;
+  if (!env) return;
+  const hostsRules = (hosts: string[] | undefined, privateHosts: string[] | undefined, at: string): void => {
+    (hosts ?? []).forEach((h, i) => {
+      if (!isRegistryHost(h)) errors.push({ path: `${at}.hosts[${i}]`, message: 'must be a host name such as registry.example.com: no scheme, port, path or wildcard' });
+    });
+    for (const h of duplicates(hosts ?? [])) warnings.push({ path: `${at}.hosts`, message: `"${h}" is listed twice` });
+    if ((privateHosts ?? []).length > (hosts ?? []).length) errors.push({ path: `${at}.privateHosts`, message: 'has more hosts than hosts' });
+    (privateHosts ?? []).forEach((h, i) => {
+      const ref = (hosts ?? []).find((x) => x.toLowerCase() === h.toLowerCase());
+      if (!ref) errors.push({ path: `${at}.privateHosts[${i}]`, message: `"${h}" is not listed in hosts: a private address is opened only by marking a listed host private` });
+    });
+    for (const h of duplicates(privateHosts ?? [])) warnings.push({ path: `${at}.privateHosts`, message: `"${h}" is listed twice` });
+  };
+  env.variables.forEach((v, i) => {
+    const at = `testEnvironment.variables[${i}]`;
+    if (!ENV_NAME.test(v.name)) errors.push({ path: at, message: `the name "${v.name}" cannot be an environment variable: use letters, digits and _ only, starting with a letter or _` });
+    for (const id of duplicates(env.variables.map((x) => x.name.toUpperCase()))) errors.push({ path: 'testEnvironment.variables', message: `the variable name "${id}" is used twice (environment names ignore case)` });
+    hostsRules(v.hosts, v.privateHosts, at);
+  });
+  env.secrets.forEach((s, i) => {
+    const at = `testEnvironment.secrets[${i}]`;
+    if (!SECRET_REF.test(s.ref)) errors.push({ path: at, message: `the ref "${s.ref}" is not a secrets-store reference` });
+    else if (!s.ref.startsWith(TEST_ENV_REF_PREFIX)) errors.push({ path: at, message: `the ref "${s.ref}" must start with "${TEST_ENV_REF_PREFIX}", so the test secrets stay a group the person can manage and delete together` });
+    if (s.testOnly !== true && s.testOnly !== false) errors.push({ path: at, message: 'must say whether the secret is test-only' });
+    hostsRules(s.hosts, s.privateHosts, at);
+  });
+  for (const ref of duplicates(env.secrets.map((s) => s.ref))) errors.push({ path: 'testEnvironment.secrets', message: `the ref "${ref}" is listed twice` });
+}
+
 // The attachment limits: a per-message total smaller than the per-file limit, or one over the total, would leave every file of that kind refused.
 function attachmentRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+
   const a = c.attachments;
   if (!a) return;
   const { imageBytes, otherBytes, messageBytes, perMessage } = a.limits;
@@ -235,6 +270,7 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
   flowRules(c, errors, warnings, tolerateFlow);
   squadRules(c, errors, warnings, tolerateFlow);
   runnerRules(c, errors, warnings);
+  testEnvRules(c, errors, warnings);
   attachmentRules(c, errors, warnings);
   commentRules(c, errors, warnings);
   const vcsIds = new Set(c.vcs.map((v) => v.id));

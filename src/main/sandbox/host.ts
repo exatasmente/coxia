@@ -31,6 +31,12 @@ export interface HostSessionOptions {
   approve?: (command: string) => Promise<{ ok: boolean; note?: string }>;
   /** What to undo once everything has ended: the copy of a reader, the display. */
   cleanup?: (() => Promise<void> | void)[];
+  /**
+   * The entries of the workspace's test environment the launcher already resolved. Merged over the cleaned environment after the scrub, so the scrub can
+   * never drop a test name and no person credential ever rides under one. A stage that tests the app under development itself — this app — also has its
+   * data folder pointed inside the stage's throwaway folder here: fresh empty folders, never the person's real data or secrets file.
+   */
+  testEnv?: { vars?: Record<string, string>; emptyDataDirs?: string[] };
   /** Asked for by the caller, who found the browsers and started the display: the session makes the output folder and adds the variables. Absent: nothing changes. */
   gui?: { browsers: string | null; browsersGone?: string; display: SandboxGui['display']; /** `DISPLAY` for the commands; set when `display` is `on`. */ displayName?: string };
 }
@@ -53,6 +59,13 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
   const results: ExecResult[] = [];
   // Output goes to a file, not a pipe: a process left in the background keeps writing after the command ends, and a closed pipe would kill it.
   const outDir = mkdtempSync(join(tmpdir(), 'coxia-host-'));
+  // Fresh empty folders per name (the data and specs folders of the app under development, when the launcher named them): made here, inside the session's
+  // throwaway folder, so the person's real data never shows up under them, and removed with the session.
+  const emptyDirs = new Map<string, string>();
+  for (const [name] of o.testEnv?.emptyDataDirs ?? []) emptyDirs.set(name, join(outDir, name.replace(/[^A-Za-z0-9.-]/g, '')));
+  for (const dir of emptyDirs.values()) mkdirSync(dir, { mode: 0o700 });
+  // Every value here is the launcher's; merged over the scrub, it can never undo what the scrub did, and nothing real rides under a test name.
+  const appliedVars = (): Record<string, string> => ({ ...(o.testEnv?.vars ?? {}), ...Object.fromEntries(emptyDirs) });
   // Screenshots and traces, apart from the commands' output files: the one folder `ViewImage` reads.
   const shots = o.gui ? join(outDir, 'out') : null;
   if (shots) mkdirSync(shots, { mode: 0o700 });
@@ -118,10 +131,16 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
         const outFile = join(outDir, `out.${n}`);
         let child: ChildProcess;
         const fd = openSync(outFile, 'w', 0o600);
+        const finalEnv = (): NodeJS.ProcessEnv => {
+          const base = scrubbedEnv(env) as NodeJS.ProcessEnv;
+          // Over the scrub, on purpose: the test names were never in the person's environment, so the scrub has nothing of theirs to lose with them,
+          // and nothing real can arrive under a test name — every value here is the launcher's.
+          return { ...base, ...appliedVars() };
+        };
         try {
           child = windows
-            ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command], { cwd: o.cwd, env: scrubbedEnv(env), detached: false, stdio: ['ignore', fd, fd] })
-            : spawn(existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh', ['-c', command], { cwd: o.cwd, env: scrubbedEnv(env), detached: true, stdio: ['ignore', fd, fd] });
+            ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command], { cwd: o.cwd, env: finalEnv(), detached: false, stdio: ['ignore', fd, fd] })
+            : spawn(existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh', ['-c', command], { cwd: o.cwd, env: finalEnv(), detached: true, stdio: ['ignore', fd, fd] });
         } catch (e) {
           return record({ command, exitCode: null, timedOut: false, output: redact(String(e instanceof Error ? e.message : e)), ms: 0 }, 'run');
         } finally {
@@ -172,6 +191,18 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
     exec: (command) => {
       const next = queue.then(() => run(command));
       queue = next.catch(() => undefined);
+      return next;
+    },
+    get log() {
+      return results;
+    },
+    close,
+  };
+}
+
+const SIGNALS: Partial<Record<NodeJS.Signals, number>> = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGKILL: 9, SIGTERM: 15 };
+const signalNumber = (s: NodeJS.Signals): number | undefined => SIGNALS[s];
+.catch(() => undefined);
       return next;
     },
     get log() {

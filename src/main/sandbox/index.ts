@@ -59,7 +59,7 @@ export interface OpenOptions {
 }
 
 /** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders; to test an interface it asks, like a sandbox, for the browsers folder and (a QA stage) a display. */
-export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display'> & Pick<HostSessionOptions, 'approve'>;
+export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display' | 'testEnv'> & Pick<HostSessionOptions, 'approve'>;
 
 export interface SandboxService {
   /** The cached answer to "can this machine make a sandbox"; `force` asks again. */
@@ -242,7 +242,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         const registry = opts.config.network === 'registry';
         const openNet = opts.config.network === 'open';
         if (registry) {
-          const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: opts.config.registryHosts, onDecision: opts.onProxy });
+          const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: opts.config.registryHosts, privateHosts: opts.testEnv?.privateHosts, onDecision: opts.onProxy });
           cleanup.push(() => proxy.close());
         }
         const { browsers, browsersGone } = browsersOf(opts.config);
@@ -264,6 +264,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           limits: opts.config.limits,
           tmpMb: 512,
           ...(browsers || xvfb ? { gui: { browsers, xvfb } } : {}),
+          ...(opts.testEnv ? { testEnv: opts.testEnv.vars } : {}),
         });
         const gui = browsers || browsersGone || askedDisplay ? { browsers, ...(browsersGone ? { browsersGone } : {}), display: askedDisplay ? (xvfb ? ('start' as const) : ('missing' as const)) : null } : undefined;
         return await openSession({ stageDir, args, limits: opts.config.limits, proxy: registry, onExec: opts.onExec, cleanup, ...(gui ? { gui } : {}) }, o.deps);
@@ -309,7 +310,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
       }
       try {
         return openHostSession(
-          { cwd, limits: opts.config.limits, env, onExec: opts.onExec, approve: opts.approve, ...(cleanup ? { cleanup } : {}), ...(wantsGui ? { gui: { browsers, ...(browsersGone ? { browsersGone } : {}), display, ...(displayName ? { displayName } : {}) } } : {}) },
+          { cwd, limits: opts.config.limits, env, onExec: opts.onExec, approve: opts.approve, ...(opts.testEnv ? { testEnv: { vars: opts.testEnv.vars, emptyDataDirs: TEST_ENV_DATA_VARS } } : {}), ...(cleanup ? { cleanup } : {}), ...(wantsGui ? { gui: { browsers, ...(browsersGone ? { browsersGone } : {}), display, ...(displayName ? { displayName } : {}) } } : {}) },
           o.hostDeps,
         );
       } catch (e) {
@@ -329,6 +330,51 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         }
       }
       // A listed folder that is gone or refused already fails a sandbox stage on its own; the display is looked for on the system's path then.
+      const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(listedBins(config)) ? 'ready' : 'missing';
+      return { browsers, display };
+    },
+    purge() {
+      try {
+        for (const name of readdirSync(o.dir)) removeTree(join(o.dir, name));
+      } catch {
+        // Nothing was ever made.
+      }
+    },
+  };
+}
+
+export { invalidateSandboxStatus };
+n its own; the display is looked for on the system's path then.
+      const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(listedBins(config)) ? 'ready' : 'missing';
+      return { browsers, display };
+    },
+    purge() {
+      try {
+        for (const name of readdirSync(o.dir)) removeTree(join(o.dir, name));
+      } catch {
+        // Nothing was ever made.
+      }
+    },
+  };
+}
+
+export { invalidateSandboxStatus };
+y is looked for on the system's path then.
+      const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(listedBins(config)) ? 'ready' : 'missing';
+      return { browsers, display };
+    },
+    purge() {
+      try {
+        for (const name of readdirSync(o.dir)) removeTree(join(o.dir, name));
+      } catch {
+        // Nothing was ever made.
+      }
+    },
+  };
+}
+
+export { invalidateSandboxStatus };
+n its own; the display is looked for on the system's path then.
       const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(listedBins(config)) ? 'ready' : 'missing';
       return { browsers, display };
     },

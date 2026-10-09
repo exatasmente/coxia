@@ -313,19 +313,38 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
   const config = d.config();
   const threadId = runThreadId(run.id);
   if (!d.sandbox) throw new StageError('no-sandbox', { agent: agent.id, reason: t('main.sandbox.reason.platform') });
+  // The test environment of this stage, resolved once: variables and secrets straight into the shells, and the exact values into this launch's masker.
+  // A refusal is named here — in the thread and the audit log — and the entry is simply not delivered (spec 11, never a crash).
+  const testEnv: StageTestEnv | null = resolveStageTestEnv(stage, config.testEnvironment, secrets(), { confirmed: (ref) => testEnvLedger().approved(ref), text: t });
+  const mask = testEnv && testEnv.entries.length ? stageMasker(testEnv.values) : null;
+  for (const refusal of testEnv?.refusals ?? []) {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.testEnv.refusal', params: { agent: agent.id, entry: refusal.name, reason: refusal.reason }, stage: stage.id });
+      recordWrite({ kind: 'exec', issue: run.issue.iid, target: `test-env:${refusal.name}`, via: 'test-env', fields: { agent: agent.id, run: run.id, stage: stage.id }, ok: false, code: null, result: refusal.reason, origin: { actionId: '', kind: 'run-testEnv', key: `${run.id}:${stage.id}`, summary: null }, by: null });
+    } catch (e) {
+      console.error('[runner] could not record a test-env refusal', e instanceof Error ? e.message : e);
+    }
+  }
+  // Only an entry-carrying stage widens the network and its registry list: hosts the entries declared, on top of the workspace's own; private hosts only where marked.
+  const entries = testEnv?.entries ?? [];
+  const stageSandbox = entries.length
+    ? { ...config.runner.sandbox, network: 'registry' as const, registryHosts: [...new Set([...config.runner.sandbox.registryHosts, ...testEnv!.hosts])] }
+    : config.runner.sandbox;
+  const delivery = entries.length ? { vars: testEnv!.vars, privateHosts: testEnv!.privateHosts } : undefined;
   const report = (r: ExecResult, mode: 'run' | 'refused'): void => {
     try {
-      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: host ? 'runner.exec.host' : 'runner.exec', params: { agent: agent.id, n: r.n, command: clipText(redact(r.command.replace(/\s+/g, ' ')), 300), result: endedAs(r), ms: Math.round(r.ms / 100) / 10, tail: clipText(r.output, 600) || '—' }, stage: stage.id });
+      // Exact-value masking first, the pattern-based redact after it (spec 7): the plugin requests keep the same order.
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: host ? 'runner.exec.host' : 'runner.exec', params: { agent: agent.id, n: r.n, command: clipText((mask ?? redact)(r.command.replace(/\s+/g, ' ')), 300), result: endedAs(r), ms: Math.round(r.ms / 100) / 10, tail: clipText(mask ? mask(r.output) : r.output, 600) || '—' }, stage: stage.id });
       if (mode === 'run') {
         recordWrite({
           kind: 'exec',
           issue: run.issue.iid,
-          target: redact(clipText(r.command, 300)),
+          target: mask ? mask(redact(clipText(r.command, 300))) as string : redact(clipText(r.command, 300)),
           via: host ? 'host' : 'sandbox',
           fields: { agent: agent.id, run: run.id, stage: stage.id, n: String(r.n), ms: String(r.ms), timedOut: String(r.timedOut) },
           ok: r.exitCode === 0,
           code: r.exitCode,
-          result: r.output.slice(-300),
+          result: mask ? mask(r.output.slice(-300)) : r.output.slice(-300),
           origin: { actionId: '', kind: 'run-exec', key: `${run.id}:${stage.id}`, summary: null },
           by: agent.id,
         });
@@ -359,8 +378,8 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     // Only the stage that produces the QA output asks for a display; the browsers folder, when the person set one, comes with every sandbox and every host session.
     const display = outputKindOf(stage.kind) === 'qa';
     const session = host
-      ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal, display })
-      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display });
+      ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), approve: hostApproval(d, run, stage, agent, signal, clock), signal, display })
+      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), onProxy, onNote, signal, display });
     const gui = session.gui;
     // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
