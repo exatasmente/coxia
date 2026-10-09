@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The screen recording of a stage starts when the agent first uses the screen.** It used to start when the stage's virtual display opened, so a stage whose agent took minutes to open a window began with minutes of black. The recording now starts with the first window mapped on the screen and holds nothing of the screen while it is empty again. A stage whose agent never opened a window keeps no recording and says so once in the conversation ("no window was opened on the screen"), as it does for any recording that was not kept.
+
 ## [0.9.0-beta.4] - 2026-10-08
 
 ### Added

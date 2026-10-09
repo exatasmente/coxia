@@ -31,8 +31,8 @@ export interface RecorderSink {
   abort(): void;
 }
 
-/** What a recording ended as: the file and what the player needs to know of it, or why there is none. */
-export type RecordingOutcome = { ok: true; bytes: Uint8Array; meta: RecordingMeta } | { ok: false; reason: 'no-frame' | 'encoder' };
+/** What a recording ended as: the file and what the player needs to know of it, or why there is none (`unused`: no window was ever on the screen; the hub tells it). */
+export type RecordingOutcome = { ok: true; bytes: Uint8Array; meta: RecordingMeta } | { ok: false; reason: 'no-frame' | 'unused' | 'encoder' };
 
 /** Why the recording stopped before the stage did. */
 export type RecorderStop = 'size' | 'time' | 'encoder' | 'resized';

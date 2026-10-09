@@ -11,7 +11,7 @@ import { placeEvidence } from './store';
 export type RecordingProblem = 'empty' | 'too-long' | 'not-webm' | 'write';
 
 /** Why a recording ended without a file the store could keep: the recorder's own reasons, then the store's. */
-export type NotKept = RecordingProblem | 'no-frame' | 'encoder';
+export type NotKept = RecordingProblem | 'no-frame' | 'unused' | 'encoder';
 
 /** The reason, in words, for the line the conversation gets when a recording could not be kept. */
 export const notKeptText = (why: NotKept): string => t(why === 'empty' || why === 'no-frame' ? 'main.screen.notKept.noFrame' : `main.screen.notKept.${why === 'too-long' ? 'tooLong' : why === 'not-webm' ? 'notWebm' : why}`, { max: Math.round(RECORDING_MAX_BYTES / (1024 * 1024)) });
