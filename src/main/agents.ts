@@ -13,7 +13,7 @@ import { getLanguage, t } from '../shared/i18n';
 import { type RunActivity, beginActivity } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type CommandAsk, type Confinement, type EngineRequest, type ReadConfinement, type Run, type Schema, type ShellPolicy, MaxTurnsError, ProviderBudgetError } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, MaxTurnsError, ProviderBudgetError, poolNoticeText } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
 import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
 import { budgetText, clipProviderText } from './engine/budget';
@@ -591,6 +591,11 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
       onText: () => req.beat?.(),
       onReasoning: () => req.beat?.(),
       onInterim: (text) => req.activity?.text(text),
+      // A switch of model shows on the live line and, when the caller keeps a thread, there.
+      onSwitch: (e) => {
+        req.activity?.tool(poolNoticeText(e));
+        req.onPool?.(e);
+      },
     },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
     incoming: req.incoming,
@@ -1250,6 +1255,8 @@ export interface AgentCall {
   beat?: () => void;
   /** Called once per model call with what it used, and what it cost when the provider or the SDK said. */
   onUsage?: (usage: UsageReport) => void;
+  /** Called when the call moves to another model of its role's pool: where the caller says it in its thread. */
+  onPool?: (notice: PoolNotice) => void;
 }
 
 // What a reader of a run may use: the tools the agent uses (its own when it names them, else the workspace's), as the ceremonies get them, and no shell beyond the
@@ -1344,6 +1351,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       abort: call.abort,
       beat: call.beat,
       onUsage: call.onUsage,
+      onPool: call.onPool,
       incoming: only ? undefined : call.incoming,
       runnerTools: only ? undefined : call.runnerTools,
       procedures: call.procedures,

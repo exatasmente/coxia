@@ -1,6 +1,6 @@
 # Implementação: conjunto de modelos por papel
 
-Registro do que foi feito por commit, dos desvios do plano (`2_PLAN.md`) e dos testes acrescentados. Os commits 1 a 4 do plano estão aqui; os seguintes são acrescentados quando feitos.
+Registro do que foi feito por commit, dos desvios do plano (`2_PLAN.md`) e dos testes acrescentados. Os commits 1 a 6 do plano estão aqui; os seguintes são acrescentados quando feitos.
 
 ## Commit 1: `fix: count a retry-after as an attempt in the open client`
 
@@ -46,3 +46,20 @@ Registro do que foi feito por commit, dos desvios do plano (`2_PLAN.md`) e dos t
   - O `CHANGELOG` do recurso fica no commit 8 (a interface), como o plano prevê; a troca em si ainda só se liga editando `config.json`.
   - A mensagem do `ProviderBusyError` passa pelo catálogo (nome do conjunto, modelos, quando volta), em vez de um texto técnico, para que uma cerimônia a mostre como está.
 - **Testes.** `engine-open-pool.test.ts` (dois servidores falsos: ocupado no primeiro termina no segundo na mesma sessão com o histórico inteiro e a linha `switch`; repetições do cliente antes de trocar; 503/5xx trocam e timeout/chave inválida não; sem reservas o erro é o do cliente; fica no segundo depois que o primeiro volta; descanso entre execuções e volta depois dele; `Retry-After` com teto de 15 min e padrão de 5; todos ocupados com o nome do conjunto; lista por atividade e volta; captura de tela só em modelo com imagem, com ou sem etiqueta; conjunto sem imagem em ninguém; subagente compartilha o conjunto; `no_tools` fora do primeiro e membro sem ferramentas pulado; eco do raciocínio por modelo e descarte ao trocar), `engine-open-activity.test.ts` (toda ferramenta que o app traz tem a etiqueta esperada), `engine-open-client.test.ts` (eco semeado na primeira chamada, 400 que recusa o campo), `engine-seam.test.ts` (`openSelection` monta o conjunto só com entradas do motor aberto), `runner-lifecycle.test.ts` (`pool-busy` falha a etapa citando o conjunto, sem espera, e o "Tentar de novo" segue).
+
+## Commit 5: `feat: say every model switch in the run thread`
+
+- **Feito.**
+  - `contract.ts`: `PoolNotice` (de, para, motivo, até quando, atividade), `AgentCall.onPool`/`EngineRequest.onPool`, e as funções que dão as palavras da troca (`poolNoticeParams`, `poolNoticeCode`, `poolNoticeLine`, `poolNoticeText`), no mesmo lugar de `poolBusyParams`. O modelo ocupado e o que assumiu vão pelo nome; o provedor entra entre parênteses só quando os dois são de provedores diferentes.
+  - `agents.ts`: `runOpenEngine` liga `events.onSwitch` à linha da atividade ao vivo (`activity.tool`) e a `req.onPool`; `runAgent` repassa `call.onPool`. Como a atividade vai no pedido, a cerimônia (`runOnce`, `askAgent`), que não tem conversa, mostra a troca só na atividade, sem código novo.
+  - Quem tem conversa a diz: `executor.ts` (a etapa, na conversa da execução, com `stage`), `conversation.ts` (o agente chamado, na conversa onde trabalha) e `mentions/answer.ts` (a menção). Todos são `forum.append` do app com o código `runner.model.switched` (modelo ocupado, com a hora em que volta) ou `runner.model.moved` (troca por tipo de trabalho, sem hora); falha ao gravar a linha é logada e nunca derruba a etapa.
+  - `mentions/answer.ts`: uma menção cujo conjunto está todo ocupado diz `runner.model.allBusy` (conjunto, modelos, quando o primeiro volta), inteira, em vez do `runner.mentionFailed` com o motivo cortado em 300 caracteres.
+  - Chaves nos dois catálogos: `main.engine.pool.{switched,moved,activity.*}` (linha ao vivo) e `main.forum.code.runner.model.{switched,moved,allBusy}` (conversa). `docs/runner.md`, PT e EN: parágrafo do conjunto na seção da etapa.
+- **Desvios e interpretações.**
+  - O plano falava em duas chaves (`switched`, `allBusy`); há uma terceira, `moved`, porque uma troca por atividade (`reason: 'activity'`) não tem modelo ocupado nem hora de volta, e "estava ocupado" seria falso.
+  - `allBusy` só existe onde a falha não tem outra linha: a etapa já tem a sua (`pool-busy`, pelo `run.stage.failed`), então repeti-la ali duplicaria. Fica na menção; a conversa entre agentes propaga o erro ao agente que chamou, como hoje.
+  - A linha ao vivo usa `activity.tool` e não `activity.text` (o plano dizia `text`): `text` só vira passo se uma ferramenta vier depois, e a troca é um fato que deve aparecer na hora.
+  - A hora da conversa é formatada no momento de gravar a linha (como `poolBusyParams` já faz), não na hora de mostrar: uma troca de idioma não a reformata.
+  - O trecho do `wrapup.ts` (última volta de procedimentos) não recebe `onPool`: a troca nele aparece só na atividade.
+- **Testes.** `runner-lifecycle` (a linha na conversa da execução, com os dois modelos e a hora, e a de tipo de trabalho; a etapa segue), `runner-agent-open` (um agente do motor aberto com reserva: o primeiro responde 429, o segundo termina; `onPool`, a linha da atividade e o descanso de 5 minutos), `forum-mentions` (troca e `allBusy`), `runner-conversation` (a troca do agente chamado), `engine-pool-notice` (as palavras nos dois idiomas, o provedor só quando difere, as chaves dos dois catálogos com os mesmos campos).
+

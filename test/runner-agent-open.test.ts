@@ -9,7 +9,8 @@ import { obj, runAgent, str } from '../src/main/agents';
 import { confinedHooks, readConfinedHooks, type Denial } from '../src/main/runner/hooks';
 import { newProvider } from '../src/shared/config/defaults';
 import { newAgent } from '../src/shared/config/team';
-import { type Fake, fakeOpenAI, toolStep } from './helpers/fakeOpenAI';
+import type { PoolNotice } from '../src/main/engine/contract';
+import { type Fake, type Step, errorStep, fakeOpenAI, toolStep } from './helpers/fakeOpenAI';
 
 let fake: Fake;
 let root: string;
@@ -247,5 +248,43 @@ describe('a reading agent of a run on the open engine', () => {
     expect(inside.denials).toEqual([]);
     const refused = await readerRun([{ id: 'r1', name: 'Read', args: { file_path: join(docs, 'guide.md') } }]);
     expect(refused.denials.map((d) => d.code)).toEqual(['outside']);
+  });
+});
+
+describe('an agent whose model has spares, on the open engine', () => {
+  it('moves to the next model when the first is busy, tells the caller and the live activity, and finishes the stage there', async () => {
+    const { restRegistry } = await import('../src/main/engine/open/rest');
+    const { updateConfig } = await import('../src/main/workspaceConfig');
+    restRegistry.clear();
+    // `retry-after: 0` keeps the client's own retries instant; the model still rests for the default time.
+    const busy = await fakeOpenAI(() => ({ ...errorStep(429, 'Rate limit reached'), headers: { 'retry-after': '0' } }) as Step);
+    const spare = await fakeOpenAI(() => toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }]));
+    try {
+      updateConfig((c) => {
+        c.llm.providers.push(newProvider({ id: 'poolbusy', kind: 'openai-compatible', baseUrl: busy.url, structured: 'tool' }), newProvider({ id: 'poolspare', kind: 'openai-compatible', baseUrl: spare.url, structured: 'tool' }));
+        return c;
+      });
+      const agent = newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider: 'poolbusy', model: 'model-a', fallbacks: [{ provider: 'poolspare', model: 'model-b' }] } });
+      const notices: PoolNotice[] = [];
+      activityLog.clear();
+      const before = Date.now();
+      const r = await withActivityContext('run:r-pool-0001', () =>
+        runAgent<{ fala: string }>({ agent, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'reviewer', maxTurns: 4, onPool: (n) => notices.push(n) }),
+      );
+      expect(r.data).toEqual({ fala: 'done' });
+      expect(busy.chats().length).toBeGreaterThan(0);
+      expect(spare.chats()[0].body?.model).toBe('model-b');
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toMatchObject({ from: { label: 'model-a', provider: 'poolbusy' }, to: { label: 'model-b', provider: 'poolspare' }, reason: 'rate_limit', activity: 'write' });
+      // The busy model rests for the default 5 minutes, and the notice says until when.
+      expect(notices[0].until).toBeGreaterThanOrEqual(before + 5 * 60_000 - 1000);
+      const shown = activityLog.get('run:r-pool-0001').filter((e) => e.kind === 'tool' && e.label.includes('model-b'));
+      expect(shown).toHaveLength(1);
+      expect(shown[0].label).toContain('model-a');
+    } finally {
+      restRegistry.clear();
+      await busy.close();
+      await spare.close();
+    }
   });
 });

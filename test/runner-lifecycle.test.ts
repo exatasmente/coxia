@@ -165,6 +165,27 @@ describe('a stage that goes wrong', () => {
     expect(b.runner.get(run.id)).toMatchObject({ status: 'gate', error: null });
   });
 
+  it('says in the thread of the run that a stage moved to another model of its pool, with the model that was busy and when it is back, and does not fail the stage', async () => {
+    const b = await boot();
+    easy(b);
+    const back = Date.parse('2026-01-01T14:05:00');
+    b.engine.script('refiner', (call) => {
+      call.onPool?.({ from: { label: 'model-a', provider: 'prov-a' }, to: { label: 'model-b', provider: 'prov-a' }, reason: 'rate_limit', until: back, activity: 'write' });
+      call.onPool?.({ from: { label: 'model-b', provider: 'prov-a' }, to: { label: 'model-c', provider: 'prov-b' }, reason: 'activity', until: null, activity: 'shell' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    const lines = b.thread(run).filter((m) => m.code?.startsWith('runner.model.'));
+    expect(lines.map((m) => m.code)).toEqual(['runner.model.switched', 'runner.model.moved']);
+    expect(lines[0]).toMatchObject({ kind: 'system', stage: 'refine', params: { agent: 'refiner', from: 'model-a', to: 'model-b' } });
+    expect(messageText(lines[0])).toContain(new Date(back).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+    expect(messageText(lines[0])).toContain('model-a');
+    // The provider is named only where the two models come from different ones.
+    expect(lines[1].params).toMatchObject({ from: 'model-b (prov-a)', to: 'model-c (prov-b)' });
+    expect(b.runner.get(run.id)!.status).toBe('gate');
+  });
+
   it('fails when the agent ran past the limit, stopping it', async () => {
     const b = await boot({ timeoutMs: 40 });
     easy(b);

@@ -73,6 +73,19 @@ describe('a conversation between two agents', () => {
     expect(ex.answered).toEqual(['answer 1']);
   });
 
+  it('says in the conversation that the called agent moved to another model of its pool', async () => {
+    const engine = async (call: AgentCall) => {
+      call.onPool?.({ from: { label: 'model-a' }, to: { label: 'model-b' }, reason: 'rate_limit', until: Date.now() + 300_000, activity: 'write' });
+      return { data: { texto: 'done' } };
+    };
+    await runConversation(
+      { run, stage: { id: 'implement' } as never, caller: agent('developer'), called: agent('qa'), forum, config: () => neutralConfig(), engine, commands: [], abort: new AbortController(), chain: ['developer'], place: 'run', title: 'talk' },
+      exchange(['first']).ex,
+    );
+    const thread = forum.read(runThreadId('r1'), 0, 500)?.messages ?? [];
+    expect(thread.find((m) => m.code === 'runner.model.switched')).toMatchObject({ kind: 'system', stage: 'implement', params: { agent: 'qa', from: 'model-a', to: 'model-b' } });
+  });
+
   it('opens a thread of its own for a conversation in a new place, linked from the run', async () => {
     const engine = async () => ({ data: { texto: 'done' } });
     const r = await runConversation(

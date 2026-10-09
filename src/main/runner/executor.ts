@@ -15,7 +15,7 @@ import { withActivityContext } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import { rc } from '../workspaceConfig';
 import { type AgentCall, extraReadRoots } from '../agents';
-import { MaxTurnsError, ProviderBudgetError, ProviderBusyError, type ReadConfinement, poolBusyParams } from '../engine/contract';
+import { MaxTurnsError, ProviderBudgetError, ProviderBusyError, type ReadConfinement, poolBusyParams, poolNoticeLine } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, MEMORY_FILE, ensureMemory, readFolder, readMemory, tidyArtifact, writeArtifact, writeMemory } from './cycleFolder';
@@ -1006,6 +1006,14 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   if (clock) clock.watch = watch;
   call.beat = watch.beat;
   call.onUsage = procedures ? procedures.wrapUsage(usage) : usage;
+  // A move to another model of the pool is said in the thread of the run, with the model that was busy and when it is back.
+  call.onPool = (notice) => {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, ...poolNoticeLine(agent.id, notice), stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not record a switch of model', run.id, e instanceof Error ? e.message : e);
+    }
+  };
   // The mailbox of the stage: a message addressed to this agent while it works enters the session between two steps. It is opened with the attempt and closed
   // before the sandbox, so nothing the stage hands over outlives it.
   const inbox = openInbox(run.id, stage.id, agent.id, d.forum, () => new Date().toISOString());

@@ -9,7 +9,7 @@ import type { Run } from '../../shared/runs';
 import { mentionJob } from '../../shared/activity';
 import { type RunActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
-import type { ReadConfinement } from '../engine/contract';
+import { type ReadConfinement, ProviderBusyError, poolBusyParams, poolNoticeLine } from '../engine/contract';
 import { callKey } from '../../shared/browser';
 import { type CallScreen, type CallScreenRequest, type ScreenPorts, beginHandoff, modelSeesImages, offerHandoff, openCallScreen, promptFor } from '../browser/callScreen';
 import { countsText } from '../browser/audit';
@@ -306,6 +306,13 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         // The workspace turned attachments to agents off: the conversation says so, once per answer, so the person knows why the agent did not read them.
         deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'main.attachment.agentsOff', stage });
       }
+      call.onPool = (notice) => {
+        try {
+          deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, ...poolNoticeLine(id, notice), stage });
+        } catch (e) {
+          console.error('[mentions] could not record a switch of model', e instanceof Error ? e.message : e);
+        }
+      };
       call.docs = await docsAskOf(place, config, info.files);
       // The engine hears the abort too, so Stop ends the model's work and not only the wait for it.
       call.abort = abort;
@@ -359,6 +366,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       // Nothing ran, so the engine reported no end: the call fails here, or its line would stay on screen.
       if (!ran) made?.activity.status('failed', reason);
       if (stoppedBy) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: stoppedBy === 'person' ? 'runner.mention.stopped' : 'runner.mention.stoppedScreen', params: { agent: id }, stage });
+      // Every model of the role's pool was busy: the line names the pool and when the first one is back, whole where the reason would be cut.
+      else if (e instanceof ProviderBusyError) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.model.allBusy', params: { agent: id, ...poolBusyParams(e) }, stage });
       else deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
     } finally {
       if (!detached) procedures?.finish(answered ? 'done' : 'failed');

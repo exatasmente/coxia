@@ -1,7 +1,7 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
 import { intlLocale, t } from '../../shared/i18n';
 import type { AttachmentRef } from '../../shared/attachments';
-import type { AgentToolsConfig, LlmRole } from '../../shared/config/types';
+import type { Activity, AgentToolsConfig, LlmRole } from '../../shared/config/types';
 import type { RunActivity } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import type { UsageReport } from '../../shared/runs/usage';
@@ -68,10 +68,49 @@ export class ProviderBusyError extends Error {
   }
 }
 
+const clockOf = (at: number): string => new Date(at).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
+
 /** The words of the failure of a pool that is all busy: the pool, its models and when the first one is back. The stage and the ceremonies both say it this way. */
 export function poolBusyParams(e: { pool: string; models: string[]; until: number | null; detail: string }): Record<string, string> {
-  const time = e.until === null ? null : new Date(e.until).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
+  const time = e.until === null ? null : clockOf(e.until);
   return { pool: e.pool, models: e.models.join(', '), when: time === null ? t('main.runner.error.pool-busy.whenUnknown') : t('main.runner.error.pool-busy.when', { time }), detail: e.detail };
+}
+
+/**
+ * A call moved from one model of its pool to another. `reason` is the refusal that made it (the model was busy; `resting` is one that was already resting from a
+ * refusal elsewhere) or `activity` (the next turn belongs to a list that does not hold the model in use). `until` is when the model left behind is back (epoch ms), null
+ * when it is not resting.
+ */
+export interface PoolNotice {
+  from: { label: string; provider?: string };
+  to: { label: string; provider?: string };
+  reason: 'rate_limit' | 'overloaded' | 'server' | 'resting' | 'activity';
+  until: number | null;
+  activity: Activity;
+}
+
+/** A model as the person reads it; the provider goes along only when the two models of a switch come from different ones. */
+const nameOf = (m: PoolNotice['from'], other: PoolNotice['from']): string => (m.provider && m.provider !== other.provider ? `${m.label} (${m.provider})` : m.label);
+
+/** The words of a switch, for the thread and for the live activity. A switch for the kind of work has no `time`: nothing is resting. */
+export function poolNoticeParams(e: PoolNotice): Record<string, string> {
+  return {
+    from: nameOf(e.from, e.to),
+    to: nameOf(e.to, e.from),
+    time: e.until === null ? '' : clockOf(e.until),
+    activity: t(`main.engine.pool.activity.${e.activity}`),
+  };
+}
+
+/** The key of the thread line of a switch (under `main.forum.code.`): the model was busy, or the turn asked for another list. */
+export const poolNoticeCode = (e: PoolNotice): 'runner.model.switched' | 'runner.model.moved' => (e.reason === 'activity' || e.until === null ? 'runner.model.moved' : 'runner.model.switched');
+
+/** The thread line of a switch: the code under `main.forum.code.` and its params, with the agent whose call moved. */
+export const poolNoticeLine = (agent: string, e: PoolNotice): { code: string; params: Record<string, string> } => ({ code: poolNoticeCode(e), params: { agent, ...poolNoticeParams(e) } });
+
+/** One line saying a switch, for the live activity of a call that has no thread to say it in. */
+export function poolNoticeText(e: PoolNotice): string {
+  return t(poolNoticeCode(e) === 'runner.model.switched' ? 'main.engine.pool.switched' : 'main.engine.pool.moved', poolNoticeParams(e));
 }
 
 /** The read-only shell the agent may use: SDK permission rules plus the allow-list the hook enforces (see agents.ts). */
@@ -195,6 +234,8 @@ export interface EngineRequest {
   onUsage?: (usage: UsageReport) => void;
   /** Called at every sign of life from the model: a piece of text, a tool call, a usage report, a message of the SDK. */
   beat?: () => void;
+  /** Called when the call moves to another model of its pool, so the thread can say it. */
+  onPool?: (notice: PoolNotice) => void;
   /** Where the engine reports what it is doing (tool calls, narration, blocked calls); the run's own states are reported by `run`. */
   activity?: RunActivity;
   /**
