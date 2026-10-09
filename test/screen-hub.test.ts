@@ -489,6 +489,18 @@ describe('bursts of input', () => {
     expect(await s.hub.input('r-1', [move(1, 1)])).toMatchObject({ reason: 'none' });
   });
 
+  it('end with the display lost while control is on: the burst is closed and the conversation says control is over, once', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [move(1, 1)]);
+    s.conn.close();
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used', 'runner.screen.controlOff']);
+    s.quiet();
+    await s.hub.finish('r-1');
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used', 'runner.screen.controlOff']);
+  });
+
   it('end without a line when the app drops the screen (the stage never got to finish)', async () => {
     const s = setup();
     await s.open();

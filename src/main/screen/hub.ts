@@ -167,7 +167,14 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
   const drop = (run: string, keep: boolean): void => {
     const live = lives.get(run);
     if (!live) return;
-    if (keep) closeBurst(live);
+    if (keep) {
+      closeBurst(live);
+      // The screen is gone with control on: the conversation said it was taken, so it says it is over.
+      if (live.control) {
+        live.control = false;
+        say(live, 'runner.screen.controlOff');
+      }
+    }
     live.ended = true;
     lives.delete(run);
     live.cancelBurst?.();
