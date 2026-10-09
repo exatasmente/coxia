@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.11] - 2026-10-09
+
 ### Added
 
 - **A terminal session can read the workspace's state through a local server.** Settings › Workspaces gains a per-workspace opt-in ("Terminal state server", schema 24); with it on, the panel shows the exact server entry to add to a project's `.mcp.json` (the same `{mcpServers}` shape the app itself reads) and offers, once per project folder, to merge that entry into the file beside the project's other entries, never replacing a same-name entry that runs a different program (the person confirms the write in the dialog; opting out never touches the file). A session with the entry gets the app's read tools over standard input and output — the workspace's cycles, its runs (stage, status and the question one waits for), one run's conversation without system lines, its evidence, its activities memory and the learned procedures — each answer masked the way the app masks its own, rebuilt from the files at every call, answering other workspaces nothing, and working with the app closed. Nothing is served before the opt-in, and no tool writes.
@@ -437,7 +439,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.10...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.11...HEAD
+[0.9.0-beta.11]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.10...v0.9.0-beta.11
 [0.9.0-beta.10]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.9...v0.9.0-beta.10
 [0.9.0-beta.9]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.8...v0.9.0-beta.9
 [0.9.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.7...v0.9.0-beta.8
