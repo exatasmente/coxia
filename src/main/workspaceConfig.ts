@@ -15,14 +15,15 @@ import { secrets, seedLegacySecrets } from './secrets';
 // The loaded config of the running workspace, and the getters that replaced the constants env.ts used to hold.
 // Modules read `rc()` at call time, never at import time: the config can change while the app runs (Settings, import, the wizard).
 
-let state: { config: WorkspaceConfig; resolved: ResolvedConfig } | null = null;
+// `degraded`: the file on disk did not pass the check and the config in memory is what the migration made of it, not what the person wrote.
+let state: { config: WorkspaceConfig; resolved: ResolvedConfig; degraded: boolean } | null = null;
 let bootstrapped = false;
 let legacyWorkspace = false;
 const listeners = new Set<(config: WorkspaceConfig) => void>();
 
 const context = () => ({ home: HOME, env: process.env, fallbackCwd: ATAS });
 
-function load(): { config: WorkspaceConfig; resolved: ResolvedConfig } {
+function load(): NonNullable<typeof state> {
   const log = (m: string) => console.log(`[config] ${m}`);
   const profile = loadLegacyProfile(process.env, log);
   if (!bootstrapped) {
@@ -47,12 +48,18 @@ function load(): { config: WorkspaceConfig; resolved: ResolvedConfig } {
   setLanguage(config.language);
   setTerms(termsFor(config, config.language));
   setVoiceEnabled(config.voice.enabled);
-  return { config, resolved: resolveConfig(config, context()) };
+  return { config, resolved: resolveConfig(config, context()), degraded: !checked.config };
 }
 
 export function getConfig(): WorkspaceConfig {
   state ??= load();
   return state.config;
+}
+
+/** Whether the config in memory is the one on disk. false: the file was unreadable or invalid and this is a repaired one, so it must not decide what to delete. */
+export function configLoadedCleanly(): boolean {
+  state ??= load();
+  return !state.degraded;
 }
 
 /** The resolved view: absolute paths, the optional integrations that are on, the former constants. */
@@ -94,7 +101,7 @@ export function checkConfig(next: unknown): WorkspaceConfig {
 export function saveConfig(next: unknown): WorkspaceConfig {
   const config = checkConfig(next);
   writeConfigFile(ATAS, config);
-  state = { config, resolved: resolveConfig(config, context()) };
+  state = { config, resolved: resolveConfig(config, context()), degraded: false };
   setLanguage(config.language);
   setTerms(termsFor(config, config.language));
   setVoiceEnabled(config.voice.enabled);

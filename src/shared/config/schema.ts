@@ -3,7 +3,7 @@ import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
 import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 20). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 22). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -238,6 +238,9 @@ const agentDef = object(
     turnsTo: { type: ['string', 'null'], description: 'Who the agent turns to when it cannot decide: another agent of the team, or null for the person.', pattern: ID },
     squad: { type: ['string', 'null'], description: 'The squad the agent belongs to (a squads id); absent or null: a shared agent, which works for every squad.', pattern: ID },
     draft: boolean('An agent the AI assistant saved to be tested in a direct conversation: it works no stage, is not asked and is not called by another agent. Absent: an agent of the team.'),
+    screen: boolean('A virtual screen for the agent and the app\'s browser tools, which the person can watch. Absent: off. A paired browser may turn it off, never on; a template or an import never brings it.'),
+    allowedHosts: list('The hosts the agent may reach through the app\'s filtering proxy: exact lowercase names, HTTPS port 443, no wildcard or port. Not used by an agent on shell: host. Absent: none.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+    browserProfile: boolean('The agent\'s browser keeps its logins between uses, in a profile folder of its own in the workspace\'s data. Absent: off, a fresh profile every time.'),
     instructions: string('Appended to the agent system prompt (a catalog key or a literal).', { maxLength: 20_000 }),
     system: boolean('One of the five built-in agents: it can be edited and never removed.'),
   },
@@ -523,6 +526,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         }),
         identity: object('Who the app\'s commits are made as (a run\'s, and the merge that resolves a conflict); both empty: the one in the repository\'s own .git/config, never the global one, and with neither the app does not commit.', { name: string('Author and committer name.', { maxLength: 200 }), email: string('Author and committer email.', { maxLength: 200 }) }),
         evidence: enumOf('Where a stage\'s evidence is kept: app (only with the run, in the workspace\'s data, never in a commit; the default) or cycle (also copied into the cycle folder and committed with the stage). Only the computer changes it. Optional: absent reads as app.', EVIDENCE_PLACEMENTS),
+        procedures: boolean('Agents keep what they learned as procedures in the workspace and read them the next time. Only the computer changes it. Off: no tool and no prompt section; the Procedures view still lists, edits and deletes. Optional: absent reads as off.'),
         commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         prTitle: string('The title of the pull request a run opens; {title} (the agent\'s title, or the issue\'s) and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         linkDependencies: boolean('A run\'s worktree gets a link to the dependency folders (node_modules, .venv) of the repository\'s clone, so the commands the app runs there find their tools. Optional: absent reads as true.'),

@@ -130,6 +130,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
             <button type="button" className="btn" onClick={() => go({ name: 'runs' })}>{t('ui.runs.nav')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'board' })}>{t('ui.board.nav')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'forum' })}>{t('ui.forum.nav')}</button>
+            <button type="button" className="btn" onClick={() => go({ name: 'procedures' })}>{t('ui.procedures.nav')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'settings' })}>{t('ui.nav.settings')}</button>
             <button type="button" className="btn" onClick={() => go({ name: 'custo' })}>{t('ui.nav.cost')}</button>
             <RadarButton go={go} />

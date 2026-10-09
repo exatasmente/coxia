@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { migrateConfig } from '../src/shared/config/migrations';
+import { proceduresOn } from '../src/shared/procedures';
 import { neutralConfig, neutralRunner } from '../src/shared/config/defaults';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
@@ -12,6 +13,9 @@ import { V1_SETTINGS, exampleProfile } from './helpers/config';
 
 const quiet = { log: () => undefined, now: () => new Date('2026-10-02T12:00:00Z') };
 let root: string;
+
+// A migrated file is a workspace that existed: the learned procedures are off for it, where a new workspace has them on (schema 22).
+const existing = (c: ReturnType<typeof neutralConfig>): ReturnType<typeof neutralConfig> => ({ ...c, runner: { ...c.runner, procedures: false } });
 
 function put(rel: string, content: string): void {
   const file = join(root, rel);
@@ -74,7 +78,7 @@ describe('migrateConfig', () => {
 
   it('a workspace with no config file on an existing install is neutral without a profile', () => {
     const r = migrateConfig(undefined, { legacyInstall: true });
-    expect(r.config).toEqual(neutralConfig());
+    expect(r.config).toEqual(existing(neutralConfig()));
     expect(r.config.setupComplete).toBe(false);
   });
 
@@ -151,7 +155,7 @@ describe('migrateConfig', () => {
       expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.projects.issues).toMatchObject({ project: 'group/app', refPrefix: 'app#', cardScope: 'labels', cardLabels: ['ready', 'sprint 12'] });
       expect(r.config.agents.team.map((a) => a.id)).toEqual([...LLM_ROLES]);
-      expect(r.config.runner).toEqual(neutralRunner());
+      expect(r.config.runner).toEqual({ ...neutralRunner(), procedures: false });
       expect(r.config.devCycle.comments).toEqual({});
       expect(r.config.devCycle.stages).toEqual(file.devCycle.stages);
       expect(r.config).toMatchObject({ language: 'en', userName: 'Ana', devCycle: { priority: { labels: ['^P0$', '^P1$'] } } });
@@ -231,7 +235,7 @@ describe('migrateConfig', () => {
       const r = migrateConfig(v8({ stageTimeoutMs: 1_800_000, enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3 }), { legacyInstall: false });
       expect(r.config.runner).toMatchObject({ enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3 });
       const bare = migrateConfig(v8(undefined), { legacyInstall: false });
-      expect(bare.config.runner).toEqual(neutralConfig().runner);
+      expect(bare.config.runner).toEqual({ ...neutralConfig().runner, procedures: false });
     });
   });
 
@@ -329,7 +333,7 @@ describe('migrateConfig', () => {
       expect({ ...r.config, runner: { ...r.config.runner, commitMessage: undefined, prTitle: undefined }, schemaVersion: 0 }).toEqual({
         ...neutralConfig(),
         language: 'en',
-        runner: { ...neutralConfig().runner, commitMessage: undefined, prTitle: undefined },
+        runner: { ...neutralConfig().runner, procedures: false, commitMessage: undefined, prTitle: undefined },
         schemaVersion: 0,
       });
     });
@@ -380,7 +384,7 @@ describe('migrateConfig', () => {
     const r = migrateConfig(v18, { legacyInstall: false });
     expect(r.fromVersion).toBe(18);
     expect(r.changed).toBe(true);
-    expect(r.config).toEqual(neutralConfig());
+    expect(r.config).toEqual(existing(neutralConfig()));
     expect(r.config.agents.team.some((a) => 'draft' in a)).toBe(false);
     expect(r.notes.join(' ')).toContain('draft');
     expect(validateConfig(r.config).ok).toBe(true);
@@ -447,9 +451,137 @@ describe('migrateConfig', () => {
       expect(r.config.devCycle.autonomy).toEqual(neutralConfig().devCycle.autonomy);
     });
 
-    it('is the newest step: the previous version is current and the next is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(20);
-      expect(() => migrateConfig({ schemaVersion: CONFIG_SCHEMA_VERSION + 1 }, { legacyInstall: false })).toThrow(/newer app/);
+  });
+
+  describe('schema 20 to 21: the virtual screen of an agent', () => {
+    const v20 = (): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 20;
+      delete c.runner.procedures;
+      c.agents.team.push({ id: 'writer', name: 'Writer', job: '', model: { role: 'deep', provider: '', model: '' }, stages: [], permission: 'read', tracker: 'none', shell: 'sandbox', autonomous: false, turnsTo: null, instructions: 'x', system: false });
+      return c;
+    };
+
+    it('bumps the version, leaves a note, yields a valid file and gives no agent a screen, a host or a profile', () => {
+      const r = migrateConfig(v20(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(20);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.notes.join(' ')).toContain('a virtual screen');
+      expect(validateConfig(r.config).ok).toBe(true);
+      for (const a of r.config.agents.team) {
+        expect(a.screen).toBeUndefined();
+        expect(a.allowedHosts).toBeUndefined();
+        expect(a.browserProfile).toBeUndefined();
+      }
+    });
+
+    it('keeps every field of every agent and the rest of the file exactly as it was', () => {
+      const before = v20();
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect(r.config.agents.team).toEqual(before.agents.team);
+      expect({ ...r.config, schemaVersion: 20, runner: { ...r.config.runner, procedures: undefined } }).toEqual({ ...before, runner: { ...before.runner, procedures: undefined } });
+    });
+
+    it('keeps a screen, hosts and a profile a file already carries, and is idempotent', () => {
+      const c = v20();
+      Object.assign(c.agents.team.find((a: any) => a.id === 'writer'), { screen: true, allowedHosts: ['example.com'], browserProfile: true });
+      const once = migrateConfig(c, { legacyInstall: false });
+      expect(once.config.agents.team.find((a) => a.id === 'writer')).toMatchObject({ screen: true, allowedHosts: ['example.com'], browserProfile: true });
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+  });
+
+  describe('schema 21 to 22: the learned procedures of the agents', () => {
+    const v21 = (change: (runner: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 21;
+      delete c.runner.procedures;
+      change(c.runner);
+      return c;
+    };
+
+    it('sets the switch off for a workspace that existed, bumps the version, leaves a note and yields a valid file', () => {
+      const r = migrateConfig(v21(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(21);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.runner.procedures).toBe(false);
+      expect(proceduresOn(r.config)).toBe(false);
+      expect(r.notes.join(' ')).toContain('learned procedures are off for a workspace that existed');
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('touches nothing else of the file', () => {
+      const before = v21((runner) => {
+        runner.enabled = true;
+        runner.triggerLabel = 'auto';
+      });
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect({ ...r.config, schemaVersion: 21, runner: { ...r.config.runner, procedures: undefined } }).toEqual({ ...before, runner: { ...before.runner, procedures: undefined } });
+    });
+
+    it('is off for a file that came from the first versions too, whatever the chain seeded on the way', () => {
+      expect(migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false }).config.runner.procedures).toBe(false);
+      expect(migrateConfig(undefined, { legacyInstall: true }).config.runner.procedures).toBe(false);
+    });
+
+    it('is on for a new workspace, and the app reads an absent switch as off', () => {
+      expect(neutralConfig().runner.procedures).toBe(true);
+      expect(migrateConfig(undefined, { legacyInstall: false }).config.runner.procedures).toBe(true);
+      expect(proceduresOn(neutralConfig())).toBe(true);
+      expect(proceduresOn({ runner: {} })).toBe(false);
+      expect(proceduresOn(null)).toBe(false);
+    });
+
+    it('a file already at 22 keeps its choice, and a second start changes nothing', () => {
+      const on = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      expect(migrateConfig(on, { legacyInstall: false }).config.runner.procedures).toBe(true);
+      const once = migrateConfig(v21(), { legacyInstall: false });
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+    it('is followed by the test environment step: the chain does not stop at 22', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(22);
+    });
+  });
+
+  describe('schema 22 to 23: the workspace test environment', () => {
+    const v22 = (): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 22;
+      delete c.testEnvironment;
+      return c;
+    };
+
+    it('adds an empty environment, bumps the version, leaves a note and yields a valid file', () => {
+      const r = migrateConfig(v22(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(22);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.testEnvironment).toEqual({ variables: [], secrets: [] });
+      expect(r.notes.join(' ')).toContain('testEnvironment was added');
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps a section the file already carries, and a second start changes nothing', () => {
+      const c = v22();
+      c.testEnvironment = { variables: [{ name: 'INTEGRATION_URL', value: 'https://staging.example.com', hosts: ['staging.example.com'] }], secrets: [] };
+      const once = migrateConfig(c, { legacyInstall: false });
+      expect(once.config.testEnvironment?.variables).toHaveLength(1);
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+    it('is the newest step: 23 is current and 24 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(23);
+      expect(() => migrateConfig({ schemaVersion: 24 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

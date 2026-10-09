@@ -2,10 +2,32 @@ import type { AttachmentRef } from '../attachments';
 import type { StageKind, StageType, WaitFor, WaitKind } from '../config/types';
 import type { EvidenceRecord } from '../evidence';
 import type { ForumDraft } from '../forum';
+import type { LiveScreen } from '../screen';
+import type { ProcedureUse } from '../procedures';
 
 // A run: one issue going through the agent cycle. This file is the shape; the moves are in transitions.ts, the file format check in schema.ts.
 
-export const RUN_VERSION = 1;
+/**
+ * The newest run file format this app reads. Version 2 is a run that holds the app's own screen recording (a `webm` evidence record): an app that does not know the
+ * kind refuses such a file as written by a newer app, instead of reading it as invalid. Version 3 is a run whose recording also holds `cuts` or `startedAfterMs` (#176): the beta.4 and
+ * beta.5 apps know the recording but their schema allows no other property in it, so they would call such a run invalid; at 3 they say "written by a newer app".
+ * Version 4 is a run whose recording holds a hand-off interval (`handoff`, and a mark of kind `handoff`, #178): the apps before it allow no such property.
+ * Version 5 is a run whose stage records carry `procedures` (the procedures a stage used, #179): an older app's schema allows no other property in a stage record, so it would call
+ * such a run invalid; at 5 it says "written by a newer app".
+ * Every other run is written as version 1 (`runVersionOf`), so a downgrade loses only the runs that have a recording, from 3 on only the ones with cuts too, from 4 on only
+ * the ones with a hand-off, and from 5 on only the ones that used a procedure.
+ */
+export const RUN_VERSION = 5;
+export type RunVersion = 1 | 2 | 3 | 4 | 5;
+
+/** The format a run is written as: 5 when a stage record holds `procedures`, 4 when a screen recording holds a hand-off, 3 when it holds cuts or `startedAfterMs` (the fields v2 does not know), 2 when it holds one without, else 1. The store stamps it on every save, so it follows the content and cannot be forgotten by a move. */
+export const runVersionOf = (run: { evidence?: Run['evidence']; stages?: readonly Pick<StageRecord, 'procedures'>[] }): RunVersion => {
+  if ((run.stages ?? []).some((s) => s.procedures !== undefined)) return 5;
+  const pieces = Object.values(run.evidence ?? {}).filter((e) => e.kind === 'webm');
+  if (pieces.some((e) => e.recording?.handoff === true || e.recording?.marks.some((m) => m.kind !== undefined))) return 4;
+  if (pieces.some((e) => (e.recording?.cuts?.length ?? 0) > 0 || e.recording?.startedAfterMs !== undefined)) return 3;
+  return pieces.length > 0 ? 2 : 1;
+};
 export const RUN_ID = /^r-[a-z0-9]{1,12}-[a-z0-9]{2,8}$/;
 
 export type { EvidenceRecord };
@@ -39,7 +61,12 @@ export interface StageRecord {
   autonomous: boolean;
   /** What its model calls used, over all attempts; absent for a stage that ran before this was recorded (and for a gate). */
   usage?: StageUsage;
+  /** The procedures the stage's agent read and what became of each (#179); absent when it read none. At most `PROCEDURES_PER_STAGE`, one per procedure. */
+  procedures?: ProcedureUse[];
 }
+
+/** The most procedures a stage's record lists. */
+export const PROCEDURES_PER_STAGE = 20;
 
 /** What the model calls of a stage used, over all its attempts. `costUsd` is what a provider or the SDK reported, null when none did. */
 export interface StageUsage {
@@ -362,7 +389,7 @@ export interface RunSubject {
 }
 
 export interface Run {
-  version: typeof RUN_VERSION;
+  version: RunVersion;
   /** Grows by one on every save of the store. */
   rev: number;
   id: string;
@@ -384,6 +411,8 @@ export interface Run {
   question: PendingQuestion | null;
   /** The command the working stage waits for the person to allow (`shell: host`). Filled in by the runner when it hands a run out, never written to the file. */
   command?: PendingCommand | null;
+  /** The live screen of the working stage's virtual display, while it has one. Filled in by the runner when it hands a run out, never written to the file. */
+  screen?: LiveScreen | null;
   /** The result of a non-autonomous agent, waiting for the person (status `to-accept`). */
   pending: PendingResult | null;
   /** How many times each stage sent the work back (by the stage that sent it: review and QA have a budget each) since the person last answered the limit's question. */

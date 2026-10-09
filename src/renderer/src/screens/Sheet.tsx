@@ -6,17 +6,21 @@ const FOCUSABLE = 'button:not(:disabled), a[href], input:not(:disabled), select:
 
 const WIDE = 'sheet sheet-wide'; // i18n-ignore: CSS classes
 
-// Bottom sheet: Esc and the backdrop close it, Tab stays inside, focus goes back to what opened it.
-export function Sheet({ label, onClose, children, wide }: { label: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+// Bottom sheet: Esc and the backdrop close it, Tab stays inside, focus goes back to what opened it. With `captureKeys` the sheet leaves Esc and Tab alone: what is inside
+// takes the keyboard (the live screen's Take control sends every key to the agent's screen), and the buttons and the backdrop still close it.
+export function Sheet({ label, onClose, children, wide, captureKeys }: { label: string; onClose: () => void; children: ReactNode; wide?: boolean; captureKeys?: boolean }) {
   const t = useT();
   const box = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
+  const capture = useRef(!!captureKeys);
+  capture.current = !!captureKeys;
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     box.current?.querySelector<HTMLElement>(FOCUSABLE)?.focus();
     const onKey = (e: KeyboardEvent) => {
+      if (capture.current) return;
       if (e.key === 'Escape') {
         e.stopPropagation();
         close.current();

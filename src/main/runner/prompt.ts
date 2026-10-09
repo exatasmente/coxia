@@ -10,6 +10,7 @@ import { prompt as cp, text as cycleWord } from '../cyclePrompts';
 import type { CommandResult } from './commands';
 import { type FolderFile, ISSUE_FILE, MEMORY_FILE } from './cycleFolder';
 import { MEMORY_MAX } from './memory';
+import { type ScreenPrompt, screenRules, shellRules } from './screenPrompt';
 
 // The text a stage's agent is given. The ids are `runner.*` prompts of the catalogs (the base family): the app's own wording, in the workspace's
 // language. Everything that came from outside (the issue, comments, the thread, files, the diff) goes between <data> tags and the system text says
@@ -43,6 +44,8 @@ export interface StageInput {
   commandResults?: CommandResult[];
   /** The stage's agent runs commands in a sandbox: what it is told about it (and that a reader works in a copy). */
   sandbox?: { network: 'off' | 'registry' | 'open'; reader: boolean; host?: boolean; gui?: SandboxGui; look?: boolean };
+  /** What the agent is told of its screen, its own hosts and the app's browser; absent for an agent with neither the switch nor a host list. */
+  screen?: ScreenPrompt;
   /** The commands are numbered in the prompt (a stage with a sandbox: the agent cites them as the evidence of a scenario). */
   numberedCommands?: boolean;
   /** The agent has the evidence tools: what it is told about keeping a file and citing its id. */
@@ -75,6 +78,13 @@ export interface StageInput {
   memory?: { over: boolean; max: number } | null;
   /** What the app knows of the activities of the workspace, rendered: the front of this activity whole and the rest in short, or "" (then no section). */
   shared?: string;
+  /**
+   * The workspace's learned procedures: the call has the tools when this is a string (then the rules are in the system text), and the list is the string itself,
+   * rendered; "" is a call with the tools and nothing listed (no section). Absent: no tools, and neither rules nor section.
+   */
+  procedures?: string;
+  /** The call has the app's browser, so it is also given the draft: the rules say to keep a screen task with `procedures_draft`. Only with `procedures`. */
+  proceduresGui?: boolean;
   /** The stage changes the branch and the repository has AGENTS.md instructions that must stay true. */
   docsKeep?: boolean;
   /** The stage carries the workspace's test environment: it is told what that means (masked values, blocked images). */
@@ -124,10 +134,11 @@ export const DIFF_LIMIT = DIFF_MAX;
  * How to test an interface in this stage: the general way (the sandbox's, or the computer's for an agent that runs commands there), then one line for each piece the
  * person switched on, saying whether the stage has it. Absent when the person switched neither on, so such a stage's prompt is what it was.
  */
-function guiRules(gui: SandboxGui, look: boolean, host: boolean): string {
+function guiRules(gui: SandboxGui, look: boolean, host: boolean, screen?: ScreenPrompt): string {
   const out = gui.out ?? '';
+  // An agent that has the app's browser is told that its own Playwright is for the app under test: the text that says "no network" or "never an external address" reads it.
   return [
-    host ? cp('runner.rules.gui.host', { out }) : cp('runner.rules.gui'),
+    host ? (screen?.screen ? cp('runner.rules.gui.host.screen', { out }) : cp('runner.rules.gui.host', { out })) : screen?.screen ? cp('runner.rules.gui.screen') : cp('runner.rules.gui'),
     gui.browsers ? cp('runner.rules.gui.browsers', { path: gui.browsers }) : gui.browsersGone ? cp('runner.rules.gui.noBrowsers') : '',
     gui.display === 'on' ? cp('runner.rules.gui.display') : gui.display === 'missing' || gui.display === 'failed' ? cp('runner.rules.gui.noDisplay') : '',
     look ? (host ? cp('runner.rules.gui.look.host', { out }) : cp('runner.rules.gui.look')) : cp('runner.rules.gui.noLook'),
@@ -146,14 +157,17 @@ export function systemText(i: StageInput): string {
     cp('runner.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title, stage: cycleWord(i.stage.label) }),
     i.squad ? cp('runner.squad.system', { squad: cycleWord(i.squad.name), mission: i.squad.mission.trim() ? cycleWord(i.squad.mission) : '—' }) : '',
     rules,
-    i.sandbox ? (i.sandbox.host ? cp('runner.rules.shell.host') : i.sandbox.network === 'open' ? cp('runner.rules.shell.open') : i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
+    i.sandbox ? shellRules(i.sandbox, i.screen) : '',
     i.sandbox?.reader ? (i.sandbox.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
-    i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true, i.sandbox.host === true) : '',
+    i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true, i.sandbox.host === true, i.screen) : '',
     i.testEnv ? cp('runner.rules.testEnv') : '',
+    screenRules(i.screen),
     cp('runner.rules.data'),
     cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),
     cp('runner.rules.focus'),
+    i.procedures !== undefined ? cp('runner.rules.procedures') : '',
+    i.procedures !== undefined && i.proceduresGui ? cp('runner.rules.proceduresGui') : '',
     // The folder of the stage's evidence is named as this stage has it: the sandbox's `/coxia/out`, or the real folder a host session saves in.
     i.evidence ? cp(i.sandbox?.host && i.sandbox.gui?.out ? 'runner.rules.evidence.host' : 'runner.rules.evidence', { out: i.sandbox?.gui?.out ?? OUT }) : '',
     i.docsKeep ? cp('runner.docs.keep') : '',
@@ -252,6 +266,7 @@ export function stagePrompt(i: StageInput): string {
   if (i.commandResults) sections.push(commandsSection(i.commandResults, i.numberedCommands));
   // What the app knows of the other activities, and of this one whole: material to consult, under its own tags (specification rules 5 to 7).
   if (i.shared) sections.push(cp('runner.section.shared', { text: fence(i.shared) }));
+  if (i.procedures) sections.push(cp('runner.section.procedures', { text: fence(i.procedures) }));
   if (i.release) sections.push(i.release);
   if (i.plugins?.length) sections.push(cp('runner.section.plugins', { text: fence(i.plugins.map((p) => `${p.name}: ${p.note}`).join('\n')) }));
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));

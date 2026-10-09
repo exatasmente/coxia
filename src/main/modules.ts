@@ -2,6 +2,7 @@ import { agentAssist } from './agentAssist';
 import { agentPrep } from './agentPrep';
 import { autostart } from './autostart';
 import { register as board } from './board';
+import { browserModule } from './browser/module';
 import { custoTempo } from './custo-tempo';
 import { register as auditoria } from './auditoria';
 import { register as ceremonyCommands } from './ceremonyCommands';
@@ -18,12 +19,14 @@ import { register as glossary } from './glossary';
 import { minutes } from './minutes';
 import { mentionsModule } from './mentions/module';
 import { pluginsModule } from './plugins/module';
+import { proceduresModule } from './procedures/module';
 import { register as radar } from './radar';
 import { register as watchers } from './watchers';
 import { retention } from './retention';
 import { runsModule } from './runner/module';
 import { suggestionsModule } from './suggestionsModule';
 import { saude } from './saude';
+import { screenModule } from './screen/module';
 import { update } from './update';
 import { updates } from './updates';
 import { vcsModule } from './vcs/module';
@@ -39,6 +42,7 @@ const ALL: Module[] = [
   auditoria,
   autostart,
   board,
+  browserModule,
   ceremonyCommands,
   configModule,
   conflictVerify,
@@ -54,10 +58,12 @@ const ALL: Module[] = [
   mentionsModule,
   minutes,
   pluginsModule,
+  proceduresModule,
   radar,
   retention,
   runsModule,
   saude,
+  screenModule,
   suggestionsModule,
   update,
   updates,

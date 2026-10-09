@@ -1,3 +1,4 @@
+import { basename, dirname } from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { prompt as cp } from '../cyclePrompts';
 import { type DenialCode, WRITE_TOOLS, anchored, checkPath, writeTarget } from '../engine/guard';
@@ -7,7 +8,7 @@ import { noBroadSearch, noSecrets, redactSecretResults, secretPath, shellAllowli
 // through policyFromHooks), so a refusal reads the same on either. What they allow: read, search, write and edit inside the worktree, and
 // the exact commands the workspace listed. What they refuse: any path outside it, `.git`, secret files, any other command, the network.
 
-export type RunnerDenialCode = DenialCode | 'command' | 'network';
+export type RunnerDenialCode = DenialCode | 'command' | 'network' | 'document';
 
 export interface Denial {
   tool: string;
@@ -26,6 +27,8 @@ export interface ConfineOptions {
   writeAllow?: readonly string[];
   /** The commands the agent may run, each exactly as typed. */
   commands: string[];
+  /** The documents of the cycle and the folder they live in: the app writes them there from the answer, so the agent may not write one of these names anywhere else. */
+  documents?: { folder: string; names: readonly string[] };
   /** Called for every refusal, before the agent is told: the runner posts it to the run's thread. */
   onDenied?: (denial: Denial) => void;
 }
@@ -55,7 +58,8 @@ function globBase(pattern: string): string {
 export function confinedHooks(o: ConfineOptions): Hooks {
   const say = (tool: string, target: unknown, code: RunnerDenialCode) => {
     o.onDenied?.({ tool, target: typeof target === 'string' ? target.slice(0, 300) : '', code });
-    return refuse(cp(`runner.denied.${code}`, code === 'command' ? { commands: o.commands.length ? o.commands.join(', ') : cp('runner.denied.noCommands') } : {}));
+    const params: Record<string, string> = code === 'command' ? { commands: o.commands.length ? o.commands.join(', ') : cp('runner.denied.noCommands') } : code === 'document' ? { folder: o.documents?.folder ?? '' } : {};
+    return refuse(cp(`runner.denied.${code}`, params));
   };
 
   const writeGuard: HookCallback = async (input) => {
@@ -67,7 +71,11 @@ export function confinedHooks(o: ConfineOptions): Hooks {
       ...(narrow ? { fence: o.root, reserved: o.writeReserved } : {}),
       writeAllow: o.writeAllow,
     });
-    return check.ok ? {} : say(input.tool_name, target, check.code);
+    if (!check.ok) return say(input.tool_name, target, check.code);
+    // A document of the cycle written by the agent itself lands where its working directory is (the worktree's root) and would go into the pull request.
+    const rel = check.rel.replace(/\\/g, '/');
+    if (o.documents?.names.includes(basename(rel)) && dirname(rel) !== o.documents.folder) return say(input.tool_name, target, 'document');
+    return {};
   };
 
   // The shell is the allow-list of the ceremonies with another list in it: only the commands the workspace named, character for character. The denial is the

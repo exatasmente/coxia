@@ -6,6 +6,7 @@ import { collectSecretRequirements, validateConfig } from '../shared/config/vali
 import { CONFIG_EVENT, type ConfigView } from '../shared/configView';
 import type { ExportResult, ImportApply, ImportPreview, ImportResult, ImportSource, ImportTarget } from '../shared/configTransfer';
 import type { SecretInput, SecretInfo, SecretsStorageStatus } from '../shared/secrets';
+import { syncProfiles } from './browser/module';
 import { applyImport, exportText, previewImport } from './config-transfer';
 import { DATA_ROOT, HOME, WORKSPACE_ID } from './env';
 import { locateSdk } from './claudeSdk';
@@ -124,7 +125,11 @@ export const configModule: Module = (ctx) => {
   ctx.handle('config:import-preview', (source: ImportSource, target: ImportTarget): ImportPreview => previewImport(transferDeps(), source, target));
   ctx.handle('config:import-apply', (req: ImportApply): ImportResult => {
     const result = applyImport(transferDeps(), req, WORKSPACE_ID);
-    if (result.appliedToRunning) reloadConfig();
+    if (result.appliedToRunning) {
+      reloadConfig();
+      // An import can drop agents: their logged-in profiles go with them.
+      syncProfiles();
+    }
     announce();
     return result;
   });

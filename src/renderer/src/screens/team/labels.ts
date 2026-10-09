@@ -1,3 +1,4 @@
+import type { SitesRefusal } from '../../../../shared/browser';
 import type { AssistField } from '../../../../shared/agentAssist';
 import type { SandboxGuiStatus, SandboxReason } from '../../../../shared/sandbox';
 import type { AgentPermission, SandboxNetwork, AgentShell, AgentTracker, CommentEventKey, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
@@ -114,3 +115,19 @@ export const TOOL_LABEL = {
   vcsCli: 'ui.team.tools.vcsCli',
   subagents: 'ui.team.tools.subagents',
 } as const;
+
+// The app's browser: the Chromium line of the agent editor, and why the sites of a logged-in profile could not be listed or revoked.
+export const CHROMIUM_LABEL: Record<NonNullable<SandboxGuiStatus['chromium']>, string> = {
+  ready: 'ui.team.screen.chromium.ready',
+  unset: 'ui.team.screen.chromium.unset',
+  none: 'ui.team.screen.chromium.none',
+};
+
+export const SITES_REFUSAL_LABEL: Record<SitesRefusal, string> = {
+  agent: 'ui.team.sessions.why.agent',
+  site: 'ui.team.sessions.why.site',
+  open: 'ui.team.sessions.why.open',
+  busy: 'ui.team.sessions.why.busy',
+  browser: 'ui.team.sessions.why.browser',
+  failed: 'ui.team.sessions.why.failed',
+};

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RunnerConfig, SandboxNetwork } from '../../../../shared/config/types';
 import { SANDBOX_LIMIT_RANGES } from '../../../../shared/sandboxPaths';
+import { proceduresOn } from '../../../../shared/procedures';
 import { soleMaintainerOf } from '../../../../shared/release';
 import { isFlowCycle } from '../../../../shared/runs/flow';
 import { errorText } from '../../api';
@@ -161,6 +162,8 @@ export function RunnerSection({ config, save }: SectionProps) {
         <>
           <Toggle checked={draft.soleMaintainer} onChange={(soleMaintainer) => set({ soleMaintainer })} label={t('ui.runner.soleMaintainer')} />
           <p className="small muted">{t('ui.runner.soleMaintainerHint')}</p>
+          <Toggle checked={draft.procedures} onChange={(procedures) => set({ procedures })} label={t('ui.runner.procedures')} />
+          <p className="small muted">{t('ui.runner.proceduresHint')}</p>
         </>
       )}
 
@@ -196,6 +199,8 @@ function WebOnComputer({ runner }: { runner: RunnerConfig }) {
       <dd className="small">{identity}</dd>
       <dt className="wz-label">{t('ui.runner.soleMaintainer')}</dt>
       <dd className="small">{t(soleMaintainerOf(runner) ? 'ui.runner.soleMaintainerOn' : 'ui.runner.soleMaintainerOff')}</dd>
+      <dt className="wz-label">{t('ui.runner.procedures')}</dt>
+      <dd className="small">{t(proceduresOn({ runner }) ? 'ui.runner.proceduresOn' : 'ui.runner.proceduresOff')}</dd>
       <dt className="wz-label">{t('ui.runner.evidence')}</dt>
       <dd className="small">{t(runner.evidence === 'cycle' ? 'ui.runner.evidenceCycle' : 'ui.runner.evidenceApp')}</dd>
     </dl>

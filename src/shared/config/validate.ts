@@ -69,6 +69,11 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
     (a.allowedCommands ?? []).forEach((r, j) => {
       if (!validRule(r)) errors.push({ path: at(`allowedCommands[${j}]`), message: 'a rule is one line of at most 200 characters ("prefix:*" or an exact command)' });
     });
+    (a.allowedHosts ?? []).forEach((h, j) => {
+      if (!isRegistryHost(h)) errors.push({ path: at(`allowedHosts[${j}]`), message: 'must be a host name such as example.com: lowercase, no scheme, port, path or wildcard' });
+    });
+    if ((a.allowedHosts ?? []).length > MAX_REGISTRY_HOSTS) errors.push({ path: at('allowedHosts'), message: `at most ${MAX_REGISTRY_HOSTS} hosts` });
+    for (const h of duplicates(a.allowedHosts ?? [])) warnings.push({ path: at('allowedHosts'), message: `"${h}" is listed twice` });
     if (a.shell === 'allowlist' && a.permission !== 'worktree') errors.push({ path: at('shell'), message: '"allowlist" needs the "worktree" permission: an agent that only reads runs commands only in a sandbox' });
     if (a.model.role === null) {
       if (!providers.has(a.model.provider)) errors.push({ path: at('model.provider'), message: `unknown provider "${a.model.provider}"` });

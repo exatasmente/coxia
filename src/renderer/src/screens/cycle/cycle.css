@@ -287,3 +287,64 @@
 .cy-board-detail { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line-2); padding-top: 8px; }
 .cy-board-detail .cy-field { flex: 1 1 140px; }
 .cy-board-detail .text-input { width: 100%; }
+
+/* the live screen of a working stage: the viewer in a sheet, the Take control banner and the picture */
+.cy-live { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.cy-live-bar { gap: 10px; flex-wrap: wrap; align-items: center; }
+.cy-live-switch { margin-left: auto; }
+.cy-live-banner { margin: 0; padding: 8px 12px; border-radius: 10px; border: 2px solid var(--red-solid); background: var(--red-soft); color: var(--red-ink); font-weight: 600; line-height: 1.4; }
+.cy-live-rejected { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--amber-soft); color: var(--amber-ink); }
+.cy-live-stage { display: flex; align-items: center; justify-content: center; min-height: 120px; border-radius: 10px; border: 2px solid var(--line); background: var(--surface-2); overflow: hidden; outline: none; }
+.cy-live-stage:focus-visible { border-color: var(--focus); }
+.cy-live-stage.controlled { border-color: var(--red-solid); cursor: crosshair; touch-action: none; }
+.cy-live-image { display: block; width: 100%; height: auto; max-height: 62vh; max-height: 62dvh; object-fit: contain; user-select: none; -webkit-user-drag: none; }
+.cy-live-wait { margin: 0; }
+.cy-handoff-warning { display: grid; gap: 8px; margin: 0; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); }
+.cy-handoff-warning-title { margin: 0; font-size: 14px; }
+.cy-handoff-warning-what { margin: 0; overflow-wrap: anywhere; }
+.cy-handoff-warning-list { margin: 0; padding-left: 18px; display: grid; gap: 6px; line-height: 1.4; }
+.cy-live-held { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber-ink); }
+.cy-live-ended { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--chip-quiet-bg); color: var(--muted); }
+
+/* the app's recording of an agent's screen: the video, and the strip that marks where a person used the screen */
+.cy-rec { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cy-rec-video { display: block; width: 100%; max-height: 360px; border-radius: 8px; border: 1px solid var(--line-3); background: var(--surface-2); }
+.cy-evidence-attach .cy-rec-video { max-width: 360px; }
+.cy-rec-capped { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--amber-soft); color: var(--amber-ink); }
+.cy-rec-real, .cy-rec-started { margin: 0; color: var(--muted); }
+.cy-rec-marks-box { display: flex; flex-direction: column; gap: 4px; }
+.cy-rec-marks { position: relative; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: var(--chip-quiet-bg); }
+.cy-rec-mark { position: absolute; top: 2px; bottom: 2px; min-width: 8px; padding: 0; border: 0; border-radius: 4px; background: var(--blue-solid); cursor: pointer; }
+.cy-rec-mark.handoff { background: var(--red-solid); }
+.cy-rec-mark:hover { background: var(--ink); }
+.cy-rec-mark:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.cy-rec-cuts { position: relative; height: 18px; border-radius: 6px; border: 1px solid var(--line); background: var(--chip-quiet-bg); }
+.cy-rec-cut { position: absolute; top: 1px; bottom: 1px; width: 6px; margin-left: -3px; padding: 0; border: 0; border-radius: 3px; background: var(--amber-ink); cursor: pointer; }
+.cy-rec-cut:hover { background: var(--ink); }
+.cy-rec-cut:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.cy-evidence-removed { margin: 0; padding: 6px 10px; border-radius: 8px; background: var(--chip-quiet-bg); color: var(--muted); }
+
+/* The agents' open screens of a conversation, above the message box. */
+.cy-screens { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cy-screen { padding: 6px 10px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line-3); }
+.cy-screen-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.cy-screen-agent { overflow-wrap: anywhere; }
+.cy-screen-closes { flex: 1 1 120px; min-width: 0; }
+.cy-screen-actions { display: inline-flex; gap: 6px; margin-left: auto; }
+
+/* A question the app's screen asks the person, and the agent's own words inside it. */
+.cy-asks { display: flex; flex-direction: column; gap: 8px; margin: 0 0 8px; }
+.cy-ask { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--ink); }
+.cy-ask-title { margin: 0; font-size: 14px; color: var(--amber-ink); }
+.cy-ask-line { margin: 0; line-height: 1.4; overflow-wrap: anywhere; }
+.cy-ask-words { margin: 0; padding: 6px 10px; border-left: 3px solid var(--line); background: var(--surface-2); border-radius: 0 8px 8px 0; }
+.cy-ask-words blockquote { margin: 2px 0 0; overflow-wrap: anywhere; font-style: italic; }
+.cy-ask-more { display: block; margin-top: 4px; }
+.cy-ask-note { display: flex; flex-direction: column; gap: 4px; }
+.cy-ask-actions { gap: 8px; flex-wrap: wrap; }
+.cy-ask-computer { margin: 0; }
+.cy-call-actions { display: inline-flex; gap: 6px; margin-left: auto; }
+
+/* The recording of an agent's screen in a conversation, played inside the message's file card. */
+.cy-file-video { flex-wrap: wrap; }
+.cy-file-player { flex: 1 1 100%; min-width: 0; max-width: 480px; }

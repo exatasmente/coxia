@@ -9,6 +9,8 @@ import type { Run } from '../src/shared/runs';
 import { RunnerError } from '../src/main/runner/service';
 import { listAudit } from '../src/main/auditoria';
 import { neutralSandbox } from '../src/shared/config/defaults';
+import { DATA_ROOT, WORKSPACE_ID } from '../src/main/env';
+import { setTestFlag } from '../src/main/workspaces-core';
 import { type Boot, boot, doc, fakeCommands, fakeSandbox, keepQaEvidence, makeRepo, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -55,6 +57,33 @@ describe('a stage with a sandbox', () => {
     const dev = b.engine.calls.find((c) => c.agent.id === 'developer')!;
     expect(dev.exec).toBe(sandbox.opened[0].session);
     expect(b.engine.calls.filter((c) => !['developer', 'qa'].includes(c.agent.id)).every((c) => c.exec === undefined)).toBe(true);
+  });
+
+  it('opens the sandbox for the agent that works the stage, with the hosts that agent was given and none for one that was given none', async () => {
+    const sandbox = fakeSandbox();
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'developer', 'sandbox'); shellOf(c, 'qa', 'sandbox'); c.agents.team.find((a) => a.id === 'developer')!.allowedHosts = ['app.example.com']; } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    expect(sandbox.opened.map((o) => [o.options.agent?.allowedHosts ?? null])).toEqual([[['app.example.com']], [[]]]);
+  });
+
+  it('keeps the workspace\'s own network from an agent with hosts in a test workspace, and the thread says why', async () => {
+    const sandbox = fakeSandbox();
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'developer', 'sandbox'); c.agents.team.find((a) => a.id === 'developer')!.allowedHosts = ['app.example.com']; } });
+    easy(b);
+    setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
+    try {
+      let run = await b.runner.start('app#101');
+      run = await reach(b, run, 'ready');
+      expect(sandbox.opened[0].options.agent?.allowedHosts).toEqual([]);
+      const lines = b.thread(run).filter((m) => m.code === 'runner.screen.testWorkspace');
+      expect(lines).toHaveLength(1);
+      expect(lines[0].params).toMatchObject({ agent: 'developer' });
+    } finally {
+      setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
+    }
   });
 
   it('does not make one for an agent with no commands or with the list, which runs as it always did', async () => {
@@ -277,6 +306,38 @@ describe('what QA claims to have executed', () => {
     expect(run.status).toBe('failed');
     expect(run.error?.detail).toMatch(/evidenceIds/);
     expect(Object.keys(run.evidence ?? {})).toHaveLength(1);
+  });
+
+  it('finishes a retried QA that cites the evidence an earlier attempt of the stage kept, and not one citing an id the run never kept', async () => {
+    const b = await boot({ sandbox: fakeSandbox(), configure: (c) => { shellOf(c, 'qa', 'sandbox'); c.runner.commands = []; } });
+    easy(b);
+    const scenario = (evidenceIds: string[]) => ({ name: 'a', result: 'pass' as const, detail: '', evidence: 'executed' as const, commands: [1], evidenceIds });
+    b.engine.script('qa', async (c) => {
+      await c.exec!.exec('node probe.js');
+      await keepQaEvidence(c);
+      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [scenario([])] });
+    });
+    let run = await reach(b, await b.runner.start('app#101'), 'ready');
+    expect(run.status).toBe('failed');
+    const [earlier] = Object.keys(run.evidence ?? {});
+
+    b.engine.script('qa', async (c) => {
+      await c.exec!.exec('node probe.js');
+      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [scenario(['ev-99'])] });
+    });
+    b.runner.retry(run.id);
+    run = await reach(b, b.runner.get(run.id)!, 'ready');
+    expect(run.status).toBe('failed');
+    expect(run.error?.detail).toMatch(/evidenceIds/);
+
+    b.engine.script('qa', async (c) => {
+      await c.exec!.exec('node probe.js');
+      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [scenario([earlier])] });
+    });
+    b.runner.retry(run.id);
+    run = await reach(b, b.runner.get(run.id)!, 'ready');
+    expect(run.status).toBe('done');
+    expect(run.qa.at(-1)!.scenarios[0].evidenceIds).toEqual([earlier]);
   });
 
   it('is "only read" for every scenario of a QA agent with no sandbox', async () => {

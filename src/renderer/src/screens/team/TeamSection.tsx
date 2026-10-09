@@ -14,6 +14,7 @@ import { applyAgent, agentProblems, blankAgent, draftOf, promoteDraft, shellAfte
 import { editorOf, startAssist, type AssistState } from './assistEdit';
 import { PERMISSION_HINT, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL, SHELL_HINT, SHELL_LABEL, TRACKER_HINT, TRACKER_LABEL } from './labels';
 import { Recommended } from './Recommended';
+import { ScreenFields } from './ScreenFields';
 import { useSandboxStatus } from './sandboxStatus';
 import { assistApi, teamApi } from './teamApi';
 import { agentName, agentNameById, shown, squadName } from './text';
@@ -318,6 +319,7 @@ export function AgentPanel({ config, initial, isNew, suggestionId, assisted, pro
           )}
         </Labeled>
         <PermissionFields config={config} initial={initial} draft={draft} isNew={isNew} set={set} error={fieldError('shell')} />
+        <ScreenFields draft={draft} set={set} hostsError={fieldError('allowedHosts')} agent={isNew || promote ? undefined : { id: initial.id, name: agentName({ id: initial.id, name: initial.name }) }} />
         <Toggle checked={draft.autonomous} onChange={(autonomous) => set({ autonomous })} label={t('ui.team.autonomy')} />
         <p className="small muted">{t('ui.team.autonomyHint')}</p>
         <ToolsFields config={config} draft={draft} set={set} />

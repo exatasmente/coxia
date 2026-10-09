@@ -2,8 +2,10 @@
 import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
-import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_DETAIL_MAX, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
+import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_DETAIL_MAX, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, PROCEDURES_PER_STAGE, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 import { EVIDENCE_KINDS } from '../evidence';
+import { PROCEDURE_ID } from '../procedures';
+import { RECORDING_CUTS_MAX, RECORDING_MARKS_MAX } from '../screen';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -45,6 +47,21 @@ const stageRecord = object(
       },
       ['promptTokens', 'completionTokens', 'cachedTokens', 'calls', 'costUsd'],
     ),
+    procedures: {
+      type: 'array',
+      description: 'The procedures the stage used and what became of each. Optional: absent when it read none.',
+      items: object(
+        'One procedure the stage read.',
+        {
+          id: string('The procedure.', { pattern: PROCEDURE_ID.source }),
+          revision: { type: 'integer', description: 'The revision the stage read.', minimum: 1 },
+          title: string('Its title when it was used.', { maxLength: 80 }),
+          outcome: enumOf('No failure reported, a step failed, or the stage replaced it with a corrected version.', ['ok', 'failed', 'replaced']),
+        },
+        ['id', 'revision', 'title', 'outcome'],
+      ),
+      maxItems: PROCEDURES_PER_STAGE,
+    },
   },
   ['stage', 'agent', 'status', 'artifacts', 'startedAt', 'endedAt', 'attempts', 'autonomous'],
 );
@@ -161,6 +178,22 @@ const evidenceRecord = object(
     from: { type: ['string', 'null'], description: 'The evidence this one was made from.', pattern: '^ev-\\d{1,6}$', maxLength: 12 },
     message: { type: ['integer', 'null'], description: 'The forum message it was published as an attachment of.', minimum: 1 },
     inCycle: { type: 'boolean', description: 'The file was also copied into the cycle folder.' },
+    recording: object(
+      'Only on the app\'s own recording of a stage\'s screen.',
+      {
+        durationMs: { type: 'integer', description: 'The length of the video: its media time, with the idle stretches shortened.', minimum: 0, maximum: 86_400_000 },
+        startedAfterMs: { type: 'integer', description: 'The time from the screen opening to the first frame of the video.', minimum: 0, maximum: 4_294_967_295 },
+        realMs: { type: 'integer', description: 'The stage\'s own time on the screen, with the cuts put back.', minimum: 0, maximum: 4_294_967_295 },
+        width: { type: 'integer', description: 'Width of the picture.', minimum: 1, maximum: 16_384 },
+        height: { type: 'integer', description: 'Height of the picture.', minimum: 1, maximum: 16_384 },
+        truncated: enumOf('Why it stopped before the stage did.', ['size', 'time']),
+        handoff: { type: 'boolean', description: 'The video holds a hand-off: the person typed on the screen while it was theirs.', enum: [true] },
+        marks: { type: 'array', description: 'The intervals in which the person used the screen, in ms from the start.', items: object('One interval.', { fromMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, toMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, kind: enumOf('The interval of a hand-off: the agent gave the screen to the person.', ['handoff']) }, ['fromMs', 'toMs']), maxItems: RECORDING_MARKS_MAX },
+        cuts: { type: 'array', description: 'Where an idle stretch was shortened: the video time at which its pause ends and the stage time left out.', items: object('One cut.', { atMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, skippedMs: { type: 'integer', minimum: 1, maximum: 4_294_967_295 } }, ['atMs', 'skippedMs']), maxItems: RECORDING_CUTS_MAX },
+      },
+      ['durationMs', 'width', 'height', 'marks'],
+    ),
+    removed: enumOf('The file was removed by retention; the record stays.', ['retention']),
   },
   ['id', 'stage', 'by', 'title', 'description', 'name', 'kind', 'bytes', 'at', 'from', 'message'],
 );
@@ -260,7 +293,7 @@ const docsRun = object('What the run is about when it drafts the documentation o
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
-    version: { type: 'integer', description: 'Version of this file format.', const: RUN_VERSION },
+    version: { type: 'integer', description: 'Version of this file format: 5 when a stage of the run used a procedure, 4 when a screen recording of the run holds a hand-off, 3 when it holds cuts or the time it started after the screen opened, 2 when the run holds one without, else 1.', enum: [1, 2, 3, 4, 5] },
     rev: { type: 'integer', description: 'Grows by one on every save.', minimum: 0 },
     id: string('Run id.', { pattern: RUN_ID.source }),
     issue: object('The issue.', { ref: string('How the cards write it.', { minLength: 1, maxLength: 200 }), iid: { type: 'integer', description: 'Issue number.', minimum: 0 }, title: string('Title.', { maxLength: 500 }), url: nullableString('Web address.') }, ['ref', 'iid', 'title', 'url']),

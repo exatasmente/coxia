@@ -205,6 +205,18 @@ describe('the hooks of the confinement', () => {
     expect(denials[1].target).toBe('.git/hooks/pre-commit');
   });
 
+  it('refuse a document of the cycle written anywhere but the cycle folder', async () => {
+    const own = policyFromHooks(confinedHooks({ root, commands: [], documents: { folder: 'docs/cycles/123-x', names: ['0_ISSUE.md', '1_SPEC.md'] }, onDenied: (d) => denials.push(d) }), 's1');
+    const write = (file_path: string) => own.pre('Write', { file_path, content: 'x' }, root);
+    expect(await write('docs/cycles/123-x/1_SPEC.md')).toBeNull();
+    expect(await write(join(root, 'docs/cycles/123-x/1_SPEC.md'))).toBeNull();
+    expect(await write('src/spec.md')).toBeNull();
+    expect(await write('1_SPEC.md')).toMatch(/docs\/cycles\/123-x/);
+    expect(await write(join(root, 'docs/1_SPEC.md'))).toMatch(/docs\/cycles\/123-x/);
+    expect(await write('docs/cycles/9-other/0_ISSUE.md')).not.toBeNull();
+    expect(denials.map((d) => [d.target, d.code])).toEqual([['1_SPEC.md', 'document'], [join(root, 'docs/1_SPEC.md'), 'document'], ['docs/cycles/9-other/0_ISSUE.md', 'document']]);
+  });
+
   it('allow exactly the listed commands and nothing else', async () => {
     expect(await pre('Bash', { command: 'npm test' })).toBeNull();
     expect(await pre('Bash', { command: 'npm run typecheck' })).toBeNull();

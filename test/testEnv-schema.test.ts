@@ -10,18 +10,18 @@ import { validateConfig } from '../src/shared/config/validate';
 
 // The configuration surface of the test environment: validation, the migration that fills the section in, and the export that never carries a resolved value.
 
-const v20 = (change: (c: Record<string, any>) => void = () => undefined): Record<string, any> => {
+const v22 = (change: (c: Record<string, any>) => void = () => undefined): Record<string, any> => {
   const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
-  c.schemaVersion = 20;
+  c.schemaVersion = 22;
   delete c.testEnvironment;
   change(c);
   return c;
 };
 const migrate = (doc: Record<string, unknown>) => migrateConfig(doc, { legacyInstall: false });
 
-describe('the migration to schema 21', () => {
+describe('the migration to schema 23', () => {
   it('fills the empty section in and raises no stage field: a stored template keeps left-out = no', () => {
-    const r = migrate(v20((c) => {
+    const r = migrate(v22((c) => {
       c.devCycle.stages = [{ id: 'qa-stage', label: 'QA', kind: 'qa', rank: 0, match: [], artifacts: [], reads: null, agentId: null }];
     }));
     expect(r.config.testEnvironment).toEqual({ variables: [], secrets: [] });
@@ -30,7 +30,7 @@ describe('the migration to schema 21', () => {
   });
 
   it('keeps what the person had, and keeps a filled section as it was', () => {
-    const r = migrate(v20((c) => {
+    const r = migrate(v22((c) => {
       c.testEnvironment = { variables: [{ name: 'INTEGRATION_URL', value: 'https://staging.example.com' }], secrets: [] };
     }));
     expect(r.config.testEnvironment?.variables).toEqual([{ name: 'INTEGRATION_URL', value: 'https://staging.example.com' }]);
