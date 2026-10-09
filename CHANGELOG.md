@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.10] - 2026-10-09
+
 ### Added
 
 - **An agent with a shell can keep what it worked out as a procedure drafted by the app.** `procedures_draft` is now offered to a call that has a shell, not only to one with the app's browser: it returns the commands that worked, in order, with the ones that failed as candidates for pitfalls, and `procedures_save` of a repo or tool procedure takes the draft's id and the numbers of the steps to keep, so the commands are the app's record and the agent cannot add or change one. The draft is built from the text of the commands alone, never from their output; a command that could carry a secret (a credential, a token, a file such as `.env`, a request header, a script pasted into the shell, a value the person typed or the test environment holds) is left out, and the draft only says how many were left out.
@@ -429,7 +431,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.9...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.10...HEAD
+[0.9.0-beta.10]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.9...v0.9.0-beta.10
 [0.9.0-beta.9]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.8...v0.9.0-beta.9
 [0.9.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.7...v0.9.0-beta.8
 [0.9.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.6...v0.9.0-beta.7
