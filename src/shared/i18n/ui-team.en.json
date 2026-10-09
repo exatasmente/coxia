@@ -533,6 +533,7 @@
   "ui.team.f.screen": "Virtual screen",
   "ui.team.f.screenGroup": "Virtual screen and browser",
   "ui.team.f.screenHint": "Gives the agent the app's own browser and a screen you can watch, and take over on this computer, from the conversation it works in. The app asks you before a step it reads as irreversible. It is never your own screen.",
+  "ui.team.f.screenHost": "This agent runs commands on this computer, as you: its own commands are not held. The app holds the browser's steps only when they come through the app's browser; a command of the agent can reach the browser, its display and its profile directly. For work on sites, no commands is the only setting where the holds bound the agent.",
   "ui.team.f.screenShell": "For work on sites, no commands is the safest setting: then nothing else can use the display the browser draws on.",
   "ui.team.f.shell": "Commands",
   "ui.team.f.squad": "Squad",

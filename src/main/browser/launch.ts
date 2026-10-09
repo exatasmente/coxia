@@ -11,6 +11,7 @@ import { FORWARDER_JS } from '../sandbox/policy';
 import { type ProxyOptions, type RegistryProxy, createRegistryProxy } from '../sandbox/proxy';
 import { displayProgram } from '../sandbox';
 import { nameResolverBinds, systemLayout } from '../sandbox/system';
+import { dropControlSockets } from './controlSocket';
 import { type DisplayDeps, type DisplaySandbox, startDisplaySandbox } from './display';
 import { type HostsTally, createHostsTally } from './hosts';
 import { EXPOSED_TOOLS, PROBE_TOOLS } from './allowlist';
@@ -172,6 +173,8 @@ export async function startBrowser(o: BrowserStartOptions, deps: BrowserDeps = {
     // A short folder of its own for the server's socket, taken away with the session.
     const sockets = folder(join(tmpdir(), `cxpw-${basename(sessionDir)}`));
     cleanup.push(() => void removeTree(sockets));
+    // The server's own control socket is of no use to the app and a way around it for anyone who could reach it: its name is taken away as it appears (`controlSocket.ts`).
+    cleanup.push(dropControlSockets(folder(join(sockets, 'browser'))));
     const args = [...serverArgs({ cli: deps.cli ?? PLAYWRIGHT_MCP_CLI, profile, outDir: join(sessionDir, 'out'), wrapper, config, images: o.seesImages, proxy: o.network.mode === 'proxy', headless: o.headless }), ...(deps.serverExtra ?? [])];
     const { child, client } = spawnMcp(
       { command: executable, args, env: serverEnv({ home: join(sessionDir, 'home'), tmp: join(sessionDir, 'tmp'), display: displayName, browsers: o.browsers, sockets }), cwd: join(sessionDir, 'home'), detached: true },

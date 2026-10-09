@@ -48,6 +48,16 @@ describe('the argument list of the sandbox', () => {
     expect(at('/clones/app/.git')).toBeLessThan(a.findIndex((x, i) => x === '--bind' && a[i + 1] === wt));
   });
 
+  it('gives an agent a /tmp of its own and binds nothing of the host\'s: the folder of the app\'s browser server (its control socket) is out of reach', () => {
+    for (const gui of [undefined, { browsers: '/home/p/.cache/ms-playwright', xvfb: '/usr/bin/Xvfb' }]) {
+      const a = bwrapArgs(spec({ ...(gui ? { gui } : {}), network: 'proxy' }));
+      expect(a.findIndex((x, i) => x === '--tmpfs' && a[i + 1] === '/tmp')).toBeGreaterThan(-1);
+      expect(a.filter((x) => x.startsWith('/tmp')).every((x) => x === '/tmp' || x === '/tmp/.X11-unix')).toBe(true);
+      expect(a.some((x) => x.includes('cxpw-'))).toBe(false);
+      expect(pairs(a, '--bind').every(([src]) => !src.startsWith('/tmp'))).toBe(true);
+    }
+  });
+
   it('binds a folder of the stage folder over /tmp/.X11-unix when a display is started, after the tmpfs of /tmp, so the app can dial the socket', () => {
     const a = bwrapArgs(spec({ gui: { browsers: null, xvfb: '/usr/bin/Xvfb' } }));
     expect(pairs(a, '--bind')).toContainEqual(['/data/sandbox/abc/x11', '/tmp/.X11-unix']);

@@ -4,14 +4,15 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { createServer as createHttpServer } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
-import { type AddressInfo, type Socket, connect } from 'node:net';
+import { type AddressInfo, type Socket, connect, createServer as createNetServer } from 'node:net';
 import { homedir, tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { neutralSandbox } from '../src/shared/config/defaults';
 import { EXPOSED_TOOLS, PROBE_TOOLS } from '../src/main/browser/allowlist';
 import { countsText } from '../src/main/browser/audit';
 import { findChromium } from '../src/main/browser/chromium';
+import { dropControlSockets } from '../src/main/browser/controlSocket';
 import { createHostsTally } from '../src/main/browser/hosts';
 import { createIntermediary } from '../src/main/browser/intermediary';
 import { createMaskSet } from '../src/main/browser/mask';
@@ -234,6 +235,29 @@ createInterface({ input: process.stdin }).on('line', (line) => {
 });
 `;
 
+describe('the server\'s control socket', () => {
+  it('takes the name of every socket in the folder away as it appears, and leaves the other files', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'coxia-ctl-'));
+    const stop = dropControlSockets(dir);
+    const listening = createNetServer();
+    try {
+      writeFileSync(join(dir, 'note.txt'), 'x');
+      await new Promise<void>((r) => listening.listen(join(dir, 'browser-abc.sock'), r));
+      for (let i = 0; i < 40 && readdirSync(dir).includes('browser-abc.sock'); i++) await new Promise((r) => setTimeout(r, 50));
+      expect(readdirSync(dir)).toEqual(['note.txt']);
+    } finally {
+      stop();
+      listening.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not throw for a folder that is gone', () => {
+    const stop = dropControlSockets(join(tmpdir(), 'coxia-ctl-nothing-here'));
+    expect(() => stop()).not.toThrow();
+  });
+});
+
 describe('starting the browser', () => {
   let root: string;
   let running: BrowserRuntime | null = null;
@@ -429,6 +453,21 @@ describe.skipIf(!real)('a real browser in its sandbox', () => {
     expect(siteHits).toBeGreaterThan(0);
     expect(runtime.hosts.summary().allowed[HOST]).toBeGreaterThan(0);
   }, 60_000);
+
+  it('leaves no control socket of the server to connect to once the browser is up', async () => {
+    // The server binds every browser it starts to a unix socket that takes the whole protocol with no token: any process of the same user that can see the folder drives
+    // the browser around the intermediary. The socket's folder is the server's own and goes with the session.
+    const dir = join(tmpdir(), `cxpw-${basename(runtime.sessionDir)}`, 'browser');
+    expect((await call('browser_snapshot', {})).isError).not.toBe(true);
+    let left: string[] = [];
+    for (let i = 0; i < 40; i++) {
+      left = readdirSync(dir);
+      if (left.length === 0) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(left).toEqual([]);
+    expect(statSync(dir).mode & 0o077).toBe(0);
+  }, 30_000);
 
   it('is driven through the intermediary: the app reads the page itself, holds a submit, and fences what comes back', async () => {
     const asked: string[] = [];
