@@ -6,7 +6,16 @@ import type { LiveScreen } from '../screen';
 
 // A run: one issue going through the agent cycle. This file is the shape; the moves are in transitions.ts, the file format check in schema.ts.
 
-export const RUN_VERSION = 1;
+/**
+ * The newest run file format this app reads. Version 2 is a run that holds the app's own screen recording (a `webm` evidence record): an app that does not know the
+ * kind refuses such a file as written by a newer app, instead of reading it as invalid. Every other run is written as version 1 (`runVersionOf`), so a downgrade loses
+ * only the runs that have a recording.
+ */
+export const RUN_VERSION = 2;
+export type RunVersion = 1 | 2;
+
+/** The format a run is written as: 2 when it holds a screen recording, else 1. The store stamps it on every save, so it follows the content and cannot be forgotten by a move. */
+export const runVersionOf = (run: { evidence?: Run['evidence'] }): RunVersion => (Object.values(run.evidence ?? {}).some((e) => e.kind === 'webm') ? 2 : 1);
 export const RUN_ID = /^r-[a-z0-9]{1,12}-[a-z0-9]{2,8}$/;
 
 export type { EvidenceRecord };
@@ -361,7 +370,7 @@ export interface RunSubject {
 }
 
 export interface Run {
-  version: typeof RUN_VERSION;
+  version: RunVersion;
   /** Grows by one on every save of the store. */
   rev: number;
   id: string;
