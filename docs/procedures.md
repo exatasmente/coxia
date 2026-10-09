@@ -86,7 +86,9 @@ O primeiro filtro é a estrutura: campos curtos e um validador que **recusa**, p
 - uma sequência de 6 ou mais dígitos, ou 20 ou mais caracteres sem espaço que misturam letras e dígitos;
 - um endereço com consulta ou fragmento;
 - e-mail, telefone, ou qualquer coisa que `redact()` mudaria (uma credencial num comando é recusada, não mascarada);
-- o caminho da pasta pessoal.
+- o caminho da pasta pessoal;
+- uma senha ou token dado como valor de uma opção de comando (`--password x`, `mysql -p x`), a menos que seja um marcador como `<valor>` ou `$VAR`;
+- caracteres invisíveis ou de formatação (largura zero, inversão de direção).
 
 O validador erra para o lado de recusar: um falso positivo recusa e ensina. Isso **não** pega um nome, um endereço ou outro dado pessoal escrito em palavras curtas com cara de rótulo; as defesas que restam são a revisão da pessoa e os limites de tamanho.
 
@@ -95,6 +97,7 @@ O validador erra para o lado de recusar: um falso positivo recusa e ensina. Isso
 - é **o melhor que dá para fazer**, não um cofre: pega o que a pessoa digitou **pelo visualizador do app**, e só durante **aquela chamada** (a memória some ao fim da chamada ou ao reiniciar o app);
 - não pega o que a página mostra e a pessoa não digitou (um código que chegou ao celular), nem o que o agente leu da própria página, já que os processos do agente continuam rodando durante a passagem;
 - um registro gravado numa chamada em que a pessoa usou a tela, **ou numa tela em que ela já tinha usado antes**, fica **à espera de revisão** (`origin.handoff` sem `reviewed`): não entra na lista do prompt, nem em `procedures_list`, nem em `procedures_get` até a pessoa marcá-lo como revisado ou reescrevê-lo. A tela de procedimentos o mostra e diz que espera.
+- uma página hostil pode levar o agente a gravar texto da página como registro de outro tipo (`request` ou `tool`), onde o limite de aspas de 40 caracteres do `gui` não vale; o validador e a revisão da pessoa são o que resta.
 
 ### A chave
 
@@ -213,7 +216,9 @@ The first filter is structure: short fields and a validator that **refuses**, by
 - a run of 6 or more digits, or 20 or more characters with no space that mix letters and digits;
 - an address with a query string or a fragment;
 - an email, a phone number, or anything `redact()` would change (a credential in a command is refused, not masked);
-- the path of the home folder.
+- the path of the home folder;
+- a password or token given as the value of a command option (`--password x`, `mysql -p x`), unless it is a placeholder such as `<value>` or `$VAR`;
+- invisible or format characters (zero width, direction overrides).
 
 The validator errs towards refusing: a false positive refuses and teaches. It does **not** catch a name, an address or other personal data written in short label-like words; what is left is the person's review and the size limits.
 
@@ -222,6 +227,7 @@ The validator errs towards refusing: a false positive refuses and teaches. It do
 - it is **best effort**, not a vault: it catches what the person typed **through the app's viewer**, and only during **that call** (the memory is gone at the end of the call or when the app restarts);
 - it does not catch what the page shows and the person did not type (a code that reached a phone), nor what the agent read from the page itself, since the agent's processes keep running during a hand-off;
 - a record saved in a call in which the person used the screen, **or on a screen where they had used it earlier**, **waits for review** (`origin.handoff` without `reviewed`): it is out of the prompt list, `procedures_list` and `procedures_get` until the person marks it as reviewed or rewrites it. The Procedures view shows it and says it waits.
+- a hostile page can steer the agent into saving page text as a record of another kind (`request` or `tool`), where the 40-character quotation limit of `gui` does not apply; the validator and the person's review are what is left.
 
 ### The switch
 

@@ -37,6 +37,7 @@ Review pass over acceptance criteria 1 to 27 of `1_SPEC.md`, made at the end of 
 ## Deliberate differences from the spec
 
 - Criterion 26 asks for a thread line for each delete. The plan (D8) audits the person's writes (edit, review, restore, delete) with no thread line, because a workspace-level action has no thread; the agent cannot delete. A save or a stale report by an agent leaves both.
+- The label of a control in a `gui` step is cut at 40 characters, not the 60 the spec names: rule 23 refuses a quotation of more than 40, so a longer label would be refused by the validator the draft goes through.
 
 ## Gates (phase E, branch of the implementation)
 
