@@ -68,7 +68,8 @@ export interface CallOptions {
   signal?: AbortSignal;
   /**
    * The person has the screen for a hand-off (#178) while this answers true: the call is refused with a fixed sentence before anything is read or done, and is not a step. It is
-   * asked when the call arrives and again when its turn comes, since a call queued behind a slow one may start after the person took the screen.
+   * asked when the call arrives and again when its turn comes, since a call queued behind a slow one may start after the person took the screen. A call that was already in the
+   * browser when the person took it is asked once more before the server is called and after it answers: its page is dropped (the step is logged `not-run`).
    */
   held?: () => boolean;
 }
@@ -261,7 +262,9 @@ export function createIntermediary(d: IntermediaryDeps): Intermediary {
         if (masked !== shown.answer) return finish(refusal(t('main.browser.reason.shownTyped')), 'not-run');
       }
 
-      // 5. The server.
+      // 5. The server. The person may have taken the screen while the app read the page or waited for an answer: nothing is sent to a screen that is no longer the agent's.
+      const taken = (): boolean => held?.() === true;
+      if (taken()) return finish(refusal(HANDOFF_HELD_TEXT), 'not-run');
       let answer: Awaited<ReturnType<McpClient['callTool']>>;
       try {
         answer = await d.client.callTool(tool, args, { timeoutMs: timeoutFor(tool), signal });
@@ -270,6 +273,8 @@ export function createIntermediary(d: IntermediaryDeps): Intermediary {
         const text = code === 'aborted' ? t('main.browser.reason.stopped') : code === 'timeout' ? t('main.browser.reason.slow') : t('main.browser.reason.failed');
         return finish(refusal(text), 'error');
       }
+      // A call already in the browser when the person took the screen comes back with the page as it was before their typing was known: it is dropped, not masked.
+      if (taken()) return finish(refusal(HANDOFF_HELD_TEXT), 'not-run');
       const serverText = answer.content.map((x) => (x.type === 'text' && typeof (x as { text?: unknown }).text === 'string' ? String((x as { text: string }).text) : '')).filter(Boolean).join('\n');
       const images = answer.content
         .filter((x): x is { type: 'image'; data: string; mimeType: string } => x.type === 'image' && typeof (x as { data?: unknown }).data === 'string')
@@ -292,6 +297,8 @@ export function createIntermediary(d: IntermediaryDeps): Intermediary {
           entry.path = pathOf(url);
         }
       }
+      // The read after an action is one more await in which the screen may have been taken.
+      if (taken()) return finish(refusal(HANDOFF_HELD_TEXT), 'not-run');
       const parts: string[] = [];
       if (tool === 'browser_take_screenshot') parts.push(images.length ? t('main.browser.result.screenshot') : t('main.browser.result.noScreenshot'));
       else parts.push(finishText(body));

@@ -95,10 +95,8 @@ describe('while the person has the screen', () => {
 
   it('refuses a call that was queued behind a slow one when the person took the screen in between', async () => {
     const w = world();
-    let held = false;
-    const options = { held: () => held || w.call.active() };
-    // The click is in the browser when the person takes the screen.
-    w.server.state.onAct = () => void (held = true);
+    // The person takes the screen once the click is over, before the queued call's turn.
+    const options = { held: () => w.log.entries().length > 0 || w.call.active() };
     const slow = w.inter.call('browser_click', { target: 'e4' }, options);
     const queued = w.inter.call('browser_snapshot', {}, options);
     expect((await slow).isError).toBe(false);
@@ -107,6 +105,72 @@ describe('while the person has the screen', () => {
     expect(w.server.calls).toHaveLength(seen);
     // The refusal is not a step and does not hold the screen busy.
     expect(w.log.entries().map((e) => e.tool)).toEqual(['browser_click']);
+  });
+});
+
+describe('a call already in the browser when the person takes the screen', () => {
+  /** The person takes the screen, types the value and the call is still running; the call ends during the interval. */
+  async function takeDuring(w: ReturnType<typeof world>): Promise<void> {
+    w.call.request({ what: 'Log in to the site' });
+    await w.fh.take(KEY);
+    w.fh.typed = [VALUE];
+  }
+
+  it('does not return the page it read during the interval, whatever the tool, and logs it once as not run', async () => {
+    const rows: { tool: string; args: Record<string, unknown> }[] = [
+      { tool: 'browser_wait_for', args: { time: 30 } },
+      { tool: 'browser_snapshot', args: {} },
+      { tool: 'browser_take_screenshot', args: {} },
+      { tool: 'browser_navigate', args: { url: 'https://example.com/welcome' } },
+    ];
+    for (const row of rows) {
+      const w = world();
+      pageShowing(w);
+      let taken = false;
+      w.server.state.before = async (name) => {
+        if (name !== row.tool || taken) return;
+        taken = true;
+        await takeDuring(w);
+      };
+      const r = await w.inter.call(row.tool, row.args, w.options);
+      expect(r, row.tool).toEqual({ text: HANDOFF_HELD_TEXT, images: [], isError: true });
+      expect(w.log.entries().map((e) => [e.tool, e.outcome]), row.tool).toEqual([[row.tool, 'not-run']]);
+    }
+  });
+
+  it('does not return the page read after an action when the screen was taken during that read', async () => {
+    const w = world();
+    pageShowing(w);
+    let acted = false;
+    let taken = false;
+    w.server.state.onAct = () => void (acted = true);
+    w.server.state.before = async (name) => {
+      if (name !== 'browser_snapshot' || !acted || taken) return;
+      taken = true;
+      await takeDuring(w);
+    };
+    const r = await w.inter.call('browser_click', { target: 'e4' }, w.options);
+    expect(r).toEqual({ text: HANDOFF_HELD_TEXT, images: [], isError: true });
+    expect(w.log.entries().map((e) => [e.tool, e.outcome])).toEqual([['browser_click', 'not-run']]);
+  });
+
+  it('does not send a step to the browser when the screen was taken while it waited for the person', async () => {
+    const w = world();
+    w.server.state.before = async (name) => {
+      if (name === 'browser_evaluate' && !w.call.active()) await takeDuring(w);
+    };
+    const r = await w.inter.call('browser_click', { target: 'e22' }, w.options);
+    expect(r).toEqual({ text: HANDOFF_HELD_TEXT, images: [], isError: true });
+    expect(w.server.acts()).toEqual([]);
+  });
+
+  it('returns the page, masked, to a call that began after the screen was given back', async () => {
+    const w = world();
+    pageShowing(w);
+    expect(await w.handOver([VALUE])).toBe('done');
+    const r = await w.inter.call('browser_wait_for', { time: 1 }, w.options);
+    expect(r.isError).toBe(false);
+    expect(forms(r.text)).toEqual([]);
   });
 });
 

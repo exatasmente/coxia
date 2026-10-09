@@ -24,12 +24,15 @@ export function fakeServer() {
     actText: '### Page\n- Page URL: https://example.com/\n- Page Title: Account settings',
     fail: null as null | 'timeout' | 'throw' | 'isError',
     image: null as null | string,
-    onAct: null as null | (() => void),
+    onAct: null as null | (() => void | Promise<void>),
+    /** Awaited at the start of every call, before it answers: a test makes a call slow, or acts while it is in the browser. */
+    before: null as null | ((name: string) => void | Promise<void>),
     probes: recorded.probes,
   };
   const client = {
     async callTool(name: string, args: Record<string, unknown>) {
       calls.push({ name, args });
+      await state.before?.(name);
       const text = (t: string, isError?: boolean) => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError: true } : {}) });
       if (name === 'browser_snapshot') return text(state.snapshot);
       if (name === 'browser_evaluate') {
@@ -40,7 +43,7 @@ export function fakeServer() {
       if (state.fail === 'timeout') throw new McpError('timeout', 'slow');
       if (state.fail === 'throw') throw new Error('boom');
       if (state.fail === 'isError') return text('### Error\nElement is not visible', true);
-      state.onAct?.();
+      await state.onAct?.();
       if (name === 'browser_take_screenshot') return { content: [{ type: 'text', text: '[Screenshot of viewport](/data/sandbox/abc/out/page-1.png)' }, { type: 'image', data: state.image ?? 'aGVsbG8=', mimeType: 'image/png' }] };
       if (name === 'browser_find') return text('### Matches\n- button "Send" [ref=e15]');
       return text(state.actText);
