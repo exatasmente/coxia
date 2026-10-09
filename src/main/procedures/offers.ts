@@ -71,6 +71,8 @@ export interface OffersDeps {
   home?: string;
   /** The audit log. An offer raised, a no and a yes are each a line; none holds a step, a pitfall or a wait. */
   audit?(entry: Omit<AuditEntry, 'at'>): void;
+  /** A system line in the thread of an offer, as a forum code with its params: an offer raised, a yes, a no. A line that cannot be written is not the answer's to know. */
+  note?(thread: string, code: string, params: Record<string, string | number>): void;
 }
 
 export interface ProcedureOffers {
@@ -113,6 +115,13 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
       deps.audit?.(procedureAuditEntry({ ...input, by, surface: o.writer.surface, issue: o.issue, ref: o.writer.ref ?? o.thread }));
     } catch {
       // The answer already took place; a failing log must not turn it into a reported failure.
+    }
+  };
+  const say = (o: Offer, code: string, params: Record<string, string | number>): void => {
+    try {
+      deps.note?.(o.thread, code, { agent: o.agent, ...params });
+    } catch {
+      // see OffersDeps.note
     }
   };
   const aboutOffer = (o: Offer): ProcedureAuditInput['offer'] => ({ id: o.offerId, kind: o.kind, key: o.key, title: o.title });
@@ -167,11 +176,14 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
     raise(input) {
       purge();
       const same = held.findIndex((o) => o.thread === input.thread && o.agent === input.agent && o.kind === input.kind && o.key.toLowerCase() === input.key.toLowerCase());
-      if (same >= 0) held.splice(same, 1);
+      const replaced = same >= 0;
+      if (replaced) held.splice(same, 1);
       const offer: Offer = { ...input, offerId: `o-${hex()}`, at: now() };
       held.push(offer);
       while (held.length > OFFER_MAX_PENDING) held.shift();
       audit(offer, offer.agent, { op: 'offer', offer: aboutOffer(offer) });
+      // A newer offer for the same work refreshes the card; the thread was told once.
+      if (!replaced) say(offer, 'runner.procedures.offered', { count: offer.steps.length, title: offer.title });
       changed();
       return offer;
     },
@@ -206,6 +218,7 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
       drop(o);
       const stored = deps.store.get(r.record.id);
       audit(o, 'person', { op: 'save', record: r.record });
+      say(o, 'runner.procedures.offerKept', { id: r.record.id, revision: r.record.revision, title: r.record.title });
       changed();
       return { ok: true, record: stored.status === 'ok' ? stored.record : r.record };
     },
@@ -216,6 +229,7 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
       moveMark(o);
       drop(o);
       audit(o, 'person', { op: 'decline', offer: aboutOffer(o) });
+      say(o, 'runner.procedures.offerDeclined', { title: o.title });
       changed();
       return { ok: true };
     },

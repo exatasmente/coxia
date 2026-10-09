@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AuditEntry } from '../src/shared/auditoria';
+import { CATALOGS, setLanguage, t } from '../src/shared/i18n';
 import { neutralConfig } from '../src/shared/config';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { StageUsage } from '../src/shared/runs/types';
@@ -19,6 +20,7 @@ let marks: Map<string, number>;
 let offers: ProcedureOffers;
 let audits: Omit<AuditEntry, 'at'>[];
 let changes: number;
+let notes: { thread: string; code: string; params: Record<string, string | number> }[];
 
 const T0 = Date.parse('2026-10-09T10:00:00Z');
 const usage: StageUsage = { promptTokens: 9000, completionTokens: 400, cachedTokens: 0, calls: 7, costUsd: null };
@@ -54,9 +56,10 @@ beforeEach(() => {
   marks = new Map();
   audits = [];
   changes = 0;
+  notes = [];
   config = { ...neutralConfig(), projects: { ...neutralConfig().projects, repos: [{ id: 'api', path: '/tmp/api', remoteUrl: null, vcsId: null, projectPath: null }] } };
   store = createProcedureStore(ws, { now: () => clock, hex: () => (++counter).toString(16).padStart(8, '0') });
-  offers = createProcedureOffers({ store, config: () => config, sessions: fakeSessions, now: () => clock, hex: () => (++counter + 0x100).toString(16).padStart(8, '0'), audit: (e) => void audits.push(e) });
+  offers = createProcedureOffers({ store, config: () => config, sessions: fakeSessions, now: () => clock, hex: () => (++counter + 0x100).toString(16).padStart(8, '0'), audit: (e) => void audits.push(e), note: (thread, code, params) => void notes.push({ thread, code, params }) });
   offers.onChange(() => void changes++);
 });
 
@@ -305,5 +308,59 @@ describe('the audit and the change signal', () => {
     offers.raise(input({ key: 'web' }));
     expect(seen).toBe(1);
     expect(changes).toBe(2);
+  });
+});
+
+describe('the lines in the thread', () => {
+  it('says once that an offer was made, and not again when a newer one replaces it', () => {
+    offers.raise(input({ thread: 'run-1', agent: 'developer' }));
+    expect(notes).toEqual([{ thread: 'run-1', code: 'runner.procedures.offered', params: { agent: 'developer', count: 2, title: 'Run the tests' } }]);
+    offers.raise(input({ thread: 'run-1', agent: 'developer', title: 'Run the tests again' }));
+    expect(notes).toHaveLength(1);
+    offers.raise(input({ thread: 'run-1', agent: 'developer', key: 'web' }));
+    expect(notes).toHaveLength(2);
+  });
+
+  it('says what was kept, with the id and revision, and what was declined, and says nothing for an answer that did nothing', () => {
+    const a = offers.raise(input({ thread: 'run-1' }));
+    notes.length = 0;
+    const kept = offers.keep(a.offerId, 'Run the tests, my way');
+    expect(notes).toEqual([{ thread: 'run-1', code: 'runner.procedures.offerKept', params: { agent: 'writer', id: kept.ok ? kept.record.id : '', revision: 1, title: 'Run the tests, my way' } }]);
+    const b = offers.raise(input({ thread: 'run-2', key: 'web' }));
+    notes.length = 0;
+    offers.decline(b.offerId);
+    expect(notes).toEqual([{ thread: 'run-2', code: 'runner.procedures.offerDeclined', params: { agent: 'writer', title: 'Run the tests' } }]);
+    notes.length = 0;
+    offers.decline(b.offerId);
+    offers.keep(b.offerId, 'x');
+    const c = offers.raise(input({ thread: 'run-3' }));
+    notes.length = 0;
+    offers.keep(c.offerId, 'Run the tests, my way');
+    expect(notes).toEqual([]);
+  });
+
+  it('writes no line for a refused yes, and goes on when the line cannot be written', () => {
+    const a = offers.raise(input({ thread: 'run-1', steps: [{ text: 'Log in', run: 'tool --password hunter2' }] }));
+    notes.length = 0;
+    expect(offers.keep(a.offerId, 'Run the tests').ok).toBe(false);
+    expect(notes).toEqual([]);
+    const broken = createProcedureOffers({ store, config: () => config, now: () => clock, note: () => { throw new Error('no thread'); } });
+    expect(broken.keep(broken.raise(input({ key: 'api', title: 'Another one' })).offerId, 'Another one').ok).toBe(true);
+  });
+
+  it.each(['en', 'pt-BR'] as const)('has the four lines in %s, with every parameter filled', (language) => {
+    setLanguage(language);
+    try {
+      const params = { agent: 'developer', tokens: 1200, count: 4, title: 'Run the tests', id: 'p-00000001', revision: 1 };
+      for (const code of ['wrapUp', 'offered', 'offerKept', 'offerDeclined']) {
+        const key = `main.forum.code.runner.procedures.${code}`;
+        expect(CATALOGS[language][key], key).toBeTruthy();
+        const text = t(key, params);
+        expect(text, key).not.toMatch(/\{\w+\}/);
+        if (code !== 'offered') expect(text, key).toContain('developer');
+      }
+    } finally {
+      setLanguage('pt-BR');
+    }
   });
 });

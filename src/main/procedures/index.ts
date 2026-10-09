@@ -26,13 +26,21 @@ let port: ProceduresPort | null = null;
 export const proceduresPort = (): ProceduresPort => (port ??= createProceduresPort({ config: getConfig, dir: ATAS, pluginNames: () => pluginNotes().map((p) => p.name), audit: recordWrite, contextWindow: contextWindowOf, onError: logError }));
 
 let screens: () => ScreenMarks | null = () => null;
+let notes: ((thread: string, code: string, params: Record<string, string | number>) => void) | null = null;
 let offers: ProcedureOffers | null = null;
 
-/** The screens the offers move a draft mark in: given by the module that starts them, as they do not exist when the process starts. */
-export function offerScreens(get: () => ScreenMarks | null): void {
-  screens = get;
+/** What the offers reach outside the procedure memory: the screens, whose draft mark a yes or a no moves, and the threads, where they leave a line. Given by the module that starts them, as neither exists when the process starts. */
+export function wireOffers(w: { screens: () => ScreenMarks | null; note: (thread: string, code: string, params: Record<string, string | number>) => void }): void {
+  screens = w.screens;
+  notes = w.note;
 }
 
 /** The workspace's offers to keep a procedure, in memory. One for the process, as the port is: a workspace switch restarts the app. */
 export const procedureOffers = (): ProcedureOffers =>
-  (offers ??= createProcedureOffers({ store: createProcedureStore(ATAS, { onError: (e) => logError('procedures', e) }), config: getConfig, sessions: () => screens(), audit: recordWrite }));
+  (offers ??= createProcedureOffers({
+    store: createProcedureStore(ATAS, { onError: (e) => logError('procedures', e) }),
+    config: getConfig,
+    sessions: () => screens(),
+    audit: recordWrite,
+    note: (thread, code, params) => notes?.(thread, code, params),
+  }));
