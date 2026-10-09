@@ -18,6 +18,8 @@ export interface ScreenSource {
   handoff?: Pick<HandoffService, 'hadHandoff'> | null;
   /** The call holds the app's browser: a draft of what it did can be made. */
   browser: boolean;
+  /** The person holds the screen right now (the call's hand-off tool says so): what they type is not in `typed` until the interval ends. */
+  active?: () => boolean;
 }
 
 export interface ProcedureScreen {
@@ -38,7 +40,7 @@ export interface ProcedureScreen {
 const NAVIGATES = new Set(['browser_navigate', 'browser_tabs']);
 
 export function procedureScreen(source: ScreenSource): ProcedureScreen {
-  const { key, sessions, typed, handoff } = source;
+  const { key, sessions, typed, handoff, active } = source;
   const entries = (): readonly StepEntry[] => {
     try {
       return sessions?.stepsOf(key) ?? [];
@@ -54,7 +56,7 @@ export function procedureScreen(source: ScreenSource): ProcedureScreen {
     browser: source.browser,
     steps,
     visited: () => [...new Set(steps().filter((e) => e.site && !(e.outcome === 'not-run' && NAVIGATES.has(e.tool))).map((e) => e.site.toLowerCase()))],
-    handedOff: () => typed?.had === true || (handoff?.hadHandoff(key) ?? false),
+    handedOff: () => typed?.had === true || active?.() === true || (handoff?.hadHandoff(key) ?? false),
     typedIn: (text) => typed?.hits(text) ?? false,
   };
 }

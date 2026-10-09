@@ -69,6 +69,15 @@ describe('the hand-off', () => {
     expect(screen.typedIn('use correct horse here')).toBe(false);
   });
 
+  it('is known while a hand-off is active, before anything the person typed is known', () => {
+    let active = false;
+    const screen = procedureScreen({ key: KEY, typed: createTypedValues(), active: () => active, browser: true });
+    expect(screen.handedOff()).toBe(false);
+    active = true;
+    expect(screen.handedOff()).toBe(true);
+    expect(procedureScreen({ key: KEY, browser: true }).handedOff()).toBe(false);
+  });
+
   it('is known from the service for a hand-off in an earlier call on the same screen', () => {
     let had = false;
     const screen = procedureScreen({ key: KEY, typed: createTypedValues(), handoff: { hadHandoff: (k) => had && k === KEY }, browser: true });

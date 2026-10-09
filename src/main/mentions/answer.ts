@@ -244,7 +244,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
             issue: place.run?.issue.iid,
             repos: info.repos,
             requests: true,
-            screen: screen?.toolset ? procedureScreen({ key: callKey(place.thread, id), sessions: ports?.sessions, typed: screen.toolset.typed, handoff: ports?.handoff, browser: !!screen.toolset.browser }) : undefined,
+            screen: screen?.toolset ? procedureScreen({ key: callKey(place.thread, id), sessions: ports?.sessions, typed: screen.toolset.typed, handoff: ports?.handoff, active: () => screen?.toolset?.handoff?.active() === true, browser: !!screen.toolset.browser }) : undefined,
             note: (code, params) => {
               try {
                 deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code, params, stage });
