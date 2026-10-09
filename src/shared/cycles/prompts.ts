@@ -1,5 +1,6 @@
-import type { DevCycleConfig, Language, PromptRole } from '../config/types';
-import { CATALOGS, keyCandidates, voiceEnabled, type Params } from '../i18n';
+import { LANGUAGES, type DevCycleConfig, type Language, type PromptOverride, type PromptRole } from '../config/types';
+import { CATALOGS, keyCandidates, kindSuffix, NOVOICE_SUFFIX, voiceEnabled, type Params } from '../i18n';
+import { CYCLE_VARIANTS } from '../i18n/terms';
 import { catalogText, renderLines, type RenderOptions } from './text';
 
 // The prompts of the ceremonies. Every text lives in the i18n catalogs under `prompt.<family>.<id>` (pt-BR and en); a cycle picks the family of
@@ -128,6 +129,68 @@ export function promptTemplate(cycle: Pick<DevCycleConfig, 'prompts' | 'promptOv
   // For a host it may have one more (the key plus ".github"), which comes before the plain text.
   const find = (key: string): string | undefined => keyCandidates(key, voice).reduce<string | undefined>((found, candidate) => found ?? catalogText(candidate, language), undefined);
   return find(catalogKey(familyOf(cycle, id), id)) ?? find(catalogKey(BASE_FAMILY, id));
+}
+
+// The suffixes a catalog key carries for another wording of the same text (voice off, a host, a cycle variant): they are not ids of their own, and an
+// override of the id replaces every one of them.
+const VARIANT_SUFFIX = new RegExp(`(${escapeRe(NOVOICE_SUFFIX)}|${escapeRe(kindSuffix(''))}[\\w-]+|${CYCLE_VARIANTS.map((v) => escapeRe(`.${v}`)).join('|')})$`);
+
+/** The id a prompt catalog key stands for: the key without its family and without the suffixes of its variants. Null for a key that is not a prompt. */
+export function promptIdOf(key: string): string | null {
+  const m = /^prompt\.[\w-]+\.(.+)$/.exec(key);
+  if (!m) return null;
+  let id = m[1];
+  for (let next = id.replace(VARIANT_SUFFIX, ''); next !== id; next = id.replace(VARIANT_SUFFIX, '')) id = next;
+  return id;
+}
+
+/** Every prompt id the catalogs have, in any family and any language, sorted. Read from the catalogs each time: a text added later is listed without a list to keep. */
+export function promptIds(): string[] {
+  const ids = new Set<string>();
+  for (const catalog of Object.values(CATALOGS)) {
+    for (const key of Object.keys(catalog)) {
+      const id = promptIdOf(key);
+      if (id) ids.add(id);
+    }
+  }
+  return [...ids].sort();
+}
+
+/** One prompt as the prompt editor shows it: the family it is read from in this cycle, the text the app uses without an override, and the override. */
+export interface PromptEntry {
+  id: string;
+  family: string;
+  defaults: Partial<Record<Language, string>>;
+  override: PromptOverride;
+}
+
+/** The prompts of the catalogs with what this cycle makes of them, for the given voice mode (the default text is the one the app sends now). */
+export function promptEntries(cycle: Pick<DevCycleConfig, 'prompts' | 'promptOverrides'>, voice: boolean = voiceEnabled()): PromptEntry[] {
+  const plain = { prompts: cycle.prompts, promptOverrides: {} };
+  return promptIds().map((id) => {
+    const defaults: Partial<Record<Language, string>> = {};
+    for (const language of LANGUAGES) {
+      const text = promptTemplate(plain, id, language, voice);
+      if (text !== undefined) defaults[language] = text;
+    }
+    return { id, family: familyOf(cycle, id), defaults, override: { ...cycle.promptOverrides[id] } };
+  });
+}
+
+/**
+ * The cycle's overrides with one text changed: a string replaces the prompt in that language (an empty one included), null goes back to the catalog's text.
+ * An id left with no language is dropped. Throws for an id the catalogs do not have: an override of it would never be read.
+ */
+export function withPromptOverride(overrides: Record<string, PromptOverride>, id: string, language: Language, text: string | null): Record<string, PromptOverride> {
+  // i18n-ignore: developer error
+  if (!promptIds().includes(id)) throw new Error(`unknown prompt: ${id}`);
+  const entry: PromptOverride = { ...overrides[id] };
+  if (text === null) delete entry[language];
+  else entry[language] = text;
+  const next = { ...overrides };
+  if (Object.keys(entry).length) next[id] = entry;
+  else delete next[id];
+  return next;
 }
 
 /** The template filled with the params. A missing id throws: it is a bug in the code, and a silent empty prompt would hide it. */

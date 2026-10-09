@@ -58,7 +58,8 @@ const WEB_ADMIN = /^web:/;
 // and for scanning the machine's projects (it reads folders). The one write a browser has is config:cycle-save (team, squads, flow, comment
 // templates, the runner's plain settings), which is allowed here and checks its own scope in configModule.ts (configScope.ts). Confirming a test secret
 // (or revoking that) decides which secret a stage launches with, so it stays on the computer too; the list of confirmations is only refs and stays open.
-const CONFIG_ADMIN = /^(config:(save|secret|secrets|export|import|testenv-confirm$|testenv-revoke$)|cycle:(apply|template-save|template-remove|template-pick)|agents:(scan|apply|summarize))/;
+// The prompt editor (config:prompts, config:prompt-set) changes what every agent is told: the computer's alone, the list included.
+const CONFIG_ADMIN = /^(config:(save|secret|secrets|export|import|testenv-confirm$|testenv-revoke$|prompts$|prompt-set$)|cycle:(apply|template-save|template-remove|template-pick)|agents:(scan|apply|summarize))/;
 
 // The setup wizard opens file dialogs, runs npm, tests keys and writes the configuration: it exists only in the desktop window. A browser
 // that finds the setup unfinished is told to finish it on the computer (secrets are never entered from the PWA).

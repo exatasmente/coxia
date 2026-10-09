@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Developer mode for the prompts: Ctrl+Shift+I.** On the computer, Ctrl+Shift+I (Cmd+Shift+I on a Mac) opens and closes a screen with every text the app sends an agent, read from the app's catalogs each time it opens, so a prompt added in a later version is listed without a change to the screen. Pick one, see the text the app sends today and the placeholders it uses, and replace it for this workspace in either language; the change is kept in `devCycle.promptOverrides` and applies from the next prompt on, and Restore brings back the original. Search by id or text, and a filter shows only the changed ones. The paired browser has neither the shortcut nor the channels. The help (F1) lists the shortcut.
+
 ## [0.9.0-beta.11] - 2026-10-09
 
 ### Added
