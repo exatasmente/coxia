@@ -271,3 +271,106 @@ Arquivos afetados: `config-schema`, `config-migrations`, `config-web-scope`, `cy
 
 1. **Confirmado:** `delegate` (e `switch`) são inertes sem lista por atividade: valem `fallback`.
 2. **Confirmado:** a chave `tools.subagents` governa também `Agent` em `delegate`; os textos dela passam a explicar o uso nas execuções.
+
+# Parte 3: o que o provedor oferece
+
+Conferido em `wt-213` (`81c705c8`, `feat-model-pool`), os fatos do servidor em 2026-10-09 (ver a spec, "Parte 3"). Escopo: as cinco decisões do mantenedor. Nada foi executado; o que não foi conferido está em **Riscos da parte 3**.
+
+## O que o código mostra e muda o desenho
+
+1. **`foldUsage` já lê `usage.cost`** (`client.ts:181-184`); falta `estimated_cost`. No motor aberto o custo chega ao run sem marca (`agents.ts:605-608` não passa `costEstimated`), e `provenance` (`shared/runs/usage.ts:27`) trata a falta da marca como "cobrado": o `costEstimated: true` de hoje só nasce no SDK fora da API da Anthropic (`agents.ts:780`). **A "estimativa que fica" é essa**, mais `estimateStageCost` na ordem da sugestão; não há estimativa por chamada no motor aberto e nenhuma é criada.
+2. **Cerimônia não grava custo**: `runOnce` não passa `onUsage` (`agents.ts:860`). Seu registro é a linha `msg` do `.jsonl` (`UsageRecord.costUsd`, `session.ts:8-16`), que passa a receber o valor novo.
+3. **O `/models` já tem `reasoning_effort`** (37 dos 96 modelos de chat nas 179 entradas salvas hoje; só 29 dos 64 com `reasoning` o têm), mas **não** `flex` (75 dos 226 de texto da listagem rica) nem `deprecated`/`replaced_by` (130 de texto marcados, 127 com data passada). Os obsoletos **não estão** no `/models` (0 dos 96 de chat): o aviso precisa da listagem rica, que também lista os já aposentados.
+4. **Dois defeitos que o desenho tem de evitar.** (a) Um 400 "Unknown parameter: reasoning_effort" cai antes no ramo do eco (`errors.ts:220`, que casa `/reasoning/` e marca `echoRefused`), apagando o raciocínio de um modelo que o exige: os parâmetros novos são testados antes. (b) O cliente repete um 429 duas vezes (`client.ts:272`), o que anula o `fail_fast`: ele não repete o 429 de uma chamada que o enviou.
+5. **A espera do flex bate no limite da etapa.** A documentação diz até 10 minutos de fila; `runner.stageIdleMs` é 10 minutos (`defaults.ts:37`) e só `beat` o zera (`executor.ts:1017`).
+
+## O que será construído
+
+| Funcionalidade | Onde cai |
+|---|---|
+| Custo e uso do servidor | `open/types.ts:45-52,86-94`, `client.ts:181-184`, `session.ts:8-16`, `agents.ts:607` |
+| Parâmetros no pedido, aprendizado, 429 | `client.ts:51-60,221-242,272-278`, `errors.ts:122,189,209-225` |
+| Bloco do provedor, `offer`, esforço, flex | `config/types.ts:52,141,568,880`, novo `config/offer.ts`, `schema.ts`, `validate.ts:40`, `migrations.ts:379-407`, `config-resolve.ts:53-79,137-160` |
+| Parâmetros por membro e por chamada | `pool.ts:109,118,155,214`, `loop.ts:327-350,482-501`, `bridge.ts:18,86`, `agents.ts:479,564`, `contract.ts` (`background`) |
+| Etapa que ninguém espera | `executor.ts:1017`, `conversation.ts:300`, `chain.ts:48`, `request.ts:41`, `wrapup.ts:86` |
+| Catálogo, listagem rica, obsoleto | `modelCatalog.ts:12,55,82`, `probe.ts:29,85,123`, `wizard.ts:131`, `shared/wizard.ts:89,155` |
+| Interface | `ModelsStep.tsx`, `PoolEditor.tsx`, `poolEdit.ts:90`, `TeamSection.tsx`, `agentEdit.ts:88`, `RunnerSection.tsx` |
+| Documentos | `docs/llm-providers.md` (PT e EN), `docs/runner.md`, `docs/configuration.md`, `CHANGELOG.md` |
+
+## Dados e configuração
+
+```ts
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high';
+export type EffortSetting = ReasoningEffort | 'default';          // 'default': nothing is sent
+export interface ProviderFeatures { serviceTier?: boolean; failFast?: boolean; reasoningEffort?: boolean; catalogUrl?: string }  // LlmProvider.features?
+export interface ModelOffer { flex?: boolean; effort?: boolean; deprecated?: number /* epoch s */; replacedBy?: string }          // ModelRef.offer? (AgentModel também)
+// LlmConfig.effort?: Partial<Record<Activity, EffortSetting>>      RunnerConfig.flex?: boolean (ausente = ligado)
+export const DEFAULT_EFFORT: Partial<Record<Activity, ReasoningEffort>> = { explore: 'low', shell: 'low', edit: 'medium' };
+```
+- **Onde vive o que é do provedor.** `features` é do servidor (o que ele aceita) e é da pessoa: a predefinição o semeia (`OpenPreset.features`, só a do provedor em questão traz `serviceTier`, `failFast`, `reasoningEffort` ligados e o `catalogUrl`), e o cartão do provedor o edita. **Não** vai em `capabilities`: o teste de conexão reescreve esse bloco inteiro (`wizard.ts:131-150`) e apagaria a escolha da pessoa. O que é do **modelo** (`flex`, `effort`, `deprecated`, `replacedBy`) vai em `offer`, na entrada, como `images` e `contextWindow`: o catálogo só existe no teste, nunca na execução. Os outros provedores e os existentes não têm o bloco: tudo desligado.
+- **Quem libera cada parâmetro** (puro, `shared/config/offer.ts`: `canFlex`, `canEffort`, `canFailFast`, `deprecationOf`). flex: `features.serviceTier` ∧ `offer.flex` ∧ `runner.flex !== false` ∧ chamada de fundo. esforço: `features.reasoningEffort` ∧ `offer.effort` ∧ nível ≠ `default`. `fail_fast`: `features.failFast` ∧ membro que não é o último. `effortFor(llm, atividade)` = `llm.effort[a] ?? DEFAULT_EFFORT[a]`.
+- **`offer.effort`** vem da etiqueta `reasoning_effort`; se a listagem não traz essa etiqueta em modelo nenhum (outro servidor), de `reasoning` ou do que o teste viu. A pessoa corrige à mão na linha.
+- **Esquema 25, sem 26.** O 25 não saiu; os campos entram no passo `v24ToV25` (`migrations.ts:379`), que só ganha a nota. Nenhum passo sobe permissão: nada disso é permissão nem alcance, e sem `features` nada é enviado. `POOL_KEYS`/`poolKeyAt` (`:403-407`) ganham `offer`, `features`, `llm.effort` e `runner.flex`: valor inválido cai sozinho. `validate.ts:40` (`providerRules`) recusa `catalogUrl` de outra origem que `baseUrl` ou fora de http(s), e avisa se `features` está ligado num provedor do SDK.
+- **Fora do alcance do celular e dos modelos de ciclo.** `llm.*` e `runner.flex` não estão em `WEB_EDITABLE` (`configScope.ts:15`); `offer` de um agente (`agents.team`) pode mudar, e não dá alcance. `apply.ts:77` e `settingsView.ts:28` tiram `offer` do modelo exportado.
+- **Formato do run não muda** (`RUN_VERSION` 6): `cacheWriteTokens`, `reasoningTokens`, a camada servida e o `x-request-id` vão só à linha do `.jsonl`.
+
+## Fluxo
+
+**Cliente.** `CallOptions` ganha `serviceTier?: 'flex'`, `effort?: ReasoningEffort` e `failFast?: boolean`. `build()` (`:221`) põe `service_tier`, `reasoning_effort` e `fail_fast` salvo se `learned.dropParams` já os tem. `DROPPABLE` (`errors.ts:189`) ganha os três e `adaptBodyForError` os testa **antes** dos ramos de imagem e de eco. `mapHttpError` lê `code: engine_overloaded` num 429 como `overloaded` (a mensagem fala de modelo ocupado, não de taxa). `complete()`: um 429 de pedido com `fail_fast` **não** é repetido; um 429 de pedido com `service_tier` sem `fail_fast` reenvia **uma vez** sem a camada (só aquela chamada; nada aprendido); o resto como hoje. `ChunkFolder` guarda `service_tier` da raiz; `complete()` lê `x-request-id`; `Completion.usage` ganha `cacheWriteTokens` e `reasoningTokens`, e `Completion.meta` `{ requestId, tier }`. `foldUsage`: `costUsd = cost ?? estimated_cost`.
+
+**Membro e conjunto.** `PoolMember.params = { flex, effort, failFast }` (já liberados pelo provedor e pela entrada), montado em `openMember` (`agents.ts:479`) com `ResolvedRole.features` e `.offer`; `PoolMemberSpec.params` o leva pelo `bridge` (`:86`) e `OpenPool.primary.params` o do modelo da chamada. `OpenRunParams.tuning = { background, efforts }` (de `runOpenEngine`: `background && runner.flex`, e `effortFor` das cinco atividades). `PoolClient` monta as opções de cada chamada ao membro (`pool.ts:231`, e a passagem direta `:215`): `serviceTier` se `tuning.background` e `params.flex`; `effort` do `efforts[atividade]` e `params.effort`; `failFast` se `params.failFast` e **existe outro membro** da lista em uso que não descansa nem recusou nesta chamada. A atividade do esforço é a do turno em `switch`, a de `write` em `fixed` (o principal de `fallback` e `delegate`), e o **tipo** num subagente (`PoolClientOptions.effortAs`, posto em `loop.ts:361`). A recusa do `fail_fast` entra no caminho de ocupado de hoje (`pool.ts:235`): o modelo descansa e o conjunto troca, sem repetições do cliente.
+
+**Fundo.** `AgentCall.background` e `EngineRequest.background` (padrão ausente = alguém espera). Ligados no `call` da etapa (`executor.ts:1017`; a rodada de reparo `:701` o herda), no agente chamado (`conversation.ts:300`), na pergunta e no pedido entre agentes (`chain.ts:48`, `request.ts:41`) e na última volta de procedimentos (`wrapup.ts:86`). Cerimônia (`agents.ts:860`) e `@menção` ficam sem. Enquanto uma chamada flex espera, o laço chama `events.onWait` a cada 30 s e `runOpenEngine` o liga a `req.beat`, para a fila de até 10 minutos não ser lida como parada; o limite da chamada (15 min) segue valendo.
+
+**Catálogo.** `CatalogModel` ganha `effort`, `flex`, `deprecated`, `replacedBy`. O leitor de metadados lê `reasoning_effort`; o de agregador, `supported_parameters`. `parseRichCatalog` lê `model_name`, `tags` (`flex`), `deprecated`, `replaced_by` e `mergeRich` junta por id. `ChatClient.listRich(url)` busca `catalogUrl` com a chave só se a origem é a do provedor (10 s, falha em silêncio com uma linha `probeRichFail`); `ProbeResult` ganha `deprecations` (id → `{ at, replacedBy }`, até 500) e `testOpen` repassa `features.catalogUrl`. **Nada de rede na execução.** Na tela, `applyCatalogOffer` (em `poolEdit.ts`) grava `offer` em toda entrada do provedor no **rascunho** (modelos dos papéis, reservas, listas, agentes com modelo próprio); o aviso é texto (`deprecationOf`), e quem troca é a pessoa.
+
+## Ordem dos commits (a partir do 15)
+
+Antes do 15, um commit só com `docs/cycles/213-…/` ("add the spec and plan for what the provider offers"); o gate da parte 3 espera o mantenedor. Cada commit passa em `npx tsc --noEmit`, `npx vitest run`, `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`.
+
+15. **`feat: read the real cost and cache writes from the server`** — `types.ts`, `client.ts`, `session.ts`, `agents.ts:607` (`costEstimated: false` quando há valor), `fakeOpenAI.ts` (`usage()` com `estimated_cost`, `cache_write_tokens`, `reasoning_tokens`, `service_tier`), `docs/runner.md`, CHANGELOG › Changed. Testes: `engine-open-client` (`cost` vence, `estimated_cost`, nenhum, `cache_write_tokens` nulo e número, cabeçalho e camada), `engine-open-loop` (linha do `.jsonl`), `runner-agent-open` (`onUsage` sem estimativa), `runner-lifecycle` (a etapa soma `costUsd` e não fica "estimada").
+16. **`feat: send tier, effort and fail-fast when the server takes them`** — `CallOptions`, `build()`, `DROPPABLE`, ordem do aprendizado, `engine_overloaded`, as duas regras do 429, `fakeOpenAI.ts` (`busyStep`). Testes: `engine-open-client` (cada parâmetro só se pedido; um 400 que o cita o tira e não volta; o 400 de `reasoning_effort` **não** marca `echoRefused` com raciocínio no histórico; `fail_fast` com 429 faz uma chamada só; flex com 429 reenvia sem a camada uma vez), `engine-open-rest` (`engine_overloaded` vira `overloaded`, com `restMs` ausente).
+17. **`feat: add the provider features and the offer of a model to the config`** — `types.ts`, `offer.ts`, `schema.ts`, `defaults.ts` (`runner.flex: true`), `validate.ts`, `migrations.ts`, `config-resolve.ts`, `apply.ts`, `settingsView.ts`, `team.ts`, `OpenPreset.features`/`buildProvider`, `docs/configuration.md`. Testes: `config-schema` (neutro, aceita, recusa), `config-migrations` (v24→25 intacto; `features`, `offer`, `effort`, `flex` inválidos caem sozinhos), `config-resolve`, `offer` (novo: liberações, `effortFor`, `deprecationOf`), `cycle-templates` (`offer` não viaja), `config-web-scope` (`llm.*` e `runner.flex` recusados), `wizard-core`, `team-agent-edit`.
+18. **`feat: use tier, effort and fail-fast in the open engine`** — `pool.ts`, `loop.ts`, `bridge.ts`, `agents.ts`, `contract.ts`, os cinco pontos de `background`, `onWait`. Testes (`fakeOpenAI` com três servidores): `engine-open-pool` (`fail_fast` no 1.º e no 2.º, não no 3.º; membro em descanso não conta como "outro"; depois da recusa o que sobra é o último; recusa troca sem repetir; esforço por atividade em `switch`, o de `write` em `fixed`, o do tipo no subagente; flex só com `background`), `runner-agent-open` (provedor sem `features` envia nenhum dos três; cerimônia e menção não enviam flex), `runner-lifecycle` (flex na etapa), `engine-open-subagent`.
+19. **`feat: read flex, effort and deprecation from the provider catalog`** — `modelCatalog.ts`, `probe.ts`, `client.ts` (`listRich`), `wizard.ts`, `shared/wizard.ts`, `poolEdit.ts` (`applyCatalogOffer`), `messages.ts` e `main.*.json` (`probeRichFail`). Testes: `model-catalog` (etiquetas, listagem rica, modelo fora do `/models`), `engine-open-probe` (só a mesma origem; falha não derruba; `deprecations`), `pool-editor`, `main-catalogs`.
+20. **`feat: show what the provider offers in the wizard and the settings`** — `ModelsStep.tsx` (recursos do provedor, seletores de esforço, aviso nos papéis e no teste), `PoolEditor.tsx` (marcas e aviso por linha), `TeamSection.tsx`, `RunnerSection.tsx`, `wizard.*`, `ui.*`, `docs/llm-providers.md` (PT e EN), `docs/runner.md`, CHANGELOG › Added. Testes: `wizard-i18n` (famílias `wizard.features.`, `wizard.effort.`, `wizard.pool.offer.`, `wizard.pool.deprecated.`), `ui-i18n`, `team-pool-ui`, `pool-editor`, `team-runner-edit`, `theme-audit`.
+
+## Plano de teste (resumo)
+
+Arquivos afetados: `engine-open-client`, `engine-open-pool`, `engine-open-subagent`, `engine-open-probe`, `runner-agent-open`, `runner-lifecycle`, `config-*`, `cycle-templates`, `model-catalog`, `pool-editor`, `team-*`, `wizard-*`, catálogos. **Goldens não mudam** (nenhum texto enviado ao modelo é tocado). `fakeOpenAI.ts` ganha `opts.rich` (serve `/models/list`) e passos prontos; nenhum teste chama a rede. Manual, com chave de verdade e `CERIMONIAS_DATA_DIR` vazio: uma etapa com flex (custo 0,8x e `tier` no `.jsonl`), um conjunto com ocupado forçado (recusa em < 1 s), um esforço baixo em `shell`, e a **taxa de acerto de cache** (`cachedTokens / promptTokens` do uso da etapa, que já existe) por modelo: um modelo que lista preço de cache e mostrou 0% hoje é medida, não recurso.
+
+## Riscos da parte 3
+
+| Risco | Como é coberto |
+|---|---|
+| A fila do flex (até 10 min, só pela documentação) estoura `stageIdleMs` | `onWait` a cada 30 s e o limite de 15 min da chamada. **Não verificado** com o servidor ocupado. |
+| `fail_fast` + flex em modelo ocupado gera muitas recusas (flex é "melhor esforço") e o conjunto sobe para modelos mais caros | Só em membro que não é o último; medir na etapa de teste; a pergunta 1 (descanso) é o ajuste. |
+| Recusa por `fail_fast` descansa 5 min (decisão 4), embora o modelo possa estar livre em segundos | Constante única (`restFor`); pergunta aberta 1. |
+| Flex num modelo que não o tem é servido no padrão sem erro (documentação) | `DROPPABLE` não age; a camada servida vai ao `.jsonl` e o custo mostra; a marca vem do catálogo ou da pessoa. |
+| Esforço baixo piora a chamada de ferramenta de um modelo que raciocina | Padrões conservadores só para `explore`, `shell` e `edit`; "do modelo" por atividade desliga. **Não verificado** em tarefa real. |
+| `offer` envelhece (um modelo fica obsoleto depois de salvo) | Cada teste de conexão o regrava no rascunho; sem rede na execução. |
+| `deprecated` como data de aposentadoria é uma leitura da listagem salva (127 passadas, 3 futuras) | Texto neutro ("obsoleto desde/até"); sem ação automática. |
+| A listagem rica é grande (434 KB hoje) e leva a chave | 10 s, falha em silêncio, só a origem do provedor, só no teste. |
+| O 400 de um servidor que cita outro parâmetro junto | Cada parâmetro é testado pelo nome; o resto do aprendizado é o de hoje. |
+
+## Registro de decisões da parte 3
+
+| Decisão | Alternativa rejeitada |
+|---|---|
+| `features` no provedor (da pessoa, semeado pela predefinição), `offer` na entrada (do catálogo) | Tudo em `capabilities` (o teste o reescreve e apaga a escolha); mapa de fatos por modelo no provedor (mais um lugar a manter e a podar) |
+| Liberar por provedor ∧ modelo ∧ (flex) `runner.flex` ∧ fundo | Só a etiqueta do catálogo (um servidor sem o recurso receberia o parâmetro) |
+| `cost ?? estimated_cost` sem a marca de estimativa | Marcar o `estimated_cost` como estimado (o mantenedor pediu `costEstimated: false`) |
+| Cache gravado, tokens de raciocínio e camada só no `.jsonl` | Pô-los em `StageUsage` (formato do run 7 por um número que o painel não mostra) |
+| 429 de flex sem `fail_fast`: reenvia no padrão, uma vez | Tratá-lo como ocupado (sairia do modelo por uma otimização) |
+| `fail_fast` 429 não é repetido pelo cliente | Repetir como os outros (anula o recurso) |
+| Esforço fixo em `write` no principal de `fallback`/`delegate`, o do tipo no subagente | Esforço por volta em todo modo (varia o pedido a cada volta; pergunta 3) |
+| Os campos entram no 25 ainda não publicado | Um `v25ToV26` |
+| Aviso de obsoleto só em texto; a pessoa troca | Botão "Trocar" ou troca automática (a regra é nunca trocar sozinho) |
+| `catalogUrl` obrigatoriamente da origem do provedor | Qualquer endereço (levaria a chave a outro lugar); derivar do nome do provedor (nome no código) |
+
+## Perguntas abertas (respondidas no gate da parte 3, 2026-10-09)
+
+1. **60 s** de descanso para a recusa por `fail_fast` (`engine_overloaded`); 429 de limite de taxa e `Retry-After` seguem com a regra da decisão 4.
+2. **Só o botão** "Usar os da predefinição" no cartão do provedor; a migração não liga nada pelo endereço.
+3. O principal de `fallback`/`delegate` usa o esforço de `write` (proposta aceita).
+4. **Sim, nesta parte:** as etiquetas `tools` e `structured-output` da listagem rica tiram o "não verificado" da sugestão (no mesmo commit que lê a listagem rica).

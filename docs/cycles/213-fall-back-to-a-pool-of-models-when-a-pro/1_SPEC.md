@@ -153,6 +153,33 @@ A troca por atividade (itens 5 e 2 acima) perde o cache de prompt a cada troca, 
 
 **Confirmado pelo mantenedor (gate da parte 2):** sem lista própria por atividade, `switch` e `delegate` valem como `fallback`; e a chave `tools.subagents` também governa a ferramenta `Agent` no modo `delegate` (os textos dela passam a explicar o uso nas execuções).
 
+## Parte 3: o que o provedor oferece
+
+Cinco coisas que um provedor da família OpenAI oferece além do protocolo e que o conjunto de modelos passa a aproveitar. Decididas pelo mantenedor na #213 (parte 3). **Conferido em 2026-10-09** contra um provedor real: toda resposta de chat traz `usage.estimated_cost` (US$), `prompt_tokens_details.cached_tokens` e `cache_write_tokens` (nulo), `completion_tokens_details.reasoning_tokens`, `service_tier` na raiz e o cabeçalho `x-request-id`; o cache é automático (a segunda chamada idêntica serviu 3.840 de 4.013 tokens do cache; `prompt_cache_key` não mudou nada e fica fora); `service_tier: "flex"` custou exatamente 0,8x, com fila maior (3,9 s contra ~1 s) e funciona junto com `fail_fast`; `fail_fast: true` devolveu `429` com `code: engine_overloaded` em 0,4 s, num modelo que sem ele respondia em ~1 s (entrava na fila); `reasoning_effort: "none"` foi aceito.
+
+| O quê | Hoje | Onde |
+|---|---|---|
+| Custo da chamada | só `usage.cost` (o formato de um agregador); sem ele a etapa fica sem custo | `client.ts:183`, `types.ts:50` |
+| Cache gravado, tokens de raciocínio, camada servida | não lidos | `types.ts:45-52` |
+| `service_tier`, `reasoning_effort`, `fail_fast` | nunca enviados; `DROPPABLE` não os conhece | `client.ts:221-242`, `errors.ts:189` |
+| Um 429 | o cliente repete 2 vezes (1 s, 2 s), qualquer que seja o código, antes de o conjunto trocar | `client.ts:272`, `errors.ts:122` |
+| Catálogo | o `/models` traz as etiquetas `reasoning`, `reasoning_effort`, `vision`, `prompt_cache` (conferido nas 179 entradas salvas hoje); **não** traz `flex` nem `deprecated`/`replaced_by`, que só a listagem rica do provedor (`/models/list`) traz | `modelCatalog.ts:55-76` |
+
+1. **Custo real.** O cliente lê `usage.cost` e `usage.estimated_cost` (o que o servidor diz vale sobre qualquer estimativa) e `cache_write_tokens`. O custo da etapa, o do procedimento e o registro da sessão usam o valor do servidor, sem a marca de estimativa. A estimativa continua só onde o servidor nada diz (o valor de tabela do SDK fora da API da Anthropic, e a ordem da sugestão).
+2. **Camada flex (-20%) nas etapas de execução.** `service_tier: "flex"` vai nas chamadas de etapa que ninguém espera (etapa, pergunta entre agentes, volta final de procedimentos); cerimônia e `@menção` ficam no padrão. Só quando o servidor tem o recurso ligado **e** o catálogo (etiqueta `flex` da listagem rica) ou a pessoa diz que o modelo o aceita; chave `runner.flex`, ligada por padrão. Um servidor que recusa o parâmetro ensina o cliente a tirá-lo. Um 429 de uma chamada flex sem `fail_fast` reenvia a mesma chamada no padrão, uma vez, em vez de sair do modelo.
+3. **Esforço de raciocínio por atividade.** `reasoning_effort` por atividade: proposta `explore` e `shell` baixo, `edit` médio, `write` e `screen` o padrão do modelo (nada enviado); configurável por atividade em `llm.effort` (`none`, `low`, `medium`, `high` ou "do modelo"). Só para modelo que raciocina (etiqueta `reasoning_effort`; sem ela na listagem, `reasoning` ou o teste de conexão). Um subagente de um tipo usa o esforço do tipo; o modelo principal em `fallback` e `delegate` usa o de `write`, para não variar a cada volta.
+4. **Modelo obsoleto.** `deprecated` (segundos desde 1970) e `replaced_by` da listagem rica viram um aviso no teste de conexão, ao lado das entradas do conjunto e dos modelos dos papéis e dos agentes, sugerindo o substituto. Só avisa: nunca troca sozinho, nem em execução.
+5. **Recusar na hora.** `fail_fast: true` em todo membro do conjunto que **não é o último** ainda disponível da lista em uso: o modelo ocupado recusa de imediato (429 `engine_overloaded`, sem repetir) e o conjunto passa ao seguinte; o último espera na fila como hoje. Só onde o servidor tem o recurso ligado (a listagem não diz).
+6. **Bloco de recursos do servidor.** Um bloco opcional por provedor (`features`: `serviceTier`, `failFast`, `reasoningEffort` e `catalogUrl`) liga estes parâmetros; o que o catálogo sabe de cada modelo (`flex`, `effort`, `deprecated`, `replacedBy`) fica na entrada do modelo (`offer`). A predefinição do provedor em questão o traz ligado; os outros provedores e os workspaces que existem não mudam. `catalogUrl` tem de ser da mesma origem que o endereço do provedor: a chave nunca vai a outro lugar.
+
+**Na tela.** Cartão do provedor: "Recursos do servidor" (três caixas, o endereço da listagem rica e "Usar os da predefinição"); linhas do conjunto: marcas "flex" e "esforço" (a pessoa corrige à mão) e o aviso "obsoleto desde <data>; substituto: <modelo>"; passo Modelos: cinco seletores de esforço, um por atividade; seção do runner (só no computador): "Usar a camada flex nas etapas".
+
+**Critérios de aceite.** (a) Uma resposta com `estimated_cost` entra em `costUsd` da etapa, sem `costEstimated`. (b) Etapa de execução em modelo com flex envia `service_tier: "flex"`; cerimônia, menção e provedor sem o recurso, não. (c) Entrada `shell` envia o esforço de `shell`; modelo sem a marca não envia nada; um 400 que cita o parâmetro o tira e o cliente não o manda mais. (d) Num conjunto de três modelos o primeiro e o segundo enviam `fail_fast`, o terceiro não; a recusa troca de modelo sem repetir. (e) Modelo obsoleto aparece com o substituto, no teste e na linha; nada muda sozinho. (f) Provedor sem o bloco: nenhum campo novo no pedido e o comportamento é o de antes. (g) `catalogUrl` de outra origem é recusado.
+
+**Fora do escopo.** `prompt_cache_key`, a camada `priority`, o parâmetro `reasoning` em objeto, buscar a listagem rica na execução (só no teste de conexão), mostrar o cache gravado na tela do run (pediria o formato 7), trocar de modelo por obsolescência, estimar custo de chamada sem o valor do servidor.
+
+**Respondido no gate da parte 3:** a recusa por `fail_fast` descansa 60 s; provedor já cadastrado liga as opções pelo botão "Usar os da predefinição" (a migração não liga nada); o principal de `fallback`/`delegate` usa o esforço de `write`; as etiquetas `tools` e `structured-output` da listagem rica tiram o "não verificado" da sugestão.
+
 ## O que não foi verificado
 
 - O formato do catálogo foi conferido **hoje** contra um provedor real: `GET {baseUrl}/models`
@@ -160,7 +187,8 @@ A troca por atividade (itens 5 e 2 acima) perde o cache de prompt a cada troca, 
   de cache, em dólares por milhão de tokens) e `tags` (`vision`, `prompt_cache`, `reasoning`).
   Nada disso é padrão do protocolo OpenAI; outros provedores trazem outro formato ou nada.
 - A listagem mais rica, fora do protocolo OpenAI, que o provedor tem (etiquetas `tools`, `json`,
-  `structured-output`), é **específica dele** e não entra: a sugestão lê só o `/models`.
+  `structured-output`), é **específica dele** e não entra na sugestão, que lê só o `/models`; a parte 3
+  lê dela apenas `flex`, `deprecated` e `replaced_by`, no teste de conexão.
 - Nenhum teste da suíte chama a rede; a troca real entre dois modelos de um servidor vivo é
   verificação manual da etapa de teste.
 
@@ -187,6 +215,7 @@ A troca por atividade (itens 5 e 2 acima) perde o cache de prompt a cada troca, 
    `supported_parameters`, modalidades de entrada), escrito pela documentação pública e
    marcado no código como não conferido contra o serviço.
 8. **Três modos de usar o conjunto (2026-10-09, depois da parte 1):** `fallback` ("só reserva"), `switch` ("trocar por atividade", o que está feito) e `delegate` ("principal com subagentes", o **padrão**, em workspace novo e existente). Escolha: agente > etapa do modelo de ciclo > padrão do workspace; cerimônia e `@menção` só agente > workspace. Não é permissão. Ver "Modos de uso do conjunto" e a parte 2 do plano.
+9. **O que o provedor oferece (2026-10-09, parte 3):** custo real do servidor (`estimated_cost`, além de `cost`) sobre a estimativa; camada `flex` nas etapas de execução; `reasoning_effort` por atividade; aviso de modelo obsoleto (`deprecated`, `replaced_by`) sem trocar sozinho; `fail_fast` em todo membro que não é o último. Tudo atrás do bloco de recursos do provedor e do que o catálogo diz de cada modelo; provedor sem o bloco não muda. Ver "Parte 3" na spec e no plano.
 
 ## Fora do escopo
 
