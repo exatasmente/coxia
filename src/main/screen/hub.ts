@@ -101,9 +101,13 @@ interface Live {
   stopSaid: boolean;
   /** A window was mapped on the screen at some look: tells a screen that was never used from one whose pictures could not be read. */
   sawWindow: boolean;
+  /** When the look that began the present stretch of looks with a window mapped was made; null while the screen is bare. A picture read before it may predate the window. */
+  usedSince: number | null;
   ended: boolean;
   grabbed: Grabbed | null;
   reading: Promise<Grabbed | null> | null;
+  /** When the read under way began. */
+  readingFrom: number;
   failed: number;
   /** The pictures made of `grabbed`, by width: one per (frame, width), dropped when the screen changes. */
   pictures: Map<number, { jpeg: Uint8Array; width: number; height: number }>;
@@ -214,10 +218,20 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     changed(live.run);
   };
 
-  /** The latest frame, read now or reused: null when the display did not answer (the second time in a row the screen is over). */
-  const read = (live: Live): Promise<Grabbed | null> => {
-    if (live.grabbed && now() - live.grabbed.at < FRAME_MIN_MS) return Promise.resolve(live.grabbed);
-    if (live.reading) return live.reading;
+  /**
+   * The latest frame, read now or reused: null when the display did not answer (the second time in a row the screen is over). `notBefore` is the earliest time a
+   * frame may have been read at: a cached or under-way read that began before it is not taken, and the screen is read afresh.
+   */
+  const read = async (live: Live, notBefore = 0): Promise<Grabbed | null> => {
+    for (;;) {
+      if (live.grabbed && now() - live.grabbed.at < FRAME_MIN_MS && live.grabbed.at >= notBefore) return live.grabbed;
+      if (!live.reading) break;
+      if (live.readingFrom >= notBefore) return live.reading;
+      // A read that began too early is waited out, not used: the next one is the caller's.
+      await live.reading.catch(() => undefined);
+      if (live.ended) return null;
+    }
+    live.readingFrom = now();
     live.reading = (async (): Promise<Grabbed | null> => {
       const f = await live.conn.grab();
       if (live.ended) return null;
@@ -243,22 +257,34 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     return live.reading;
   };
 
+  /**
+   * One look at the screen for the recording: asks whether a window is mapped and, if one is, offers the picture to the recorder. The first look after a bare screen
+   * reads afresh: a picture a viewer read within the cache's 400 ms may be from before the window mapped, and it would be the video's first frame.
+   */
+  const look = async (live: Live, rec: Recorder): Promise<void> => {
+    const checkedAt = now();
+    // A bare screen (or a display that did not answer) is not read for the recording: it is empty, or the next look finds out.
+    const used = await live.conn.inUse();
+    if (live.ended) return;
+    if (used !== true) {
+      live.usedSince = null;
+      return;
+    }
+    live.usedSince ??= checkedAt;
+    live.sawWindow = true;
+    const got = await read(live, live.usedSince);
+    if (live.ended || !got) return;
+    await rec.add(got.frame, got.hash, got.at);
+    if (rec.state === 'stopped') sayStopped(live, rec);
+  };
+
   /** One look at the screen for the recording; the next is timed when this one is done, so two never overlap. */
   const tick = async (live: Live): Promise<void> => {
     live.cancelTick = null;
     const rec = live.rec;
     if (live.ended || !rec) return;
     try {
-      // A bare screen (or a display that did not answer) is not read for the recording: it is empty, or the next look finds out.
-      const used = await live.conn.inUse();
-      if (used && !live.ended) {
-        live.sawWindow = true;
-        const got = await read(live);
-        if (!live.ended && got) {
-          await rec.add(got.frame, got.hash, got.at);
-          if (rec.state === 'stopped') sayStopped(live, rec);
-        }
-      }
+      await look(live, rec);
     } catch {
       // A look that failed is the next one's to retry; a recording is never the stage's failure.
     }
@@ -277,7 +303,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       } catch {
         return false;
       }
-      const live: Live = { run: screen.run, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits }) : null, cancelTick: null, stopSaid: false, sawWindow: false, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, failed: 0, pictures: new Map() };
+      const live: Live = { run: screen.run, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits }) : null, cancelTick: null, stopSaid: false, sawWindow: false, usedSince: null, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, readingFrom: 0, failed: 0, pictures: new Map() };
       lives.set(screen.run, live);
       // A connection that is lost ends the screen: it is never dialled again, since what is at the socket's path is not the app's to trust after the agent has run.
       conn.onClose(() => {

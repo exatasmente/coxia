@@ -755,6 +755,41 @@ describe('a screen in use', () => {
     expect(out?.ok && out.meta.durationMs).toBeLessThanOrEqual(3000);
   });
 
+  it('does not take a bare picture a viewer read just before the window mapped as the first frame of the video (#176)', async () => {
+    const r = await bare();
+    // A viewer reads the bare screen; the window maps within the 400 ms the cache keeps that picture.
+    expect((await r.hub.frame('r-1', 0, 640)).state).toBe('frame');
+    expect(r.conn.grabs).toBe(1);
+    r.conn.windows = true;
+    r.conn.pixels.fill(6);
+    r.clock.t += 300;
+    for (const t of r.timers.filter((x) => x.live && x.ms === 1000)) {
+      t.live = false;
+      t.fn();
+    }
+    await vi.waitFor(() => expect(r.sink.fed).toHaveLength(1));
+    expect(r.sink.firstBytes).toEqual([6]);
+    expect(r.conn.grabs).toBe(2);
+  });
+
+  it('goes on reusing a recent picture once the window has been there: only the first look after a bare screen is read afresh', async () => {
+    const r = await bare();
+    r.conn.windows = true;
+    await r.second();
+    expect(r.sink.fed).toHaveLength(1);
+    r.conn.pixels.fill(7);
+    r.clock.t += 1000;
+    await r.hub.frame('r-1', 0, 640);
+    const grabs = r.conn.grabs;
+    r.clock.t += 300;
+    for (const t of r.timers.filter((x) => x.live && x.ms === 1000)) {
+      t.live = false;
+      t.fn();
+    }
+    await vi.waitFor(() => expect(r.sink.fed).toHaveLength(2));
+    expect(r.conn.grabs).toBe(grabs);
+  });
+
   it('feeds nothing from an empty screen after the window is gone, though its picture changed', async () => {
     const r = await bare();
     r.conn.windows = true;
