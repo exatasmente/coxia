@@ -48,7 +48,7 @@ import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import type { ScreenHub } from '../screen/hub';
 import { grantsFor, withheldText } from '../browser/guard';
-import { type CallScreen, modelSeesImages, openCallScreen } from '../browser/callScreen';
+import { type CallScreen, modelSeesImages, openCallScreen, promptFor } from '../browser/callScreen';
 import type { ScreenAsks } from '../browser/asks';
 import type { ScreenSessions } from '../browser/sessions';
 
@@ -720,6 +720,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     commandResults: ran,
     numberedCommands: !!session,
     evidence: !!(evidenceRoot && d.keepEvidence),
+    // What the agent is told of its screen and its hosts: nothing for an agent with neither, so its prompt is what it was.
+    screen: promptFor(screen ?? null, agent, config.runner.sandbox, grantsFor(agent), session?.gui?.display === 'on'),
     sandbox: session
       ? {
           network: config.runner.sandbox.network,

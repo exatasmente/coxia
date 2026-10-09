@@ -11,7 +11,7 @@ import { type RunActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import type { ReadConfinement } from '../engine/contract';
 import { callKey } from '../../shared/browser';
-import { type CallScreen, type CallScreenRequest, type ScreenPorts, modelSeesImages, openCallScreen } from '../browser/callScreen';
+import { type CallScreen, type CallScreenRequest, type ScreenPorts, modelSeesImages, openCallScreen, promptFor } from '../browser/callScreen';
 import { grantsFor, withheldText } from '../browser/guard';
 import { recordWrite } from '../auditoria';
 import { ATAS } from '../env';
@@ -227,6 +227,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         repos: info.repos,
         place: place.kind === 'run' ? 'run' : place.kind,
         shell: session ? { host: def.shell === 'host', network: config.runner.sandbox.network } : undefined,
+        // What the agent is told of its screen and its hosts: nothing for an agent with neither, so its prompt is what it was.
+        screen: promptFor(screen, def, config.runner.sandbox, grantsFor(def), session?.gui?.display === 'on'),
         proposals: mayPropose(def, deps, place),
         autonomous: autonomyOf(config, def),
         attachments: attachments ?? undefined,
