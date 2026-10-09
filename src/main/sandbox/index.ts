@@ -20,6 +20,7 @@ import { type HostSessionDeps, type HostSessionOptions, openHostSession } from '
 import { type HostDisplay, startHostDisplay } from './display';
 import { loginEnv } from '../loginPath';
 import { nameResolverBinds, systemLayout } from './system';
+import { findChromium } from '../browser/chromium';
 
 export type { ExecResult, SandboxSession } from './session';
 export { SandboxError } from './errors';
@@ -329,9 +330,11 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
     },
     guiStatus(config) {
       let browsers: SandboxGuiStatus['browsers'] = 'unset';
+      let chromium: NonNullable<SandboxGuiStatus['chromium']> = config.browsersPath ? 'none' : 'unset';
       if (config.browsersPath) {
         try {
           const dir = readOnlyFolders([config.browsersPath], home, protect)[0];
+          if (findChromium(dir).ok) chromium = 'ready';
           // Playwright keeps one folder per build (chromium-1234, chromium_headless_shell-1234, firefox-…): an empty folder offers nothing.
           browsers = readdirSync(dir).some((n) => /^(chromium|chrome|firefox|webkit)/.test(n)) ? 'ready' : 'empty';
         } catch (e) {
@@ -340,7 +343,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
       }
       // A listed folder that is gone or refused already fails a sandbox stage on its own; the display is looked for on the system's path then.
       const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(listedBins(config)) ? 'ready' : 'missing';
-      return { browsers, display };
+      return { browsers, display, chromium };
     },
     purge() {
       try {
