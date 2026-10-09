@@ -7,6 +7,9 @@ import { PassThrough } from 'node:stream';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { neutralSandbox } from '../src/shared/config/defaults';
 import { type SessionOptions, openSession } from '../src/main/sandbox/session';
+import { OUTPUT_LIMIT } from '../src/main/runner/commands';
+import { renderExec } from '../src/main/sandbox/tool';
+import { createTypedValues } from '../src/main/screen/typedValues';
 
 // The session against a fake program that speaks the supervisor's protocol: no sandbox is made. It answers the way the supervisor does: reads the line, runs a script of
 // its own for the command, writes the output file and says "done".
@@ -132,6 +135,87 @@ describe('a session', () => {
     expect(r.output).not.toContain('ghp_aaaa');
     expect(r.output.endsWith('end')).toBe(true);
     expect(r.output.length).toBeLessThan(7000);
+    await s.close();
+  });
+
+  // While the person holds the screen for a hand-off (#178) a command is refused at the door and again when it comes up, and what the person typed is taken out of the output.
+  it('refuses a command while the person has the screen, without sending it in, logging it or telling the thread, and runs again after', async () => {
+    const f = fakeSpawn((_c, _n, out) => (out('ran\n'), 0));
+    const seen: string[] = [];
+    let held = false;
+    const s = await openSession(options({ held: () => held, onExec: (r) => seen.push(r.command) }), { spawn: f.spawn });
+    held = true;
+    const refused = await s.exec('echo hi');
+    expect(refused).toMatchObject({ refused: 'handoff', exitCode: null, output: '' });
+    expect(renderExec(refused)).toBe('The person has the screen; wait for the hand-off result.');
+    expect(f.made[0].lines).toEqual([]);
+    expect(seen).toEqual([]);
+    expect(s.log).toEqual([]);
+    held = false;
+    expect(await s.exec('echo back')).toMatchObject({ n: 1, exitCode: 0, output: 'ran' });
+    expect(f.made[0].lines).toHaveLength(1);
+    await s.close();
+  });
+
+  it('refuses again a command queued before the interval, behind one that is still running, and does not stop the running one', async () => {
+    let finish: () => void = () => undefined;
+    const f = fakeSpawn((c, _n, out) => {
+      out(`ran ${c}\n`);
+      return c === 'slow' ? 'hang' : 0;
+    });
+    let held = false;
+    const s = await openSession(options({ held: () => held }), { spawn: f.spawn });
+    const slow = s.exec('slow');
+    const queued = s.exec('after');
+    await new Promise((r) => setImmediate(r));
+    held = true;
+    // The program finishes the slow one.
+    finish = () => (f.made[0].child.stdout as unknown as PassThrough).write(`done 1 ${f.made[0].lines[0].split(' ')[1]} 0\n`);
+    finish();
+    const [a, b] = await Promise.all([slow, queued]);
+    expect(a).toMatchObject({ exitCode: 0, output: 'ran slow' });
+    expect(b).toMatchObject({ refused: 'handoff' });
+    expect(f.made[0].lines).toHaveLength(1);
+    expect(s.log.map((r) => r.command)).toEqual(['slow']);
+    await s.close();
+  });
+
+  it('takes what the person typed out of the output, in the three forms, and out of a value a long output would have cut in two', async () => {
+    const typed = createTypedValues();
+    const value = 'p@ss "w0rd"/x';
+    typed.add([value]);
+    const f = fakeSpawn((_c, _n, out) => {
+      out(`marker-start ${value}|${encodeURIComponent(value)}|${JSON.stringify(value).slice(1, -1)}\n${'x'.repeat(20_000)}\nend\n`);
+      return 0;
+    });
+    const s = await openSession(options({ mask: typed.mask }), { spawn: f.spawn });
+    const r = await s.exec('print');
+    expect(r.output).not.toContain('w0rd');
+    expect(r.output.endsWith('end')).toBe(true);
+    const short = fakeSpawn((_c, _n, out) => (out(`a ${value}|${encodeURIComponent(value)}|${JSON.stringify(value).slice(1, -1)}\n`), 0), { dir: join(dir, 'b') });
+    const t = await openSession(options({ stageDir: join(dir, 'b'), mask: typed.mask }), { spawn: short.spawn });
+    expect((await t.exec('print')).output).toBe('a [secret]|[secret]|[secret]');
+    await s.close();
+    await t.close();
+  });
+
+  it('finds a typed value that the cut of a long output would have split in two', async () => {
+    const typed = createTypedValues();
+    const value = 'marker-value-4821';
+    typed.add([value]);
+    // The kept end starts in the middle of the value: masking only the kept end would leave its second half in clear.
+    const f = fakeSpawn((_c, _n, out) => (out(`${'y'.repeat(100)}${value}${'z'.repeat(OUTPUT_LIMIT - 8)}`), 0));
+    const s = await openSession(options({ mask: typed.mask }), { spawn: f.spawn });
+    const r = await s.exec('print');
+    expect(r.output).not.toMatch(/value|4821|marker/);
+    expect(r.output.endsWith('z')).toBe(true);
+    await s.close();
+  });
+
+  it('does not show an output the mask could not check', async () => {
+    const f = fakeSpawn((_c, _n, out) => (out('something\n'), 0));
+    const s = await openSession(options({ mask: () => { throw new Error('boom'); } }), { spawn: f.spawn });
+    expect(await s.exec('print')).toMatchObject({ output: '', outputUnavailable: true, exitCode: 0 });
     await s.close();
   });
 

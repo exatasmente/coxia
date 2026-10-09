@@ -1580,6 +1580,7 @@
   "main.runner.exec.refused.budget": "refused: the stage's time for commands was used up",
   "main.runner.exec.refused.closed": "refused: the sandbox had ended",
   "main.runner.exec.refused.denied": "refused: you did not allow it",
+  "main.runner.exec.refused.handoff": "refused: the person had the screen",
   "main.forum.code.runner.exec": "{agent} ran command {n} in its sandbox: {command} → {result} ({ms}s). End of the output: {tail}",
   "main.forum.code.runner.exec.host": "{agent} ran command {n} on this computer: {command} → {result} ({ms}s). End of the output: {tail}",
   "main.forum.code.runner.command.ask": "{agent} wants to run a command on this computer and waits for you to allow it: {command}",

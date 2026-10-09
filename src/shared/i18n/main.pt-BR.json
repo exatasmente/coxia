@@ -1580,6 +1580,7 @@
   "main.runner.exec.refused.budget": "recusado: o tempo da etapa para comandos acabou",
   "main.runner.exec.refused.closed": "recusado: a sandbox já tinha terminado",
   "main.runner.exec.refused.denied": "recusado: você não permitiu",
+  "main.runner.exec.refused.handoff": "recusado: a pessoa estava com a tela",
   "main.forum.code.runner.exec": "{agent} rodou o comando {n} na sandbox: {command} → {result} ({ms}s). Fim da saída: {tail}",
   "main.forum.code.runner.exec.host": "{agent} rodou o comando {n} neste computador: {command} → {result} ({ms}s). Fim da saída: {tail}",
   "main.forum.code.runner.command.ask": "{agent} quer rodar um comando neste computador e espera você permitir: {command}",
