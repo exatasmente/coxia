@@ -1036,3 +1036,328 @@ describe('screens by key', () => {
     expect(s.touched).toEqual(['call:general:dev', 'call:general:dev', 'call:general:dev']);
   });
 });
+
+// The hand-off interval (#178): the stretch in which the person holds the screen because the agent asked. The screen is withheld from every reader that is not the
+// person, before control is on; the input is collected as text for the masker and not as bursts; the recording keeps being fed and carries one mark.
+describe('a hand-off interval', () => {
+  const noop = { input: () => undefined, end: () => undefined };
+  /** An interval with a listener that keeps what it heard. */
+  function begun(over: Parameters<typeof setup>[0] = {}) {
+    const s = setup(over);
+    const heard: { inputs: number; ends: { from: number; to: number; typed: string[]; why: string }[] } = { inputs: 0, ends: [] };
+    const on = { input: () => void heard.inputs++, end: (r: (typeof heard.ends)[number]) => void heard.ends.push(r) };
+    return { ...s, heard, on };
+  }
+
+  it('is begun on a live screen only, once at a time', async () => {
+    const s = setup();
+    expect(s.hub.beginInterval('r-1', noop)).toBe(false);
+    await s.open();
+    expect(s.hub.held('r-1')).toBe(false);
+    expect(s.hub.beginInterval('r-1', noop)).toBe(true);
+    expect(s.hub.held('r-1')).toBe(true);
+    expect(s.hub.held('run:r-1')).toBe(true);
+    expect(s.hub.beginInterval('r-1', noop)).toBe(false);
+    expect(s.hub.held('r-2')).toBe(false);
+  });
+
+  it('answers a paired browser held from the moment it begins, before control is on, and reads nothing for it', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.frame('r-1', 0, 640);
+    const grabs = s.conn.grabs;
+    expect(s.hub.beginInterval('r-1', noop)).toBe(true);
+    // A phone polling between the withholding and the control that follows it.
+    expect(s.hub.state('r-1')?.control).toBe(false);
+    expect(await s.hub.frame('r-1', 0, 640)).toEqual({ state: 'held' });
+    expect(await s.hub.frame('r-1', 0, 640, 'web')).toEqual({ state: 'held' });
+    s.clock.t += 5000;
+    await s.hub.control('r-1', true);
+    expect(await s.hub.frame('r-1', 1, 640)).toEqual({ state: 'held' });
+    expect(s.conn.grabs).toBe(grabs);
+    expect(s.encoded).toEqual([640]);
+  });
+
+  it('serves the person who holds the screen its pictures, and tells the list at both ends', async () => {
+    const s = setup();
+    await s.open();
+    s.changed.length = 0;
+    s.hub.beginInterval('r-1', noop);
+    const a = await s.hub.frame('r-1', 0, 640, 'person');
+    expect(a).toMatchObject({ state: 'frame', width: W });
+    expect(s.changed).toEqual(['run:r-1']);
+    s.hub.endInterval('r-1', 'back');
+    await vi.waitFor(() => expect(s.hub.held('r-1')).toBe(false));
+    expect(s.changed).toEqual(['run:r-1', 'run:r-1']);
+  });
+
+  it('drops the frame cache and the pictures at both ends, so nothing of the interval is served later and the first picture after it is read fresh', async () => {
+    const s = setup();
+    await s.open();
+    const before = await s.hub.frame('r-1', 0, 640);
+    expect(before).toMatchObject({ state: 'frame', seq: 1 });
+    s.hub.beginInterval('r-1', noop);
+    // Inside, the person\'s own read is not served from what was read before.
+    const grabs = s.conn.grabs;
+    const inside = await s.hub.frame('r-1', 0, 640, 'person');
+    expect(s.conn.grabs).toBe(grabs + 1);
+    expect(inside).toMatchObject({ state: 'frame' });
+    s.hub.endInterval('r-1', 'back');
+    await vi.waitFor(() => expect(s.hub.held('r-1')).toBe(false));
+    // Inside the cache\'s 400 ms, the picture of the interval is not reused for a reader after it.
+    const afterGrabs = s.conn.grabs;
+    const after = await s.hub.frame('r-1', 1, 640);
+    expect(s.conn.grabs).toBe(afterGrabs + 1);
+    // The viewer that held the sequence number of the first picture is not told the next, identical, one is "the same".
+    expect(after).toMatchObject({ state: 'frame' });
+    expect((after as { seq: number }).seq).toBeGreaterThan(2);
+  });
+
+  it('does not cache a read that crosses either end of the interval', async () => {
+    const s = setup();
+    await s.open();
+    // A read under way when the interval begins is answered to whoever asked, and the cache stays empty.
+    s.conn.hold = () => undefined;
+    const web = s.hub.frame('r-1', 0, 640);
+    await Promise.resolve();
+    s.hub.beginInterval('r-1', noop);
+    s.conn.release();
+    expect(await web).toEqual({ state: 'held' });
+    expect(s.encoded).toEqual([]);
+    const grabs = s.conn.grabs;
+    // A read of the interval that ends after it is not what the next reader gets.
+    s.conn.hold = () => undefined;
+    const person = s.hub.frame('r-1', 0, 640, 'person');
+    await Promise.resolve();
+    s.hub.endInterval('r-1', 'back');
+    await vi.waitFor(() => expect(s.hub.held('r-1')).toBe(false));
+    s.conn.release();
+    await person;
+    expect(s.conn.grabs).toBe(grabs + 1);
+    await s.hub.frame('r-1', 0, 640);
+    expect(s.conn.grabs).toBe(grabs + 2);
+  });
+
+  it('collects what the person types, the keys the screen has no key for included, and hands it over only at the end', async () => {
+    const s = begun();
+    await s.open();
+    s.hub.beginInterval('r-1', s.on);
+    await s.hub.control('r-1', true);
+    // 'é' has no key in the fake layout: it is rejected for the screen and collected all the same.
+    const sent = await s.hub.input('r-1', [key('a', true), key('a', false), key('é', true), key('é', false), key('Tab', true), key('A', true)]);
+    expect(sent).toMatchObject({ ok: true, rejected: 2 });
+    s.hub.endInterval('r-1', 'back');
+    await vi.waitFor(() => expect(s.heard.ends).toHaveLength(1));
+    expect(s.heard.ends[0]).toMatchObject({ typed: ['aé', 'A'], why: 'back' });
+  });
+
+  it('collects no more than the limits of a call let through, and nothing while control is off', async () => {
+    const s = begun();
+    await s.open();
+    s.hub.beginInterval('r-1', s.on);
+    expect(await s.hub.input('r-1', [key('a', true)])).toMatchObject({ ok: false, reason: 'off' });
+    await s.hub.control('r-1', true);
+    const many = Array.from({ length: 100 }, () => key('b', true));
+    await s.hub.input('r-1', many);
+    s.hub.endInterval('r-1', 'back');
+    await vi.waitFor(() => expect(s.heard.ends).toHaveLength(1));
+    expect(s.heard.ends[0].typed).toEqual(['b'.repeat(SCREEN_INPUT_MAX)]);
+  });
+
+  it('tells its listener of each delivered event, and not of one that was not delivered', async () => {
+    const s = begun();
+    await s.open();
+    s.hub.beginInterval('r-1', s.on);
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [move(1, 1)]);
+    await s.hub.input('r-1', [key('é', true)]);
+    s.conn.failInput = true;
+    await s.hub.input('r-1', [move(2, 2)]);
+    expect(s.heard.inputs).toBe(1);
+  });
+
+  it('writes no line for control and none for a burst, and one line for the whole interval with its times', async () => {
+    const s = begun();
+    await s.open();
+    const t0 = s.clock.t;
+    s.hub.beginInterval('r-1', s.on);
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [move(1, 1)]);
+    s.clock.t += 2000;
+    await s.hub.input('r-1', [move(2, 2)]);
+    s.clock.t += BURST_GAP_MS + 1;
+    await s.hub.input('r-1', [move(3, 3)]);
+    s.quiet();
+    expect(s.notes).toEqual([]);
+    expect(s.used).toEqual([]);
+    s.clock.t += 1000;
+    s.hub.endInterval('r-1', 'back');
+    await vi.waitFor(() => expect(s.heard.ends).toHaveLength(1));
+    expect(s.notes).toEqual([{ thread: 'run-r-1', stage: 'qa', code: 'runner.screen.handoffUsed', params: { agent: 'qa', from: local(t0), to: local(t0 + 2000 + BURST_GAP_MS + 1 + 1000) } }]);
+    // The audit of the interval is the hand-off\'s own entry, not a second one from here.
+    expect(s.used).toEqual([]);
+    expect(s.heard.ends[0]).toMatchObject({ from: t0, to: t0 + 2000 + BURST_GAP_MS + 1 + 1000 });
+  });
+
+  it('ends once: held keys are put up first, control goes off, the screen stays withheld until then, and a second end does nothing', async () => {
+    const s = begun();
+    await s.open();
+    s.hub.beginInterval('r-1', s.on);
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [key('A', true), { t: 'button', b: 1, down: true }]);
+    s.conn.sent.length = 0;
+    s.hub.endInterval('r-1', 'expired');
+    s.hub.endInterval('r-1', 'back');
+    expect(s.hub.held('r-1')).toBe(true);
+    expect(await s.hub.frame('r-1', 0, 640)).toEqual({ state: 'held' });
+    await vi.waitFor(() => expect(s.heard.ends).toHaveLength(1));
+    expect(s.hub.held('r-1')).toBe(false);
+    expect(s.hub.state('r-1')?.control).toBe(false);
+    expect(sentFlat(s)).toEqual(expect.arrayContaining([{ type: 'button', button: 1, down: false }, { type: 'key', keycode: 8, down: false }]));
+    expect(s.heard.ends[0].why).toBe('expired');
+    expect(await s.hub.input('r-1', [move(1, 1)])).toMatchObject({ reason: 'off' });
+    s.hub.endInterval('r-1', 'back');
+    expect(s.heard.ends).toHaveLength(1);
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.handoffUsed']);
+  });
+
+  it('lets control go off and on again inside the interval without a line, and the interval stays', async () => {
+    const s = begun();
+    await s.open();
+    s.hub.beginInterval('r-1', s.on);
+    await s.hub.control('r-1', true);
+    await s.hub.control('r-1', false);
+    expect(s.hub.held('r-1')).toBe(true);
+    expect(await s.hub.frame('r-1', 0, 640)).toEqual({ state: 'held' });
+    await s.hub.control('r-1', true);
+    expect(s.notes).toEqual([]);
+    s.hub.endInterval('r-1', 'back');
+    await vi.waitFor(() => expect(s.heard.ends).toHaveLength(1));
+  });
+
+  it('closes the burst Take control had open before it begins, and says control is over at the end when it was on', async () => {
+    const s = begun();
+    await s.open();
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [move(1, 1)]);
+    s.hub.beginInterval('r-1', s.on);
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used']);
+    s.hub.endInterval('r-1', 'back');
+    await vi.waitFor(() => expect(s.heard.ends).toHaveLength(1));
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used', 'runner.screen.controlOff', 'runner.screen.handoffUsed']);
+  });
+
+  it('is closed by the end of the stage, with the keys put up, and the listener hears it was the end', async () => {
+    const s = begun();
+    await s.open();
+    s.hub.beginInterval('r-1', s.on);
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [key('Tab', true)]);
+    s.conn.sent.length = 0;
+    await s.hub.finish('r-1');
+    expect(s.heard.ends).toHaveLength(1);
+    expect(s.heard.ends[0].why).toBe('ended');
+    expect(sentFlat(s)).toEqual([{ type: 'key', keycode: 10, down: false }]);
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.handoffUsed']);
+  });
+
+  it('is closed by a screen that is ended without being kept, and by a display that is lost', async () => {
+    const a = begun();
+    await a.open();
+    a.hub.beginInterval('r-1', a.on);
+    a.hub.end('r-1');
+    expect(a.heard.ends.map((e) => e.why)).toEqual(['ended']);
+    const b = begun();
+    await b.open();
+    b.hub.beginInterval('r-1', b.on);
+    b.conn.close();
+    expect(b.heard.ends.map((e) => e.why)).toEqual(['lost']);
+    expect(b.hub.held('r-1')).toBe(false);
+    // The screen is gone with the interval open, and nothing is left withheld or running.
+    expect(await b.hub.frame('r-1', 0, 640)).toEqual({ state: 'none' });
+    b.hub.endInterval('r-1', 'back');
+    expect(b.heard.ends).toHaveLength(1);
+  });
+
+  it('does not let a failing listener decide anything', async () => {
+    const s = setup();
+    await s.open();
+    s.hub.beginInterval('r-1', { input: () => { throw new Error('boom'); }, end: () => { throw new Error('boom'); } });
+    await s.hub.control('r-1', true);
+    expect(await s.hub.input('r-1', [move(1, 1)])).toMatchObject({ ok: true, delivered: 1 });
+    s.hub.endInterval('r-1', 'back');
+    await vi.waitFor(() => expect(s.hub.held('r-1')).toBe(false));
+  });
+
+  it('keeps the recording being fed, and marks the whole interval once, with the kind, and says the file holds a hand-off', async () => {
+    const sink = fakeSink();
+    const s = begun({ sink });
+    await s.open();
+    await vi.waitFor(() => expect(sink.fed).toHaveLength(1));
+    const second = async (): Promise<void> => {
+      s.clock.t += 1000;
+      const before = s.conn.grabs;
+      for (const t of s.timers.filter((x) => x.live && x.ms === 1000)) {
+        t.live = false;
+        t.fn();
+      }
+      await vi.waitFor(() => expect(s.conn.grabs).toBeGreaterThan(before));
+      await new Promise((r) => setTimeout(r, 0));
+    };
+    await second();
+    s.hub.beginInterval('r-1', s.on);
+    await s.hub.control('r-1', true);
+    // What the person does on the screen is on the video: the screen changes and the recorder is fed.
+    s.conn.pixels.fill(5);
+    await second();
+    s.conn.pixels.fill(6);
+    await second();
+    await s.hub.input('r-1', [move(1, 1)]);
+    s.hub.endInterval('r-1', 'back');
+    await vi.waitFor(() => expect(s.heard.ends).toHaveLength(1));
+    s.conn.pixels.fill(7);
+    await second();
+    // Every change on the screen was fed, those inside the interval too.
+    expect(sink.fed.map((f) => f.ts)).toEqual([0, 2000, 3000, 4000]);
+    const out = await s.hub.finish('r-1');
+    expect(out?.ok).toBe(true);
+    if (!out?.ok) return;
+    expect(out.meta.marks).toEqual([{ fromMs: 1000, toMs: 3000, kind: 'handoff' }]);
+    expect(out.meta.handoff).toBe(true);
+    // One mark for the interval and none for the person\'s one burst inside it.
+    expect(out.meta.marks.filter((m) => m.kind === undefined)).toEqual([]);
+  });
+
+  it('leaves Take control outside a hand-off as it was: a burst is a mark of its own with no kind, and the file does not say it holds a hand-off', async () => {
+    const sink = fakeSink();
+    const s = setup({ sink });
+    await s.open();
+    await vi.waitFor(() => expect(sink.fed).toHaveLength(1));
+    await s.hub.control('r-1', true);
+    s.clock.t += 1000;
+    await s.hub.input('r-1', [move(1, 1)]);
+    s.clock.t += 800;
+    s.quiet();
+    await s.hub.control('r-1', false);
+    s.clock.t += 2000;
+    const out = await s.hub.finish('r-1');
+    expect(out?.ok).toBe(true);
+    if (!out?.ok) return;
+    expect(out.meta.marks).toHaveLength(1);
+    expect(out.meta.marks[0]).not.toHaveProperty('kind');
+    expect(out.meta).not.toHaveProperty('handoff');
+    expect(s.used).toHaveLength(1);
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used', 'runner.screen.controlOff']);
+  });
+
+  it('is begun on one screen without touching another', async () => {
+    const s = setup({ own: true });
+    await s.open();
+    await s.hub.open({ key: 'call:general:dev', thread: 'general', stage: '', agent: 'dev', socket: '/x/X98', kind: 'host' });
+    s.hub.beginInterval('call:general:dev', noop);
+    expect(s.hub.held('call:general:dev')).toBe(true);
+    expect(s.hub.held('run:r-1')).toBe(false);
+    expect(await s.hub.frame('run:r-1', 0, 640)).toMatchObject({ state: 'frame' });
+    expect(await s.hub.frame('call:general:dev', 0, 640)).toEqual({ state: 'held' });
+  });
+});

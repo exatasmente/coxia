@@ -1637,6 +1637,7 @@
   "main.forum.code.runner.screen.controlOn": "A person took control of the screen of {agent}'s stage from the desktop: clicks and keys now go to that screen. {agent}'s commands keep running.",
   "main.forum.code.runner.screen.controlOff": "The person gave the screen of {agent}'s stage back.",
   "main.forum.code.runner.screen.used": "The person used the screen of {agent}'s stage from {from} to {to}. What happened on it in that time is not {agent}'s doing.",
+  "main.forum.code.runner.screen.handoffUsed": "The person used the screen of {agent} from {from} to {to}, because {agent} handed it over. What they did and typed there is not {agent}'s doing and was not given to {agent}; the recording keeps the interval, marked.",
   "main.forum.code.runner.evidence.kept": "Evidence {id} kept: \"{title}\" ({kind}).",
   "main.forum.code.runner.evidence.recorded": "The app recorded the screen of {agent}'s stage. The video shows what was on that screen, including what a person did on it; the marks on its timeline say when.",
   "main.forum.code.runner.screen.notKept": "The screen recording of {agent}'s stage was not kept: {reason}",

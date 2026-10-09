@@ -3,6 +3,7 @@ import { type LiveScreen, RECORDING_INTERVAL_MS, RECORDING_MAX_BYTES, RECORDING_
 import { type FrameEncoder, type RawFrame, fixPad, hashFrame } from './frame';
 import { type Recorder, type RecorderLimits, type RecorderSink, type RecordingOutcome, createRecorder } from './recorder';
 import { type X11Connection, connectX11 } from './x11';
+import { type TypedCollector, createTypedCollector } from './typedValues';
 import { type InputPlanner, createInputPlanner } from './xinput';
 
 // The registry of live screens: one per screen key (`run:<id>` for a working stage's display, `call:<thread>:<agent>` for an agent in a conversation), so a run can have its
@@ -20,6 +21,11 @@ import { type InputPlanner, createInputPlanner } from './xinput';
 // screen is not read for the recording, so the video begins when the screen is first used and a stage that never used it keeps none. A burst of the person's input is
 // also a mark on the recording. The recording is built by `finish`, at the end of the stage, after one last look; a screen that is lost on the way (the display died) keeps its recorder
 // aside until `finish` or `end`.
+//
+// A hand-off interval (#178) is the stretch in which the person holds the screen because the agent asked them to: it begins with `beginInterval`, before control is on,
+// and ends with `endInterval` or with the screen. While it lasts a paired browser is answered `held` instead of a frame, the frame cache is dropped at both ends (and a read
+// that crosses an end is not cached), the person's input is collected as typed text for the masker and not as bursts, control writes no line, and the recording keeps being
+// fed, with the interval as one mark of kind `handoff`.
 
 /** A frame read less than this long ago is reused: two viewers cost one read. */
 export const FRAME_MIN_MS = 400;
@@ -51,6 +57,20 @@ export interface ScreenHubDeps {
   recordingLimits?: Partial<RecorderLimits>;
 }
 
+/** How a hand-off interval ended, and what the person typed in it (in memory, for the masker only). */
+export interface IntervalEnd {
+  from: number;
+  to: number;
+  typed: string[];
+  why: 'back' | 'expired' | 'aborted' | 'lost' | 'ended';
+}
+
+/** Who hears of an interval: each delivered event of the person (it restarts the idle limit) and its end, once. */
+export interface IntervalListener {
+  input(): void;
+  end(result: IntervalEnd): void;
+}
+
 export interface OpenScreen {
   /** `run:<id>` or `call:<thread>:<agent>`. */
   key: string;
@@ -70,8 +90,20 @@ export interface ScreenHub {
   open(screen: OpenScreen): Promise<boolean>;
   /** What the screen is handed out with; null when the key has no live screen. */
   state(key: string): LiveScreen | null;
-  /** The latest frame of a live screen for a viewer that shows `since`, about `width` wide. Never throws. */
-  frame(key: string, since: number, width: number): Promise<ScreenFrameAnswer>;
+  /**
+   * The latest frame of a live screen for a viewer that shows `since`, about `width` wide. Never throws. During a hand-off interval a `web` viewer (a paired browser, or the
+   * run list) is answered `held` and nothing is read for it; only the `person` viewer, the desktop window of the one who holds the screen, gets pictures.
+   */
+  frame(key: string, since: number, width: number, viewer?: 'web' | 'person'): Promise<ScreenFrameAnswer>;
+  /**
+   * The hand-off interval begins: from here the screen is withheld from every `web` reader. It does not await, so the withholding is in place before the control that follows
+   * it. False when the key has no live screen or already has an interval.
+   */
+  beginInterval(key: string, on: IntervalListener): boolean;
+  /** The interval ends, whatever the reason: held keys are put up, control goes off without a line, the mark and the one line are written, then `on.end`. Idempotent. */
+  endInterval(key: string, why: IntervalEnd['why']): void;
+  /** A hand-off interval is open on the key. */
+  held(key: string): boolean;
   /** The person takes control of the screen (desktop only) or gives it back; giving it back puts up every key and button still held. */
   control(key: string, on: boolean): Promise<ScreenControlAnswer>;
   /** The person's input: pointer, buttons, wheel and keys. Reaches the screen only while control is on. Never throws. */
@@ -123,6 +155,21 @@ interface Live {
   failed: number;
   /** The pictures made of `grabbed`, by width: one per (frame, width), dropped when the screen changes. */
   pictures: Map<number, { jpeg: Uint8Array; width: number; height: number }>;
+  /** The last sequence number handed out: it never goes back when the cache is dropped, so a viewer holding an old one is never told a new picture is the same. */
+  seq: number;
+  /** Changes at both ends of a hand-off interval: a read that began under another epoch is returned to its caller and never cached. */
+  epoch: number;
+  interval: Interval | null;
+}
+
+interface Interval {
+  from: number;
+  typed: TypedCollector;
+  on: IntervalListener;
+  /** Control was on, from Take control, when the interval began: the conversation was told, so it is told it is over. */
+  controlBefore: boolean;
+  /** The end has begun (held keys are being put up). */
+  ending: boolean;
 }
 
 /** The local time of day, as the person's clock shows it. */
@@ -182,6 +229,32 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     live.rec?.mark(b.from, b.last);
   };
 
+  /**
+   * The interval is over: the mark, the one line, the caches dropped, and the listener told last (it takes the typed text and may resolve a promise). Synchronous, so a
+   * screen that goes away can close its interval without waiting. Control goes off here without a line of its own.
+   */
+  const closeInterval = (live: Live, why: IntervalEnd['why']): void => {
+    const iv = live.interval;
+    if (!iv) return;
+    const to = now();
+    live.interval = null;
+    live.epoch++;
+    live.grabbed = null;
+    live.pictures.clear();
+    live.control = false;
+    if (iv.controlBefore) say(live, 'runner.screen.controlOff');
+    say(live, 'runner.screen.handoffUsed', { from: clockText(iv.from), to: clockText(to) });
+    live.rec?.mark(iv.from, to, 'handoff');
+    const typed = iv.typed.values();
+    iv.typed.clear();
+    changed(live.key);
+    try {
+      iv.on.end({ from: iv.from, to, typed, why });
+    } catch {
+      // The listener's failure is not the screen's.
+    }
+  };
+
   /** Puts up every key and button the person's input left down. */
   const releaseHeld = async (live: Live): Promise<void> => {
     if (!live.planner) return;
@@ -199,6 +272,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
   const drop = (key: string, keep: boolean): void => {
     const live = lives.get(key);
     if (!live) return;
+    closeInterval(live, keep ? 'lost' : 'ended');
     if (keep) {
       closeBurst(live);
       // The screen is gone with control on: the conversation said it was taken, so it says it is over.
@@ -256,6 +330,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       if (live.ended) return null;
     }
     live.readingFrom = now();
+    const epoch = live.epoch;
     live.reading = (async (): Promise<Grabbed | null> => {
       const f = await live.conn.grab();
       if (live.ended) return null;
@@ -268,10 +343,12 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       fixPad(f.data);
       const frame: RawFrame = { width: f.width, height: f.height, data: f.data };
       const hash = hashFrame(frame);
+      // A hand-off interval began or ended while the display was read: this picture belongs to the other side of it, and the cache is not its to fill.
+      if (live.epoch !== epoch) return { seq: ++live.seq, at: now(), hash, frame };
       const prev = live.grabbed;
       if (prev && prev.hash === hash) prev.at = now();
       else {
-        live.grabbed = { seq: (prev?.seq ?? 0) + 1, at: now(), hash, frame };
+        live.grabbed = { seq: ++live.seq, at: now(), hash, frame };
         live.pictures.clear();
       }
       return live.grabbed;
@@ -334,7 +411,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       } catch {
         return false;
       }
-      const live: Live = { key: screen.key, thread: screen.thread, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits, openedAt: now() }) : null, cancelTick: null, stopSaid: false, sawWindow: false, usedSince: null, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, readingFrom: 0, failed: 0, pictures: new Map() };
+      const live: Live = { key: screen.key, thread: screen.thread, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits, openedAt: now() }) : null, cancelTick: null, stopSaid: false, sawWindow: false, usedSince: null, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, readingFrom: 0, failed: 0, pictures: new Map(), seq: 0, epoch: 0, interval: null };
       lives.set(screen.key, live);
       // A connection that is lost ends the screen: it is never dialled again, since what is at the socket's path is not the app's to trust after the agent has run.
       conn.onClose(() => {
@@ -350,12 +427,16 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       if (!live) return null;
       return { stage: live.stage, width: live.grabbed?.frame.width ?? live.conn.size.width, height: live.grabbed?.frame.height ?? live.conn.size.height, since: live.since, control: live.control, recording: !live.rec || live.rec.state === 'stopped' ? 'stopped' : live.usedSince === null ? 'waiting' : 'on' };
     },
-    async frame(k, since, width) {
+    async frame(k, since, width, viewer = 'web') {
       const live = lives.get(keyOf(k) ?? '');
       if (!live) return { state: 'none' };
+      // The hand-off interval: nothing is read for a reader that is not the person who holds the screen, so no picture of it is ever made for one.
+      if (live.interval && viewer === 'web') return { state: 'held' };
       const got = await read(live);
       // The screen ended while the frame was being read, or the encoder is gone: nothing more to show.
       if (live.ended) return { state: 'none' };
+      // The interval began while the display was read: the picture is not for this reader.
+      if (live.interval && viewer === 'web') return { state: 'held' };
       if (!got) return { state: 'same', seq: 0, control: live.control };
       if (got.seq === since) return { state: 'same', seq: got.seq, control: live.control };
       const w = clampFrameWidth(width);
@@ -374,14 +455,15 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       const live = lives.get(key);
       if (!live) return { ok: false, reason: 'none' };
       if (live.control === on) return { ok: true };
+      // In a hand-off interval control comes and goes without a line: the interval has its own.
       if (on) {
         live.control = true;
-        say(live, 'runner.screen.controlOn');
+        if (!live.interval) say(live, 'runner.screen.controlOn');
       } else {
         await releaseHeld(live);
         closeBurst(live);
         live.control = false;
-        say(live, 'runner.screen.controlOff');
+        if (!live.interval) say(live, 'runner.screen.controlOff');
       }
       changed(key);
       touched(key);
@@ -397,6 +479,9 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       const room = Math.max(0, Math.min(SCREEN_INPUT_MAX, events.length, SCREEN_INPUT_PER_SECOND - live.rate.n));
       live.rate.n += room;
       let rejected = events.length - room;
+      // In a hand-off interval the keys are also the text the masker will take out of what the agent reads: collected for every event the call carries within the limits,
+      // the ones the screen has no key for included (to over-mask is harmless).
+      live.interval?.typed.feed(events.slice(0, room));
       const planner = await plannerOf(live);
       // The stage ended or control was given back while the keymap was being read.
       if (live.ended) return { ok: false, delivered: 0, rejected: events.length, reason: 'none' };
@@ -408,6 +493,15 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       if (!sent.ok) return { ok: false, delivered: 0, rejected: rejected + plan.accepted };
       const at = now();
       touched(live.key);
+      if (live.interval) {
+        // The interval is one stretch, not bursts: it writes one line when it ends, and a line per burst would show the rhythm of the typing.
+        try {
+          live.interval.on.input();
+        } catch {
+          // The listener's failure is not the person's.
+        }
+        return { ok: true, delivered: plan.accepted, rejected };
+      }
       if (live.burst && at - live.burst.last > BURST_GAP_MS) closeBurst(live);
       live.burst = live.burst ? { from: live.burst.from, last: at } : { from: at, last: at };
       live.cancelBurst?.();
@@ -432,6 +526,8 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
         // Control is given back with the stage: what the person held down is put up, and the conversation says both.
         await releaseHeld(live).catch(() => undefined);
         closeBurst(live);
+        // The interval's mark goes on the recording before it leaves the screen.
+        closeInterval(live, 'ended');
         if (live.control) {
           live.control = false;
           say(live, 'runner.screen.controlOff');
@@ -456,6 +552,31 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
         return { ok: false, reason: 'encoder' };
       }
     },
+    beginInterval(k, on) {
+      const live = lives.get(keyOf(k) ?? '');
+      if (!live || live.ended || live.interval) return false;
+      // What Take control had begun is closed first, so its line comes before the interval's. All of this is synchronous: the withholding is in place before anyone can read.
+      closeBurst(live);
+      live.interval = { from: now(), typed: createTypedCollector(), on, controlBefore: live.control, ending: false };
+      live.epoch++;
+      live.grabbed = null;
+      live.pictures.clear();
+      changed(live.key);
+      return true;
+    },
+    endInterval(k, why) {
+      const live = lives.get(keyOf(k) ?? '');
+      const iv = live?.interval;
+      if (!live || !iv || iv.ending) return;
+      iv.ending = true;
+      // Held keys go up first, and the screen stays withheld until they have: only then does the interval end.
+      void releaseHeld(live)
+        .catch(() => undefined)
+        .then(() => {
+          if (!live.ended) closeInterval(live, why);
+        });
+    },
+    held: (k) => !!lives.get(keyOf(k) ?? '')?.interval,
     end: (k) => end(keyOf(k) ?? ''),
     endAll() {
       for (const key of [...lives.keys(), ...lost.keys()]) end(key);

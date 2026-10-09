@@ -53,8 +53,8 @@ export interface Recorder {
   readonly stoppedBy: RecorderStop | null;
   /** Offers the screen as it was at `at` (ms on the stage's clock); `hash` tells it from the last one fed. */
   add(frame: RawFrame, hash: string, at: number): Promise<AddResult>;
-  /** The person used the screen from `fromAt` to `toAt` (the same clock). */
-  mark(fromAt: number, toAt: number): void;
+  /** The person used the screen from `fromAt` to `toAt` (the same clock); `handoff`: the interval of a hand-off (#178), kept apart in the file. */
+  mark(fromAt: number, toAt: number, kind?: 'handoff'): void;
   /** Ends the recording at `stopAt` and builds the file. Idempotent. */
   finish(stopAt: number): Promise<RecordingOutcome>;
   /** Drops everything without a file. */
@@ -88,7 +88,7 @@ export function createRecorder(deps: { sink: RecorderSink; limits?: Partial<Reco
   // Set when the end starts being built: the offers queued before it are still taken.
   let ending = false;
   let aborted = false;
-  const marks: { from: number; to: number }[] = [];
+  const marks: { from: number; to: number; kind?: 'handoff' }[] = [];
   // Offers and the end are done one after the other: a stage that ends while a frame is being handed over waits for it.
   let chain: Promise<unknown> = Promise.resolve();
   const serial = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -192,7 +192,7 @@ export function createRecorder(deps: { sink: RecorderSink; limits?: Partial<Reco
     const finalCuts = kept0.filter((c) => c.atMs <= duration);
     const realMs = realAtMedia(finalCuts, duration);
     // The marks are the stage's times; the strip is the video's.
-    const ranges: { fromMs: number; toMs: number }[] = [];
+    const ranges: { fromMs: number; toMs: number; kind?: 'handoff' }[] = [];
     for (const m of marks) {
       const realFrom = m.from - start;
       const realTo = Math.max(m.to, m.from + RECORDING_MARK_MIN_MS) - start;
@@ -205,13 +205,16 @@ export function createRecorder(deps: { sink: RecorderSink; limits?: Partial<Reco
         toMs = Math.min(duration, fromMs + RECORDING_MARK_MIN_MS);
         if (toMs <= fromMs) fromMs = Math.max(0, toMs - RECORDING_MARK_MIN_MS);
       }
-      if (toMs > fromMs) ranges.push({ fromMs, toMs });
+      if (toMs > fromMs) ranges.push({ fromMs, toMs, ...(m.kind ? { kind: m.kind } : {}) });
     }
-    ranges.sort((a, b) => a.fromMs - b.fromMs);
+    // A hand-off interval is never the one a crowd of marks pushes out: the cap drops the others first.
+    const handoffs = ranges.filter((r) => r.kind === 'handoff');
+    const keptMarks = ranges.length > RECORDING_MARKS_MAX ? [...handoffs, ...ranges.filter((r) => r.kind !== 'handoff').slice(0, Math.max(0, RECORDING_MARKS_MAX - handoffs.length))] : ranges;
+    keptMarks.sort((a, b) => a.fromMs - b.fromMs);
     return {
       ok: true,
       bytes,
-      meta: { durationMs: duration, width: size.width, height: size.height, ...(truncated ? { truncated } : {}), ...(deps.openedAt !== undefined ? { startedAfterMs: Math.max(0, Math.round(start - deps.openedAt)) } : {}), marks: ranges.slice(0, RECORDING_MARKS_MAX), ...(finalCuts.length ? { realMs, cuts: finalCuts } : {}) },
+      meta: { durationMs: duration, width: size.width, height: size.height, ...(truncated ? { truncated } : {}), ...(deps.openedAt !== undefined ? { startedAfterMs: Math.max(0, Math.round(start - deps.openedAt)) } : {}), marks: keptMarks.slice(0, RECORDING_MARKS_MAX), ...(handoffs.length ? { handoff: true as const } : {}), ...(finalCuts.length ? { realMs, cuts: finalCuts } : {}) },
     };
   }
 
@@ -223,9 +226,9 @@ export function createRecorder(deps: { sink: RecorderSink; limits?: Partial<Reco
       return stopped;
     },
     add: (frame, hash, at) => serial(() => offer(frame, hash, at)),
-    mark(fromAt, toAt) {
+    mark(fromAt, toAt, kind) {
       if (finished || aborted || toAt < fromAt) return;
-      marks.push({ from: fromAt, to: toAt });
+      marks.push({ from: fromAt, to: toAt, ...(kind ? { kind } : {}) });
     },
     finish(stopAt) {
       finished ??= serial(() => build(stopAt)).catch((): RecordingOutcome => ({ ok: false, reason: 'encoder' }));

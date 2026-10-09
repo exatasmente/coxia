@@ -19,8 +19,13 @@ export interface RecordingMeta {
   height: number;
   /** The recording stopped at a limit and holds only what came before it. */
   truncated?: 'size' | 'time';
-  /** The intervals in which the person used the screen, in ms of the video from its start (media time), so they sit right on the player's strip. */
-  marks: { fromMs: number; toMs: number }[];
+  /**
+   * The intervals in which the person used the screen, in ms of the video from its start (media time), so they sit right on the player's strip. `kind: 'handoff'` is the one
+   * interval of a hand-off (#178): the agent gave the screen to the person, and the video keeps what they did.
+   */
+  marks: { fromMs: number; toMs: number; kind?: 'handoff' }[];
+  /** The video holds a hand-off interval (#178): what the person typed while they held the screen can be seen in it. */
+  handoff?: true;
   /** The time from the stage's screen opening to the first frame of the video: the recording starts when the screen is first used, not when it opens (#176). Absent in a recording made before it was kept. */
   startedAfterMs?: number;
   /** The stage's own time between the first frame and the end of the video: `durationMs` plus every `skippedMs`. Only with `cuts`; without them it is `durationMs`. */
@@ -101,10 +106,11 @@ export interface LiveScreen {
 
 /**
  * The answer to a viewer that asks for the latest frame: no live screen (the stage ended, or there never was one); the same picture as the sequence number it holds;
- * or a newer one. `screen` is the display's own size, which the pointer is mapped to; `width` and `height` are the picture's.
+ * or a newer one; or `held`: the person has the screen for a hand-off (#178) and no picture of it is served to a paired browser. `screen` is the display's own size, which the pointer is mapped to; `width` and `height` are the picture's.
  */
 export type ScreenFrameAnswer =
   | { state: 'none' }
+  | { state: 'held' }
   | { state: 'same'; seq: number; control: boolean }
   | { state: 'frame'; seq: number; width: number; height: number; screen: { width: number; height: number }; jpeg: Uint8Array; control: boolean };
 

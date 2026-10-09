@@ -47,6 +47,10 @@ function useFrames(runId: string, width: number): Frames {
         if (answer.state === 'none') {
           next = { ended: true, remote: false, failed: false };
           again = false;
+        } else if (answer.state === 'held') {
+          // A hand-off (#178): the person holds the screen on the computer, and no picture of it is served here.
+          since = 0;
+          next = { src: null, screen: null, failed: false };
         } else if (answer.state === 'same') {
           next = { remote: answer.control, failed: false };
         } else {

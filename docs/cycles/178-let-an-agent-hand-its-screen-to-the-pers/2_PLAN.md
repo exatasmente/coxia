@@ -35,13 +35,15 @@ New code in `src/main/screen/` (`typedValues.ts`, `handoff.ts`, `maskExact.ts`),
 - #177's `PendingAsk.kind` (`'hold' | 'confirm'`) gets `'handoff'`; the entry has `why: 'agent'`, `agentWords` = `what`, and a new optional `handoff?: { why?: string; taken: boolean; paths: HandoffPaths }`. No new field on `Run`: the spec's "record handed out with the run" (rule 6) is met by `OpenScreenInfo.pending` of `runs:screens(thread)`, which a run's screen and a conversation read alike (decision D2).
 - `ScreenFrameAnswer` gets `{ state: 'held' }`. `RecordingMeta` gets `handoff?: true`; `marks[]` entries get `kind?: 'handoff'`. `Recorder.mark(from, to, kind?)`. `RecordingOutcome` is unchanged.
 - `ExecResult.refused` gets `'handoff'`; `SessionOptions` and `HostSessionOptions` get `held?: () => boolean` and `mask?: (text: string) => string`.
-- Hub: `Live.interval: { from: number; last: number; typed: TypedCollector; on: { input(): void; end(r: IntervalEnd): void } } | null` and `Live.epoch: number`; `ScreenHub` gets `beginInterval(key, on): boolean`, `endInterval(key, why): void`, `held(key): boolean`; `frame(key, since, width, viewer = 'web' | 'person')`. `IntervalEnd = { from: number; to: number; typed: string[]; why: 'back' | 'expired' | 'aborted' | 'lost' | 'ended' }`.
+- Hub: `Live.interval: { from; typed: TypedCollector; on: IntervalListener; controlBefore: boolean; ending: boolean } | null`, `Live.epoch` and `Live.seq` (the sequence number of a frame no longer comes from the cache, which an interval drops, so it never goes back); `ScreenHub` gets `beginInterval(key, on): boolean`, `endInterval(key, why): void`, `held(key): boolean`; `frame(key, since, width, viewer = 'web' | 'person')`. `IntervalEnd = { from: number; to: number; typed: string[]; why: 'back' | 'expired' | 'aborted' | 'lost' | 'ended' }`.
 - `TypedValues` (per call, `typedValues.ts`): `add(values)`, `mask(text)`, `hits(text)`, `had`, `clear()`. `CallHandoff` (per call, `handoff.ts`): `typed`, `request(input)`, `active()`, `end()`.
 - Audit entry `screen-handoff`: `fields = { agent, place, what, outcome, from, to }`, `via` `sandbox | host`, never a typed value. Thread codes (both `main` catalogs): `runner.screen.handoffAsked` (with `what`), `handoffTaken`, `handoffBack`, `handoffDeclined`, `handoffExpired`, `handoffUsed` (the one interval line; the existing `runner.screen.used` says "stage", wrong in a conversation).
 
 ## 3. Configuration and migration
 
-None. The wait limits, the warning and the masker have no setting (spec, out of scope), so `SCHEMA_VERSION` stays and no step is added to `STEPS` (`rules/config-schema.md`); `test/config-schema.test.ts` and `test/config-migrations.test.ts` are not touched, which also keeps the merge with #170 (schema bump) conflict-free. Nothing is written to disk by this feature (spec rules 19, 21, 28); a test greps the new files for fs writes.
+None for the configuration. The wait limits, the warning and the masker have no setting (spec, out of scope), so `SCHEMA_VERSION` stays and no step is added to `STEPS` (`rules/config-schema.md`); `test/config-schema.test.ts` and `test/config-migrations.test.ts` are not touched, which also keeps the merge with #170 (schema bump) conflict-free.
+
+**The run file does change (found in commit 3, missing from the first version of this plan).** The `recording` object of the run file's schema allows no other property, and `RecordingMeta` gets `handoff` and a `kind` on a mark. Following the precedent of #176, `RUN_VERSION` goes from 3 to 4 (`runVersionOf`: 4 when a `webm` record has `handoff` or a mark with a `kind`), the schema lists the two properties and the version enum becomes `[1, 2, 3, 4]`. Only a run whose recording holds a hand-off is written as 4; every other run keeps its version, so a downgrade to a build that reads 3 loses only those runs (it says "written by a newer app" and leaves the file alone). `test/runs-store.test.ts` moves its "newer" fixture from 4 to 5. Nothing is written to disk by this feature (spec rules 19, 21, 28); a test greps the new files for fs writes.
 
 ## 4. Flow and prompts
 
@@ -130,6 +132,7 @@ New: `typed-values`, `maskExact` (copied), `handoff-service`, `handoff-ui`, `han
 | D10 | The wait limits are constants; no setting, no schema bump | A setting (spec open question 3) |
 | D11 | The notice target carries both `id` and `thread` | A new push screen name |
 | D12 | The warning is composed from `paths` in `src/shared/handoff.ts`, every time | Remembering the acknowledgement per agent |
+| D13 | A recording that holds a hand-off makes the run file format 4 (schema lists `handoff` and the mark's `kind`) | Writing the new properties under version 3: the builds that read 3 would call the run invalid instead of newer |
 
 Maintainer answers at gate 2 (waived), 2026-10-09: a recording that holds a hand-off interval stays playable on a paired browser, like any other recording (rejected: computer only, a check inside the evidence handler). The other choices of section 8 stand as the plan writes them.
 
