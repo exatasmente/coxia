@@ -65,6 +65,10 @@ export interface WrapUpPlan {
 }
 
 export interface ProcedureSession {
+  /** Who is writing and from where, as a record of this call would say it: what an offer made from the call is written as. */
+  readonly writer: Writer;
+  /** The run's issue number, for the audit; absent outside a run. */
+  readonly issue?: number;
   /** The list the call's prompt carries; empty text when nothing fits. */
   list: Listed;
   tools: ProcedureTools;
@@ -633,6 +637,8 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     };
 
   return {
+    writer: { ...ctx.writer },
+    ...(ctx.issue !== undefined ? { issue: ctx.issue } : {}),
     list,
     has: { screen: hasScreen, commands: hasCommands },
     plan,
