@@ -53,6 +53,7 @@ export function RecordingPlayer({ record, url }: { record: EvidenceView; url: st
               ? t('ui.cycle.rec.durationReal', { time: clock(0, meta.durationMs), real: clock(0, meta.realMs ?? realAtMedia(cuts, meta.durationMs)) })
               : t('ui.cycle.rec.duration', { time: clock(0, meta.durationMs) })}
           </p>
+          {meta.startedAfterMs !== undefined && meta.startedAfterMs >= 1000 && <p className="faint small cy-rec-started">{t('ui.cycle.rec.startedAfter', { time: clock(0, meta.startedAfterMs) })}</p>}
           {cuts.length > 0 && <p className="faint small cy-rec-real">{t('ui.cycle.rec.realTime', { time: clock(0, real) })}</p>}
           {meta.truncated && <p className="small cy-rec-capped">{t(meta.truncated === 'size' ? 'ui.cycle.rec.truncatedSize' : 'ui.cycle.rec.truncatedTime')}</p>}
           {meta.marks.length > 0 && (

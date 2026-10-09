@@ -233,6 +233,21 @@ describe('the version of a run file', () => {
     expect(onDisk(run.id).version).toBe(1);
   });
 
+  it('is 3 for a recording that says how long after the screen opened it started, though nothing was cut (#176)', () => {
+    const started = { ...recording, recording: { ...recording.recording!, startedAfterMs: 90_000 } };
+    expect(runVersionOf({ evidence: { 'ev-1': started } })).toBe(3);
+    const store = createRunStore(dir);
+    const run = store.create(fresh());
+    store.update(run.id, (r) => recordEvidence(r, started, at(2)));
+    expect(onDisk(run.id).version).toBe(3);
+    expect(store.get(run.id)?.evidence?.['ev-1']).toEqual(started);
+    const base = JSON.parse(JSON.stringify(fresh()));
+    const withIt = (v: unknown) => parseRun({ ...base, evidence: { 'ev-1': { ...JSON.parse(JSON.stringify(started)), recording: { ...started.recording, startedAfterMs: v } } } }).ok;
+    expect(withIt(0)).toBe(true);
+    expect(withIt(-1)).toBe(false);
+    expect(withIt(1.5)).toBe(false);
+  });
+
   it('reads the version from the content: 1 without a recording, 2 with one, 3 with one that holds cuts', () => {
     expect(runVersionOf({ evidence: { 'ev-1': recording } })).toBe(2);
     expect(runVersionOf({ evidence: { 'ev-1': { ...recording, recording: { ...recording.recording!, cuts: [{ atMs: 1, skippedMs: 2 }] } } } })).toBe(3);

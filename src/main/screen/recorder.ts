@@ -67,7 +67,8 @@ export interface RecorderLimits {
   reserve: number;
 }
 
-export function createRecorder(deps: { sink: RecorderSink; limits?: Partial<RecorderLimits> }): Recorder {
+/** `openedAt` is when the screen opened (the same clock as the offers): the meta says how long after it the first frame came. */
+export function createRecorder(deps: { sink: RecorderSink; limits?: Partial<RecorderLimits>; openedAt?: number }): Recorder {
   const sink = deps.sink;
   const limits: RecorderLimits = { bytes: RECORDING_MAX_BYTES, ms: RECORDING_MAX_MS, reserve: RECORDING_RESERVE_BYTES, ...deps.limits };
   // The stage's time of the first frame that was fed: set only when the encoder took one, so a dropped first frame does not leave the video starting late.
@@ -210,7 +211,7 @@ export function createRecorder(deps: { sink: RecorderSink; limits?: Partial<Reco
     return {
       ok: true,
       bytes,
-      meta: { durationMs: duration, width: size.width, height: size.height, ...(truncated ? { truncated } : {}), marks: ranges.slice(0, RECORDING_MARKS_MAX), ...(finalCuts.length ? { realMs, cuts: finalCuts } : {}) },
+      meta: { durationMs: duration, width: size.width, height: size.height, ...(truncated ? { truncated } : {}), ...(deps.openedAt !== undefined ? { startedAfterMs: Math.max(0, Math.round(start - deps.openedAt)) } : {}), marks: ranges.slice(0, RECORDING_MARKS_MAX), ...(finalCuts.length ? { realMs, cuts: finalCuts } : {}) },
     };
   }
 

@@ -310,7 +310,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       } catch {
         return false;
       }
-      const live: Live = { run: screen.run, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits }) : null, cancelTick: null, stopSaid: false, sawWindow: false, usedSince: null, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, readingFrom: 0, failed: 0, pictures: new Map() };
+      const live: Live = { run: screen.run, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits, openedAt: now() }) : null, cancelTick: null, stopSaid: false, sawWindow: false, usedSince: null, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, readingFrom: 0, failed: 0, pictures: new Map() };
       lives.set(screen.run, live);
       // A connection that is lost ends the screen: it is never dialled again, since what is at the socket's path is not the app's to trust after the agent has run.
       conn.onClose(() => {

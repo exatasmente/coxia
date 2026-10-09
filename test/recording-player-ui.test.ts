@@ -114,6 +114,22 @@ describe('the player of a video with cuts', () => {
     expect(html).toContain(t('ui.cycle.rec.realTime', { time: '0:00' }));
   });
 
+  it('says the stage\'s time on the screen at the point being played, and how long after the screen opened the recording started', () => {
+    const html = player(withCuts([cut(15_000, 300_000)], { startedAfterMs: 754_000 }));
+    expect(html).toContain(t('ui.cycle.rec.realTime', { time: '0:00' }));
+    expect(CATALOGS.en['ui.cycle.rec.realTime']).toBe('On the screen at {time}');
+    expect(html).toContain(t('ui.cycle.rec.startedAfter', { time: '12:34' }));
+    // Without the field (a recording made before it was kept), or when it is under a second, the line is not there.
+    expect(player(withCuts([cut(15_000, 300_000)]))).not.toContain('cy-rec-started');
+    expect(player(withCuts([cut(15_000, 300_000)], { startedAfterMs: 400 }))).not.toContain('cy-rec-started');
+  });
+
+  it('says how long after the screen opened it started also for a video nothing was cut from', () => {
+    const html = player(piece({ recording: { durationMs: 60_000, startedAfterMs: 90_000, width: 1280, height: 800, marks: [] } }));
+    expect(html).toContain(t('ui.cycle.rec.startedAfter', { time: '1:30' }));
+    expect(html).not.toContain(t('ui.cycle.rec.realTime', { time: '0:00' }));
+  });
+
   it('draws no tick for the cut at the end of the video, and no strip when that is the only cut', () => {
     const html = player(withCuts([cut(60_000, 300_000)]));
     expect(html).not.toContain('cy-rec-cut');
@@ -138,7 +154,7 @@ describe('the player of a video with cuts', () => {
 
   it.each(['en', 'pt-BR'] as const)('is worded in %s, with nothing left as a code or a hole', (language) => {
     setLanguage(language);
-    for (const key of ['ui.cycle.rec.durationReal', 'ui.cycle.rec.realTime', 'ui.cycle.rec.cuts', 'ui.cycle.rec.cut'] as const) {
+    for (const key of ['ui.cycle.rec.durationReal', 'ui.cycle.rec.realTime', 'ui.cycle.rec.cuts', 'ui.cycle.rec.cut', 'ui.cycle.rec.startedAfter'] as const) {
       expect(CATALOGS[language][key], key).toBeTruthy();
       expect(t(key, { time: 'T', real: 'R', at: 'A', skipped: 'S' }), key).not.toMatch(/\{\w+\}|ui\.cycle/);
     }

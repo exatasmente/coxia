@@ -21,6 +21,8 @@ export interface RecordingMeta {
   truncated?: 'size' | 'time';
   /** The intervals in which the person used the screen, in ms of the video from its start (media time), so they sit right on the player's strip. */
   marks: { fromMs: number; toMs: number }[];
+  /** The time from the stage's screen opening to the first frame of the video: the recording starts when the screen is first used, not when it opens (#176). Absent in a recording made before it was kept. */
+  startedAfterMs?: number;
   /** The stage's own time between the first frame and the end of the video: `durationMs` plus every `skippedMs`. Only with `cuts`; without them it is `durationMs`. */
   realMs?: number;
   /** Where an idle stretch was shortened, by media time, in order; at most `RECORDING_CUTS_MAX`. Absent when nothing was cut. */

@@ -60,6 +60,21 @@ describe('what is fed', () => {
     expect(sink.fed[1].key).toBe(false);
   });
 
+  it('says how long after the screen opened the first frame came, from the frame that was taken and not the one dropped (#176)', async () => {
+    const sink = fakeSink();
+    const rec = createRecorder({ sink, openedAt: T0 - 5000 });
+    sink.behind = 1;
+    await rec.add(frameOf(1), 'a', T0);
+    await rec.add(frameOf(2), 'b', T0 + 2000);
+    const out = await rec.finish(T0 + 2500);
+    expect(out.ok && out.meta.startedAfterMs).toBe(7000);
+    // Without the time the screen opened, nothing is said.
+    const plain = setup();
+    await plain.rec.add(frameOf(1), 'a', T0);
+    const bare = await plain.rec.finish(T0 + 100);
+    expect(bare.ok && 'startedAfterMs' in bare.meta).toBe(false);
+  });
+
   it('starts the video at the first frame that was taken: a dropped first frame does not leave it starting late (#176)', async () => {
     const { sink, rec } = setup();
     sink.behind = 1;

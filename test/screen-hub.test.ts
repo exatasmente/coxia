@@ -742,6 +742,15 @@ describe('a screen in use', () => {
     expect(r.timers.filter((t) => t.live && t.ms === 1000)).toHaveLength(1);
   });
 
+  it('says in the recording how long after the screen opened the first window was used (#176)', async () => {
+    const r = await bare();
+    r.conn.windows = true;
+    await r.second();
+    const out = await r.hub.finish('r-1');
+    // The screen opened at t and the first look with a window was a second later.
+    expect(out?.ok && out.meta.startedAfterMs).toBe(1000);
+  });
+
   it('is handed out as recording once a window is on the screen, waiting again when it is bare, and tells the list each time', async () => {
     const r = await bare();
     const changes = () => r.changed.length;
