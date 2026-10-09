@@ -143,6 +143,8 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
   const hasCommands = !!ctx.commands;
   // Which source a successful save came from a draft of: a save from any draft of a source keeps what that source drafted, so the last turn leaves no card for it.
   const savedFrom = new Set<'screen' | 'commands'>();
+  // A record was saved with no draft behind it.
+  let undrafted = false;
 
   const say = (code: string, params: Record<string, string | number>): void => {
     try {
@@ -401,6 +403,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     else replaced.add(rec.id);
     if (input.kind === 'gui') savedFrom.add('screen');
     else if (input.draft !== undefined) savedFrom.add('commands');
+    else undrafted = true;
     seen.set(rec.id, rec.revision);
     // What the draft held is kept now: the next draft of this screen starts after it.
     if (upTo !== undefined) ctx.screen?.advance(upTo);
@@ -630,7 +633,8 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
       text: parts.join('\n\n'),
       words,
       screen: planned.some((x) => x.source === 'screen'),
-      settle: () => offers.flatMap((x) => (x.offer && !savedFrom.has(x.source) ? [x.offer] : [])),
+      // A save from a draft keeps that draft; a save with none is the agent keeping its own words, and no card follows it.
+      settle: () => (undrafted ? [] : offers.flatMap((x) => (x.offer && !savedFrom.has(x.source) ? [x.offer] : []))),
     };
   }
 

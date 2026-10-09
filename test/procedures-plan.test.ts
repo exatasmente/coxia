@@ -212,13 +212,13 @@ describe('what is left to offer after the turn', () => {
     expect(plan?.settle()).toHaveLength(1);
   });
 
-  it('a save of its own words, with no draft, is not the draft kept', async () => {
+  it('a save of its own words, with no draft, is the agent keeping its own: no card follows it', async () => {
     const s = shell();
     fought(s);
     const { session } = make({ commands: s.source });
     const plan = session.plan({ words: '' });
     await session.tools.save({ kind: 'repo', key: 'api', title: 'Run the tests', steps: [{ text: 'Run npm test' }] });
-    expect(plan?.settle()).toHaveLength(1);
+    expect(plan?.settle()).toEqual([]);
   });
 
   it('settle can be read twice and does not need the shell any more', () => {

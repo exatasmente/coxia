@@ -171,7 +171,7 @@ describe('what it leaves', () => {
     expect(raised[0].writer).toMatchObject({ by: 'builder', surface: 'stage', stage: 'development', ref: 'app#123', permission: 'worktree', shell: 'sandbox' });
   });
 
-  it('a draft the agent saved from in the turn becomes none, and a save of its own does not count', async () => {
+  it('a draft the agent saved from in the turn becomes none, and a save of its own without the draft counts as keeping too', async () => {
     const a = make({ commands: shellOf(FOUGHT) });
     await runWrapUp(deps(answering((c) => void c.procedures?.save({ kind: 'repo', key: 'api', title: 'Fix and run the tests', draft: 'c-1' }))), run(a.session));
     expect(raised).toEqual([]);
@@ -179,7 +179,7 @@ describe('what it leaves', () => {
 
     const b = make({ commands: shellOf(FOUGHT) });
     await runWrapUp(deps(answering((c) => void c.procedures?.save({ kind: 'repo', key: 'api', title: 'Run the tests', steps: [{ text: 'Run npm test' }] }))), run(b.session));
-    expect(raised).toHaveLength(1);
+    expect(raised).toEqual([]);
   });
 
   it('a screen and a shell can leave two', async () => {
