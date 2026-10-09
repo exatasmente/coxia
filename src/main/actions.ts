@@ -1061,8 +1061,8 @@ async function publishConflict(a: ReleaseAction): Promise<string> {
 }
 
 // ---- the push of a run's branch -----------------------------------------------------------------------------------------------------------
-// The runner never pushes: it proposes the push here and it waits for its own "sim" whatever the agents' autonomy. The action names a run, never a
-// folder: the worktree and the branch are read from the run's file when it is approved, so a stored action cannot point the push anywhere else.
+// By default the runner does not push: it proposes the push here and it waits for its own "sim". Only the autonomy block's "push" choice lets a run push
+// by itself, through pushRunBranchAuto below, with the same checks and an audit line of its own. The action names a run, never a folder: the worktree and the branch are read from the run's file when it is approved, so a stored action cannot point the push anywhere else.
 
 /** Proposes the push of a run's branch. A push of the same run that still waits is replaced: what goes is the branch as it is when the "sim" comes. */
 export function proposeRunPush(input: { key: string; issue: number; issueTitle?: string; summary: string; detail?: string; runId: string; branch: string; notify?: { title: string; body: string } }): ReleaseAction | null {
