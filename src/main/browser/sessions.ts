@@ -58,6 +58,8 @@ export interface AcquireRequest {
   seesImages: boolean;
   /** Runs when the screen ends, after the browser is gone: whatever the caller kept for it (a shell session). */
   onClose?: () => Promise<void> | void;
+  /** The clocks of the call that holds the screen (a stage's watchdog, an answer's): they stand still while a question to the person waits. */
+  pause?: () => () => void;
 }
 
 /** What the screen was when it ended, handed to those who learn from it (the procedure memory) before its folder is removed. */
@@ -130,6 +132,8 @@ interface Session {
   log: StepLog;
   /** Answers that hold the screen now. */
   answers: number;
+  /** The clocks of the calls that hold it, stopped together with the screen's own while a question waits. */
+  pauses: Set<() => () => void>;
   /** Steps of the browser in progress. */
   steps: number;
   /** Questions to the person that wait (they stop the clocks). */
@@ -336,8 +340,9 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
     return s.closing.then(() => true);
   }
 
-  const leaseOf = (s: Session, context: AskContext): ScreenLease => {
+  const leaseOf = (s: Session, context: AskContext, pause?: () => () => void): ScreenLease => {
     let released = false;
+    if (pause) s.pauses.add(pause);
     return {
       key: s.key,
       browser: s.inter as Intermediary,
@@ -348,6 +353,7 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       release() {
         if (released) return;
         released = true;
+        if (pause) s.pauses.delete(pause);
         s.answers = Math.max(0, s.answers - 1);
         settle(s);
       },
@@ -359,14 +365,29 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
     agent: s.agent,
     place: s.place,
     ...(s.issue ? { issue: s.issue } : {}),
-    // A question to the person stops the clocks of the screen while it waits.
+    // A question to the person stops the clocks of the screen, and of the calls that hold it, while it waits.
     pause: () => {
       s.paused++;
       settle(s);
+      const calls: (() => void)[] = [];
+      for (const p of s.pauses) {
+        try {
+          calls.push(p());
+        } catch {
+          // A clock that cannot be stopped is the caller's.
+        }
+      }
       let resumed = false;
       return () => {
         if (resumed) return;
         resumed = true;
+        for (const resume of calls) {
+          try {
+            resume();
+          } catch {
+            // Likewise.
+          }
+        }
         s.paused = Math.max(0, s.paused - 1);
         settle(s);
       };
@@ -391,7 +412,7 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       }
       open.answers++;
       settle(open);
-      return { ok: true, lease: leaseOf(open, contextOf(open)) };
+      return { ok: true, lease: leaseOf(open, contextOf(open), req.pause) };
     }
 
     const grants = d.grants(req.agent);
@@ -433,6 +454,7 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       masks: createMaskSet(),
       log: createStepLog(undefined, now),
       answers: 1,
+      pauses: new Set(),
       steps: 0,
       paused: 0,
       idleAt: null,
@@ -542,7 +564,7 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       console.error('[browser] could not audit a screen', e instanceof Error ? e.message : e);
     }
     changed(s.key);
-    return { ok: true, lease: leaseOf(s, context) };
+    return { ok: true, lease: leaseOf(s, context, req.pause) };
   }
 
   const infoOf = (s: Session): OpenScreenInfo => {

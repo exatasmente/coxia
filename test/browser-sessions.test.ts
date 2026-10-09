@@ -364,6 +364,24 @@ describe('the idle clock', () => {
     expect(s.sessions.has(callKey('general', 'web'))).toBe(false);
   });
 
+  it('stops the clocks of the call that holds the screen while a question waits, and starts them when it is answered', async () => {
+    const s = setup();
+    const events: string[] = [];
+    const lease = await s.lease({ pause: () => (events.push('pause'), () => void events.push('resume')) });
+    const asked = s.asks.confirm({ ...lease.context, confirmKind: 'send', words: 'send the report' });
+    expect(events).toEqual(['pause']);
+    s.asks.answer(s.asks.list()[0].id, 'no', 'window');
+    await asked;
+    expect(events).toEqual(['pause', 'resume']);
+    // The call is over: its clock is no longer the screen's to stop.
+    lease.release();
+    const again = await s.lease();
+    const next = s.asks.confirm({ ...again.context, confirmKind: 'send', words: 'send it again' });
+    s.asks.answer(s.asks.list()[0].id, 'no', 'window');
+    await next;
+    expect(events).toEqual(['pause', 'resume']);
+  });
+
   it('starts over when the person uses the screen, and is not touched by someone only watching', async () => {
     const s = setup();
     const lease = await s.lease();

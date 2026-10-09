@@ -330,6 +330,9 @@ export interface BootOptions {
   sandbox?: SandboxService;
   /** The live screens of the stages that have a virtual display (a real hub over a fake connection, or a fake hub); none by default. */
   screens?: RunnerDeps['screens'];
+  /** The screens of the agents that have one (the app's browser) and the questions they ask; none by default. */
+  sessions?: RunnerDeps['sessions'];
+  asks?: RunnerDeps['asks'];
   timeoutMs?: number;
   /** Replaces the idle limit and the cap of a stage one by one. */
   limits?: { idleMs?: number; maxMs?: number };
@@ -382,6 +385,8 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     commandRunner: options.commandRunner ?? fakeCommands(),
     sandbox: options.sandbox,
     screens: options.screens,
+    sessions: options.sessions,
+    asks: options.asks,
     timeoutMs: options.timeoutMs,
     limits: options.limits,
     probeBudget: options.probeBudget,

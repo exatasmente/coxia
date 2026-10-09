@@ -48,6 +48,9 @@ import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import type { ScreenHub } from '../screen/hub';
 import { grantsFor, withheldText } from '../browser/guard';
+import { type CallScreen, modelSeesImages, openCallScreen } from '../browser/callScreen';
+import type { ScreenAsks } from '../browser/asks';
+import type { ScreenSessions } from '../browser/sessions';
 
 // One attempt at one stage: build what the agent reads, run it, write the documents it returned into the cycle folder and commit what it did.
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
@@ -109,6 +112,9 @@ export interface ExecutorDeps {
   dataDir: () => string;
   /** The live screens of the stages that have a virtual display; absent: none is opened. */
   screens?: ScreenHub;
+  /** The screens of the agents that have one (the app's browser), and the questions they ask the person; absent: no stage gets a browser. */
+  sessions?: ScreenSessions;
+  asks?: ScreenAsks;
 }
 
 export interface StageRun {
@@ -365,10 +371,12 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
   };
   // A test workspace never reaches real sites: the hosts the agent was allowed are withheld, and the thread says so (the agent keeps the workspace's own network).
   const grants = grantsFor(agent);
-  if (!host && grants.withheld.includes('hosts')) appendGui('runner.screen.testWorkspace', { what: withheldText('hosts') });
+  // (An agent with a screen has it said once by the screen sessions, which read the same grants.)
+  if (!host && grants.withheld.includes('hosts') && !(agent.screen && d.sessions)) appendGui('runner.screen.testWorkspace', { what: withheldText('hosts') });
   try {
-    // Only the stage that produces the QA output asks for a display; the browsers folder, when the person set one, comes with every sandbox and every host session.
-    const display = outputKindOf(stage.kind) === 'qa';
+    // The stage that produces the QA output asks for a display, and so does the stage of an agent that has a screen (the app's browser draws on it); the browsers folder,
+    // when the person set one, comes with every sandbox and every host session.
+    const display = outputKindOf(stage.kind) === 'qa' || (own && agent.screen === true && grants.browser && !!d.sessions);
     const session = host
       ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal, display })
       : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display, agent: { allowedHosts: grants.allowedHosts } });
@@ -506,20 +514,51 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   // before the sandbox is made, because the sandbox shares the folders those links point to.
   // A documentation run reads and writes text: it runs no code, so it needs none of the repository's dependencies.
   if ((writes || kind === 'qa') && !run.docs) await ensureDependencies(d, run, stage.id);
+  // The run's screens belong to a stage: what an earlier stage (or an earlier attempt) left open is closed before this one begins.
+  await d.sessions?.closeThread(runThreadId(run.id), 'stage');
   // The watchdog is made with the agent call, after the session: until then a pause has nothing to stop.
   const clock: StageClock & { watch?: Watchdog } = { pause: () => clock.watch?.pause() ?? (() => undefined), beat: () => clock.watch?.beat(), allowed: new Set() };
   // A documentation run's agent gets no command door at all, whatever its `shell` says.
   const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host') ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock, true) : null;
+  let screen: CallScreen | null = null;
   try {
-    return await runStage(d, run, flow, abort, usage, carried, session, clock);
+    screen = await openStageScreen(d, run, stage, agent, session, clock);
+    return await runStage(d, run, flow, abort, usage, carried, session, clock, screen);
   } finally {
+    screen?.release();
     // The live screen goes first, whatever way the stage ended: nothing reads the display once its sandbox is closing. A stage that failed before it could build the
     // recording itself still keeps what was recorded (nothing then, when `runStage` ended the screen already).
     keepScreenRecording(d, run, stage, agent, await d.screens?.finish(runKey(run.id)).catch(() => null) ?? null);
     d.screens?.end(runKey(run.id));
+    // The app's browser ends with the stage, and before the display it may be drawing on.
+    await d.sessions?.closeThread(runThreadId(run.id), 'stage').catch(() => undefined);
     // Whatever happened, nothing the stage started outlives it. Closing never throws, and a finished stage is not turned into a failed one by it.
     await session?.close().catch(() => undefined);
   }
+}
+
+/**
+ * The agent's screen for this stage: the app's browser when the agent has the switch (drawn on the display of its shell session, or on one of the app's own when it has none),
+ * and the confirmation tool where a stage has a display, a host list or the computer's shell. The stage keeps its run key; what could not be opened has been said in the thread
+ * and the stage goes on without it.
+ */
+async function openStageScreen(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, session: SandboxSession | null, clock: StageClock): Promise<CallScreen | null> {
+  if (run.docs || !d.sessions || !d.asks) return null;
+  const lent = session?.screen && session.gui?.display === 'on' ? { socket: session.screen.socket, kind: session.screen.kind } : null;
+  const screen = await openCallScreen(
+    { sessions: d.sessions, asks: d.asks },
+    { key: runKey(run.id), thread: runThreadId(run.id), place: 'stage', stage: stage.id, issue: run.issue.iid, display: lent, agent, seesImages: modelSeesImages(agent), pause: clock.pause, hasDisplay: lent !== null },
+  );
+  // A browser on a display of its own (the agent has no shell session to lend one): the stage's live screen and recording follow that display, as they follow a session's.
+  const own = screen.lease?.display;
+  if (own?.own && d.screens && !(await d.screens.open({ key: runKey(run.id), thread: runThreadId(run.id), stage: stage.id, agent: agent.id, socket: own.socket, kind: 'sandbox' }))) {
+    try {
+      d.forum.append(runThreadId(run.id), { kind: 'system', author: { type: 'app' }, code: 'runner.screen.noConnect', params: { agent: agent.id }, stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
+    }
+  }
+  return screen;
 }
 
 /**
@@ -587,7 +626,7 @@ function missingDocuments(output: StageOutput, stage: FlowStage, folder: string)
   return stage.artifacts.filter((n) => !output.artifacts.some((a) => a.name === n) && !existsSync(join(folder, n)));
 }
 
-async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, carried: readonly AttachmentRef[] | undefined, session: SandboxSession | null, clock?: StageClock & { watch?: Watchdog }): Promise<StageRun> {
+async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, carried: readonly AttachmentRef[] | undefined, session: SandboxSession | null, clock?: StageClock & { watch?: Watchdog }, screen?: CallScreen | null): Promise<StageRun> {
   const config = d.config();
   const { agent, stage, kind } = pickAgent(config, run, flow);
   const wt = run.worktree;
@@ -788,6 +827,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     confine: writes ? { root: wt, ...(writeRoot ? { writeRoot, writeAllow } : {}), hooks: confinedHooks({ root: wt, writeRoot, writeAllow, commands, onDenied: denied }) } : undefined,
     readRoot: writes ? undefined : readConfinement(wt, agent.model.role ?? 'deep', denied),
     exec: session ?? undefined,
+    // The app's browser and the confirmation tool, when the agent has them: a screen that closes under the stage leaves the browser's calls answering that it is gone.
+    screen: screen?.toolset,
     evidence,
     onLooked,
     label: agent.id,
@@ -965,6 +1006,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     resetOpened(run.id, stage.id);
     // The live screen ends with the stage, before its sandbox does; its recording is kept whatever way the stage ended, a failed or cancelled one included.
     keepRecording(await d.screens?.finish(runKey(run.id)).catch(() => null) ?? null);
+    // The app's browser goes before the sandbox: it may be drawing on the display the sandbox lends it.
+    screen?.release();
+    await d.sessions?.closeThread(threadId, 'stage').catch(() => undefined);
     // The sandbox ends after the app read the answer, ran the repair round and kept what the agent looked at: no process of the stage can race the commit.
     await session?.close();
   }

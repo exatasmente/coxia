@@ -111,6 +111,8 @@ import { prompt } from '../cyclePrompts';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
 import type { ScreenHub } from '../screen/hub';
+import type { ScreenAsks } from '../browser/asks';
+import type { ScreenSessions } from '../browser/sessions';
 import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../shared/evidence';
 import { dropEvidence, readEvidence } from '../evidence/store';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
@@ -218,6 +220,9 @@ export interface RunnerDeps {
   sandbox?: SandboxService;
   /** The live screens of the stages that have a virtual display; without it no stage opens one and no run carries `screen`. */
   screens?: ScreenHub;
+  /** The screens of the agents that have one (the app's browser) and the questions they ask the person; without them no stage gets a browser. */
+  sessions?: ScreenSessions;
+  asks?: ScreenAsks;
   /** Makes one small call to a provider to find out whether its key has budget again. Without it the runs that hit the refusal keep waiting. */
   probeBudget?: BudgetProbeFn;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
@@ -383,7 +388,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref) };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref) };
 
   /** The record of the activities as a call reads it: the front named whole, the others in short. Never a model call, never the file. */
   function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = []): string {
