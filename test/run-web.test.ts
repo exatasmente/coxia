@@ -52,10 +52,15 @@ describe('the run screen in a browser', () => {
   });
 
   it('has no desktop-only branch left: no screen of the cycle reads the platform, and no text says the app on the computer must do it', () => {
-    for (const f of readdirSync(CYCLE).filter((n) => /\.tsx?$/.test(n))) {
+    // The one exception, by decision (#157): the live screen's Take control is hidden in a paired browser, which only watches. The server refuses `screen:*` to it anyway.
+    const watchOnly = new Set(['LiveScreen.tsx']);
+    for (const f of readdirSync(CYCLE).filter((n) => /\.tsx?$/.test(n) && !watchOnly.has(n))) {
       const text = source(CYCLE, f);
       expect(text, f).not.toMatch(/isWeb\(|platform'|desktopOnly|\bweb[=:}]/);
     }
+    expect(webAccess('screen:control')).toBe('deny');
+    expect(webAccess('screen:input')).toBe('deny');
+    expect(webAccess('runs:screen')).toBe('allow');
     // The field that starts a release is offered wherever the workspace has the flow: the server decides whether a paired browser may use it.
     expect(source(CYCLE, 'RunsScreen.tsx')).toMatch(/flows\?\.release && <StartRelease/);
   });
