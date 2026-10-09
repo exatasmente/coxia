@@ -24,6 +24,9 @@ import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commi
 import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCommands } from './commands';
 import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
+import { resolveStageTestEnv, registerTestEnvForms, stageAllowsTestEnv, formsOfValues, type StageTestEnv } from '../testEnv';
+import { testEnvLedger, secrets } from '../secrets';
+import { maskerFromResolved, type ExactMask } from '../maskExact';
 import { auditScreen } from '../browser/audit';
 import { type ExecResult, type OpenOptions, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
 import { type EvidenceRecord, evidencePlacementOf } from '../../shared/evidence';
@@ -325,6 +328,11 @@ export const sessionRunner = (session: SandboxSession): CommandRunner => async (
 
 const clipText = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
+// The exact mask of each open session, keyed by the session object the stage works with: per stage, never shared between concurrent runs.
+const sessionMask = new WeakMap<SandboxSession, ExactMask>();
+/** The stage's masker, when its shell was opened with test-environment entries; a stage without them masks exactly as before. */
+const maskOfSession = (session: SandboxSession | null): ExactMask | null => (session ? sessionMask.get(session) ?? null : null);
+
 /** What the thread says about a command of a sandbox: how it ended. */
 const endedAs = (r: ExecResult): string => (r.refused ? t(`main.runner.exec.refused.${r.refused}`) : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }));
 
@@ -343,19 +351,40 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
   // Only the gate and the mask of a hand-off: nothing else of the caller's options reaches the sandbox.
   const gate = { ...(handoff?.held ? { held: handoff.held } : {}), ...(handoff?.mask ? { mask: handoff.mask } : {}) };
   if (!d.sandbox) throw new StageError('no-sandbox', { agent: agent.id, reason: t('main.sandbox.reason.platform') });
+  // The test environment of this stage, resolved once: variables and secrets straight into the shells, and the exact values into this launch's masker.
+  // A refusal is named here — in the thread and the audit log — and the entry is simply not delivered (spec 11, never a crash).
+  const testEnv: StageTestEnv | null = resolveStageTestEnv(stage, config.testEnvironment, secrets(), { confirmed: (ref) => testEnvLedger().approved(ref), text: t });
+  const mask = testEnv && testEnv.entries.length ? maskerFromResolved(testEnv.values) : null;
+  // The stage's exact forms go under the Actions door's scan for as long as this session lives (a commit, a pull request or an image that would carry one is refused, not sent).
+  const unscan = testEnv && testEnv.entries.length ? registerTestEnvForms(formsOfValues(testEnv.values)) : undefined;
+  for (const refusal of testEnv?.refusals ?? []) {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.testEnv.refusal', params: { agent: agent.id, entry: refusal.name, reason: refusal.reason }, stage: stage.id });
+      recordWrite({ kind: 'exec', issue: run.issue.iid, target: `test-env:${refusal.name}`, via: 'test-env', fields: { agent: agent.id, run: run.id, stage: stage.id }, ok: false, code: null, result: refusal.reason, origin: { actionId: '', kind: 'run-testEnv', key: `${run.id}:${stage.id}`, summary: null }, by: null });
+    } catch (e) {
+      console.error('[runner] could not record a test-env refusal', e instanceof Error ? e.message : e);
+    }
+  }
+  // Only an entry-carrying stage widens the network and its registry list: hosts the entries declared, on top of the workspace's own; private hosts only where marked.
+  const entries = testEnv?.entries ?? [];
+  const stageSandbox = entries.length
+    ? { ...config.runner.sandbox, network: 'registry' as const, registryHosts: [...new Set([...config.runner.sandbox.registryHosts, ...testEnv!.hosts])] }
+    : config.runner.sandbox;
+  const delivery = entries.length ? { vars: testEnv!.vars, privateHosts: testEnv!.privateHosts } : undefined;
   const report = (r: ExecResult, mode: 'run' | 'refused'): void => {
     try {
-      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: host ? 'runner.exec.host' : 'runner.exec', params: { agent: agent.id, n: r.n, command: clipText(redact(r.command.replace(/\s+/g, ' ')), 300), result: endedAs(r), ms: Math.round(r.ms / 100) / 10, tail: clipText(r.output, 600) || '—' }, stage: stage.id });
+      // Exact-value masking first, the pattern-based redact after it (spec 7): the plugin requests keep the same order.
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: host ? 'runner.exec.host' : 'runner.exec', params: { agent: agent.id, n: r.n, command: clipText((mask ?? redact)(r.command.replace(/\s+/g, ' ')), 300), result: endedAs(r), ms: Math.round(r.ms / 100) / 10, tail: clipText(mask ? mask(r.output) : r.output, 600) || '—' }, stage: stage.id });
       if (mode === 'run') {
         recordWrite({
           kind: 'exec',
           issue: run.issue.iid,
-          target: redact(clipText(r.command, 300)),
+          target: mask ? mask(redact(clipText(r.command, 300))) as string : redact(clipText(r.command, 300)),
           via: host ? 'host' : 'sandbox',
           fields: { agent: agent.id, run: run.id, stage: stage.id, n: String(r.n), ms: String(r.ms), timedOut: String(r.timedOut) },
           ok: r.exitCode === 0,
           code: r.exitCode,
-          result: r.output.slice(-300),
+          result: mask ? mask(r.output.slice(-300)) : r.output.slice(-300),
           origin: { actionId: '', kind: 'run-exec', key: `${run.id}:${stage.id}`, summary: null },
           by: agent.id,
         });
@@ -394,12 +423,18 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     // when the person set one, comes with every sandbox and every host session.
     const display = outputKindOf(stage.kind) === 'qa' || (own && agent.screen === true && grants.browser && !!d.sessions) || wantsDisplay;
     const session = host
-      ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal, display, ...gate })
-      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display, agent: { allowedHosts: grants.allowedHosts }, ...gate });
+      ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), approve: hostApproval(d, run, stage, agent, signal, clock), signal, display, ...gate })
+      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), onProxy, onNote, signal, display, agent: { allowedHosts: grants.allowedHosts }, ...gate });
     const gui = session.gui;
     // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
     if (gui?.display === 'missing' || gui?.display === 'failed') appendGui(gui.display === 'missing' ? 'runner.sandbox.noDisplay' : 'runner.sandbox.displayFailed', {});
+    // The scan of the door lives with the session: when it closes (the stage ended), the stage's forms leave the scan.
+    const given = !unscan ? session : (() => {
+      const close = session.close.bind(session);
+      return { ...session, close: () => close().finally(() => unscan()) };
+    })();
+    if (mask) sessionMask.set(given, mask);
     // The app's own connection to the stage's display is made now, before the agent has run a single command: what is at the socket's path is the agent's to change from
     // then on. A display that cannot be reached leaves the stage without a live screen and says so; nothing else changes. Only the stage's own session is registered
     // (`own`): an agent it calls, or one mentioned in the run's thread, gets its display but no live screen, since a run has one and it is the stage's.
@@ -407,11 +442,11 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
       if (!(await d.screens.open({ key: runKey(run.id), thread: runThreadId(run.id), stage: stage.id, agent: agent.id, socket: session.screen.socket, kind: session.screen.kind }))) appendGui('runner.screen.noConnect', {});
       else if (agent.screen !== true) {
         // A screen reached only through the agent's own shell (a QA stage's) has no browser session to write the line that opens it; an agent with the switch has one.
-        shellScreens.set(session, Date.now());
+        shellScreens.set(given, Date.now());
         auditScreen.opened({ key: runKey(run.id), agent: agent.id, place: 'stage', issue: run.issue.iid, mode: host ? 'host' : 'sandbox', path: 'shell', profile: 'none' });
       }
     }
-    return session;
+    return given;
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
     throw e;
@@ -688,6 +723,9 @@ function missingDocuments(output: StageOutput, stage: FlowStage, folder: string)
 
 async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, carried: readonly AttachmentRef[] | undefined, session: SandboxSession | null, clock?: StageClock & { watch?: Watchdog }, screen?: CallScreen | null): Promise<StageRun> {
   const config = d.config();
+  // The exact-value mask of this stage's shell, when it carries the workspace's test environment; everything the stage produces and keeps goes through it first.
+  const mask = maskOfSession(session);
+  const maskOf = (text: string): string => (mask ? mask(text) : text);
   const { agent, stage, kind } = pickAgent(config, run, flow);
   const wt = run.worktree;
   const writes = agent.permission === 'worktree';
@@ -800,6 +838,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     commandResults: ran,
     numberedCommands: !!session,
     evidence: !!(evidenceRoot && d.keepEvidence),
+    // The prompt sentence of an entry-carrying stage: exactly what the launcher delivered (an empty section of the config behaves as none).
+    testEnv: stageAllowsTestEnv(stage) && (!!config.testEnvironment && (config.testEnvironment.variables.length > 0 || config.testEnvironment.secrets.length > 0)),
     // What the agent is told of its screen and its hosts: nothing for an agent with neither, so its prompt is what it was.
     screen: promptFor(screen ?? null, agent, config.runner.sandbox, grantsFor(agent), session?.gui?.display === 'on'),
     sandbox: session
@@ -1018,7 +1058,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         const r = await runConversation(conversation, { fromCaller: incoming, answered: (text) => inbox.post(text) });
         conversationOf.set(to, { thread: r.thread, say: entry.say });
         for (const e of r.log ?? []) {
-          conversationCommands.push({ command: clipText(redact(e.command.replace(/\s+/g, ' ')), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: 'agent' });
+          conversationCommands.push({ command: clipText(maskOf(redact(e.command.replace(/\s+/g, ' '))), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: maskOf(e.output), ms: e.ms, n: e.n, by: 'agent' });
         }
       } else {
         void runConversation(conversation, { fromCaller: incoming, answered: (text) => inbox.post(text) })
@@ -1140,7 +1180,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   if (scenariosWithoutEvidence.length) throw new StageError('qa-evidence-missing', { scenarios: scenariosWithoutEvidence.map((scenario) => scenario.name).join(', ') });
   // Everything that ran in the stage's sandbox, in order: the app's own commands before QA, then the agent's. A called agent that wrote ran in its own session over
   // the same worktree, and its commands join the list under its name.
-  const ranInSandbox: CommandResult[] | undefined = session ? [...session.log.filter((e) => !e.refused).map((e) => ({ command: clipText(redact(e.command.replace(/\s+/g, ' ')), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), ...conversationCommands] : conversationCommands.length ? conversationCommands : undefined;
+  const ranInSandbox: CommandResult[] | undefined = session ? [...session.log.filter((e) => !e.refused).map((e) => ({ command: clipText(maskOf(redact(e.command.replace(/\s+/g, ' '))), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: maskOf(e.output), ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), ...conversationCommands] : conversationCommands.length ? conversationCommands : undefined;
   if (!output.summary && !output.question && !output.reporterQuestion) throw new StageError('empty-answer');
 
   const written: string[] = [];
@@ -1157,7 +1197,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.artifactIgnored', params: { agent: agent.id, name: a.name }, stage: stage.id });
       continue;
     }
-    writeArtifact(wt, run.cycleFolder, a.name, tidyArtifact(planContent(a.name, a.content), run.issue));
+    writeArtifact(wt, run.cycleFolder, a.name, maskOf(tidyArtifact(planContent(a.name, a.content), run.issue)) );
     written.push(a.name);
   }
   if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked, ...(keptRecords.length ? { keptEvidence: keptRecords } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };

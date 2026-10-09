@@ -99,6 +99,15 @@ describe('the argument list of the sandbox', () => {
     expect(bwrapArgs(spec({ network: 'proxy' }))).toContain('--unshare-net');
   });
 
+  it('applies the stage test environment over every other environment decision, and nothing else changes without it', () => {
+    const env = sandboxEnv(spec({ testEnv: { MODEL_KEY: 'k-1234', HTTPS_PROXY: 'http://staging.example.com:8443' } }));
+    expect(env.MODEL_KEY).toBe('k-1234');
+    // Applied last: a test entry shadows even a base decision (here, the proxy variables of registry mode).
+    expect(env.HTTPS_PROXY).toBe('http://staging.example.com:8443');
+    expect(bwrapArgs(spec({ testEnv: { MODEL_KEY: 'k-1234' } }))).toEqual(expect.arrayContaining(['--setenv', 'MODEL_KEY', 'k-1234']));
+    expect(Object.keys(sandboxEnv(spec())).filter((k) => k === 'MODEL_KEY')).toEqual([]);
+  });
+
   it('shares the computer network in open mode: no --unshare-net, no proxy, the other unshares kept', () => {
     const a = bwrapArgs(spec({ network: 'open' }));
     expect(a).not.toContain('--unshare-net');

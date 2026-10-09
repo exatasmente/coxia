@@ -8,6 +8,7 @@ import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { Run } from '../src/shared/runs';
 import { RunnerError } from '../src/main/runner/service';
 import { listAudit } from '../src/main/auditoria';
+import { neutralSandbox } from '../src/shared/config/defaults';
 import { DATA_ROOT, WORKSPACE_ID } from '../src/main/env';
 import { setTestFlag } from '../src/main/workspaces-core';
 import { type Boot, boot, doc, fakeCommands, fakeSandbox, keepQaEvidence, makeRepo, work } from './helpers/runner';
@@ -374,5 +375,27 @@ describe('a computer that cannot make a sandbox', () => {
     expect(now.error?.detail).toMatch(/qa.*sandbox/is);
     // Nothing fell back to running the commands outside.
     expect(commands.ran).toEqual([]);
+  });
+});
+
+describe('a stage and the workspace test environment', () => {
+  it('delivers the entries to the shell of a stage that allows them, and none to one that does not', async () => {
+    const sandbox = fakeSandbox();
+    const b = await boot({ sandbox, configure: (c) => {
+      shellOf(c, 'developer', 'sandbox');
+      shellOf(c, 'qa', 'sandbox');
+      c.language = 'en';
+      c.testEnvironment = { variables: [{ name: 'INTEGRATION_URL', value: 'https://staging.example.com' }], secrets: [] };
+    } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    // The developer stage is a work stage (left out of testEnv reads as no) and the QA one allows it by default; the opens come in runner order.
+    expect(sandbox.opened).toHaveLength(2);
+    const [dev, qa] = sandbox.opened.map((o) => o.options);
+    expect(dev.testEnv).toBeUndefined();
+    expect(dev.config.network).toBe(neutralSandbox().network);
+    expect(qa.testEnv).toMatchObject({ vars: { INTEGRATION_URL: 'https://staging.example.com' } });
   });
 });

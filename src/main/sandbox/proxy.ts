@@ -14,6 +14,8 @@ export interface ProxyOptions {
   socketPath: string;
   /** Exact host names (lowercase). */
   hosts: string[];
+  /** Hosts of `hosts` the person marked as reachable even on a private address (a test environment's opt-in); default: none private is allowed. */
+  privateHosts?: string[];
   /** Told about every request: what was asked and what was decided. */
   onDecision?: (d: ProxyDecision) => void;
   /** Replaced in tests. */
@@ -57,6 +59,7 @@ const realResolve = async (host: string): Promise<string[]> => (await lookup(hos
 
 export async function createRegistryProxy(o: ProxyOptions): Promise<RegistryProxy> {
   const hosts = new Set(o.hosts.map((h) => h.toLowerCase()));
+  const privateHosts = new Set((o.privateHosts ?? []).map((h) => h.toLowerCase()));
   const resolveName = o.resolve ?? realResolve;
   const open = o.open ?? ((address: string, port: number) => connect({ host: address, port }));
   const maxConnections = o.maxConnections ?? 16;
@@ -130,8 +133,9 @@ export async function createRegistryProxy(o: ProxyOptions): Promise<RegistryProx
         release();
         return refuse('502 Bad Gateway', { host, port, allowed: false, why: 'resolve' });
       }
-      // Every address the name has must be a public one: a name with a single private address among the public ones is refused whole.
-      if (!addresses.length || addresses.some(isPrivateAddress)) {
+      // Every address the name has must be a public one, unless the person marked this name private (an integration under test on their network):
+      // then the connection goes to the address the resolver gave. Even a marked name is refused whole when one of its other addresses is private.
+      if (!addresses.length || (!privateHosts.has(host) && addresses.some(isPrivateAddress)) || (privateHosts.has(host) && addresses.some((a) => a !== addresses[0] && isPrivateAddress(a)))) {
         release();
         return refuse('403 Forbidden', { host, port, allowed: false, why: 'address' });
       }

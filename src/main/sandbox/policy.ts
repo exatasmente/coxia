@@ -34,6 +34,8 @@ export interface SandboxSpec {
   tmpMb: number;
   /** What the sandbox offers to test an interface: the browsers folder (already among the read-only binds) and the display program to start. */
   gui?: { browsers: string | null; xvfb: string | null };
+  /** The test environment's variables, applied over every other environment decision (delivered by the launcher, never by the agent). */
+  testEnv?: Record<string, string>;
 }
 
 /** The display a sandbox starts for a stage: the socket of `:99` lives in the sandbox's own /tmp. */
@@ -85,6 +87,8 @@ export function sandboxEnv(spec: SandboxSpec): Record<string, string> {
     const url = `http://127.0.0.1:${PROXY_PORT}`;
     Object.assign(env, { HTTPS_PROXY: url, HTTP_PROXY: url, https_proxy: url, http_proxy: url, npm_config_proxy: url, npm_config_https_proxy: url, YARN_HTTPS_PROXY: url, YARN_HTTP_PROXY: url, NO_PROXY: '127.0.0.1,localhost', no_proxy: '127.0.0.1,localhost', COXIA_PROXY: '1' });
   }
+  // Last, over every decision above: the environment is built from nothing, so a test name can never be shadowed by a base one, and the base ones cannot drop it.
+  Object.assign(env, spec.testEnv ?? {});
   return env;
 }
 

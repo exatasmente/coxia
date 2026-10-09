@@ -58,6 +58,8 @@ export interface OpenOptions {
    * worktree's. Ignored when the tree is a worktree, whose clone git names.
    */
   clone?: string;
+  /** The stage's test environment: the variables delivered to every command, and the hosts the proxy may reach even on a private address. */
+  testEnv?: { vars: Record<string, string>; privateHosts?: string[] };
   /**
    * The agent the sandbox is for: its own list of hosts (`allowedHosts`) meets the workspace's network setting (see `effectiveNetwork`). Absent, or without a list: the
    * workspace's setting alone, as before. Not used by `openHost`: an agent on the computer has the computer's own network.
@@ -69,8 +71,11 @@ export interface OpenOptions {
   mask?: (text: string) => string;
 }
 
+/** The data-folder variables a host stage testing the app under development gets as fresh empty folders (spec rule 9). */
+export const TEST_ENV_DATA_VARS = ['CERIMONIAS_DATA_DIR', 'CERIMONIAS_SPECS_DIR'];
+
 /** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders; to test an interface it asks, like a sandbox, for the browsers folder and (a QA stage) a display. */
-export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display' | 'held' | 'mask'> & Pick<HostSessionOptions, 'approve'>;
+export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display' | 'held' | 'mask' | 'testEnv'> & Pick<HostSessionOptions, 'approve'>;
 
 export interface SandboxService {
   /** The cached answer to "can this machine make a sandbox"; `force` asks again. */
@@ -257,7 +262,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         const registry = net.mode === 'proxy';
         const openNet = net.mode === 'open';
         if (registry) {
-          const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: net.hosts, onDecision: opts.onProxy, ...o.proxyDeps });
+          const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: net.hosts, privateHosts: opts.testEnv?.privateHosts, onDecision: opts.onProxy, ...o.proxyDeps });
           cleanup.push(() => proxy.close());
         }
         const { browsers, browsersGone } = browsersOf(opts.config);
@@ -279,6 +284,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           limits: opts.config.limits,
           tmpMb: 512,
           ...(browsers || xvfb ? { gui: { browsers, xvfb } } : {}),
+          ...(opts.testEnv ? { testEnv: opts.testEnv.vars } : {}),
         });
         const gui = browsers || browsersGone || askedDisplay ? { browsers, ...(browsersGone ? { browsersGone } : {}), display: askedDisplay ? (xvfb ? ('start' as const) : ('missing' as const)) : null } : undefined;
         return await openSession({ stageDir, args, limits: opts.config.limits, proxy: registry, onExec: opts.onExec, cleanup, ...(gui ? { gui } : {}), ...(opts.held ? { held: opts.held } : {}), ...(opts.mask ? { mask: opts.mask } : {}) }, o.deps);
@@ -324,7 +330,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
       }
       try {
         return openHostSession(
-          { cwd, limits: opts.config.limits, env, onExec: opts.onExec, approve: opts.approve, ...(opts.held ? { held: opts.held } : {}), ...(opts.mask ? { mask: opts.mask } : {}), ...(cleanup ? { cleanup } : {}), ...(wantsGui ? { gui: { browsers, ...(browsersGone ? { browsersGone } : {}), display, ...(displayName ? { displayName } : {}) } } : {}) },
+          { cwd, limits: opts.config.limits, env, onExec: opts.onExec, approve: opts.approve, ...(opts.testEnv ? { testEnv: { vars: opts.testEnv.vars, emptyDataDirs: TEST_ENV_DATA_VARS } } : {}), ...(opts.held ? { held: opts.held } : {}), ...(opts.mask ? { mask: opts.mask } : {}), ...(cleanup ? { cleanup } : {}), ...(wantsGui ? { gui: { browsers, ...(browsersGone ? { browsersGone } : {}), display, ...(displayName ? { displayName } : {}) } } : {}) },
           o.hostDeps,
         );
       } catch (e) {
@@ -359,4 +365,3 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
   };
 }
 
-export { invalidateSandboxStatus };

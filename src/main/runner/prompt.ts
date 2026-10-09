@@ -87,6 +87,8 @@ export interface StageInput {
   proceduresGui?: boolean;
   /** The stage changes the branch and the repository has AGENTS.md instructions that must stay true. */
   docsKeep?: boolean;
+  /** The stage carries the workspace's test environment: it is told what that means (masked values, blocked images). */
+  testEnv?: boolean;
 }
 
 /** Why a stage runs again: the person sent the work back, a review or QA returned it, the person retried a failure, or the app restarted under it. */
@@ -158,6 +160,7 @@ export function systemText(i: StageInput): string {
     i.sandbox ? shellRules(i.sandbox, i.screen) : '',
     i.sandbox?.reader ? (i.sandbox.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
     i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true, i.sandbox.host === true, i.screen) : '',
+    i.testEnv ? cp('runner.rules.testEnv') : '',
     screenRules(i.screen),
     cp('runner.rules.data'),
     cp('runner.rules.memory', { max: MEMORY_MAX }),

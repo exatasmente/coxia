@@ -508,7 +508,7 @@ describe('migrateConfig', () => {
       const r = migrateConfig(v21(), { legacyInstall: false });
       expect(r.fromVersion).toBe(21);
       expect(r.changed).toBe(true);
-      expect(r.config.schemaVersion).toBe(22);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.runner.procedures).toBe(false);
       expect(proceduresOn(r.config)).toBe(false);
       expect(r.notes.join(' ')).toContain('learned procedures are off for a workspace that existed');
@@ -546,9 +546,42 @@ describe('migrateConfig', () => {
       expect(twice.config).toEqual(once.config);
     });
 
-    it('is the newest step: the current version is 22 and one more is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(22);
-      expect(() => migrateConfig({ schemaVersion: 23 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is followed by the test environment step: the chain does not stop at 22', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(22);
+    });
+  });
+
+  describe('schema 22 to 23: the workspace test environment', () => {
+    const v22 = (): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 22;
+      delete c.testEnvironment;
+      return c;
+    };
+
+    it('adds an empty environment, bumps the version, leaves a note and yields a valid file', () => {
+      const r = migrateConfig(v22(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(22);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.testEnvironment).toEqual({ variables: [], secrets: [] });
+      expect(r.notes.join(' ')).toContain('testEnvironment was added');
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps a section the file already carries, and a second start changes nothing', () => {
+      const c = v22();
+      c.testEnvironment = { variables: [{ name: 'INTEGRATION_URL', value: 'https://staging.example.com', hosts: ['staging.example.com'] }], secrets: [] };
+      const once = migrateConfig(c, { legacyInstall: false });
+      expect(once.config.testEnvironment?.variables).toHaveLength(1);
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+    it('is the newest step: 23 is current and 24 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(23);
+      expect(() => migrateConfig({ schemaVersion: 24 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

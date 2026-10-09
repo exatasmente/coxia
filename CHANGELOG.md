@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A stage of a run can test the app under development with the workspace's test environment.** Per workspace, the configuration keeps a test environment: plain variables with their values, and secret references into the secrets store under the `test.` prefix (the value is resolved on the computer, at launch, and never shown or saved). Settings › Team and cycle gains a Test-environment tab to edit it. A stage that allows it (QA stages by default; other kinds opt in per stage) starts with the entries as environment variables, its network opens only to the hosts the entries declare (443 through the app proxy; a private address only where the person marked it private), and one stage that tests this app itself on the host machine starts against fresh empty data and specs folders, never the person's real data. Every resolved value is masked — raw, URL-encoded, JSON-escaped — in the conversation, the audit log, the run file, the stage documents and the run's command lists; a commit, a push or a pull request that would carry a value is refused with the reason, so is an image a secret-carrying stage produces (images cannot be masked). A secret not marked test-only launches only after one confirmation by the person, recorded in the audit log.
+
 ### Fixed
 
 - **The app's browser starts in the installed app.** In the package, the Playwright that the browser server needs was left inside `app.asar`, where the server (unpacked so that it runs as a real file) cannot read it, so an agent's screen answered that the browser server did not start. Both builds now unpack it too.

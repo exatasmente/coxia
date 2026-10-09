@@ -18,6 +18,7 @@
   "ui.audit.kind.screenOpen": "Screen opened",
   "ui.audit.kind.screenUse": "Screen used by a person",
   "ui.audit.kind.sync": "Sync",
+  "ui.audit.kind.testEnv": "Test environment",
   "ui.audit.loading": "Reading the log…",
   "ui.audit.none": "No writes performed yet.",
   "ui.audit.noneForIssue": "No writes for that issue.",

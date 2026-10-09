@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 22): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 23): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 22;
+export const CONFIG_SCHEMA_VERSION = 23;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -216,6 +216,8 @@ export interface StageDef {
    * expressions); a cycle where one does is a flow a run follows, and a stage with no type in it is work.
    */
   type?: StageType;
+  /** Whether the stage receives the workspace's test environment. Left out: a QA stage of the current editor reads as yes; every stage carried by an already-saved template reads as no. */
+  testEnv?: boolean;
   /** The agent that works this stage in a run (an `agents.team` id). It wins over the `stages` list of the agents. Work stages only. */
   agentId?: string;
   /** Files, in the cycle folder, that this stage must produce. Plain names: no folder, nothing that starts with a dot. */
@@ -940,6 +942,42 @@ export interface PluginsConfig {
   confirmSeconds: number;
 }
 
+/** The prefix every secret ref of the test environment carries, so the person manages and deletes them as a group. */
+export const TEST_ENV_REF_PREFIX = 'test.';
+
+/** One plain variable the test environment hands a stage: a URL, a feature flag, a model name. Never a credential (that is what the secrets are for). */
+export interface TestEnvVariable {
+  /** The name it becomes as an environment variable of the stage (`ENV_NAME`). */
+  name: string;
+  /** The value, kept in the workspace configuration only. */
+  value: string;
+  /** Exact host names the stage's network may open to because of this entry (443, through the app's proxy). Empty: it opens nothing. */
+  hosts?: string[];
+  /** Hosts of `hosts` that the person marks as private addresses (a self-hosted integration): open only when marked. */
+  privateHosts?: string[];
+}
+
+/** One secret the test environment hands a stage, by reference into the secrets store. The value is resolved only in the main process, at launch. */
+export interface TestEnvSecret {
+  /** A secrets-store ref under the `test.` prefix; the name of the variable the stage gets is the part after the prefix, uppercased (`test.llm-key` → `TEST_LLM_KEY`). */
+  ref: string;
+  /**
+   * Whether this credential is for testing only (a dedicated project, a low-budget key). A secret not marked test-only needs the person's confirmation, once,
+   * before a stage launches with it, and the confirmation is recorded.
+   */
+  testOnly: boolean;
+  /** Exact host names this entry opens the stage's network to (443, through the app's proxy). Empty: it opens nothing. */
+  hosts?: string[];
+  /** Hosts of `hosts` that are private addresses, open only when marked. */
+  privateHosts?: string[];
+}
+
+/** What the person keeps, per workspace, so an allowed stage can exercise the app under development with real configuration. */
+export interface TestEnvironment {
+  variables: TestEnvVariable[];
+  secrets: TestEnvSecret[];
+}
+
 export interface WorkspaceConfig {
   schemaVersion: typeof CONFIG_SCHEMA_VERSION;
   /** False until the setup wizard finishes (or the config was migrated from an existing install). */
@@ -969,6 +1007,12 @@ export interface WorkspaceConfig {
   externalTools: ExternalToolsConfig;
   runner: RunnerConfig;
   plugins: PluginsConfig;
+  /**
+   * What an allowed stage gets to exercise the app under development with, per workspace: plain variables, kept here with their values, and secret
+   * references into the secrets store (under the `test.` prefix), whose values are resolved only on this computer when a stage launches.
+   * Optional: a workspace stored without it has none and behaves exactly as before.
+   */
+  testEnvironment?: TestEnvironment;
 }
 
 /** A secret the config needs, found by walking the secretRef fields. */

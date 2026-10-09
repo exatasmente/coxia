@@ -37,6 +37,16 @@ import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
 import { VcsError } from './vcs/errors';
+import { testEnvScanActive, testEnvTextProblem, activeTestEnvForms } from './testEnv';
+
+/** The text one command carries (its body, its fields, its endpoint): what a value could ride out inside. */
+const commandText = (c: VcsCommand): string => [c.method, c.endpoint, ...Object.values(c.fields), c.json ?? ''].join('\n');
+
+/** Spec rules 7 and 8: while a test environment is live, no write may carry one of its exact forms; the reason names the form, never the value. */
+export const assertNoTestEnvLeak = (c: VcsCommand): void => {
+  const leak = testEnvTextProblem(commandText(c));
+  if (leak) throw new VcsError('unsupported', { kind: c.via.toUpperCase(), what: leak });
+};
 import { type ReleaseUnit, alwaysWaits, isReleasePush, parseReleaseUnit, releaseBlockers, releaseWaits, soleMaintainerOf } from '../shared/release';
 import { type ReleasePr, previewRelease, releaseCommandLine, runReleaseOp, sameSha } from './releaseGit';
 import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
@@ -530,6 +540,7 @@ export interface AutoWrite {
 
 export async function runVcsAuto(w: AutoWrite, c: VcsCommand): Promise<unknown> {
   validateVcsCommand(c);
+  assertNoTestEnvLeak(c);
   let response: unknown;
   await audited({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by, bodyHash: w.bodyHash }, { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
     const out = await runVcs(c, meta);
@@ -583,6 +594,7 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       for (let i = a.done ?? 0; i < all.length; i++) {
         // An upload of evidence carries its header only at the moment it runs: the proposal never stores the credential.
         const raw = all[i];
+        assertNoTestEnvLeak(raw);
         let c = await withUploadHeaders(raw);
         // The comment that cites evidence takes up the addresses the uploads of the same group just answered with; without an image the body goes as written.
         if (evidence && i === evidence.bodyAt) c = withEvidenceEmbeds(c, evidence, uploadedAt);
@@ -1122,6 +1134,11 @@ export async function pushRunBranchAuto(w: AutoWrite, runId: string, branch: str
   const memory = `:(top,exclude,literal)${run.cycleFolder}/${MEMORY_FILE}`;
   if ((await git(run.worktree, ['status', '--porcelain', '--untracked-files=no', '--', '.', memory])).stdout.trim()) throw new Error(t('main.conflictGit.dirty'));
   const now = new Date().toISOString();
+  // Spec rule 7 applied to the push itself: every file the branch would send is searched for the exact forms of a live test environment first.
+  for (const f of activeTestEnvForms()) {
+    const hit = (await git(run.worktree, ['grep', '--fixed-strings', '--files-with-matches', '-I', f.value, 'HEAD'])).stdout.trim();
+    if (hit) throw new Error(t('main.testEnv.refusal.commit', { what: t(`main.testEnv.form.${f.kind}`) }));
+  }
   const a = blank({ key: w.key, kind: 'run-push', issue: w.issue, summary: w.summary, unit: { runId, branch } });
   // A push of this run that still waited is replaced: what goes out is the branch as it is now, not the state the proposal was made for.
   const store = read();
