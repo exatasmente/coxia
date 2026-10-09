@@ -122,6 +122,8 @@ interface Grabbed {
   at: number;
   hash: string;
   frame: RawFrame;
+  /** The hand-off epoch it was read under: a reader that is not the person takes only the current one. */
+  epoch: number;
 }
 
 interface Live {
@@ -152,6 +154,8 @@ interface Live {
   reading: Promise<Grabbed | null> | null;
   /** When the read under way began. */
   readingFrom: number;
+  /** The epoch the read under way began under. */
+  readingEpoch: number;
   failed: number;
   /** The pictures made of `grabbed`, by width: one per (frame, width), dropped when the screen changes. */
   pictures: Map<number, { jpeg: Uint8Array; width: number; height: number }>;
@@ -318,19 +322,21 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
 
   /**
    * The latest frame, read now or reused: null when the display did not answer (the second time in a row the screen is over). `notBefore` is the earliest time a
-   * frame may have been read at: a cached or under-way read that began before it is not taken, and the screen is read afresh.
+   * frame may have been read at: a cached or under-way read that began before it is not taken, and the screen is read afresh. `accept` is the hand-off epoch the caller
+   * accepts: a cached or under-way read of another one is not taken either (a phone is not served what was read while the person held the screen).
    */
-  const read = async (live: Live, notBefore = 0): Promise<Grabbed | null> => {
+  const read = async (live: Live, notBefore = 0, accept?: number): Promise<Grabbed | null> => {
     for (;;) {
-      if (live.grabbed && now() - live.grabbed.at < FRAME_MIN_MS && live.grabbed.at >= notBefore) return live.grabbed;
+      if (live.grabbed && now() - live.grabbed.at < FRAME_MIN_MS && live.grabbed.at >= notBefore && (accept === undefined || live.grabbed.epoch === accept)) return live.grabbed;
       if (!live.reading) break;
-      if (live.readingFrom >= notBefore) return live.reading;
+      if (live.readingFrom >= notBefore && (accept === undefined || live.readingEpoch === accept)) return live.reading;
       // A read that began too early is waited out, not used: the next one is the caller's.
       await live.reading.catch(() => undefined);
       if (live.ended) return null;
     }
     live.readingFrom = now();
     const epoch = live.epoch;
+    live.readingEpoch = epoch;
     live.reading = (async (): Promise<Grabbed | null> => {
       const f = await live.conn.grab();
       if (live.ended) return null;
@@ -344,11 +350,11 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       const frame: RawFrame = { width: f.width, height: f.height, data: f.data };
       const hash = hashFrame(frame);
       // A hand-off interval began or ended while the display was read: this picture belongs to the other side of it, and the cache is not its to fill.
-      if (live.epoch !== epoch) return { seq: ++live.seq, at: now(), hash, frame };
+      if (live.epoch !== epoch) return { seq: ++live.seq, at: now(), hash, frame, epoch };
       const prev = live.grabbed;
       if (prev && prev.hash === hash) prev.at = now();
       else {
-        live.grabbed = { seq: ++live.seq, at: now(), hash, frame };
+        live.grabbed = { seq: ++live.seq, at: now(), hash, frame, epoch };
         live.pictures.clear();
       }
       return live.grabbed;
@@ -411,7 +417,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       } catch {
         return false;
       }
-      const live: Live = { key: screen.key, thread: screen.thread, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits, openedAt: now() }) : null, cancelTick: null, stopSaid: false, sawWindow: false, usedSince: null, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, readingFrom: 0, failed: 0, pictures: new Map(), seq: 0, epoch: 0, interval: null };
+      const live: Live = { key: screen.key, thread: screen.thread, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits, openedAt: now() }) : null, cancelTick: null, stopSaid: false, sawWindow: false, usedSince: null, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, readingFrom: 0, readingEpoch: 0, failed: 0, pictures: new Map(), seq: 0, epoch: 0, interval: null };
       lives.set(screen.key, live);
       // A connection that is lost ends the screen: it is never dialled again, since what is at the socket's path is not the app's to trust after the agent has run.
       conn.onClose(() => {
@@ -432,11 +438,18 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       if (!live) return { state: 'none' };
       // The hand-off interval: nothing is read for a reader that is not the person who holds the screen, so no picture of it is ever made for one.
       if (live.interval && viewer === 'web') return { state: 'held' };
-      const got = await read(live);
+      // A phone takes only a picture read under the epoch it asks in; the person's own reader takes any.
+      let got = await read(live, 0, viewer === 'web' ? live.epoch : undefined);
       // The screen ended while the frame was being read, or the encoder is gone: nothing more to show.
       if (live.ended) return { state: 'none' };
       // The interval began while the display was read: the picture is not for this reader.
       if (live.interval && viewer === 'web') return { state: 'held' };
+      // The whole interval passed while the display was read: that picture is the person's, and a phone gets one read afresh.
+      if (viewer === 'web' && got && got.epoch !== live.epoch) {
+        got = await read(live, 0, live.epoch);
+        if (live.ended) return { state: 'none' };
+        if (live.interval) return { state: 'held' };
+      }
       if (!got) return { state: 'same', seq: 0, control: live.control };
       if (got.seq === since) return { state: 'same', seq: got.seq, control: live.control };
       const w = clampFrameWidth(width);

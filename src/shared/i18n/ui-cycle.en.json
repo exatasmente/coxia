@@ -574,7 +574,7 @@
   "ui.screen.handoff.understand": "I understand, take the screen",
   "ui.screen.handoff.warning.always": "The app keeps what you type and the pictures of this screen away from the agent, its conversation and the log, and the agent is not told what you do.",
   "ui.screen.handoff.warning.asks": "The agent asks: {what}",
-  "ui.screen.handoff.warning.browser": "What you type is masked in the pages the app's browser returns to the agent, for as long as the agent has them: a masked value shows as [secret]. The app does not return a picture of a page that shows it.",
+  "ui.screen.handoff.warning.browser": "What you type is hidden from the agent in the pages the app's browser returns during this answer or stage: a hidden value shows as [secret]. The app does not return a picture of a page that shows it. If the value is still on the page afterwards, the agent can read it later, so submit or clear it before you give the screen back.",
   "ui.screen.handoff.warning.last": "Use the screen only for what you accept the agent's programs might see, and give it back when you are done.",
   "ui.screen.handoff.warning.noPrograms": "No program of this agent runs next to this screen.",
   "ui.screen.handoff.warning.programs": "The agent's programs keep running while you use this screen. They could capture it or read the page themselves, including what you type. The app does not freeze them and cannot see them, so this protection is weaker than the others.",

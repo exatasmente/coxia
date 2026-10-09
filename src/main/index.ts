@@ -15,7 +15,7 @@ import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGat
 import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
 import { askRetro, latestRetro, prepareRetro } from './retro';
 import { MODULES } from './modules';
-import { endLiveScreens } from './runner/module';
+import { endLiveScreens, hasOpenScreens } from './runner/module';
 import { RESOURCES } from './paths';
 import { wantsQuitForUpdate } from './update-core';
 import { SHOWN_EVENT } from '../shared/update';
@@ -297,11 +297,25 @@ if (!app.requestSingleInstanceLock()) {
     announceRunning();
   });
   app.on('quit', (_e, code) => console.log(`[app] quit with exit code ${code}`));
-  app.on('before-quit', () => {
+  // The open screens of the agents get a few seconds to keep their recordings and close their browsers before the app goes: the quit is held once, then asked again.
+  let screensEnded = false;
+  let screensEnding = false;
+  app.on('before-quit', (event) => {
     quitting = true;
+    if (!screensEnded && hasOpenScreens()) {
+      event.preventDefault();
+      if (!screensEnding) {
+        screensEnding = true;
+        void endLiveScreens().finally(() => {
+          screensEnded = true;
+          app.quit();
+        });
+      }
+      return;
+    }
     updatesBeforeQuit();
     forgetRunning();
-    endLiveScreens();
+    void endLiveScreens();
     stopVoice();
     void stopWebAccess();
   });

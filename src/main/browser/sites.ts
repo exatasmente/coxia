@@ -8,17 +8,23 @@ import { type ProfileLocks, ProfileError, deleteProfile, openProfile, profileDir
 // only code it is ever given, and a site is put into one only after it was checked to be a host name. Listing and clearing are refused while a screen of the agent holds the
 // profile, and the profile is locked for the time they take.
 
+/** The host names a site can be: what the listing writes, nothing a quote or a space could get through. */
+const SITE = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/;
+export const isSite = (value: unknown): value is string => typeof value === 'string' && SITE.test(value);
+
 /**
- * What reads the profile: every site that holds a cookie, with its counts. The cookies are read in the server and only their number per host leaves it. The browser lists no
- * storage of its own accord (a closed profile has no origins to ask), so each site that holds a cookie is asked on a page the browser itself fills with nothing: every request
- * is answered before it reaches the network, and with no network there is none to reach. A site that keeps a login in its local storage alone, with no cookie, is not found
- * here; Revoke all clears it.
+ * What reads the profile: every site that holds a cookie, with its counts, and every host in `extra` (the hosts the agent may reach or reached before). The cookies are read in
+ * the server and only their number per host leaves it. The browser lists no storage of its own accord (a closed profile has no origins to ask), so each site is asked on a page
+ * the browser itself fills with nothing: every request is answered before it reaches the network, and with no network there is none to reach. A host in `extra` is how a site
+ * that keeps its login in local storage alone, with no cookie, is found; a site neither holds a cookie nor is a known host is not, and Revoke all clears it. The hosts are
+ * checked names (`isSite`) and written as a JSON array: nothing else gets into the code.
  */
-export const LIST_CODE = `async (page) => {
+export const listCode = (extra: readonly string[] = []): string => `async (page) => {
   const context = page.context();
   const sites = Object.create(null);
   const row = (site) => (sites[site] ??= { site, cookies: 0, storage: 0 });
   for (const c of await context.cookies()) row(String(c.domain).replace(/^\\./, '').toLowerCase()).cookies++;
+  for (const site of ${JSON.stringify(extra.filter(isSite).slice(0, CANDIDATES_MAX))}) row(site);
   await page.route('**/*', (route) => route.fulfill({ contentType: 'text/html', body: '<html></html>' }));
   for (const site of Object.keys(sites)) {
     try {
@@ -34,9 +40,10 @@ export const LIST_CODE = `async (page) => {
   return Object.values(sites);
 }`;
 
-/** The host names a site can be: what the listing writes, nothing a quote or a space could get through. */
-const SITE = /^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/;
-export const isSite = (value: unknown): value is string => typeof value === 'string' && SITE.test(value);
+/** The most hosts the app adds to what the cookies name: a page costs a moment and the list is for a person to read. */
+export const CANDIDATES_MAX = 40;
+
+export const LIST_CODE = listCode();
 
 /** What takes one site away: its cookies (the host and its leading-dot form) and everything its origin keeps. `site` is a checked host name. */
 export function revokeCode(site: string): string {
@@ -70,12 +77,31 @@ export function parseSites(answer: string): ProfileSite[] | null {
   }
 }
 
+/**
+ * The hosts a person's agent may have kept a login at without a cookie: the ones it is allowed to reach, then the ones its earlier screens reached (the audit line of each
+ * closed screen holds the hosts the proxy allowed, with counts). Hosts only, once each, lowercase, at most `CANDIDATES_MAX`.
+ */
+export function candidateHosts(allowed: readonly string[] | undefined, closings: readonly { fields?: Record<string, string> }[]): string[] {
+  const out = new Set<string>();
+  const add = (host: string): void => {
+    const h = host.trim().toLowerCase();
+    if (isSite(h) && out.size < CANDIDATES_MAX) out.add(h);
+  };
+  for (const h of allowed ?? []) add(h);
+  for (const c of closings) {
+    for (const piece of String(c.fields?.hostsAllowed ?? '').split(',')) add(piece.split('=')[0]);
+  }
+  return [...out];
+}
+
 export interface SitesDeps {
   /** The workspace folder that holds `browser/<agent>/`. */
   workspaceDir: string;
   /** Starts a browser with no window and no network on the profile folder it is given. */
   launch(profileDir: string): Promise<BrowserRuntime>;
   locks?: ProfileLocks;
+  /** The hosts the agent may have kept something at without a cookie: the ones it may reach and the ones it reached. Absent: the cookies alone name the sites. */
+  candidates?(agentId: string): string[];
 }
 
 const ownerOf = (agentId: string): string => `sites:${agentId}`;
@@ -106,8 +132,8 @@ async function withProfile<T>(agentId: string, deps: SitesDeps, use: (runtime: B
 
 const SERVER_MS = 30_000;
 
-async function readSites(runtime: BrowserRuntime): Promise<ProfileSite[]> {
-  const r = await runtime.client.callTool('browser_run_code_unsafe', { code: LIST_CODE }, { timeoutMs: SERVER_MS });
+async function readSites(runtime: BrowserRuntime, extra: readonly string[] = []): Promise<ProfileSite[]> {
+  const r = await runtime.client.callTool('browser_run_code_unsafe', { code: listCode(extra) }, { timeoutMs: SERVER_MS });
   const sites = parseSites(r.content.map((c) => (c.type === 'text' ? String((c as { text?: unknown }).text ?? '') : '')).join('\n'));
   if (!sites) throw new Error('the browser did not answer with a list of sites');
   return sites;
@@ -124,7 +150,7 @@ export async function listSites(agentId: string, deps: SitesDeps): Promise<Sites
   const holder = (deps.locks ?? profileLocks).holder(dir);
   if (holder !== null) return { ok: false, why: holder === ownerOf(agentId) ? 'busy' : 'open' };
   if (!existsSync(dir)) return { ok: true, sites: [] };
-  const ran = await withProfile(agentId, deps, readSites);
+  const ran = await withProfile(agentId, deps, (runtime) => readSites(runtime, deps.candidates?.(agentId) ?? []));
   return ran.ok ? { ok: true, sites: ran.value } : ran;
 }
 
@@ -142,7 +168,7 @@ export async function revokeSite(agentId: string, site: string, deps: SitesDeps)
   if (!existsSync(dir)) return { ok: true, removed: false, sites: [] };
   const ran = await withProfile(agentId, deps, async (runtime) => {
     await runtime.client.callTool('browser_run_code_unsafe', { code: revokeCode(site) }, { timeoutMs: SERVER_MS });
-    return readSites(runtime);
+    return readSites(runtime, deps.candidates?.(agentId) ?? []);
   });
   return ran.ok ? { ok: true, removed: !ran.value.some((s) => s.site === site), sites: ran.value } : ran;
 }
@@ -162,7 +188,7 @@ export function revokeAll(agentId: string, deps: Pick<SitesDeps, 'workspaceDir' 
   return r.removed ? { ok: true, removed: true, sites: [] } : { ok: false, why: 'failed' };
 }
 
-export interface SitesApiDeps extends Pick<SitesDeps, 'locks' | 'launch'> {
+export interface SitesApiDeps extends Pick<SitesDeps, 'locks' | 'launch' | 'candidates'> {
   /** The ids of the agents in the config. */
   agents(): string[];
   workspaceDir(): string;
@@ -170,7 +196,7 @@ export interface SitesApiDeps extends Pick<SitesDeps, 'locks' | 'launch'> {
 
 /** The two calls Settings makes, with the checks of who may be asked about: only an agent that is in the team, and a site that is a host name. */
 export function createSitesApi(d: SitesApiDeps) {
-  const deps = (): SitesDeps => ({ workspaceDir: d.workspaceDir(), launch: d.launch, locks: d.locks });
+  const deps = (): SitesDeps => ({ workspaceDir: d.workspaceDir(), launch: d.launch, locks: d.locks, candidates: d.candidates });
   const known = (agent: unknown): agent is string => typeof agent === 'string' && d.agents().includes(agent);
   return {
     sites: async (agent: unknown): Promise<SitesResult> => (known(agent) ? listSites(agent, deps()) : { ok: false, why: 'agent' }),

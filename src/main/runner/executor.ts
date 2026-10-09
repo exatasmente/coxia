@@ -24,6 +24,7 @@ import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commi
 import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCommands } from './commands';
 import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
+import { auditScreen } from '../browser/audit';
 import { type ExecResult, type OpenOptions, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
 import { type EvidenceRecord, evidencePlacementOf } from '../../shared/evidence';
 import { evidenceToolsOf, evidenceProblemText, outputProblemText } from '../evidence/handlers';
@@ -327,6 +328,9 @@ const clipText = (text: string, max: number): string => (text.length > max ? `${
 /** What the thread says about a command of a sandbox: how it ended. */
 const endedAs = (r: ExecResult): string => (r.refused ? t(`main.runner.exec.refused.${r.refused}`) : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }));
 
+/** When a stage's screen, reached only through its agent's shell, was opened: the line that closes it is written when the stage ends. */
+const shellScreens = new WeakMap<object, number>();
+
 /**
  * Makes the sandbox of the stage (or, for an agent set to `shell: host`, the session that runs its commands on this computer once the person allows each one), and tells
  * the thread, the audit log and (through the session) the live activity about every command that runs in it. A machine that cannot make a sandbox fails the stage: an
@@ -399,7 +403,14 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     // The app's own connection to the stage's display is made now, before the agent has run a single command: what is at the socket's path is the agent's to change from
     // then on. A display that cannot be reached leaves the stage without a live screen and says so; nothing else changes. Only the stage's own session is registered
     // (`own`): an agent it calls, or one mentioned in the run's thread, gets its display but no live screen, since a run has one and it is the stage's.
-    if (own && d.screens && display && session.screen && gui?.display === 'on' && !(await d.screens.open({ key: runKey(run.id), thread: runThreadId(run.id), stage: stage.id, agent: agent.id, socket: session.screen.socket, kind: session.screen.kind }))) appendGui('runner.screen.noConnect', {});
+    if (own && d.screens && display && session.screen && gui?.display === 'on') {
+      if (!(await d.screens.open({ key: runKey(run.id), thread: runThreadId(run.id), stage: stage.id, agent: agent.id, socket: session.screen.socket, kind: session.screen.kind }))) appendGui('runner.screen.noConnect', {});
+      else if (agent.screen !== true) {
+        // A screen reached only through the agent's own shell (a QA stage's) has no browser session to write the line that opens it; an agent with the switch has one.
+        shellScreens.set(session, Date.now());
+        auditScreen.opened({ key: runKey(run.id), agent: agent.id, place: 'stage', issue: run.issue.iid, mode: host ? 'host' : 'sandbox', path: 'shell', profile: 'none' });
+      }
+    }
     return session;
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
@@ -513,6 +524,16 @@ export function keepScreenRecording(d: ExecutorDeps, current: Run, stage: Pick<F
   }
 }
 
+/** How the recording of a stage's screen ended, for the audit line of a screen reached only through the shell; read and forgotten when the stage ends. */
+const recordingAudit = new Map<string, 'kept' | 'not' | 'none'>();
+
+/** The stage's own recording is kept by `runStage`, and the audit line is written when the stage ends: what became of it is remembered in between. */
+function keepStageRecording(d: ExecutorDeps, current: Run, stage: Pick<FlowStage, 'id'>, agent: Pick<AgentDef, 'id'>, outcome: RecordingOutcome | null): 'kept' | 'not' {
+  const result = keepScreenRecording(d, current, stage, agent, outcome);
+  if (outcome) recordingAudit.set(runKey(current.id), result === 'kept' ? 'kept' : !outcome.ok && outcome.reason === 'unused' ? 'none' : 'not');
+  return result;
+}
+
 /**
  * @param usage Told what every model call of the attempt used, as it happens: a stage that fails or is stopped part-way has used it all the same.
  * @param carried The files the message that resumes the stage carries (the person's answer): the run file does not keep them, so they come from the turn that recorded the move.
@@ -545,7 +566,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     : null;
   let screen: CallScreen | null = null;
   try {
-    screen = await openStageScreen(d, run, stage, agent, session, clock, offer);
+    screen = await openStageScreen(d, run, stage, agent, session, clock, offer, abort.signal);
     return await runStage(d, run, flow, abort, usage, carried, session, clock, screen);
   } finally {
     // A hand-off still open ends first, with no result: the interval is closed before the recording is built.
@@ -553,7 +574,13 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
     screen?.release();
     // The live screen goes first, whatever way the stage ended: nothing reads the display once its sandbox is closing. A stage that failed before it could build the
     // recording itself still keeps what was recorded (nothing then, when `runStage` ended the screen already).
-    keepScreenRecording(d, run, stage, agent, await d.screens?.finish(runKey(run.id)).catch(() => null) ?? null);
+    keepStageRecording(d, run, stage, agent, (await d.screens?.finish(runKey(run.id)).catch(() => null)) ?? null);
+    const shellSince = session ? shellScreens.get(session) : undefined;
+    if (session && shellSince !== undefined) {
+      shellScreens.delete(session);
+      auditScreen.closed({ key: runKey(run.id), agent: agent.id, place: 'stage', issue: run.issue.iid, mode: agent.shell === 'host' ? 'host' : 'sandbox', reason: 'stage', ms: Date.now() - shellSince, steps: {}, hostsAllowed: {}, hostsRefused: {}, recording: recordingAudit.get(runKey(run.id)) ?? 'none' });
+    }
+    recordingAudit.delete(runKey(run.id));
     d.screens?.end(runKey(run.id));
     // The app's browser ends with the stage, and before the display it may be drawing on.
     await d.sessions?.closeThread(runThreadId(run.id), 'stage').catch(() => undefined);
@@ -567,12 +594,12 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
  * and the confirmation tool where a stage has a display, a host list or the computer's shell. The stage keeps its run key; what could not be opened has been said in the thread
  * and the stage goes on without it.
  */
-async function openStageScreen(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, session: SandboxSession | null, clock: StageClock, offer: CallHandoffOffer | null): Promise<CallScreen | null> {
+async function openStageScreen(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, session: SandboxSession | null, clock: StageClock, offer: CallHandoffOffer | null, signal: AbortSignal): Promise<CallScreen | null> {
   if (run.docs || !d.sessions || !d.asks) return null;
   const lent = session?.screen && session.gui?.display === 'on' ? { socket: session.screen.socket, kind: session.screen.kind } : null;
   const screen = await openCallScreen(
     { sessions: d.sessions, asks: d.asks },
-    { key: runKey(run.id), thread: runThreadId(run.id), place: 'stage', stage: stage.id, issue: run.issue.iid, display: lent, agent, seesImages: modelSeesImages(agent), pause: clock.pause, hasDisplay: lent !== null },
+    { key: runKey(run.id), thread: runThreadId(run.id), place: 'stage', stage: stage.id, issue: run.issue.iid, display: lent, agent, seesImages: modelSeesImages(agent), pause: clock.pause, hasDisplay: lent !== null, signal },
   );
   // A browser on a display of its own (the agent has no shell session to lend one): the stage's live screen and recording follow that display, as they follow a session's.
   const own = screen.lease?.display;
@@ -839,7 +866,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     }
     if (keptCount) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookKept', params: { agent: agent.id, count: keptCount }, stage: stage.id });
   };
-  const keepRecording = (outcome: RecordingOutcome | null): void => void keepScreenRecording(d, runSoFar(), stage, agent, outcome);
+  const keepRecording = (outcome: RecordingOutcome | null): void => void keepStageRecording(d, runSoFar(), stage, agent, outcome);
   const evidence =
     evidenceRoot && d.keepEvidence
       ? evidenceToolsOf({
@@ -974,6 +1001,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         abort,
         chain,
         place,
+        // The called agent's own screen, as a mentioned agent's (a docs run has none, as its stages have none).
+        screens: d.sessions && d.asks && !run.docs ? { sessions: d.sessions, asks: d.asks } : null,
         title: t('main.runner.conversation.title', { caller: agent.id, called: to, ref: run.issue.ref }),
       };
       // A conversation with a writer is the only writer of the worktree while it runs: the stage waits for it (its answers still come as messages), so the two

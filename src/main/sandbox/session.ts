@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { SandboxLimits } from '../../shared/config/types';
 import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
 import { redact } from '../errorlog-core';
-import { tail } from '../runner/commands';
+import { plain, tail } from '../runner/commands';
 import { MAX_IMAGE_BYTES, imageMediaType } from '../imageType';
 import { CTL, DISPLAY_SOCKET_NAME, FORWARDER_JS, OUT, SUPERVISOR_COMMAND, SUPERVISOR_SH, X11_DIR } from './policy';
 import { SandboxError } from './errors';
@@ -113,12 +113,12 @@ export interface SessionOptions {
 export type OutputMask = (text: string) => string;
 
 /**
- * The end of a command's output as the model reads it: the typed values taken out of the whole text first (a value the cut would split is still found), then the end is kept
+ * The end of a command's output as the model reads it: the escapes and carriage returns go first (one inside a value would hide it from the exact match), the typed values are taken out of the whole text (a value the cut would split is still found), then the end is kept
  * and the pattern-based masking runs last, so it cannot reshape a typed value before the exact match. Null when the mask failed: what could not be checked is not shown.
  */
 export function shownOutput(text: string, mask?: OutputMask): string | null {
   try {
-    return redact(tail(mask ? mask(text) : text));
+    return redact(tail(mask ? mask(plain(text)) : text));
   } catch {
     return null;
   }

@@ -67,5 +67,11 @@ describe('the words of the warning and the viewer', () => {
     expect(CATALOGS.en['ui.screen.handoff.warning.recorded']).toMatch(/evidence/i);
     expect(CATALOGS.en['ui.screen.handoff.warning.programs']).toMatch(/weaker/i);
   });
-});
 
+  it('says the browser mask ends with the answer: a value still on the page afterwards can be read, so submit or clear it', () => {
+    expect(CATALOGS.en['ui.screen.handoff.warning.browser']).toMatch(/still on the page afterwards/i);
+    expect(CATALOGS.en['ui.screen.handoff.warning.browser']).toMatch(/submit or clear/i);
+    expect(CATALOGS['pt-BR']['ui.screen.handoff.warning.browser']).toMatch(/ainda estiver na página depois/i);
+    expect(CATALOGS['pt-BR']['ui.screen.handoff.warning.browser']).toMatch(/envie ou apague/i);
+  });
+});

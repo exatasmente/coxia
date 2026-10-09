@@ -13,7 +13,7 @@ import { neutralSandbox } from '../src/shared/config/defaults';
 import { findChromium } from '../src/main/browser/chromium';
 import { type BrowserRuntime, startBrowser } from '../src/main/browser/launch';
 import { createProfileLocks, ensureProfile, openProfile, profileDirOf } from '../src/main/browser/profile';
-import { LIST_CODE, createSitesApi, isSite, listSites, parseSites, revokeAll, revokeCode, revokeSite } from '../src/main/browser/sites';
+import { CANDIDATES_MAX, LIST_CODE, candidateHosts, createSitesApi, isSite, listCode, listSites, parseSites, revokeAll, revokeCode, revokeSite } from '../src/main/browser/sites';
 import { displayProgram } from '../src/main/sandbox';
 import { probeSandbox } from '../src/main/sandbox/probe';
 
@@ -77,6 +77,17 @@ describe('the code that reads and clears a profile', () => {
     for (const secret of ['a-secret-session-value', 'dark', 'a-token-value', 'three-items', 'sid', 'token', 'cart']) expect(text).not.toContain(secret);
   });
 
+  it('finds a site that keeps a login in local storage alone when its host is one the app already knows, and asks about nothing that is not a host name', async () => {
+    const { page, visited } = fakePage(COOKIES, { ...STORAGE, 'https://app.example.com': 2 });
+    const sites = (await run(listCode(['app.example.com', 'example.com', '"; process.exit(1); "', 'Has Space.example.com']), page)) as { site: string }[];
+    expect(sites.map((x) => x.site)).toEqual(['example.com', 'www.example.com', 'shop.example.net', 'app.example.com']);
+    expect(sites.find((x) => x.site === 'app.example.com')).toEqual({ site: 'app.example.com', cookies: 0, storage: 2 });
+    expect(visited).not.toContain('https://has space.example.com');
+    expect(listCode(['"; process.exit(1); "'])).not.toContain('process.exit');
+    // Without hosts it is the code it always was.
+    expect(listCode()).toBe(LIST_CODE);
+  });
+
   it('clears the cookies of exactly one host, with or without its leading dot, and the storage of its origins only', async () => {
     const fake = fakePage(COOKIES, STORAGE);
     expect(await run(revokeCode('example.com'), fake.page)).toBe('cleared');
@@ -94,6 +105,25 @@ describe('the code that reads and clears a profile', () => {
     expect(revokeCode('a.example.com')).toContain('const site = "a.example.com";');
     expect(LIST_CODE).not.toMatch(/\$\{|fetch|\beval\(|require|import\(/);
     expect(LIST_CODE).not.toContain('storageState');
+  });
+});
+
+describe('the hosts a login may hide at', () => {
+  it('are the hosts the agent may reach, then the ones its earlier screens reached, each once, as host names only', () => {
+    const closings: { fields?: Record<string, string> }[] = [
+      { fields: { hostsAllowed: 'App.Example.com=12, cdn.example.com=40, …' } },
+      { fields: { hostsAllowed: 'app.example.com=3, bad host=1, evil.example.net/x=2' } },
+      { fields: {} },
+      {},
+    ];
+    expect(candidateHosts(['docs.example.com', 'app.example.com'], closings)).toEqual(['docs.example.com', 'app.example.com', 'cdn.example.com']);
+    expect(candidateHosts(undefined, [])).toEqual([]);
+  });
+
+  it('are bounded', () => {
+    const many = Array.from({ length: CANDIDATES_MAX + 30 }, (_, i) => `h${i}.example.com`);
+    expect(candidateHosts(many, [])).toHaveLength(CANDIDATES_MAX);
+    expect(candidateHosts([], [{ fields: { hostsAllowed: many.map((h) => `${h}=1`).join(', ') } }])).toHaveLength(CANDIDATES_MAX);
   });
 });
 
@@ -165,6 +195,15 @@ describe('listing and revoking the sites of a profile', () => {
     expect(state.codes).toEqual([LIST_CODE]);
     expect(state.closed).toBe(1);
     expect(locks.holder(dir)).toBeNull();
+  });
+
+  it('asks the browser about the hosts it is told the agent may have kept something at, and about no other', async () => {
+    ensureProfile(root, 'hosted');
+    const { state, locks, launch } = fakeLaunch({ answers: [list([{ site: 'app.example.com', cookies: 0, storage: 2 }])] });
+    const got = await listSites('hosted', { workspaceDir: root, launch, locks, candidates: (agent) => (agent === 'hosted' ? ['app.example.com'] : ['other.example.com']) });
+    expect(got).toEqual({ ok: true, sites: [{ site: 'app.example.com', cookies: 0, storage: 2 }] });
+    expect(state.codes).toEqual([listCode(['app.example.com'])]);
+    expect(state.codes[0]).not.toContain('other.example.com');
   });
 
   it('is refused while a screen of the agent holds the profile, and starts nothing', async () => {

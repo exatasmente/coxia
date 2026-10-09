@@ -3,6 +3,7 @@
 // fake and the sandbox runs nothing.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { WorkspaceConfig } from '../src/shared/config/types';
+import { listAudit } from '../src/main/auditoria';
 import type { Run } from '../src/shared/runs';
 import type { AgentCall } from '../src/main/agents';
 import type { ScreenHub } from '../src/main/screen/hub';
@@ -114,6 +115,27 @@ describe('the screen of a stage', () => {
     expect(screens.lines.find((l) => l.code === 'runner.screen.closed')).toMatchObject({ thread: `run-${run.id}`, params: { agent: 'planner' } });
   });
 
+  it('hands the stage\'s abort to the screen, so a stage that is cancelled while the browser starts does not wait for it', async () => {
+    screens = fakeScreens({ ownDisplay: '/own/X77' });
+    const asked: (AbortSignal | undefined)[] = [];
+    const acquire = screens.sessions.acquire.bind(screens.sessions);
+    screens.sessions.acquire = (req) => (asked.push(req.signal), acquire(req));
+    const b = await boot({
+      screens: hubFake().hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      configure: (c) => {
+        c.runner.sandbox.display = true;
+        Object.assign(agentOf(c, 'planner'), { screen: true, shell: 'none' });
+      },
+    });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toBeInstanceOf(AbortSignal);
+  });
+
   it('lends the browser the display of the agent\'s own shell session, and the browser ends before the session does', async () => {
     screens = fakeScreens();
     const h = hubFake();
@@ -188,7 +210,8 @@ describe('the screen of a stage', () => {
 });
 
 describe('what a stage is offered of the screen', () => {
-  type Row = { name: string; agent: string; shell: 'none' | 'allowlist' | 'sandbox' | 'host'; screen?: boolean; hosts?: string[]; display: boolean; browser: boolean; confirm: boolean; asksDisplay: boolean };
+  /** `display`: the stage asked its sandbox for a display (the sandbox gives none when the workspace's switch is off). */
+  type Row = { name: string; agent: string; shell: 'none' | 'allowlist' | 'sandbox' | 'host'; screen?: boolean; hosts?: string[]; workspace?: false; display: boolean; browser: boolean; confirm: boolean; asksDisplay: boolean };
   const rows: Row[] = [
     { name: 'a QA stage with no switch keeps its display and gets only the confirmation tool', agent: 'qa', shell: 'sandbox', display: true, browser: false, confirm: true, asksDisplay: true },
     { name: 'a QA stage with the switch gets the browser on its display', agent: 'qa', shell: 'sandbox', screen: true, display: true, browser: true, confirm: true, asksDisplay: true },
@@ -198,10 +221,15 @@ describe('what a stage is offered of the screen', () => {
     { name: 'a non-QA stage with no switch is offered nothing', agent: 'developer', shell: 'sandbox', display: false, browser: false, confirm: false, asksDisplay: false },
     { name: 'a non-QA stage with a host list is offered only the confirmation tool', agent: 'developer', shell: 'sandbox', hosts: ['app.example.com'], display: false, browser: false, confirm: true, asksDisplay: false },
     { name: 'a non-QA stage on the computer\'s shell is offered the confirmation tool', agent: 'developer', shell: 'host', display: false, browser: false, confirm: true, asksDisplay: false },
+    { name: 'a QA stage with no switch on the computer\'s shell keeps its display and gets only the confirmation tool', agent: 'qa', shell: 'host', display: true, browser: false, confirm: true, asksDisplay: true },
+    { name: 'a non-QA stage with the switch on the computer\'s shell gets a display and the browser', agent: 'developer', shell: 'host', screen: true, display: true, browser: true, confirm: true, asksDisplay: true },
+    { name: 'with the workspace\'s display off, a stage with the switch and a sandbox gets no display and no browser', agent: 'developer', shell: 'sandbox', screen: true, workspace: false, display: true, browser: false, confirm: false, asksDisplay: false },
+    { name: 'with the workspace\'s display off, a stage with the switch and no shell gets no browser', agent: 'planner', shell: 'none', screen: true, workspace: false, display: false, browser: false, confirm: false, asksDisplay: false },
+    { name: 'with the workspace\'s display off, a QA stage gets no display', agent: 'qa', shell: 'sandbox', workspace: false, display: true, browser: false, confirm: false, asksDisplay: false },
   ];
   it.each(rows)('$name', async (row) => {
-    screens = fakeScreens();
-    const sandbox = displayOnRequest(fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/stage/x11/X99', kind: row.shell === 'host' ? 'host' : 'sandbox' } }));
+    screens = fakeScreens({ configure: (c) => void (c.runner.sandbox.display = row.workspace !== false) });
+    const sandbox = displayOnRequest(fakeSandbox({ gui: { browsers: null, display: row.workspace === false ? null : 'on' }, screen: { socket: '/stage/x11/X99', kind: row.shell === 'host' ? 'host' : 'sandbox' } }));
     const seen: Record<string, AgentCall> = {};
     const b = await boot({
       sandbox,
@@ -209,7 +237,7 @@ describe('what a stage is offered of the screen', () => {
       sessions: screens.sessions,
       asks: screens.asks,
       configure: (c) => {
-        c.runner.sandbox.display = true;
+        c.runner.sandbox.display = row.workspace !== false;
         c.runner.sandbox.network = 'off';
         Object.assign(agentOf(c, row.agent), { shell: row.shell, ...(row.screen ? { screen: true } : {}), ...(row.hosts ? { allowedHosts: row.hosts } : {}) });
       },
@@ -225,6 +253,53 @@ describe('what a stage is offered of the screen', () => {
     expect(sandbox.opened.some((o) => o.options.display === true)).toBe(row.display);
     expect(screens.starts.length).toBe(row.browser ? 1 : 0);
     if (row.browser) expect(screens.starts[0].display === null).toBe(!row.asksDisplay);
+  });
+});
+
+// Acceptance 18, the voluntary case: a QA agent drives a browser of its own from its shell and never calls `screen_confirm`. The app sees none of it: no hold, no confirmation, no
+// step log and no mask. What it still has is the recording of the display, the agent's host list on the sandbox and the audit lines of the session and of the commands.
+describe('the shell path: an agent that runs its own browser and never calls the confirmation tool', () => {
+  it('produces no hold and no confirmation and has no step log, and keeps its recording, its host list and its audited session', async () => {
+    screens = fakeScreens();
+    const { hub, events } = hubFake();
+    const sandbox = displayOnRequest(fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/stage/x11/X99', kind: 'sandbox' } }));
+    const seen: Record<string, AgentCall> = {};
+    const b = await boot({
+      sandbox,
+      screens: hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      configure: (c) => {
+        c.runner.sandbox.display = true;
+        c.runner.sandbox.network = 'off';
+        Object.assign(agentOf(c, 'qa'), { shell: 'sandbox', allowedHosts: ['app.example.com'] });
+      },
+    });
+    easy(b, seen);
+    // The agent's own Playwright, run as a command; the confirmation tool is there to call and is never called.
+    b.engine.script('qa', async (call) => {
+      seen.qa = call;
+      await call.exec?.exec('node drive-the-page.js');
+      const evidenceIds = await keepQaEvidence(call);
+      return work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '', ...(evidenceIds.length ? { evidenceIds } : {}) }] });
+    });
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const call = seen.qa;
+    expect(call.screen?.confirm, 'the tool is offered').toBeTypeOf('function');
+    expect(call.screen?.browser, 'and the app\'s browser is not').toBeUndefined();
+    // Nothing was held, nothing asked, no step kept, no browser session to mask.
+    expect(screens.asks.list()).toEqual([]);
+    expect(screens.sessions.list()).toEqual([]);
+    expect(screens.sessions.stepsOf(`run:${run.id}`)).toEqual([]);
+    expect(screens.sessions.masksOf(`run:${run.id}`)).toBeNull();
+    const audited = listAudit().map((e) => e.kind);
+    expect(audited).not.toContain('screen-hold');
+    expect(audited).not.toContain('screen-confirm');
+    // What the app still has: the display's recording (finished with the stage), the host list on the sandbox, the session lines and the command.
+    expect(events).toContain(`finish:run:${run.id}`);
+    expect(sandbox.opened.find((o) => o.options.display === true)?.options.agent?.allowedHosts).toEqual(['app.example.com']);
+    expect(audited).toEqual(expect.arrayContaining(['screen-open', 'screen-close', 'exec']));
   });
 });
 
@@ -428,5 +503,51 @@ describe('the hand-off of a stage', () => {
     await expect(waiting).resolves.toBeNull();
     expect(handoff.paused).toBe(0);
     expect(handoff.asks.list()).toEqual([]);
+  });
+
+  // #177 hands the stage's abort to the screen and #178 to the hand-off: a cancel while the person has the screen must end both.
+  it('ends a hand-off the person is in, and releases the screen, when the stage is cancelled', async () => {
+    screens = fakeScreens({ ownDisplay: '/own/X77' });
+    const handoff = fakeHandoff();
+    const b = await boot({
+      screens: hubFake(true).hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      handoff: handoff.service,
+      configure: (c) => {
+        c.runner.sandbox.display = true;
+        Object.assign(agentOf(c, 'planner'), { screen: true, shell: 'none' });
+      },
+    });
+    easy(b);
+    let waiting: Promise<unknown> = Promise.resolve();
+    let started = false;
+    b.engine.script('planner', (call) => {
+      started = true;
+      waiting = call.screen!.handoff!.request({ what: 'Log in to the site' });
+      return new Promise((_resolve, reject) => call.abort?.signal.addEventListener('abort', () => reject(new Error('cancelled'))));
+    });
+    const run = await b.runner.start('app#101');
+    await vi.waitFor(
+      () => {
+        if (b.runner.get(run.id)?.status === 'gate') b.runner.gate(run.id, 'approve');
+        expect(started).toBe(true);
+      },
+      { timeout: 20_000, interval: 20 },
+    );
+    const key = `run:${run.id}`;
+    await handoff.take(key);
+    const call = handoff.calls[0];
+    expect(call.active()).toBe(true);
+    expect(handoff.hub.held(key)).toBe(true);
+    expect(b.runner.cancel(run.id).status).toBe('cancelled');
+    await b.settle();
+    await expect(waiting).resolves.toBeNull();
+    expect(call.active()).toBe(false);
+    expect(handoff.hub.held(key)).toBe(false);
+    expect(handoff.paused).toBe(0);
+    expect(handoff.asks.list()).toEqual([]);
+    // The browser ends with the stage: nothing of it is left open for the person to find.
+    expect(screens.sessions.list()).toEqual([]);
   });
 });

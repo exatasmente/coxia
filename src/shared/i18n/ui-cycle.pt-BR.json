@@ -574,7 +574,7 @@
   "ui.screen.handoff.understand": "Entendi, assumir a tela",
   "ui.screen.handoff.warning.always": "O app mantém o que você digita e as imagens desta tela longe do agente, da conversa dele e do registro, e o agente não é avisado do que você faz.",
   "ui.screen.handoff.warning.asks": "O agente pede: {what}",
-  "ui.screen.handoff.warning.browser": "O que você digita é mascarado nas páginas que o navegador do app devolve ao agente, enquanto o agente as tiver: um valor mascarado aparece como [secret]. O app não devolve a imagem de uma página que o mostre.",
+  "ui.screen.handoff.warning.browser": "O que você digita fica oculto do agente nas páginas que o navegador do app devolve durante esta resposta ou etapa: um valor oculto aparece como [secret]. O app não devolve a imagem de uma página que o mostre. Se o valor ainda estiver na página depois, o agente poderá lê-lo mais tarde; por isso, envie ou apague o campo antes de devolver a tela.",
   "ui.screen.handoff.warning.last": "Use a tela só para o que você aceita que os programas do agente possam ver, e devolva-a quando terminar.",
   "ui.screen.handoff.warning.noPrograms": "Nenhum programa deste agente roda junto desta tela.",
   "ui.screen.handoff.warning.programs": "Os programas do agente continuam rodando enquanto você usa esta tela. Eles podem capturá-la ou ler a página por conta própria, inclusive o que você digita. O app não os congela nem os enxerga, então esta proteção é mais fraca que as outras.",
