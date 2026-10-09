@@ -15,6 +15,37 @@ export const TYPED_PLACEHOLDER = '[secret]';
 // Keys that move the caret or leave the field: the text typed after them is not a continuation of the text before them.
 const BREAKS = new Set(['Enter', 'Tab', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown', 'Delete']);
 
+/**
+ * Whether a segment is worth masking. A blank one (a run of spaces) or one made of a single repeated character ("aaaa", "....") would turn every snapshot into placeholders
+ * and mask nothing a person meant as a secret.
+ */
+export function usable(segment: string): boolean {
+  if (segment.trim() === '') return false;
+  // A lone character is kept: the mask ignores it anyway (under 4), and the collector's other rules count on seeing it.
+  return [...segment].length < 2 || new Set(segment).size > 1;
+}
+
+const hex = (byte: number): string => `%${byte.toString(16).toUpperCase().padStart(2, '0')}`;
+
+/**
+ * Every form one typed value takes in text, besides the plain, URL-encoded and JSON-escaped ones the app shares with the stage mask: a form GET writes a space as `+` and
+ * percent-encodes `! ' ( ) * ~` as well, and a server may encode every byte, in upper or lower case. Kept here so the shared encoder stays as it is.
+ */
+export function typedForms(value: string): string[] {
+  const forms = new Set(secretForms(value));
+  const percent = encodeURIComponent(value);
+  const more = percent.replace(/[!'()*~]/g, (c) => hex(c.charCodeAt(0)));
+  const keepStar = percent.replace(/[!'()~]/g, (c) => hex(c.charCodeAt(0)));
+  const every = [...Buffer.from(value, 'utf8')].map(hex).join('');
+  for (const f of [percent, more, keepStar]) {
+    forms.add(f);
+    forms.add(f.replace(/%20/g, '+'));
+  }
+  forms.add(every);
+  for (const f of [...forms]) forms.add(f.replace(/%[0-9A-F]{2}/g, (m) => m.toLowerCase()));
+  return [...forms].filter((f) => f.length >= 4).sort((a, b) => b.length - a.length);
+}
+
 export interface TypedCollector {
   /** Reads a batch of the viewer's events (anything: a shape that is not an event is ignored). Never throws. */
   feed(events: readonly unknown[]): void;
@@ -91,7 +122,7 @@ export function createTypedCollector(): TypedCollector {
     },
     values() {
       const open = current.join('');
-      return [...new Set(open ? [...segments, open] : segments)];
+      return [...new Set(open ? [...segments, open] : segments)].filter(usable);
     },
     clear() {
       segments = [];
@@ -130,7 +161,7 @@ export function createTypedValues(): TypedValues {
   return {
     add(values) {
       had = true;
-      forms = [...new Set([...forms, ...values.flatMap((v) => secretForms(v))])];
+      forms = [...new Set([...forms, ...values.filter(usable).flatMap((v) => typedForms(v))])];
       masker = exactMask(forms);
     },
     mask: (text) => masker(text),

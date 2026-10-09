@@ -69,12 +69,17 @@ describe('the text rebuilt from keys', () => {
   });
 
   it('keeps at most 512 characters of a segment and the latest 64 segments', () => {
-    const [long] = collect(typeText('a'.repeat(600)));
+    const [long] = collect(typeText('ab'.repeat(300)));
     expect(long).toHaveLength(512);
     const many = collect(...Array.from({ length: 70 }, (_, i) => [...typeText(`value-${i}`), down('Enter')]));
     expect(many).toHaveLength(64);
     expect(many[0]).toBe('value-6');
     expect(many.at(-1)).toBe('value-69');
+  });
+
+  it('drops a segment that is blank or one repeated character, which would mask every snapshot', () => {
+    expect(collect(typeText('    '), [down('Tab')], typeText('aaaa'), [down('Tab')], typeText('....'), [down('Tab')], typeText('  \t'), [down('Tab')], typeText('real-one'))).toEqual(['real-one']);
+    expect(collect(typeText('aaab'), [down('Tab')], typeText(' ab '))).toEqual(['aaab', ' ab ']);
   });
 
   it('forgets everything on clear, modifiers too', () => {
@@ -97,6 +102,29 @@ describe('masking what was typed', () => {
     const out = typed.mask(`page: ${text}`);
     expect(out).toBe(`page: ${[TYPED_PLACEHOLDER, TYPED_PLACEHOLDER, TYPED_PLACEHOLDER].join(' | ')}`);
     expect(typed.mask(`later: ${value}`)).toBe(`later: ${TYPED_PLACEHOLDER}`);
+  });
+
+  it('masks a value in an address as a form writes it: a space as a plus, and ! \' ( ) * ~ percent-encoded', () => {
+    const typed = createTypedValues();
+    typed.add(['Passw0rd!', 'my pass(phrase)*~']);
+    const out = typed.mask('GET /login?pw=Passw0rd%21&x=my+pass%28phrase%29%2A%7E&y=my%20pass%28phrase%29%2A%7E');
+    expect(out).toBe(`GET /login?pw=${TYPED_PLACEHOLDER}&x=${TYPED_PLACEHOLDER}&y=${TYPED_PLACEHOLDER}`);
+    expect(typed.hits('?pw=Passw0rd%21')).toBe(true);
+  });
+
+  it('masks a value written with every byte percent-encoded, in either case', () => {
+    const typed = createTypedValues();
+    typed.add(['Passw0rd!']);
+    const all = [...Buffer.from('Passw0rd!')].map((b) => `%${b.toString(16).padStart(2, '0')}`).join('');
+    expect(typed.mask(`?pw=${all}&q=${all.toUpperCase()}`)).toBe(`?pw=${TYPED_PLACEHOLDER}&q=${TYPED_PLACEHOLDER}`);
+    expect(typed.mask('?pw=passw0rd%21')).toBe('?pw=passw0rd%21');
+  });
+
+  it('does not take a blank or one-character value in, so it masks nothing of the page', () => {
+    const typed = createTypedValues();
+    typed.add(['    ', 'aaaa', '....']);
+    expect(typed.mask('a page    with aaaa and ....')).toBe('a page    with aaaa and ....');
+    expect(typed.had).toBe(true);
   });
 
   it('does not mask a value of fewer than 4 characters, and says it had a hand-off all the same', () => {
