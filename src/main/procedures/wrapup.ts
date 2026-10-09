@@ -77,7 +77,9 @@ export function cardable(draft: OfferDraft, home?: string): boolean {
 /** The prompt of the turn: the work's line, the agent's closing words as data, and the drafts. */
 export function turnPrompt(run: Pick<WrapUpRun, 'ref' | 'plan'>): string {
   const words = run.plan.words ? cp('runner.procedures.turn.words', { words: fence(run.plan.words) }) : '';
-  return cp('runner.procedures.turn.main', { ref: run.ref.replace(/\s+/g, ' ').trim().slice(0, 200), words, drafts: run.plan.text });
+  // The reference carries the issue's title, which a person outside the team may have written: data, like the words.
+  const ref = `<data>${fence(run.ref.replace(/\s+/g, ' ').trim().slice(0, 200))}</data>`;
+  return cp('runner.procedures.turn.main', { ref, words, drafts: run.plan.text });
 }
 
 /** The call the turn makes: a reader whatever the agent is, the procedure tools only, three turns. */
