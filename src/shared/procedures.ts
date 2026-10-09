@@ -143,3 +143,11 @@ export function isOld(r: Pick<ProcedureRecord, 'lastVerified' | 'origin'>, now: 
   const at = Date.parse(r.lastVerified ?? r.origin.at);
   return Number.isFinite(at) && now - at > OLD_AFTER_MS;
 }
+
+/** What a call that read a procedure leaves on its record of the call: the revision it read and what became of it. */
+export interface ProcedureUse {
+  id: string;
+  revision: number;
+  title: string;
+  outcome: 'ok' | 'failed' | 'replaced';
+}
