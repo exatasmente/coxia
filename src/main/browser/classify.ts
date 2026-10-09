@@ -129,16 +129,20 @@ export interface ParsedKey {
   key: string;
 }
 
-/** `Control+Shift+Z` as its modifiers and its key. */
+// Playwright takes a line break (`\n`, `\r`) as Enter and a lone space as Space, so the text is read as it was sent: trimming it would turn them into a free character.
+const KEY_ALIASES: Readonly<Record<string, string>> = { '\n': 'enter', '\r': 'enter', ' ': 'space', numpadenter: 'enter' };
+
+/** `Control+Shift+Z` as its modifiers and its key. The aliases of Enter and Space are the key they stand for. */
 export function parseKey(raw: string): ParsedKey {
-  const text = raw.trim();
-  if (text === '+') return { mods: new Set(), key: '+' };
-  const parts = text.split('+');
-  const key = (parts.pop() ?? '').toLowerCase();
-  return { mods: new Set(parts.filter(Boolean).map((p) => p.toLowerCase())), key: key === '' ? '+' : key };
+  if (raw === '+') return { mods: new Set(), key: '+' };
+  const parts = raw.split('+');
+  const last = (parts.pop() ?? '').toLowerCase();
+  const key = last === '' ? '+' : (KEY_ALIASES[last] ?? last);
+  return { mods: new Set(parts.filter(Boolean).map((p) => p.toLowerCase())), key };
 }
 
-const isKnownKey = (key: string): boolean => key.length === 1 || NAMED_KEYS.has(key) || /^(key[a-z]|digit\d|numpad\d)$/.test(key);
+// A single character that is whitespace or a control one is a key nobody can name: it fails closed instead of passing as a letter.
+const isKnownKey = (key: string): boolean => (key.length === 1 && !/[\s\p{C}\p{Z}]/u.test(key)) || NAMED_KEYS.has(key) || /^(key[a-z]|digit\d|numpad\d)$/.test(key);
 
 /**
  * The key of a press as the step log keeps it: a named key that types nothing (Enter, Tab, Escape, arrows...), or a chord with a Control, Meta or Alt (a shortcut, never
@@ -150,8 +154,8 @@ export function stepKey(raw: string): string | null {
   const shortcut = [...mods].some((m) => m === 'control' || m === 'meta' || m === 'controlormeta' || m === 'alt');
   const named = NAMED_KEYS.has(key) && !MODIFIERS.has(key) && key !== 'space';
   if (!named && !(shortcut && isKnownKey(key))) return null;
-  // Written the way the agent wrote it, cut to what a key name is.
-  return raw.trim().slice(0, 40);
+  // Written the way the agent wrote it, cut to what a key name is; a line break stands for Enter and a space for Space.
+  return raw.replace(/(^|\+)[\r\n]$/, '$1Enter').replace(/(^|\+) $/, '$1Space').slice(0, 40);
 }
 
 // ---- the target --------------------------------------------------------------------------------------------------------------------------
@@ -242,13 +246,13 @@ function pressKey(raw: string, focus: TargetInfo | null | undefined): Classifica
   if (shortcutMods.length) {
     // Control or Meta with S or Enter saves or sends; with the editing keys it only edits; anything else with a modifier is a shortcut the app has no row for.
     if (shortcutMods.every((m) => m === 'control' || m === 'meta' || m === 'controlormeta')) {
-      if (key === 's' || key === 'enter' || key === 'numpadenter') return held('shortcut', words);
+      if (key === 's' || key === 'enter') return held('shortcut', words);
       if (FREE_CHORD_KEYS.has(key)) return free(words);
     }
     return unclassified(words);
   }
-  if (key === 'enter' || key === 'numpadenter') return activateByKey(shown, false, focus);
-  if (key === 'space' || key === ' ') return activateByKey(undefined, true, focus);
+  if (key === 'enter') return activateByKey(shown, false, focus);
+  if (key === 'space') return activateByKey(undefined, true, focus);
   return free(words);
 }
 
@@ -304,7 +308,7 @@ export function needsTarget(tool: string, args: Record<string, unknown>): 'targe
     if (typeof args.key !== 'string') return null;
     const { mods, key } = parseKey(args.key);
     const shortcut = [...mods].some((m) => m !== 'shift');
-    return !shortcut && (key === 'enter' || key === 'numpadenter' || key === 'space' || key === ' ') ? 'focus' : null;
+    return !shortcut && (key === 'enter' || key === 'space') ? 'focus' : null;
   }
   if (tool === 'browser_type' && args.slowly === true && typesEnter(args.text)) return 'target';
   return null;

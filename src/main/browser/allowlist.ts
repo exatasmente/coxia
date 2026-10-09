@@ -7,6 +7,8 @@
 /** What a `target` must look like: a ref of the page's last snapshot (`e7`, or `f1e3` inside a frame). A selector would step around what the app reads of the target. */
 export const REF_PATTERN = '^(f\\d+)?e\\d+$';
 const REF_RE = new RegExp(REF_PATTERN);
+/** What a `key` must look like: no whitespace or control character, but for the one Playwright reads as Enter (a line break) or Space, at the end. */
+export const KEY_PATTERN = '^[^\\s\\x00-\\x1f\\x7f-\\x9f]*[\\n\\r ]?$';
 export const isRef = (value: unknown): value is string => typeof value === 'string' && REF_RE.test(value);
 
 export type PropType = 'string' | 'number' | 'integer' | 'boolean' | 'array' | 'object';
@@ -110,7 +112,7 @@ export const EXPOSED_TOOLS: readonly ExposedTool[] = [
     name: 'browser_press_key',
     kind: 'act',
     description: 'Presses a key or a chord (ArrowLeft, Enter, Escape, Control+A). Enter in a form field and a save or send shortcut are held until the person says yes.',
-    properties: { key: { type: 'string', maxLength: 40, description: 'The key, like ArrowLeft or a. A chord joins its keys with +.' }, reason: REASON },
+    properties: { key: { type: 'string', maxLength: 40, pattern: KEY_PATTERN, description: 'The key, like ArrowLeft or a. A chord joins its keys with +.' }, reason: REASON },
     required: ['key'],
   },
   {

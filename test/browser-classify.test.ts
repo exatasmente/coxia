@@ -26,6 +26,9 @@ function focused(moment: string): TargetInfo {
   return { ref: n?.ref ?? '', role: n?.role ?? '', name: n?.name ?? '', active: true, probe: parseProbe(f.probe) };
 }
 
+/** A button of the recorded page with the focus on it. */
+const focusOn = (label: string): TargetInfo => ({ ...el(label), active: true });
+
 describe('what the app reads of a recorded page', () => {
   it('asks the questions the fixtures were recorded with', () => {
     expect(recorded.element).toBe(PROBE_ELEMENT_FN);
@@ -86,10 +89,27 @@ const rows: Row[] = [
   // A shortcut.
   ['Control+S', 'browser_press_key', { key: 'Control+S' }, () => ({ focus: focused('body') }), HELD, 'shortcut'],
   ['Meta+Enter', 'browser_press_key', { key: 'Meta+Enter' }, () => ({ focus: focused('body') }), HELD, 'shortcut'],
+  ['Control and a line feed', 'browser_press_key', { key: 'Control+\n' }, () => ({}), HELD, 'shortcut'],
   ['ControlOrMeta+s', 'browser_press_key', { key: 'ControlOrMeta+s' }, () => ({}), HELD, 'shortcut'],
   // A dialog.
   ['accepting a dialog', 'browser_handle_dialog', { accept: true }, () => ({}), HELD, 'dialog'],
   ['dismissing a dialog', 'browser_handle_dialog', { accept: false }, () => ({}), FREE],
+  // The aliases Playwright reads as Enter and Space press the same keys, and are held the same.
+  ['a line feed on a focused submit button', 'browser_press_key', { key: '\n' }, () => ({ focus: focused('send') }), HELD, 'submit'],
+  ['a line feed on a focused Delete button', 'browser_press_key', { key: '\n' }, () => ({ focus: focusOn('button Delete') }), HELD, 'name'],
+  ['a line feed in a text field inside a form', 'browser_press_key', { key: '\n' }, () => ({ focus: focused('name') }), HELD, 'submit'],
+  ['a carriage return on a focused submit button', 'browser_press_key', { key: '\r' }, () => ({ focus: focused('send') }), HELD, 'submit'],
+  ['a carriage return on a focused Delete button', 'browser_press_key', { key: '\r' }, () => ({ focus: focusOn('button Delete') }), HELD, 'name'],
+  ['a carriage return in a text field inside a form', 'browser_press_key', { key: '\r' }, () => ({ focus: focused('name') }), HELD, 'submit'],
+  ['Shift and a line feed on a focused submit button', 'browser_press_key', { key: 'Shift+\n' }, () => ({ focus: focused('send') }), HELD, 'submit'],
+  ['Shift and a line feed on a focused Delete button', 'browser_press_key', { key: 'Shift+\n' }, () => ({ focus: focusOn('button Delete') }), HELD, 'name'],
+  ['Shift and a line feed in a text field inside a form', 'browser_press_key', { key: 'Shift+\n' }, () => ({ focus: focused('name') }), HELD, 'submit'],
+  ['NumpadEnter on a focused submit button', 'browser_press_key', { key: 'NumpadEnter' }, () => ({ focus: focused('send') }), HELD, 'submit'],
+  ['NumpadEnter on a focused Delete button', 'browser_press_key', { key: 'NumpadEnter' }, () => ({ focus: focusOn('button Delete') }), HELD, 'name'],
+  ['NumpadEnter in a text field inside a form', 'browser_press_key', { key: 'NumpadEnter' }, () => ({ focus: focused('name') }), HELD, 'submit'],
+  ['a lone space on a focused submit button', 'browser_press_key', { key: ' ' }, () => ({ focus: focused('send') }), HELD, 'submit'],
+  ['a lone space on a focused Delete button', 'browser_press_key', { key: ' ' }, () => ({ focus: focusOn('button Delete') }), HELD, 'name'],
+  ['Shift and a space on a focused Delete button', 'browser_press_key', { key: 'Shift+ ' }, () => ({ focus: focusOn('button Delete') }), HELD, 'name'],
   // Not held.
   ['click on a link named Next', 'browser_click', { target: 'e4' }, () => ({ target: el('link Next') }), FREE],
   ['click on Cancel', 'browser_click', { target: 'e17' }, () => ({ target: el('button Cancel') }), FREE],
@@ -125,6 +145,7 @@ const rows: Row[] = [
   ['Enter with nothing focused', 'browser_press_key', { key: 'Enter' }, () => ({ focus: focused('body') }), FREE],
   ['Space on a checkbox', 'browser_press_key', { key: 'Space' }, () => ({ focus: focused('agree') }), FREE],
   ['Space in a field', 'browser_press_key', { key: ' ' }, () => ({ focus: focused('name') }), FREE],
+  ['Space in a field, spelled Space', 'browser_press_key', { key: 'Space' }, () => ({ focus: focused('name') }), FREE],
   // The app cannot say what these do.
   ['a control with no name at all', 'browser_click', { target: 'e26' }, () => ({ target: el('button') }), UNCLEAR, 'unclassified'],
   ['an iframe', 'browser_click', { target: 'e33' }, () => ({ target: el('iframe') }), UNCLEAR, 'unclassified'],
@@ -138,6 +159,14 @@ const rows: Row[] = [
   ['Enter in an editable region', 'browser_press_key', { key: 'Enter' }, () => ({ focus: { ref: 'e3', role: 'textbox', name: 'Doc', active: true, probe: { ...focused('name').probe!, editable: true, tag: 'div', form: false } } }), UNCLEAR, 'unclassified'],
   ['a chord the list has no row for', 'browser_press_key', { key: 'Control+Shift+K' }, () => ({}), UNCLEAR, 'unclassified'],
   ['Alt+F4', 'browser_press_key', { key: 'Alt+F4' }, () => ({}), UNCLEAR, 'unclassified'],
+  ['Return as a key', 'browser_press_key', { key: 'Return' }, () => ({ focus: focused('name') }), UNCLEAR, 'unclassified'],
+  ['Spacebar as a key', 'browser_press_key', { key: 'Spacebar' }, () => ({ focus: focused('name') }), UNCLEAR, 'unclassified'],
+  ['a tab character as a key', 'browser_press_key', { key: '\t' }, () => ({ focus: focused('name') }), UNCLEAR, 'unclassified'],
+  ['a no-break space as a key', 'browser_press_key', { key: '\u00a0' }, () => ({ focus: focused('name') }), UNCLEAR, 'unclassified'],
+  ['a null character as a key', 'browser_press_key', { key: '\u0000' }, () => ({ focus: focused('name') }), UNCLEAR, 'unclassified'],
+  ['a line separator as a key', 'browser_press_key', { key: '\u2028' }, () => ({ focus: focused('name') }), UNCLEAR, 'unclassified'],
+  ['Enter and a trailing space as a key', 'browser_press_key', { key: 'Enter ' }, () => ({ focus: focused('name') }), UNCLEAR, 'unclassified'],
+  ['Enter and a leading space as a key', 'browser_press_key', { key: ' Enter' }, () => ({ focus: focused('name') }), UNCLEAR, 'unclassified'],
   ['a key nobody knows', 'browser_press_key', { key: 'Banana' }, () => ({}), UNCLEAR, 'unclassified'],
   ['a tool with no row', 'browser_evaluate', { function: '() => 1' }, () => ({}), UNCLEAR, 'unclassified'],
   ['an unknown tool', 'something_new', {}, () => ({}), UNCLEAR, 'unclassified'],
@@ -204,6 +233,20 @@ describe('keys', () => {
     expect(parseKey('Control+Shift+Z')).toEqual({ mods: new Set(['control', 'shift']), key: 'z' });
     expect(parseKey('+')).toEqual({ mods: new Set(), key: '+' });
     expect(parseKey('Control++')).toEqual({ mods: new Set(['control']), key: '+' });
+  });
+  it('reads the line breaks, the lone space and NumpadEnter as the keys Playwright takes them for, and does not trim', () => {
+    expect(parseKey('\n').key).toBe('enter');
+    expect(parseKey('\r').key).toBe('enter');
+    expect(parseKey('Shift+\n')).toEqual({ mods: new Set(['shift']), key: 'enter' });
+    expect(parseKey('NumpadEnter').key).toBe('enter');
+    expect(parseKey(' ').key).toBe('space');
+    expect(parseKey('Enter ').key).toBe('enter ');
+    expect(stepKey('\n')).toBe('Enter');
+    expect(stepKey('Control+ ')).toBe('Control+Space');
+  });
+  it('reads the page for the same keys the classifier takes for Enter and Space', () => {
+    for (const key of ['\n', '\r', 'Shift+\n', ' ', 'Shift+ ', 'NumpadEnter']) expect(needsTarget('browser_press_key', { key }), JSON.stringify(key)).toBe('focus');
+    for (const key of ['Return', 'Spacebar', '\t', '\u00a0', 'Enter ']) expect(needsTarget('browser_press_key', { key }), JSON.stringify(key)).toBeNull();
   });
   it('reads the page for a click, an Enter or a Space, and not for the rest', () => {
     expect(needsTarget('browser_click', { target: 'e1' })).toBe('target');
