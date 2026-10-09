@@ -314,7 +314,7 @@ const endedAs = (r: ExecResult): string => (r.refused ? t(`main.runner.exec.refu
  * the thread, the audit log and (through the session) the live activity about every command that runs in it. A machine that cannot make a sandbox fails the stage: an
  * agent set to run commands in one never runs them without.
  */
-export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean, signal: AbortSignal, clock: StageClock): Promise<SandboxSession> {
+export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean, signal: AbortSignal, clock: StageClock, own = false): Promise<SandboxSession> {
   const host = agent.shell === 'host';
   const config = d.config();
   const threadId = runThreadId(run.id);
@@ -372,8 +372,9 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
     if (gui?.display === 'missing' || gui?.display === 'failed') appendGui(gui.display === 'missing' ? 'runner.sandbox.noDisplay' : 'runner.sandbox.displayFailed', {});
     // The app's own connection to the stage's display is made now, before the agent has run a single command: what is at the socket's path is the agent's to change from
-    // then on. A display that cannot be reached leaves the stage without a live screen and says so; nothing else changes.
-    if (d.screens && display && session.screen && gui?.display === 'on' && !(await d.screens.open({ run: run.id, stage: stage.id, agent: agent.id, socket: session.screen.socket, kind: session.screen.kind }))) appendGui('runner.screen.noConnect', {});
+    // then on. A display that cannot be reached leaves the stage without a live screen and says so; nothing else changes. Only the stage's own session is registered
+    // (`own`): an agent it calls, or one mentioned in the run's thread, gets its display but no live screen, since a run has one and it is the stage's.
+    if (own && d.screens && display && session.screen && gui?.display === 'on' && !(await d.screens.open({ run: run.id, stage: stage.id, agent: agent.id, socket: session.screen.socket, kind: session.screen.kind }))) appendGui('runner.screen.noConnect', {});
     return session;
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
@@ -477,7 +478,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   // The watchdog is made with the agent call, after the session: until then a pause has nothing to stop.
   const clock: StageClock & { watch?: Watchdog } = { pause: () => clock.watch?.pause() ?? (() => undefined), beat: () => clock.watch?.beat(), allowed: new Set() };
   // A documentation run's agent gets no command door at all, whatever its `shell` says.
-  const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host') ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock) : null;
+  const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host') ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock, true) : null;
   try {
     return await runStage(d, run, flow, abort, usage, carried, session, clock);
   } finally {

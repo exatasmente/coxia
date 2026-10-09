@@ -76,12 +76,26 @@ describe('a live screen', () => {
     expect(s.changed).toEqual([]);
   });
 
-  it('takes the place of an earlier one of the same run, and closes that connection', async () => {
-    const s = setup();
+  it('refuses a second one for a run that has one, and leaves the first one, its connection and its recording alone', async () => {
+    const sink = fakeSink();
+    const s = setup({ sink });
     await s.open();
     const first = s.conn;
+    expect(await s.open()).toBe(false);
+    expect(s.connect).toHaveBeenCalledTimes(1);
+    expect(first.closed).toBe(false);
+    expect(s.hub.state('r-1')).toMatchObject({ stage: 'qa' });
+    expect(sink.aborted).toBe(0);
+    // Another run is not the first one's business.
+    expect(await s.hub.open({ run: 'r-2', stage: 'qa', agent: 'qa', socket: '/x/X98', kind: 'sandbox' })).toBe(true);
+  });
+
+  it('takes a new one once the earlier one has ended', async () => {
+    const s = setup();
     await s.open();
-    expect(first.closed).toBe(true);
+    s.hub.end('r-1');
+    expect(await s.open()).toBe(true);
+    expect(s.connect).toHaveBeenCalledTimes(2);
   });
 });
 

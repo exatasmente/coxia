@@ -53,7 +53,7 @@ export interface OpenScreen {
 }
 
 export interface ScreenHub {
-  /** Connects to the stage's display and registers it; false when it cannot (the stage goes on without a live screen). Made before the agent's first command. */
+  /** Connects to the stage's display and registers it; false when it cannot, or when the run already has a live screen (the stage goes on without one). Made before the agent's first command. */
   open(screen: OpenScreen): Promise<boolean>;
   /** What the run is handed out with; null when its stage has no live screen. */
   state(run: string): LiveScreen | null;
@@ -251,6 +251,8 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
   return {
     async open(screen) {
       if (!deps.enabled) return false;
+      // A run has one live screen: a second display never replaces the one that is recording.
+      if (lives.has(screen.run)) return false;
       end(screen.run);
       let conn: X11Connection;
       try {

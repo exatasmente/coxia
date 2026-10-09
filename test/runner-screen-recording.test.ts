@@ -13,6 +13,8 @@ import type { Run } from '../src/shared/runs';
 import { type Boot, boot, doc, fakeSandbox, keepQaEvidence, work } from './helpers/runner';
 import { type FakeSink, fakeSink } from './helpers/recorderSink';
 import { type FakeConn, fakeConn } from './helpers/screen';
+import { CALL_AGENT_TOOL } from '../src/main/runner/tools';
+import type { ToolImpl } from '../src/main/engine/open/tools/types';
 import { webmHead } from './helpers/webm';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -310,5 +312,46 @@ describe('the recording of a QA stage', () => {
     expect(run.status).toBe('done');
     expect(b.thread(run).filter((m) => m.code === 'runner.screen.cappedSize')).toHaveLength(1);
     expect(recordingsOf(run)[0].recording?.truncated).toBe('size');
+  });
+});
+
+describe('an agent called during a QA stage', () => {
+  it('has its own sandbox but never takes the stage\'s live screen or recording from it', async () => {
+    let b!: Boot;
+    const sink = fakeSink();
+    const conn = fakeConn();
+    const connect = vi.fn(async () => conn);
+    const hub = createScreenHub({
+      enabled: true,
+      encoder: { encode: () => ({ jpeg: Uint8Array.from([1]), width: 1, height: 1 }) },
+      connect,
+      sink: () => sink,
+      note: (run, stage, code, params) => b.forum.append(runThreadId(run), { kind: 'system', author: { type: 'app' }, code, params, stage }),
+    });
+    const sandbox = fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/stage/x11/X99', kind: 'sandbox' } });
+    b = await boot({ sandbox, screens: hub, configure: (c) => { c.language = 'en'; shellOf(c, 'qa', 'sandbox'); shellOf(c, 'developer', 'sandbox'); } });
+    const seen: { closed: boolean; fedBefore: number; opened: number }[] = [];
+    easy(b, async (call) => {
+      await vi.waitFor(() => expect(sink.fed.length).toBeGreaterThan(0));
+      const call2 = (call.runnerTools as ToolImpl[]).find((x) => x.name === CALL_AGENT_TOOL)!;
+      await call2.run({ to: 'developer', topic: 'Can you check the page?', place: 'run' }, {} as never);
+      seen.push({ closed: conn.closed, fedBefore: sink.fed.length, opened: connect.mock.calls.length });
+      return passes(call);
+    });
+    // The first call of the developer is its own stage; the second is the one the QA agent makes.
+    b.engine.script('developer', () => work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] }), () => ({ texto: 'looks fine' }));
+    const run = await reach(b, await b.runner.start('app#101'), 'ready');
+    expect(run.status).toBe('done');
+    // The called agent got a sandbox of its own with a display, and the hub was not asked for a second screen.
+    expect(sandbox.opened.filter((o) => o.options.display)).toHaveLength(2);
+    expect(seen).toEqual([{ closed: false, fedBefore: expect.any(Number), opened: 1 }]);
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(b.thread(run).filter((m) => m.code === 'runner.screen.noConnect')).toEqual([]);
+    // The recording is the stage's: one encoder, closed once, kept once.
+    expect(sink.opened).toHaveLength(1);
+    expect(sink.closed).toBe(1);
+    expect(sink.aborted).toBe(0);
+    expect(recordingsOf(run)).toHaveLength(1);
+    expect(conn.closed).toBe(true);
   });
 });
