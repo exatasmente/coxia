@@ -227,6 +227,22 @@ describe('save: a replacement', () => {
     expect(r.ok && r.record.previous?.title).toBe('Run the end-to-end tests');
   });
 
+  it('an agent replacing an agent\'s version does not push the person\'s version out of previous', () => {
+    const store = make();
+    const mine = store.save(req({ writer: { by: 'person', surface: 'person' } }));
+    if (!mine.ok) throw new Error(mine.text);
+    const second = store.save(req({ id: mine.record.id, revision: 1, input: content({ title: 'Changed by an agent' }) }));
+    expect(second.ok && second.record.previous).toMatchObject({ title: 'Run the end-to-end tests', byPerson: true });
+    const third = store.save(req({ id: mine.record.id, revision: 2, input: content({ title: 'Changed again by an agent' }) }));
+    expect(third.ok && third.record.previous?.title).toBe('Run the end-to-end tests');
+    const fourth = store.save(req({ id: mine.record.id, revision: 3, input: content({ title: 'Changed a third time' }) }));
+    expect(fourth.ok && fourth.record.previous?.title).toBe('Run the end-to-end tests');
+    // The person marks the agent's version as reviewed: that one is now worth keeping, and the next agent replacement pushes it into previous.
+    store.review(mine.record.id);
+    const fifth = store.save(req({ id: mine.record.id, revision: 4, input: content({ title: 'Changed a fourth time' }) }));
+    expect(fifth.ok && fifth.record.previous).toMatchObject({ title: 'Changed a third time', byPerson: true });
+  });
+
   it('the person\'s edit of a failing record makes it unverified; of an ok one it keeps the state', () => {
     const store = make();
     const failing = created(store);
@@ -251,6 +267,15 @@ describe('stale and use', () => {
     expect(onDisk(r.id)).toMatchObject({ state: 'failing', lastFailed: { at, step: 2 }, revision: 1, stats: { failures: 1, failuresSinceSave: 1 } });
     // The agent that found it failing still holds revision 1 and can write the fix.
     expect(store.save(req({ id: r.id, revision: 1, input: content({ title: 'Run the tests, fixed' }) })).ok).toBe(true);
+  });
+
+  it('refuses a report that read an older revision than the record has', () => {
+    const store = make();
+    const r = created(store);
+    store.save(req({ id: r.id, revision: 1, input: content({ title: 'Run the tests, fixed' }) }));
+    expect(store.stale(r.id, 1, AT, 1)).toMatchObject({ ok: false, code: 'revision' });
+    expect(onDisk(r.id)).toMatchObject({ revision: 2, state: 'unverified', stats: { failures: 0 } });
+    expect(store.stale(r.id, 1, AT, 2).ok).toBe(true);
   });
 
   it('refuses a step the record does not have, and a record that is not there', () => {

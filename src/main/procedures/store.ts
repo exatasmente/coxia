@@ -10,6 +10,7 @@ import {
   normalTitle,
   sameKey,
   type ProcedureOrigin,
+  type ProcedurePrevious,
   type ProcedureRecord,
   type ProcedureUse,
   type StepsFrom,
@@ -74,7 +75,7 @@ export type GetResult =
   | { status: 'newer'; v: number }
   | { status: 'invalid' };
 
-export type MarkResult = { ok: true; record: ProcedureRecord } | { ok: false; code: 'not-found' | 'deleted' | 'newer' | 'step' | 'io'; text: string };
+export type MarkResult = { ok: true; record: ProcedureRecord } | { ok: false; code: 'not-found' | 'deleted' | 'newer' | 'step' | 'revision' | 'io'; text: string };
 
 export interface CallEnd {
   at: string;
@@ -107,8 +108,11 @@ export interface ProcedureStore {
   save(req: SaveRequest): SaveResult;
   /** Removes the record's file and remembers the id so it is never drawn again. Only the person's door calls this. */
   remove(id: string): { ok: true } | { ok: false; code: 'not-found' | 'newer' | 'io' };
-  /** An agent said step `step` no longer works: the record is failing. The revision does not move (it is the text's). */
-  stale(id: string, step: number, at: string): MarkResult;
+  /**
+   * An agent said step `step` no longer works: the record is failing. The revision does not move (it is the text's). `revision` is the one the agent read: a report on a
+   * record that has a newer revision is about text that is gone, and is refused.
+   */
+  stale(id: string, step: number, at: string, revision?: number): MarkResult;
   /** The person looked at this record: it is marked reviewed. The text did not change, so the revision does not move. */
   review(id: string): MarkResult;
   /** A call ended: its reads become uses, and what it created gets its baseline. Returns what to mark on the call's record. */
@@ -193,6 +197,14 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
 
   const describe = (r: ProcedureRecord): string => `${r.id} "${r.title}" (${r.stats.uses} uses, ${r.state})`;
 
+  // The version before this one, kept once. An agent that replaces an agent's version, which the person has neither written nor reviewed, keeps the person's version that is
+  // already there instead of pushing it out with one of an agent's.
+  function previousFor(old: ProcedureRecord, person: boolean): ProcedurePrevious {
+    const byPerson = old.origin.by === 'person' || old.reviewed;
+    if (!person && !byPerson && old.previous?.byPerson) return old.previous;
+    return { title: old.title, steps: old.steps, pitfalls: old.pitfalls, waits: old.waits, ...(byPerson ? { byPerson: true as const } : {}) };
+  }
+
   function save(req: SaveRequest): SaveResult {
     const checked = checkContent(req.input, { repos: req.repos, home: req.home });
     if (!checked.ok) return { ok: false, code: 'invalid', refusals: checked.refusals, text: `Not saved. Fix these and save again:\n${describeRefusals(checked.refusals)}` };
@@ -260,7 +272,7 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
         ...(keyedBy ? { keyedBy } : {}),
         stepsFrom: req.stepsFrom ?? 'agent',
         reviewed: person,
-        previous: { title: old.title, steps: old.steps, pitfalls: old.pitfalls, waits: old.waits },
+        previous: previousFor(old, person),
       } as ProcedureRecord;
     }
     if (!write(fileOf(record.id), record)) return { ok: false, code: 'io', text: 'The procedure could not be written. Nothing was changed.' };
@@ -290,8 +302,11 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
     return write(fileOf(id), next) ? { ok: true, record: next } : { ok: false, code: 'io', text: 'The procedure could not be written.' };
   }
 
-  function stale(id: string, step: number, at: string): MarkResult {
+  function stale(id: string, step: number, at: string, revision?: number): MarkResult {
     const got = read(id);
+    if (got.status === 'ok' && revision !== undefined && got.record.revision > revision) {
+      return { ok: false, code: 'revision', text: `${id} changed since you read it (it is at revision ${got.record.revision}, you read ${revision}). Read it again with procedures_get before you report a step of it.` };
+    }
     if (got.status === 'ok' && (!Number.isInteger(step) || step < 1 || step > got.record.steps.length)) {
       return { ok: false, code: 'step', text: `${id} has ${got.record.steps.length} steps; name one of 1 to ${got.record.steps.length}.` };
     }

@@ -104,8 +104,11 @@ export interface ProcedureStats {
   recent: ProcedureUseEntry[];
 }
 
-/** The text fields of the revision before this one, kept once so the person can restore it. */
-export type ProcedurePrevious = Pick<ProcedureContent, 'title' | 'steps' | 'pitfalls' | 'waits'>;
+/**
+ * The text fields of the revision before this one, kept once so the person can restore it. `byPerson`: that version was written or reviewed by the person, and an agent's
+ * replacement of an agent's version does not push it out.
+ */
+export type ProcedurePrevious = Pick<ProcedureContent, 'title' | 'steps' | 'pitfalls' | 'waits'> & { byPerson?: true };
 
 export interface ProcedureRecord extends ProcedureContent {
   v: typeof PROCEDURE_VERSION;

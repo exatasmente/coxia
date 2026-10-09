@@ -60,9 +60,9 @@ Não há ferramenta para apagar nem para mexer na tela de procedimentos: o agent
 
 ### Como o registro muda
 
-Um registro é **atualizado, não acumulado**. Uma gravação com o `id` troca os campos de texto (a revisão anterior fica em `previous`), devolve o estado a `unverified`, zera as falhas desde a gravação e mantém o consumo-base. Uma gravação que não leu a revisão atual é recusada com "mudou desde que você leu; leia de novo".
+Um registro é **atualizado, não acumulado**. Uma gravação com o `id` troca os campos de texto (a revisão anterior fica em `previous`; uma troca de agente sobre uma versão de agente não tira dali a versão que a pessoa escreveu ou revisou), devolve o estado a `unverified`, zera as falhas desde a gravação e mantém o consumo-base. Uma gravação que não leu a revisão atual é recusada com "mudou desde que você leu; leia de novo".
 
-- **Falha**: `procedures_stale` marca o registro como `failing`, guarda o passo e escreve uma linha na thread. Ele continua na lista, marcado. Um registro que falhou duas vezes desde a última gravação sai da lista do prompt (a pessoa continua vendo).
+- **Falha**: `procedures_stale` marca o registro como `failing`, guarda o passo e escreve uma linha na thread. Só vale para um registro que a chamada leu, que estava na lista dela ou que ela gravou, na revisão que ela viu, e uma chamada falha um registro uma vez. Ele continua na lista, marcado. Um registro que falhou duas vezes desde a última gravação sai da lista do prompt (a pessoa continua vendo).
 - **Uso**: uma chamada que leu um procedimento e terminou sem relatar falha nem trocá-lo conta como uso "sem falha relatada"; o app marca `ok` e `lastVerified`. Isso é **inferido pelo app**, não declarado pelo modelo, e é mais fraco que um teste: ninguém testou os passos. A tela diz exatamente isso.
 - **Velho**: sem verificação há mais de 90 dias, o registro é listado como velho, nunca removido por idade.
 
@@ -187,9 +187,9 @@ There is no tool to delete, and none that touches the Procedures view: the agent
 
 ### How a record changes
 
-A record is **updated, not piled up**. A write with the `id` replaces the text fields (the revision before stays in `previous`), returns the state to `unverified`, resets the failures since the save and keeps the baseline usage. A write that did not read the current revision is refused with "changed since you read it; read again".
+A record is **updated, not piled up**. A write with the `id` replaces the text fields (the revision before stays in `previous`; an agent replacing an agent's version does not push out the version the person wrote or reviewed), returns the state to `unverified`, resets the failures since the save and keeps the baseline usage. A write that did not read the current revision is refused with "changed since you read it; read again".
 
-- **Failure**: `procedures_stale` marks the record `failing`, keeps the step and writes a line in the thread. It stays in the list, marked. A record that failed twice since it was last saved leaves the prompt's list (the person still sees it).
+- **Failure**: `procedures_stale` marks the record `failing`, keeps the step and writes a line in the thread. It counts only for a record the call read, had in its list or wrote, at the revision it saw, and a call fails a record once. It stays in the list, marked. A record that failed twice since it was last saved leaves the prompt's list (the person still sees it).
 - **Use**: a call that read a procedure and finished without reporting a failure or replacing it counts as a use with "no failure reported"; the app sets `ok` and `lastVerified`. This is **inferred by the app**, not claimed by the model, and it is weaker than a test: nobody tested the steps. The view says so in those words.
 - **Old**: not verified for more than 90 days, a record is listed as old and never removed by age.
 

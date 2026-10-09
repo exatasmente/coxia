@@ -73,7 +73,9 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
 
   const read = new Set<string>();
   const staled = new Set<string>();
-  const reportedSteps = new Set<string>();
+  // The records this call may report as failing, and the revision of each that it saw: the ones in its prompt list, the ones it read, the ones it wrote. A report on any
+  // other record, or on text that changed after the call saw it, is refused, so one call cannot hide records from the others.
+  const seen = new Map<string, number>();
   const replaced = new Set<string>();
   const created = new Set<string>();
   let used = emptyUsage();
@@ -100,7 +102,9 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
 
   // What waits for the person's review is not offered to any agent, in the prompt or in a tool.
   const records = (): ProcedureRecord[] => deps.store.list().records.filter((r) => !awaitsReview(r));
-  const list = listProcedures(records(), selectCtx());
+  const visible = records();
+  const list = listProcedures(visible, selectCtx());
+  for (const r of visible) if (list.listed.includes(r.id)) seen.set(r.id, r.revision);
 
   const lineOf = (r: ProcedureRecord): string => procedureLine(r, { language, now: now(), agentsMd: ctx.select.agentsMd });
 
@@ -141,6 +145,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
       case 'ok':
         if (awaitsReview(got.record)) return answer(`${id} was written in a call in which the person used the screen, and waits for their review. No agent can read it until they mark it as reviewed.`);
         read.add(id);
+        seen.set(id, got.record.revision);
         return answer(renderRecord(got.record, lineOf(got.record)));
       case 'deleted':
         return answer(`${id} was deleted by the person; it is gone. Save a new one if it is worth keeping (no id).`);
@@ -295,6 +300,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     const rec = r.record;
     if (r.created) created.add(rec.id);
     else replaced.add(rec.id);
+    seen.set(rec.id, rec.revision);
     audit({ op: r.created ? 'save' : 'replace', record: rec, ...(handoff ? { held: true } : {}) });
     say(r.created ? 'runner.procedures.saved' : 'runner.procedures.replaced', { id: rec.id, revision: rec.revision, title: rec.title });
     if (handoff) say('runner.procedures.heldForReview', { id: rec.id, title: rec.title });
@@ -317,12 +323,11 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     if (o.note !== undefined && typeof o.note !== 'string') return answer('note must be a short text.');
     const id = o.id;
     const step = o.step;
-    // The same step of the same procedure reported again in one call is one failure.
-    const seen = `${id}:${step}`;
-    if (reportedSteps.has(seen)) return answer(`Step ${step} of ${id} is already reported as failing.`);
-    const r = deps.store.stale(id, step, iso());
+    if (!seen.has(id)) return answer(`${id} is not a procedure you read in this call. Read it with procedures_get before you report a step of it.`);
+    // However many steps are reported, a call fails a record once.
+    if (staled.has(id)) return answer(`${id} is already reported as failing in this call.`);
+    const r = deps.store.stale(id, step, iso(), seen.get(id));
     if (!r.ok) return answer(r.text);
-    reportedSteps.add(seen);
     // The call followed the procedure, so its read is a use that failed and not one that worked.
     read.add(id);
     staled.add(id);

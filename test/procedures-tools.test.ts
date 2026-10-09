@@ -280,15 +280,47 @@ describe('procedures_stale', () => {
     expect(JSON.stringify(audits)).not.toContain('button moved');
   });
 
-  it('a repeated report of the same step in one call counts once; another step counts', async () => {
+  it('a call fails a record once, whatever the number of steps it reports', async () => {
     const { session } = make();
     await session.tools.save(input());
     await session.tools.stale({ id: 'p-00000001', step: 1 });
     expect((await session.tools.stale({ id: 'p-00000001', step: 1 })).text).toContain('already reported');
-    expect(onDisk('p-00000001').stats.failures).toBe(1);
-    await session.tools.stale({ id: 'p-00000001', step: 2 });
-    expect(onDisk('p-00000001').stats.failures).toBe(2);
-    expect(notes.filter((n) => n.code === 'runner.procedures.stale')).toHaveLength(2);
+    expect((await session.tools.stale({ id: 'p-00000001', step: 2 })).text).toContain('already reported');
+    expect(onDisk('p-00000001').stats).toMatchObject({ failures: 1, failuresSinceSave: 1 });
+    expect(notes.filter((n) => n.code === 'runner.procedures.stale')).toHaveLength(1);
+  });
+
+  it('accepts a report only for a record the call read, was told of in its list, or wrote', async () => {
+    const { session, store } = make();
+    await session.tools.save(input());
+    await session.tools.save(input({ title: 'Other task' }));
+    // A fresh call, which saw only the first record in its prompt list ...
+    const other = make({}, store).session;
+    // ... and a third record it was never told of (another key).
+    const hidden = store.save({ input: input({ kind: 'tool', key: 'make', title: 'Tool task' }), writer: { by: 'someone', surface: 'stage' }, repos: ['api', 'web'] });
+    if (!hidden.ok) throw new Error(hidden.text);
+    const refused = await other.tools.stale({ id: hidden.record.id, step: 1 });
+    expect(refused.text).toContain('not a procedure you read in this call');
+    expect(onDisk(hidden.record.id)).toMatchObject({ state: 'unverified', stats: { failures: 0 } });
+    expect(audits.filter((e) => e.target === 'procedures:stale')).toEqual([]);
+    // Once it reads that record the report is accepted.
+    await other.tools.get({ id: hidden.record.id });
+    expect((await other.tools.stale({ id: hidden.record.id, step: 1 })).text).toContain('Marked');
+    // A record in the call's prompt list needs no read.
+    expect((await other.tools.stale({ id: 'p-00000001', step: 1 })).text).toContain('Marked');
+  });
+
+  it('refuses a report on a record that has a newer revision than the one the call read', async () => {
+    const { session, store } = make();
+    await session.tools.save(input());
+    const reader = make({}, store).session;
+    await reader.tools.get({ id: 'p-00000001' });
+    const fixed = store.save({ input: input({ title: 'Run the tests, fixed' }), id: 'p-00000001', revision: 1, writer: { by: 'person', surface: 'person' }, repos: ['api', 'web'] });
+    expect(fixed.ok).toBe(true);
+    const a = await reader.tools.stale({ id: 'p-00000001', step: 1 });
+    expect(a.text).toContain('changed since you read it');
+    expect(onDisk('p-00000001')).toMatchObject({ revision: 2, state: 'unverified', stats: { failures: 0 } });
+    expect(reader.finish('done')).toEqual([expect.objectContaining({ id: 'p-00000001', outcome: 'ok' })]);
   });
 
   it('a one-line note is cut and an empty one adds no line', async () => {
@@ -306,7 +338,7 @@ describe('procedures_stale', () => {
     const { session } = make();
     await session.tools.save(input());
     expect((await session.tools.stale({ id: 'p-00000001', step: 9 })).text).toContain('has 2 steps');
-    expect((await session.tools.stale({ id: 'p-ffffffff', step: 1 })).text).toContain('not found');
+    expect((await session.tools.stale({ id: 'p-ffffffff', step: 1 })).text).toContain('not a procedure you read');
     expect((await session.tools.stale({ id: 'p-00000001' })).text).toMatch(/step must be/);
     expect((await session.tools.stale({ step: 1 })).text).toMatch(/id must be/);
     expect(onDisk('p-00000001').state).toBe('unverified');
