@@ -11,7 +11,7 @@ export interface ScreenSource {
   /** The screen's key: `run:<id>` for a stage, `call:<thread>:<agent>` for an agent in a conversation. */
   key: string;
   /** Where the steps of an open screen are; absent: the call has no log (a build or a test with no screens). */
-  sessions?: Pick<ScreenSessions, 'stepsOf'> | null;
+  sessions?: Pick<ScreenSessions, 'stepsOf' | 'markOf'> | null;
   /** What the person typed in this call's hand-offs, in memory. Present when the call is offered the hand-off. */
   typed?: TypedValues;
   /** The hand-off service, for a hand-off that took place in an earlier call on the same screen. */
@@ -26,9 +26,9 @@ export interface ProcedureScreen {
   readonly key: string;
   /** The call has the app's browser, so it has a log to draft from. Without it no `gui` procedure can be saved. */
   readonly browser: boolean;
-  /** The steps the app's browser took in this call (a screen kept between messages holds the earlier ones too, which are not this call's), oldest first. */
+  /** The steps of the whole screen since its draft mark (0 when the screen opened), across the answers that took them, oldest first. */
   steps(): StepEntry[];
-  /** The hosts the app's browser was on in this call: the keys a `gui` procedure may have. A navigation the host list refused is not a visit. */
+  /** The hosts the app's browser was on in this screen: the keys a `gui` procedure may have. A navigation the host list refused is not a visit. */
   visited(): string[];
   /** The person used the screen in this call, or in an earlier call on the same screen. */
   handedOff(): boolean;
@@ -48,14 +48,23 @@ export function procedureScreen(source: ScreenSource): ProcedureScreen {
       return [];
     }
   };
-  // The log of a screen kept between messages starts before this call: its steps belong to the answers that took them.
-  const mark = entries().reduce((top, e) => Math.max(top, e.n), 0);
-  const steps = (): StepEntry[] => entries().filter((e) => e.n > mark);
+  // The draft covers the screen from where its mark is, not from where this call began: an answer that follows another on a kept screen drafts both (#187).
+  const markOf = (): number => {
+    try {
+      return sessions?.markOf(key) ?? 0;
+    } catch {
+      return 0;
+    }
+  };
+  const steps = (): StepEntry[] => {
+    const mark = markOf();
+    return entries().filter((e) => e.n > mark);
+  };
   return {
     key,
     browser: source.browser,
     steps,
-    visited: () => [...new Set(steps().filter((e) => e.site && !(e.outcome === 'not-run' && NAVIGATES.has(e.tool))).map((e) => e.site.toLowerCase()))],
+    visited: () => [...new Set(entries().filter((e) => e.site && !(e.outcome === 'not-run' && NAVIGATES.has(e.tool))).map((e) => e.site.toLowerCase()))],
     handedOff: () => typed?.had === true || active?.() === true || (handoff?.hadHandoff(key) ?? false),
     typedIn: (text) => typed?.hits(text) ?? false,
   };

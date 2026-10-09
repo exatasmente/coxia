@@ -123,7 +123,7 @@ describe('an agent mentioned in a conversation', () => {
     expect(without.engine.calls[0].system).not.toContain('procedures_draft');
   });
 
-  it('drafts only what it did itself: the steps an earlier answer took on the screen kept between messages are not in this one', async () => {
+  it('drafts the whole screen: the steps an earlier answer took on the screen kept between messages are in this one too (#187)', async () => {
     screens = fakeScreens();
     const { d, engine } = world();
     let second = '';
@@ -138,8 +138,8 @@ describe('an agent mentioned in a conversation', () => {
     });
     await answerMentions(place(), say(), d);
     await answerMentions(place(), say(), d);
-    expect(second).toContain('1. Open /later on docs.example.com');
-    expect(second).not.toContain('earlier');
+    expect(second).toContain('1. Open /earlier on docs.example.com');
+    expect(second).toContain('2. Open /later on docs.example.com');
   });
 
   it('has no draft in a call without the app\'s browser, and a gui save there is refused', async () => {

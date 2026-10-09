@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **An agent with a shell can keep what it worked out as a procedure drafted by the app.** `procedures_draft` is now offered to a call that has a shell, not only to one with the app's browser: it returns the commands that worked, in order, with the ones that failed as candidates for pitfalls, and `procedures_save` of a repo or tool procedure takes the draft's id and the numbers of the steps to keep, so the commands are the app's record and the agent cannot add or change one. The draft is built from the text of the commands alone, never from their output; a command that could carry a secret (a credential, a token, a file such as `.env`, a request header, a script pasted into the shell, a value the person typed or the test environment holds) is left out, and the draft only says how many were left out.
 
+### Fixed
+
+- **The draft of a procedure from the app's browser covers the whole screen, not only the last answer.** In a conversation the screen stays open between messages, but `procedures_draft` drafted only the steps the current answer took, so a task done over several answers was drafted in pieces. The draft now starts where the screen opened, and the sites a procedure may be keyed by span the whole screen.
+
 ## [0.9.0-beta.9] - 2026-10-09
 
 ### Fixed
