@@ -6,12 +6,14 @@
 - A confirmação é no momento de configuração (aba Ambiente de teste em Configurações › Team), não uma pausa ask-a-person no launch: um secret não test-only não confirmado é recusa nomeada no launch; confirm/revoke via config:testenv-* registra no audit log com kind 'test-env'.
 - Prefixo de ref `test.` (não `test:`); injeção no host depois do scrub; máscara de valor exato (bruto, URL-encodado, JSON-escapado, ≥4 caracteres) antes do redact por padrão em tudo que a etapa produz: conversa, audit log, run file, documentos, memória e listas de comandos.
 - Revisão rodada 4 (código 91d290bc): aprovado; os treze bloqueadores das rodadas 2 e 3 verificados fechados no código, sem achado novo bloqueante.
+- QA rodou o plano 5_TEST_PLAN.md: os 16 cenários executados com evidências guardadas (ev-30..47); testes novos 35 verdes, extensões 88 verdes, tsc limpo, suíte completa 4899 verdes + 2 falhas pre-existentes de voice-setup (isolado: dependente do estado de disco da sandbox), aba Ambiente de teste dirigida por CDP em /tmp/qa170-data, config com valor de variável + referência apenas (schema 21, sem valor resolvido), audit log com confirmed, ledger em DATA_ROOT. Gates: theme-audit (8 literais pre-existentes em api.ts), i18n 4854 chaves, public-audit 1290 arquivos — todos exit 0.
 - Resposta: volta <!-- answer:187 -->
 - Resposta: Volta e pede a correção <!-- answer:231 -->
 
 ## Restrições
 
-- O cenário de aceite de chave real (critério 7 da spec) vive na máquina da pessoa, fora da suíte; a aba na janela viva e electron-vite build também não foram verificados.
+- O cenário de aceite de chave real (AC 7) vive na máquina da pessoa, fora da suíte; electron-vite build na janela viva também não verificado.
+- Não verificados: ACs 2, 3, 6, 8 e 10 — nenhum launch ao vivo de etapa com ambiente (host declarado acessível, opt-in privado, recusa de imagem/referência irresolvível, etapas sem ambiente como antes); export de configuração (cláusula do AC 1) não exercitado. A QA deixou 5_TEST_PLAN.md e handoff.
 
 ## Tentado e descartado
 
@@ -23,8 +25,8 @@
 ## Onde o trabalho está
 
 - Ciclo 170 implementado e aprovado na revisão: schema+migração 21, resolver (src/main/testEnv.ts), injeção sandbox/host (host.ts corrige iteração de emptyDataDirs; TEST_ENV_DATA_VARS em sandbox/index.ts), proxy com privateHosts opt-in, maskExact + sessionMask (WeakMap por sessão) no executor, Actions door (acceptNoTestEnvLeak + grep do branch no push), prompt neutro, TestEnvSection.tsx no Settings, arquivo de ledger em DATA_ROOT com 0600.
-- Gates da revisão: tsc limpo; vitest 4925 testes (5 falhas apenas sob carga total — timeouts/contenção em conflict-resolve e voice-setup, mais antigos que a mudança; passam isolados); theme-audit, i18n:lint (4854 chaves), public-audit (1290 arquivos) passam.
 - Pendência pós-ciclo: overlay por repositório; CI (build extra) e verificação ao vivo da aba e do cenário de chave real por parte da pessoa.
+- Na worktree desta execução, node_modules é um symlink para o node_modules do checkout principal (caminho absoluto; é gitignored): scripts e gates rodam com ele; não recriar com caminho literal "~".
 - Passagem support → product-owner: Refinement and planning: decide the storage place of the test environment (workspace or workspace plus repository), which stage kinds receive it (QA by default?), the delivery mechanism (stage environment, a file written from a template outside the worktree, or the app's own env secret source for testing Coxia itself), how a secret's declared hosts open the stage network through the registry proxy (including the private-address case), the masking guarantees for exact values across stage text, run file, pull request and paired browser, the handling of screenshots that carry a value, whether tes… <!-- handoff:7 -->
 - Passagem product-owner → pessoa: Planejamento e contrato: definir o esquema da seção do ambiente de teste na configuração do workspace, o prefixo do cofre de segredos de teste, a extensão da lista de permissões do proxy do registry (hosts declarados + marcação privado), o ponto do launcher que injeta as variáveis no shell de sandbox e de host, o encadeamento máscara-de-valor-exato antes da redação por padrão em todos os pontos onde o texto do estágio é guardado (conversa, log de auditoria, run file, documentos de estágio, proposta de PR), a recusa de imagens e commits com valor exato, a tela de confirmação de segredo não test… <!-- handoff:11 -->
 - Passagem tl-plataforma → pessoa: Implementation by squad Plataforma, in the order of 2_PLAN.md section 2: schema+migration first, then resolver, sandbox/host injection, proxy private opt-in, masking module and its attach points, prompt sentence, Actions refusals, confirmation gate, Settings editor. Each module ships with its named test file; the real-key acceptance scenario (spec criterion 7) belongs to the person's machine, not the repository's suite. <!-- handoff:23 -->
