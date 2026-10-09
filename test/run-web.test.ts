@@ -35,7 +35,8 @@ describe('the run screen in a browser', () => {
       for (const question_ of [null, question, { ...question, kind: 'squad' as const }, { ...question, kind: 'pr-retry' as const, bases: ['release/0.8.0', 'main'], targetBranch: 'release/0.8.0', baseGone: true }]) {
         for (const a of runActions({ status, question: question_ })) {
           seen.add(a.id);
-          expect(webAccess(CHANNEL[a.id]), `${status}/${a.id}`).toBe('allow');
+          // the pull request retry writes the host directly, behind the same switch as approving a proposal (webPolicy.ts)
+          expect(webAccess(CHANNEL[a.id]), `${status}/${a.id}`).toBe(a.id === 'retryPr' ? 'external' : 'allow');
         }
       }
     }

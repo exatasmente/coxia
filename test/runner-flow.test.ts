@@ -7,7 +7,7 @@ import { newAgent } from '../src/shared/config/team';
 import type { StageDef, WorkspaceConfig } from '../src/shared/config/types';
 import { setLanguage } from '../src/shared/i18n';
 import type { Run } from '../src/shared/runs';
-import { gateApprove, recordCommentPublished, recordCommentRefused, retry, stageDone } from '../src/shared/runs';
+import { flowOf, gateApprove, recordCommentPublished, recordCommentRefused, retry, stageDone } from '../src/shared/runs';
 import { type Forge, makeForge } from './helpers/fakeForge';
 import { agentFlowConfig, drive } from './helpers/runs';
 import { type Boot, boot, doc, issue, work } from './helpers/runner';
@@ -214,8 +214,12 @@ describe('stages that wait', () => {
   it('never starts the pr-merged wait without a pull request recorded for the run: it fails closed instead', () => {
     // provider-free core guard: the flow that refused the description (the person said no to its proposal) can no longer produce the pull request, so
     // entering the stage that waits refuses the wait instead of showing a run "waiting" nothing can end.
-    const { default: flowOf } = await import('../src/shared/runs/flow');
-    const d = drive(flowOf(agentFlowConfig()));
+    const c = agentFlowConfig();
+    // the wait must be on the flow, or the run would simply end: the ready stage waits for the merge as the tests configured by the runner do
+    const readyStage = c.devCycle.stages.find((s) => s.id === 'ready') as StageDef;
+    readyStage.type = 'wait';
+    readyStage.waitsFor = { kind: 'pr-merged' };
+    const d = drive(flowOf(c));
     for (let i = 0; i < 40 && d.run.stage !== 'qa'; i++) {
       if (d.run.status === 'gate') d.do((r, at0) => gateApprove(r, d.flow, at0));
       else if (d.run.status === 'working') d.do((r, at0) => stageDone(r, d.flow, { summary: 'done', handoff: '', artifacts: [] }, at0));
