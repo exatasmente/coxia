@@ -6,6 +6,7 @@ import {
   LIMITS,
   PROCEDURE_ID,
   PROCEDURE_VERSION,
+  awaitsReview,
   isProcedureId,
   normalTitle,
   sameKey,
@@ -239,14 +240,19 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
 
     const others = list().records.filter((r) => r.id !== old?.id);
     const sameGroup = others.filter((r) => r.kind === content.kind && sameKey(r.key, content.key));
+    // A record that waits for the person's review is not open to an agent: a refusal does not name it, its title or its id. The person is told everything.
+    const open = (r: ProcedureRecord): boolean => req.writer.by === 'person' || !awaitsReview(r);
     const twin = sameGroup.find((r) => normalTitle(r.title) === normalTitle(content.title));
+    if (twin && !open(twin)) return { ok: false, code: 'duplicate', text: `A procedure with this title already exists for ${content.kind} ${content.key} and is not open to you. Save it under another title, or none.` };
     if (twin) return { ok: false, code: 'duplicate', id: twin.id, text: `It exists: ${describe(twin)}. Update that one: save with its id and the revision you read (${twin.revision}).` };
     if (sameGroup.length >= LIMITS.perKey) {
-      const victim = leastUsed(sameGroup) as ProcedureRecord;
+      const victim = leastUsed(sameGroup.filter(open));
+      if (!victim) return { ok: false, code: 'cap-key', text: `There are already ${LIMITS.perKey} procedures for ${content.kind} ${content.key}, and none of them is open to you. Save none.` };
       return { ok: false, code: 'cap-key', id: victim.id, text: `There are already ${LIMITS.perKey} procedures for ${content.kind} ${content.key}. Replace one instead of adding: the least used is ${describe(victim)}; save with its id and revision ${victim.revision}.` };
     }
     if (!old && others.length >= LIMITS.perWorkspace) {
-      const victim = leastUsed(others) as ProcedureRecord;
+      const victim = leastUsed(others.filter(open));
+      if (!victim) return { ok: false, code: 'cap-workspace', text: `The workspace holds ${LIMITS.perWorkspace} procedures, the most, and none of them is open to you. Save none.` };
       return { ok: false, code: 'cap-workspace', id: victim.id, text: `The workspace holds ${LIMITS.perWorkspace} procedures, the most. Replace one instead of adding: the least used is ${describe(victim)}; save with its id and revision ${victim.revision}.` };
     }
     if (old && req.revision !== old.revision) {

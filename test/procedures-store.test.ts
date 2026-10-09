@@ -169,6 +169,28 @@ describe('save: the caps', () => {
     expect(store.list().records).toHaveLength(LIMITS.perWorkspace);
   });
 
+  it('a refusal does not name a record that waits for the person\'s review, to an agent; the person is told', () => {
+    const store = make();
+    const held = store.save(req({ handoff: true }));
+    if (!held.ok) throw new Error(held.text);
+    const dup = store.save(req({}));
+    expect(dup).toMatchObject({ ok: false, code: 'duplicate' });
+    expect(JSON.stringify(dup)).not.toContain(held.record.id);
+    expect(JSON.stringify(dup)).not.toContain('Run the end-to-end tests (');
+    const person = store.save(req({ writer: { by: 'person', surface: 'person' } }));
+    expect(person).toMatchObject({ ok: false, code: 'duplicate', id: held.record.id });
+
+    // A key full of held records: nothing to point at.
+    const full = make();
+    for (let i = 0; i < LIMITS.perKey; i++) {
+      const r = full.save(req({ handoff: true, input: content({ key: 'web', title: `Held number ${i + 1}` }) }));
+      if (!r.ok) throw new Error(r.text);
+    }
+    const capped = full.save(req({ input: content({ key: 'web', title: 'One too many' }) }));
+    expect(capped).toMatchObject({ ok: false, code: 'cap-key' });
+    expect(JSON.stringify(capped)).not.toMatch(/p-0000|Held number/);
+  });
+
   it('a near-duplicate title in the same kind and key is stopped, naming the record to update', () => {
     const store = make();
     const first = created(store);
