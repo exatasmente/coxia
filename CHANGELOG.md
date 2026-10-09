@@ -14,6 +14,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **A piece of evidence an agent kept shows its own words in the conversation.** The post of a kept piece of evidence had no text in the catalogs and showed its internal code; it now says which evidence was kept.
 
+## [0.9.0-beta.3] - 2026-10-08
+
+### Fixed
+
+- **Images of evidence now show on the computer.** Opening an image a run kept as evidence (in the stage's evidence list, in a message of the conversation or from a QA scenario) showed nothing on the desktop: the app's content policy refuses an image from a `blob:` address, and the screen built one; only the paired browser showed the image. The image is now shown from a `data:` address, which both allow. Downloading a piece of evidence was not affected.
+
+## [0.9.0-beta.2] - 2026-10-08
+
+### Added
+
+- **Every agent knows what is in progress, in any conversation, and a restart does not lose it.** The app keeps a record of the activities of the workspace — one entry per activity, not per run — and an agent called anywhere (a run's thread, a squad channel, a general conversation, the direct conversation of an agent) reads it, so asking about an activity that is in progress is answered with its stage and who is working it instead of "there is no work going on". The record survives closing and reopening the app; an activity that had two executions is one entry; and the runs screen lists the activities and lets their entry be corrected, without any model call.
+
+### Fixed
+
+- **The run screen says which attempt each document of a stage is from.** A stage that the run entered again (the work sent back, a retry, an app restart) merges the documents of both attempts in one list; the timeline now marks each document with the attempt that produced it, written in the app's language, and shows nothing new for a run recorded before this. The same run in a paired browser keeps only that run's lines: when the browser's event stream drops and comes back, what is fetched in between no longer stitches lines of an earlier run of the same work into the timeline that is going. A browser screen opened fresh keeps fetching everything it is told.
+- **A test that raced its own engine is waited for.** The chain test that waits for a question held by an agent polled a fixed number of short sleeps and could read the run before it got there on a slow machine; it now waits for the state with a timeout that fails instead of racing.
+- **A stage whose agent runs commands on the computer can keep its evidence.** What that stage produced to test an interface (screenshots, traces, reports) is no longer lost with the temporary folder when the stage ends: the agent is offered the same evidence tools as a stage with a sandbox, the run shows what it kept, a QA scenario can cite it, and an image the agent looked at and did not keep is kept as evidence of the stage before the folder goes away.
+
 ## [0.9.0-beta.1] - 2026-10-08
 
 ### Added
@@ -308,7 +326,9 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.1...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.3...HEAD
+[0.9.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.2...v0.9.0-beta.3
+[0.9.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.1...v0.9.0-beta.2
 [0.9.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.8.0...v0.9.0-beta.1
 [0.8.0]: https://github.com/exatasmente/coxia/compare/v0.7.0...v0.8.0
 [0.8.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.7...v0.8.0-beta.8

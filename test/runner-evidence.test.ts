@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -17,15 +17,15 @@ import { offersViewImage } from '../src/main/sandbox/tool';
 
 const PNG = (): Uint8Array => encodePng({ width: 4, height: 4, data: new Uint8Array(4 * 4 * 4).fill(200) });
 
-function world(): { stageDir: string; dataDir: string; kept: EvidenceRecord[]; tools: ReturnType<typeof evidenceToolsOf> } {
-  const stageDir = mkdtempSync(join(tmpdir(), 'evidence-stage-'));
+function world(root = mkdtempSync(join(tmpdir(), 'evidence-stage-'))): { stageDir: string; outDir: string; dataDir: string; kept: EvidenceRecord[]; tools: ReturnType<typeof evidenceToolsOf> } {
   const dataDir = mkdtempSync(join(tmpdir(), 'evidence-data-'));
-  mkdirSync(join(stageDir, 'out'), { recursive: true });
+  mkdirSync(root, { recursive: true });
   const kept: EvidenceRecord[] = [];
   const run = { id: 'r-abc123-abcd', evidence: {} as Record<string, EvidenceRecord> } as never;
   const tools = evidenceToolsOf({
     dataDir,
-    stageDir,
+    // The folder the session declared: `out` inside a sandbox's stage folder, the output folder of a session that runs on the host.
+    outputDir: root,
     run,
     stage: 'qa',
     by: 'qa',
@@ -35,11 +35,11 @@ function world(): { stageDir: string; dataDir: string; kept: EvidenceRecord[]; t
     },
     now: () => '2026-10-06T12:00:00.000Z',
   });
-  return { stageDir, dataDir, kept, tools };
+  return { stageDir: root, outDir: root, dataDir, kept, tools };
 }
 
-const put = (stageDir: string, name: string, content: Uint8Array | string): string => {
-  writeFileSync(join(stageDir, 'out', name), content);
+const put = (outDir: string, name: string, content: Uint8Array | string): string => {
+  writeFileSync(join(outDir, name), content);
   return `/coxia/out/${name}`;
 };
 
@@ -62,7 +62,7 @@ describe('SaveEvidence', () => {
     const traversal = await w.tools.save({ path: '/coxia/out/../secret', title: 'x' });
     expect(traversal.text).toMatch(/\.\.|sai|leaves/i);
     const link = put(w.stageDir, 'link.txt', 'x');
-    symlinkSync('/etc/hostname', join(w.stageDir, 'out', 'linked.txt'));
+    symlinkSync('/etc/hostname', join(w.outDir, 'linked.txt'));
     const linked = await w.tools.save({ path: '/coxia/out/linked.txt', title: 'x' });
     expect(linked.text).toMatch(/link/i);
     void link;
@@ -80,11 +80,10 @@ describe('the ids of a stage', () => {
   it('never reuse one: a stage numbers from the run it started with, and the stored files are not written over', async () => {
     const stageDir = mkdtempSync(join(tmpdir(), 'evidence-stage-'));
     const dataDir = mkdtempSync(join(tmpdir(), 'evidence-data-'));
-    mkdirSync(join(stageDir, 'out'), { recursive: true });
     const kept: EvidenceRecord[] = [];
     // The run is not told about what is kept, as in a stage: the store records it on the live run, not on this object.
     const run = { id: 'r-abc123-abcd', evidence: {} } as never;
-    const tools = evidenceToolsOf({ dataDir, stageDir, run, stage: 'qa', by: 'qa', onKept: (r) => void kept.push(r), now: () => '2026-10-06T12:00:00.000Z' });
+    const tools = evidenceToolsOf({ dataDir, outputDir: stageDir, run, stage: 'qa', by: 'qa', onKept: (r) => void kept.push(r), now: () => '2026-10-06T12:00:00.000Z' });
     const first = new Uint8Array(PNG()).fill(1, 40);
     const second = new Uint8Array(PNG()).fill(2, 40);
     await tools.save({ path: put(stageDir, 'a.png', first), title: 'First' });
@@ -124,6 +123,41 @@ describe('AnnotateImage and ViewImage', () => {
     const looked = await w.tools.view({ source: 'ev-1' });
     expect(looked.image?.media).toBe('image/png');
     expect(looked.image?.data.length).toBeGreaterThan(0);
+  });
+});
+
+// A stage whose commands run on the computer declares its own output folder, not `<pasta de etapa>/out`: the tools read the folder the session named, whatever it is.
+describe('the tools against the output folder a session declares', () => {
+  it('keeps a file of the host folder and reads its kind from the bytes', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evidence-host-'));
+    const w = world(root);
+    const answer = await w.tools.save({ path: put(w.outDir, 'shot.png', PNG()), title: 'The screen' });
+    expect(answer.text).toContain('ev-1');
+    expect(w.kept[0]).toMatchObject({ id: 'ev-1', title: 'The screen', kind: 'png' });
+  });
+
+  it('refuses a path outside the host folder, a walk with .. and a link, as in a sandbox', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evidence-host-'));
+    const outside = mkdtempSync(join(tmpdir(), 'evidence-host-outside-'));
+    writeFileSync(join(outside, 'secret.txt'), 'x');
+    const w = world(root);
+    expect((await w.tools.save({ path: join(outside, 'secret.txt'), title: 'x' })).text).toMatch(/output folder|fora|out/i);
+    expect((await w.tools.save({ path: '../secret.txt', title: 'x' })).text).toMatch(/\.\.|sai|leaves/i);
+    symlinkSync(join(outside, 'secret.txt'), join(w.outDir, 'link.txt'));
+    expect((await w.tools.save({ path: 'link.txt', title: 'x' })).text).toMatch(/link/i);
+    expect(w.kept).toEqual([]);
+  });
+
+  it('writes the marked PNG under the folder the session declared, linked to its source', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'evidence-host-'));
+    const w = world(root);
+    await w.tools.save({ path: put(w.outDir, 'shot.png', PNG()), title: 'Original' });
+    const marked = await w.tools.annotate({ source: 'ev-1', marks: [{ kind: 'rectangle', x: 0, y: 0, w: 2, h: 2, color: 'red', width: 1 }] });
+    expect(marked.text).toContain('ev-2');
+    expect(w.kept[1]).toMatchObject({ id: 'ev-2', from: 'ev-1', kind: 'png' });
+    // The marked file lands in the declared folder, and nowhere else.
+    const written = readdirSync(w.outDir).filter((n) => n.startsWith('annotated-'));
+    expect(written).toHaveLength(1);
   });
 });
 

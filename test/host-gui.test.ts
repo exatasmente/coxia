@@ -87,6 +87,8 @@ describe.runIf(posix)('a host session asked to test an interface', () => {
     expect(r.output).toBe('[:0][][]');
     expect(s.gui).toBeUndefined();
     expect(s.readImage).toBeUndefined();
+    // No interface to test, no output folder: such a stage keeps what it had.
+    expect(s.outputDir).toBeUndefined();
     expect(offersViewImage(s)).toBe(false);
   });
 
@@ -98,6 +100,9 @@ describe.runIf(posix)('a host session asked to test an interface', () => {
     expect(r.output).toContain(`/b/ms-playwright :101 [][] ${out}`);
     expect(r.output).toContain('folder');
     expect(s.gui).toEqual({ browsers: '/b/ms-playwright', display: 'on', out });
+    // The folder the stage saves in is the folder its evidence is read from; a host session has no stage folder.
+    expect(s.outputDir).toBe(out);
+    expect(s.stageDir).toBeUndefined();
     expect(offersViewImage(s)).toBe(true);
   });
 

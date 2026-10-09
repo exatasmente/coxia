@@ -134,9 +134,11 @@ export const toolsFor = (call: AgentCall): Tools => {
 };
 
 export async function keepQaEvidence(call: AgentCall): Promise<string[]> {
-  if (!call.exec?.stageDir || !call.evidence) return [];
-  writeFileSync(join(call.exec.stageDir, 'out', 'qa-result.txt'), 'QA check completed.\n');
-  const saved = await call.evidence.save({ path: '/coxia/out/qa-result.txt', title: 'QA result' });
+  // The folder the stage keeps evidence from: a sandbox's `out`, or the output folder a host session that tests an interface declared.
+  const dir = call.exec?.outputDir;
+  if (!dir || !call.evidence) return [];
+  writeFileSync(join(dir, 'qa-result.txt'), 'QA check completed.\n');
+  const saved = await call.evidence.save({ path: 'qa-result.txt', title: 'QA result' });
   const id = /\bev-\d+\b/.exec(saved.text)?.[0];
   if (!id) throw new Error(`QA evidence was not saved: ${saved.text}`);
   return [id];
@@ -237,21 +239,27 @@ export function fakeSandbox(o: { gui?: SandboxGui; screen?: ScreenSocket; images
     // A stage folder with an `out` inside, as the real sandbox makes: what the evidence tools read.
     const stageDir = mkdtempSync(join(tmpdir(), 'cerimonias-fake-stage-'));
     mkdirSync(join(stageDir, 'out'), { recursive: true });
+    // The output folder this session declares: a sandbox's `out`, or the folder a host session is told to save in (`gui.out`, a real one the test names).
+    const outDir = host ? (o.gui ? (o.gui.out ?? join(stageDir, 'out')) : null) : join(stageDir, 'out');
+    // A host session makes the folder it saves in, as the real one does (`mkdirSync(shots)`); a test may name a real one of its own.
+    if (outDir && o.gui) mkdirSync(outDir, { recursive: true });
     const made: FakeSession = {
       ...(host ? { description: 'host' } : {}),
-      stageDir,
+      ...(host ? {} : { stageDir }),
+      ...(outDir ? { outputDir: outDir } : {}),
       // What the stage offers to test an interface, and the reading of images from its output folder: a sandbox always reads one, a host session when it was given the settings
       // (and then its folder is a real one, named in `gui.out`).
-      ...(o.gui ? { gui: host ? { out: '/tmp/coxia-host-test/out', ...o.gui } : o.gui } : {}),
+      ...(o.gui ? { gui: host ? { ...o.gui, out: outDir as string } : o.gui } : {}),
       ...(o.screen ? { screen: o.screen } : {}),
-      ...(!host || o.gui
+      ...(outDir
         ? {
             readImage: (path: string): ImageRead => {
               const known = o.images?.[path];
               if (known) return known;
-              // A file the stage really left in its output folder is read from it, as the real session does, so the looked path is the real one.
-              const rel = path.startsWith('/coxia/out/') ? path.slice('/coxia/out/'.length) : path;
-              const file = join(stageDir, 'out', rel);
+              // A file the stage really left in its output folder is read from it, as the real session does, so the looked path is the real one. The folder is named two
+              // ways: `/coxia/out` (the sandbox's own name, which its tools hand over) and the real path a host stage saves in.
+              const rel = path === '/coxia/out' || path === outDir ? '' : path.startsWith('/coxia/out/') ? path.slice('/coxia/out/'.length) : path.startsWith(`${outDir}/`) ? path.slice(outDir.length + 1) : path;
+              const file = join(outDir, rel);
               try {
                 const bytes = readFileSync(file);
                 return { ok: true as const, path, mediaType: 'image/png', data: bytes.toString('base64'), file };

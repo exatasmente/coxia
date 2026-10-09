@@ -15,6 +15,7 @@ import { getConfig, rc } from '../workspaceConfig';
 import { answerMentions, type MentionDeps } from './answer';
 import { placeOfThread } from './place';
 import { proposeMention } from './propose';
+import { createSharedMemory } from '../runner/activities';
 
 // Mentions answered outside a run's thread: a squad channel, the channel the squads talk in, a conversation a person opened, and the direct conversation of an agent
 // (where every message of the person calls its owner without an `@`). A run's thread stays with the runner (it has the worktree, the cycle folder and the publisher).
@@ -46,6 +47,15 @@ export function ownerOfThread(summary: ThreadSummary | null): string | null {
   return summary?.kind === 'agent' ? (summary.agent ?? summary.squad ?? null) : null;
 }
 
+/** The record of the activities of the running workspace, in the workspace's own folder: the mentions module only reads it. */
+let shared: ReturnType<typeof createSharedMemory> | null = null;
+export const sharedMemory = (): ReturnType<typeof createSharedMemory> => (shared ??= createSharedMemory(ATAS));
+
+/** The takes of an activity reference a message carries: the number `#123`, or a whole reference `group/project#123`. */
+export function refsInMessage(message: ForumMessage): string[] {
+  return [...(message.text ?? '').matchAll(/(?:([\w.-]+\/[\w.-]+))?#(\d{1,6})\b/g)].map((m) => (m[1] ? `${m[1]}#${m[2]}` : (m[2] as string)));
+}
+
 export const mentionsModule: Module = () => {
   const forum = forumStore();
   const deps: MentionDeps = {
@@ -55,6 +65,12 @@ export const mentionsModule: Module = () => {
     sandbox,
     env: () => ({ fallbackCwd: rc().projectsRoot ?? ATAS }),
     propose: proposeMention,
+    // What the answer is told of the activities of the workspace, read from the record of the running workspace and cut by what the message named.
+    memory: (place, message) => {
+      const run = place.kind === 'run' ? place.run : null;
+      const refs = refsInMessage(message);
+      return sharedMemory().render(runStore(), { ref: run?.issue.ref ?? place.ref ?? null, refs, agents: callsOf(message, ownerOfThread(forum.summary(place.thread))) }, getConfig().language);
+    },
     // A host command asks the person through the notice every screen shows, as the ceremonies do; a command the agent's rules always allow runs without asking.
     askCommand: (def, command, signal) => {
       const rules = getConfig().agents.team.find((a) => a.id === def.id)?.allowedCommands ?? def.allowedCommands;

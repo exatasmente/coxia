@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EvidenceView } from '../../../../shared/evidence';
-import { isEvidenceImage } from '../../../../shared/evidence';
+import { evidenceDataUrl, isEvidenceImage } from '../../../../shared/evidence';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import { RecordingPlayer } from './RecordingPlayer';
@@ -16,7 +16,7 @@ const size = (t: (key: string, params?: Record<string, string | number>) => stri
 
 const stamp = (iso: string): string => new Date(iso).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
-/** A blob address of one piece of evidence, read once and freed when the component goes. */
+/** The image of one piece of evidence as a `data:` address, read once: the desktop's content policy refuses a `blob:` image. Only an image is shown through it. */
 function useEvidenceUrl(runId: string, record: EvidenceView | null): { url: string | null; error: boolean } {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -32,8 +32,11 @@ function useEvidenceUrl(runId: string, record: EvidenceView | null): { url: stri
           if (live) setError(true);
           return;
         }
-        made = URL.createObjectURL(new Blob([bytes], { type: record.media }));
-        setUrl(made);
+        // Both content policies allow an image only from data: and a video only from blob:.
+        if (record.media.startsWith('video/')) {
+          made = URL.createObjectURL(new Blob([bytes], { type: record.media }));
+          setUrl(made);
+        } else setUrl(evidenceDataUrl(bytes, record.media));
       },
       () => {
         if (live) setError(true);
@@ -183,7 +186,7 @@ export function EvidenceAttachment({ runId, attachment }: { runId: string; attac
   const video = attachment.media.startsWith('video/');
   // One object for the life of the attachment: the hook reads the bytes again whenever the record it is given changes, and a recording is megabytes.
   const piece = useMemo(() => ({ id: attachment.id, media: attachment.media }) as EvidenceView, [attachment.id, attachment.media]);
-  const { url, error: gone } = useEvidenceUrl(runId, open ? piece : null);
+  const { url, error: gone } = useEvidenceUrl(runId, open && (image || video) ? piece : null);
   const download = async () => {
     setFailed(false);
     const bytes = await runsApi.evidenceBytes(runId, attachment.id).catch(() => null);
@@ -237,9 +240,9 @@ export function EvidenceCites({ runId, ids, list }: { runId: string; ids: string
 function EvidenceCite({ runId, record, id }: { runId: string; record: EvidenceView | undefined; id: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const { url } = useEvidenceUrl(runId, open ? (record ?? null) : null);
+  const image = !!record && isEvidenceImage(record.kind);
+  const { url } = useEvidenceUrl(runId, open && image ? (record ?? null) : null);
   if (!record) return <span className="faint small mono">{id}</span>;
-  const image = isEvidenceImage(record.kind);
   return (
     <span className="cy-evidence-cite">
       {image ? (

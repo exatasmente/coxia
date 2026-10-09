@@ -39,6 +39,8 @@ export interface StageRecord {
   status: StageStatus;
   /** Files of the cycle folder this stage has produced, by name. */
   artifacts: string[];
+  /** The attempt each artifact was produced in, by name; absent in a run written before it was recorded. A name produced again keeps its first attempt. */
+  artifactAttempts?: Record<string, number>;
   /** Start of the latest attempt. */
   startedAt: string | null;
   endedAt: string | null;

@@ -58,6 +58,8 @@ export interface SandboxSession {
   readonly description?: string;
   /** The folder made for the stage (`ctl`, `out` and `home` inside it): what the evidence tools read the stage's output from. Absent: no evidence tools. */
   readonly stageDir?: string;
+  /** The folder of this stage the evidence tools and `ViewImage` read from: `out` inside a sandbox's stage folder, the output folder of a host session that tests an interface. Absent: no evidence tools. */
+  readonly outputDir?: string;
   /** What the sandbox offers to test an interface; absent: nothing was asked for (a session with neither setting on). */
   readonly gui?: SandboxGui;
   /** The stage's virtual display, reachable for the live screen; set only when `gui.display` is `on`. Absent: there is no screen to show. */
@@ -297,6 +299,7 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
   const gui: SandboxGui | undefined = o.gui ? { browsers: o.gui.browsers, ...(o.gui.browsersGone ? { browsersGone: o.gui.browsersGone } : {}), display: o.gui.display === 'start' ? (noDisplay ? 'failed' : 'on') : o.gui.display === 'missing' ? 'missing' : null } : undefined;
   return {
     stageDir: o.stageDir,
+    outputDir: out,
     ...(gui ? { gui } : {}),
     ...(gui?.display === 'on' ? { screen: { socket: join(o.stageDir, X11_DIR, DISPLAY_SOCKET_NAME), kind: 'sandbox' as const } } : {}),
     readImage: (path) => readOutputImage(out, path),
@@ -346,13 +349,19 @@ export function readOutputText(outDir: string, name: string, max: number): strin
 }
 
 /**
- * An image the stage saved in its output folder, for the model. The path is the one the agent knows (`/coxia/out/shot.png`, or a name in that folder); nothing outside
- * the folder is read. What is there was written by a process the app does not trust, so it is opened like the commands' output: no link followed, no pipe waited on,
- * a regular file checked on the descriptor, a size cap, and the content (not the name) must be a picture.
+ * An image the stage saved in its output folder, for the model. The path is one the agent knows: a name in the folder, or the full path of the file as this computer
+ * has it (a sandbox names the folder `/coxia/out` from the inside; a host stage saves in a real folder it is told the name of). Only a file of that folder is read.
+ * What is there was written by a process the app does not trust, so it is opened like the commands' output: no link followed, no pipe waited on, a regular file
+ * checked on the descriptor, a size cap, and the content (not the name) must be a picture.
  */
 export function readOutputImage(outDir: string, path: string, shown: string = OUT): ImageRead {
-  const rel = path.startsWith(`${shown}/`) ? path.slice(shown.length + 1) : path.startsWith('/') ? null : path;
-  if (!rel || rel.split('/').some((part) => part === '..' || part === '')) return { ok: false, why: 'outside' };
+  // The folder is named to the model in one of two ways: `shown` (the sandbox's `/coxia/out`, which its own tools hand over) or, for a stage that saves in a real
+  // folder, the path of that folder itself. A path under either name is read against the folder; a name relative to it is read as it is; anything else — another
+  // absolute path of this computer — is outside, and refused.
+  const rel =
+    path === shown || path === outDir ? '' : path.startsWith(`${shown}/`) ? path.slice(shown.length + 1) : path.startsWith(`${outDir}/`) ? path.slice(outDir.length + 1) : path.startsWith('/') ? null : path;
+  // A path that leaves the folder, by walking with `..` or by aiming somewhere else on this computer, is refused before anything is opened.
+  if (rel === null || rel.split('/').some((part) => part === '..' || part === '')) return { ok: false, why: 'outside' };
   let fd: number | null = null;
   try {
     try {

@@ -28,7 +28,7 @@ import { type EvidenceRecord, evidencePlacementOf } from '../../shared/evidence'
 import { evidenceToolsOf, evidenceProblemText, outputProblemText } from '../evidence/handlers';
 import { resolveOutputPath } from '../evidence/paths';
 import { notKeptText, putRecording } from '../evidence/recording';
-import { copyToCycleFolder, putEvidence } from '../evidence/store';
+import { copyToCycleFolder, putEvidence, withRecordedEvidence } from '../evidence/store';
 import type { RecordingOutcome } from '../screen/recorder';
 import { redact, redactCode, redactDoc } from '../errorlog-core';
 import { type Denial, confinedHooks, readConfinedHooks } from './hooks';
@@ -101,6 +101,8 @@ export interface ExecutorDeps {
   keepEvidence?: (runId: string, record: EvidenceRecord) => ForumMessage | null;
   /** Updates a piece of evidence already recorded (the copy that went into the cycle folder): the run's record changes, nothing is published again. */
   updateEvidence?: (runId: string, record: EvidenceRecord) => void;
+  /** What the section of the activities says for one run: its own activity whole, the others in short. Absent: the stage gets no such section. */
+  sharedMemory?: (run: Run) => string;
   /** The workspace's data folder: where a run's evidence is stored. */
   dataDir: () => string;
   /** The live screens of the stages that have a virtual display; absent: none is opened. */
@@ -609,6 +611,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
 
   const documented = !!(await scanHarness(wt)).document && !run.docs;
 
+  // A sandbox and a host session that tests an interface both declare where the stage's evidence lives; a host session without one keeps what it has today.
+  const evidenceRoot = session?.outputDir;
+
   const input: StageInput = {
     run,
     stage,
@@ -619,6 +624,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     commands,
     files: readFolder(wt, run.cycleFolder, stage.reads ?? null),
     memory: { over: memoryOver(memory), max: MEMORY_MAX },
+    // What a stage is told of the record: its own activity whole, and the others in short. Nothing when the record has nothing to say.
+    shared: d.sharedMemory?.(run) ?? '',
     docsKeep: documented && writes,
     plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),
@@ -637,7 +644,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     earlier: kind === 'review' ? run.reviews.filter((r) => r.stage === stage.id).slice(-4) : undefined,
     commandResults: ran,
     numberedCommands: !!session,
-    evidence: !!(session?.stageDir && d.keepEvidence),
+    evidence: !!(evidenceRoot && d.keepEvidence),
     sandbox: session
       ? {
           network: config.runner.sandbox.network,
@@ -663,21 +670,21 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // The evidence a stage keeps while it works: each one is recorded with the run and published in its conversation, and the ids are what the stage output cites.
   const keptIds: string[] = [];
   const keptRecords: EvidenceRecord[] = [];
-  // The `run` of this function is the run as the stage started: a new piece is numbered after the ones the run has and a piece to mark is found among them, so what
-  // this stage has kept so far is added (the store records it on the live run, which this object does not follow).
-  const withKept = (): Run => (keptRecords.length ? { ...run, evidence: { ...run.evidence, ...Object.fromEntries(keptRecords.map((r) => [r.id, r])) } } : run);
   // The images of the stage's output folder the agent looked at with `ViewImage` and did not keep, by path: kept (or said as looked and not kept) while the
   // sandbox is still open. An evidence id it looked at is not here: that piece is already kept. A file the agent kept itself is not kept twice: its name is
   // remembered when it is kept, by whichever route (the tool or the guard at the close).
   const lookedPaths = new Set<string>();
   const keptNames = new Set<string>();
   const onLooked = (path: string): void => void lookedPaths.add(path);
+  // The ids are derived from the run, and the run this attempt was given never changes: every piece of a stage would otherwise be handed the id the first one
+  // took. What the stage keeps is counted on top of it, so its second piece is ev-2 like the run's own store would name it.
+  const runSoFar = (): Run => withRecordedEvidence(run, keptRecords);
   /**
    * Keeps what the agent looked at and did not keep, before the sandbox takes the stage folder away: every picture of the output folder it opened with `ViewImage`
    * is kept as evidence of the stage, and what cannot be kept is said in the conversation with the reason. An evidence id it looked at is already kept.
    */
   const keepLooked = (): void => {
-    const dir = session?.stageDir;
+    const dir = evidenceRoot;
     if (!dir || !d.keepEvidence) return;
     let keptCount = 0;
     for (const path of lookedPaths) {
@@ -690,7 +697,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         continue;
       }
       const shown = resolved.path;
-      const put = putEvidence(d.dataDir(), withKept(), { path: shown, name: basename(shown), title: t('main.evidence.keptByApp'), description: '', stage: stage.id, by: agent.id, at: new Date().toISOString() });
+      const put = putEvidence(d.dataDir(), runSoFar(), { path: shown, name: basename(shown), title: t('main.evidence.keptByApp'), description: '', stage: stage.id, by: agent.id, at: new Date().toISOString() });
       if (!put.ok) {
         d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.lookNotKept', params: { agent: agent.id, name: basename(shown), reason: evidenceProblemText(put.problem) }, stage: stage.id });
         continue;
@@ -733,13 +740,11 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     }
   };
   const evidence =
-    session?.stageDir && d.keepEvidence
+    evidenceRoot && d.keepEvidence
       ? evidenceToolsOf({
           dataDir: d.dataDir(),
-          stageDir: session.stageDir,
-          get run(): Run {
-            return withKept();
-          },
+          outputDir: evidenceRoot,
+          run: runSoFar,
           stage: stage.id,
           by: agent.id,
           onKept: (record) => {

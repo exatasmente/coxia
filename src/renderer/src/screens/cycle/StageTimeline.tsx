@@ -141,11 +141,16 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
         {record && hasUsage(record.usage) && <Usage usage={record.usage} />}
         {record && record.artifacts.length > 0 && (
           <ul className="cy-artifacts" aria-label={t('ui.cycle.stage.artifacts')}>
-            {record.artifacts.map((name) => (
-              <li key={name}>
-                <button type="button" className="cy-file mono" onClick={() => view(name)}>{name}</button>
-              </li>
-            ))}
+            {record.artifacts.map((name) => {
+              // A resumed stage merges the artifacts of its attempts; the badge says which attempt each one is from, when the run recorded it.
+              const attempt = record.attempts > 1 ? record.artifactAttempts?.[name] : undefined;
+              return (
+                <li key={name}>
+                  <button type="button" className="cy-file mono" onClick={() => view(name)}>{name}</button>
+                  {attempt !== undefined && <span className="faint small"> · {t('ui.cycle.stage.attemptOf', { count: attempt })}</span>}
+                </li>
+              );
+            })}
           </ul>
         )}
         {comments.length > 0 && (

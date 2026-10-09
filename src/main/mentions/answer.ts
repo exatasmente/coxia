@@ -71,6 +71,11 @@ export interface MentionDeps {
   readRoot?: (place: MentionPlace, agent: AgentDef, cwd: string) => ReadConfinement | undefined;
   /** The agents already in the exchange that led to this answer, when one agent called another (`CallAgent`): a call back to one of them is refused. */
   chain?: readonly string[];
+  /**
+   * What an answer is told of the activities of the workspace, by the names the message carries: the front named whole, or the short list of what is
+   * in progress. The caller renders it (the runner has the store, the mentions module reads it too); absent: the answer gets no such section.
+   */
+  memory?: (place: MentionPlace, message: ForumMessage) => string;
 }
 
 /** What a mention answer produced, for a caller that records it elsewhere (a ceremony). */
@@ -188,6 +193,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         proposals: mayPropose(def, deps, place),
         autonomous: autonomyOf(config, def),
         attachments: attachments ?? undefined,
+        // What the app knows of the activities: the section is text only, so no tool of the call changes and no folder of it is opened.
+        memory: deps.memory?.(place, message) || undefined,
       });
       if (attachments === null && message.attachments.length) {
         // The workspace turned attachments to agents off: the conversation says so, once per answer, so the person knows why the agent did not read them.
