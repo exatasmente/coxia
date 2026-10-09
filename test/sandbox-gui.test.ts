@@ -184,10 +184,19 @@ describe('the status of a sandbox for testing an interface', () => {
     mkdirSync(browsers, { recursive: true });
     const service = createSandboxService({ dir: join(root, 'sandbox'), home, protect: [join(root, 'data')] });
     const config = (over: Partial<ReturnType<typeof neutralSandbox>>) => ({ ...neutralSandbox(), ...over });
-    expect(service.guiStatus(config({}))).toEqual({ browsers: 'unset', display: 'off' });
+    expect(service.guiStatus(config({}))).toEqual({ browsers: 'unset', display: 'off', chromium: 'unset' });
     expect(service.guiStatus(config({ browsersPath: '~/.cache/ms-playwright' })).browsers).toBe('empty');
     mkdirSync(join(browsers, 'chromium-1234'));
     expect(service.guiStatus(config({ browsersPath: '~/.cache/ms-playwright' })).browsers).toBe('ready');
+    // A build folder with nothing to run, or only a headless shell, offers no browser for a display; a full Chromium with its executable does.
+    expect(service.guiStatus(config({ browsersPath: '~/.cache/ms-playwright' })).chromium).toBe('none');
+    mkdirSync(join(browsers, 'chromium_headless_shell-1234', 'chrome-linux'), { recursive: true });
+    writeFileSync(join(browsers, 'chromium_headless_shell-1234', 'chrome-linux', 'headless_shell'), '#!/bin/sh\n', { mode: 0o755 });
+    expect(service.guiStatus(config({ browsersPath: '~/.cache/ms-playwright' })).chromium).toBe('none');
+    mkdirSync(join(browsers, 'chromium-1234', 'chrome-linux64'), { recursive: true });
+    writeFileSync(join(browsers, 'chromium-1234', 'chrome-linux64', 'chrome'), '#!/bin/sh\n', { mode: 0o755 });
+    expect(service.guiStatus(config({ browsersPath: '~/.cache/ms-playwright' })).chromium).toBe('ready');
+    expect(service.guiStatus(config({ browsersPath: '~/gone' })).chromium).toBe('none');
     expect(service.guiStatus(config({ browsersPath: '~/gone' })).browsers).toBe('missing');
     expect(service.guiStatus(config({ browsersPath: '~/' + '.ssh' })).browsers).toMatch(/missing|refused/);
     expect(['ready', 'missing']).toContain(service.guiStatus(config({ display: true })).display);

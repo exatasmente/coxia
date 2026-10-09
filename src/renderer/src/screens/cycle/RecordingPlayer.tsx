@@ -6,12 +6,12 @@ import { RECORDING_IDLE_PAUSE_MS, realAtMedia } from '../../../../shared/screen'
 import { cutLeft, markBox } from './recording';
 
 // The app's own recording of an agent's screen, played in the evidence block: the video, and under it a strip with one mark for each interval in which a person used the
-// screen. A mark seeks the video to where that interval began. The bytes are read only when the person opens it (a recording is up to 24 MiB). A video whose idle
+// screen (a hand-off's, #178, told apart). A mark seeks the video to where that interval began. The bytes are read only when the person opens it (a recording is up to 24 MiB). A video whose idle
 // stretches were shortened says so: the length of the video and the stage's own time, a tick at each cut with the time it left out, and the stage's time at the
 // point being played.
 
 /** The player: a video on a `blob:` address (the media policy of both builds allows it) and the strip of marks. */
-export function RecordingPlayer({ record, url }: { record: EvidenceView; url: string }) {
+export function RecordingPlayer({ record, url }: { record: Pick<EvidenceView, 'recording'>; url: string }) {
   const t = useT();
   const video = useRef<HTMLVideoElement>(null);
   const [broken, setBroken] = useState(false);
@@ -55,6 +55,7 @@ export function RecordingPlayer({ record, url }: { record: EvidenceView; url: st
           </p>
           {meta.startedAfterMs !== undefined && meta.startedAfterMs >= 1000 && <p className="faint small cy-rec-started">{t('ui.cycle.rec.startedAfter', { time: clock(0, meta.startedAfterMs) })}</p>}
           {cuts.length > 0 && <p className="faint small cy-rec-real">{t('ui.cycle.rec.realTime', { time: clock(0, real) })}</p>}
+          {meta.handoff && <p className="small cy-rec-handoff" role="note">{t('ui.cycle.rec.handoff')}</p>}
           {meta.truncated && <p className="small cy-rec-capped">{t(meta.truncated === 'size' ? 'ui.cycle.rec.truncatedSize' : 'ui.cycle.rec.truncatedTime')}</p>}
           {meta.marks.length > 0 && (
             <div className="cy-rec-marks-box">
@@ -63,13 +64,15 @@ export function RecordingPlayer({ record, url }: { record: EvidenceView; url: st
                 {meta.marks.map((mark, i) => {
                   const box = markBox(meta.durationMs, mark);
                   if (!box) return null;
-                  const label = t('ui.cycle.rec.mark', { from: clock(0, mark.fromMs), to: clock(0, mark.toMs) });
+                  // A hand-off interval is told apart: the person had the screen because the agent gave it, and the video keeps what they did.
+                  const handoff = mark.kind === 'handoff';
+                  const label = t(handoff ? 'ui.cycle.rec.markHandoff' : 'ui.cycle.rec.mark', { from: clock(0, mark.fromMs), to: clock(0, mark.toMs) });
                   return (
                     <button
                       // The strip is positioned by the recording's own length: the style carries geometry only, never a color.
                       key={`${mark.fromMs}-${i}`}
                       type="button"
-                      className="cy-rec-mark"
+                      className={`cy-rec-mark${handoff ? ' handoff' : ''}`}
                       style={{ left: `${box.left}%`, width: `${box.width}%` }}
                       aria-label={label}
                       title={label}

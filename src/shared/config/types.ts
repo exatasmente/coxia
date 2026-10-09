@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 20): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 22): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 20;
+export const CONFIG_SCHEMA_VERSION = 22;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -566,6 +566,18 @@ export interface AgentDef {
    * and is not called by another agent; saving it in the editor drops the mark. Absent: an agent of the team.
    */
   draft?: boolean;
+  /**
+   * Gives the agent a virtual screen and the app's browser tools (the person can watch it work). Absent: off. Only the person at the computer turns it on: a paired
+   * browser may lower it, never raise it, and a template or an import never carries it.
+   */
+  screen?: boolean;
+  /**
+   * The hosts this agent may reach (exact lowercase names, HTTPS port 443, no wildcard or port, at most 20), through the app's filtering proxy; how they meet the
+   * workspace's network setting is in `src/shared/network.ts`. Not used by an agent on `shell: host`, which has the computer's own network. Absent or empty: none.
+   */
+  allowedHosts?: string[];
+  /** The agent's browser keeps its logins between uses, in a profile folder of its own in the workspace's data. Absent: off, a fresh profile every time. */
+  browserProfile?: boolean;
   /** Appended to the agent's system prompt. A catalog key or a literal. */
   instructions: string;
   /** One of the five built-in agents (the ids of the LLM roles): they can be edited, never removed. */
@@ -835,6 +847,12 @@ export interface RunnerConfig {
    * Optional: absent in a config stored before it reads as 'app' (`evidencePlacementOf`).
    */
   evidence?: RunnerEvidence;
+  /**
+   * Agents keep what they learned doing a recurring thing as procedures in the workspace (a prompt list and four tools) and read them the next time. Only the computer
+   * changes it: it gives every agent, a reading one too, a write into a store other agents' prompts read. Off: no tool and no prompt section; the Procedures view still
+   * lists, edits and deletes. A workspace that existed before it was added has it off (the migration), a new one has it on. Optional: absent reads as off (`proceduresOn`).
+   */
+  procedures?: boolean;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
   /** The title of the pull request a run opens; `{title}` (the agent's title, or the issue's) and `{iid}` are replaced. */

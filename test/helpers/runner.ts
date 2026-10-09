@@ -330,6 +330,11 @@ export interface BootOptions {
   sandbox?: SandboxService;
   /** The live screens of the stages that have a virtual display (a real hub over a fake connection, or a fake hub); none by default. */
   screens?: RunnerDeps['screens'];
+  /** The screens of the agents that have one (the app's browser) and the questions they ask; none by default. */
+  sessions?: RunnerDeps['sessions'];
+  asks?: RunnerDeps['asks'];
+  /** The hand-off of a stage's screen to the person; none by default. */
+  handoff?: RunnerDeps['handoff'];
   timeoutMs?: number;
   /** Replaces the idle limit and the cap of a stage one by one. */
   limits?: { idleMs?: number; maxMs?: number };
@@ -346,6 +351,8 @@ export interface BootOptions {
   pluginHold?: RunnerDeps['pluginHold'];
   pluginRelease?: RunnerDeps['pluginRelease'];
   pluginNotes?: RunnerDeps['pluginNotes'];
+  /** The workspace's learned procedures (a port over a folder of the test's); none by default. */
+  procedures?: RunnerDeps['procedures'];
 }
 
 /** The workspace config of the tests: the agent cycle on a workspace with one repository, a project of issues and the identity the app commits as. */
@@ -382,6 +389,9 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     commandRunner: options.commandRunner ?? fakeCommands(),
     sandbox: options.sandbox,
     screens: options.screens,
+    sessions: options.sessions,
+    asks: options.asks,
+    handoff: options.handoff,
     timeoutMs: options.timeoutMs,
     limits: options.limits,
     probeBudget: options.probeBudget,
@@ -390,6 +400,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     pluginHold: options.pluginHold,
     pluginRelease: options.pluginRelease,
     pluginNotes: options.pluginNotes,
+    procedures: options.procedures,
   };
   if (options.publish) {
     const { createPublisher } = await import('../../src/main/runner/publish');

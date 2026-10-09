@@ -45,6 +45,46 @@ describe('the problems of an agent draft', () => {
   });
 });
 
+describe('the virtual screen of an agent in the editor', () => {
+  it('starts off, and a draft of an agent without them holds none', () => {
+    const c = flow();
+    expect(blankAgent()).toMatchObject({ screen: false, allowedHosts: [], browserProfile: false });
+    expect(draftOf(agent(c, 'developer'))).toMatchObject({ screen: false, allowedHosts: [], browserProfile: false });
+  });
+
+  it('writes the three only when they are on, and clearing one removes the field', () => {
+    const c = flow();
+    const plain = applyAgent(c, draftOf(agent(c, 'developer')), false);
+    expect('screen' in agent(plain, 'developer') || 'allowedHosts' in agent(plain, 'developer') || 'browserProfile' in agent(plain, 'developer')).toBe(false);
+    const on = applyAgent(c, { ...draftOf(agent(c, 'developer')), screen: true, allowedHosts: [' Example.com ', 'docs.example.com', 'example.com', ''], browserProfile: true }, false);
+    expect(agent(on, 'developer')).toMatchObject({ screen: true, allowedHosts: ['example.com', 'docs.example.com'], browserProfile: true });
+    expect(validateConfig(agentOnly(on)).errors).toEqual([]);
+    expect(draftOf(agent(on, 'developer'))).toMatchObject({ screen: true, allowedHosts: ['example.com', 'docs.example.com'], browserProfile: true });
+    const off = applyAgent(on, { ...draftOf(agent(on, 'developer')), screen: false, allowedHosts: [], browserProfile: false }, false);
+    expect('screen' in agent(off, 'developer') || 'allowedHosts' in agent(off, 'developer') || 'browserProfile' in agent(off, 'developer')).toBe(false);
+    expect(validateConfig(agentOnly(off)).errors).toEqual([]);
+  });
+
+  it('saves a new agent with them, and an edit of something else leaves them as they were', () => {
+    const c = flow();
+    const made = applyAgent(c, { ...blankAgent(), id: 'scout', name: 'Scout', screen: true, allowedHosts: ['example.com'] }, true);
+    expect(agent(made, 'scout')).toMatchObject({ screen: true, allowedHosts: ['example.com'] });
+    const renamed = applyAgent(made, { ...draftOf(agent(made, 'scout')), name: 'Scout 2' }, false);
+    expect(agent(renamed, 'scout')).toMatchObject({ name: 'Scout 2', screen: true, allowedHosts: ['example.com'] });
+  });
+
+  it('flags a host the proxy would not take and a list that is too long, as validate.ts does', () => {
+    const c = flow();
+    const d = { ...blankAgent(), id: 'ok', name: 'A' };
+    expect(agentProblems(c, { ...d, allowedHosts: ['example.com', ' '] }, true)).toEqual([]);
+    for (const bad of ['https://example.com', 'example.com:443', '*.example.com', 'localhost']) {
+      expect(agentProblems(c, { ...d, allowedHosts: [bad] }, true), bad).toEqual([{ field: 'allowedHosts', key: 'ui.team.err.allowedHost', params: { host: bad } }]);
+    }
+    const many = Array.from({ length: 21 }, (_, i) => `h${i}.example.com`);
+    expect(agentProblems(c, { ...d, allowedHosts: many }, true).map((p) => p.key)).toEqual(['ui.team.err.allowedHostsMax']);
+  });
+});
+
 describe('applying a draft', () => {
   it('adds an agent that validates, with its squad', () => {
     let c = flow();

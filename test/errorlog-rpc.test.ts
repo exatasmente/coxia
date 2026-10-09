@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 process.env.CERIMONIAS_DATA_DIR = mkdtempSync(join(tmpdir(), 'cerimonias-errors-rpc-'));
 
-const { bindIpc, handle, handleDevice, invoke } = await import('../src/main/rpc');
+const { bindIpc, callOrigin, handle, handleDevice, invoke } = await import('../src/main/rpc');
 const { errorsView, errorlog } = await import('../src/main/errorlog');
 const { DATA_ROOT } = await import('../src/main/env');
 const { readEntries } = await import('../src/main/errorlog-core');
@@ -44,6 +44,22 @@ describe('rpc failures reach the error log', () => {
     expect(logs()).toHaveLength(before);
     await expect(invoke('t:dev', [], 'dev-1')).rejects.toThrow('device boom');
     expect(logs().at(-1)?.message).toBe('device boom');
+  });
+});
+
+describe('the door a call came through', () => {
+  it('is known to the handler, across its awaits: ipc for the window and web for a browser', async () => {
+    const seen: string[] = [];
+    handle('t:origin', (async () => {
+      seen.push(callOrigin());
+      await new Promise((r) => setTimeout(r, 5));
+      seen.push(callOrigin());
+    }) as never);
+    await ipc.get('t:origin')?.();
+    await invoke('t:origin', [], 'dev-1');
+    expect(seen).toEqual(['ipc', 'ipc', 'web', 'web']);
+    // Outside a call it is the window's.
+    expect(callOrigin()).toBe('ipc');
   });
 });
 

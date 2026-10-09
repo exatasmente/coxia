@@ -4,7 +4,6 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkspaceConfig } from '../src/shared/config/types';
-import { runThreadId } from '../src/shared/forum';
 import type { Run } from '../src/shared/runs';
 import type { ScreenSocket } from '../src/main/sandbox/session';
 import { type ScreenHub, createScreenHub } from '../src/main/screen/hub';
@@ -61,7 +60,7 @@ function screens(o: { connectFails?: boolean; forum?: () => Boot['forum'] } = {}
       if (o.connectFails) throw new Error('refused');
       return conn;
     },
-    note: (run, stage, code, params) => o.forum?.().append(runThreadId(run), { kind: 'system', author: { type: 'app' }, code, params, stage }),
+    note: (thread, stage, code, params) => o.forum?.().append(thread, { kind: 'system', author: { type: 'app' }, code, params, stage }),
   });
   return { conn, hub, events, connected };
 }

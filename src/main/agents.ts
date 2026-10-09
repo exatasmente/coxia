@@ -27,7 +27,8 @@ import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchang
 import { claudeSdkEnv, providerSecret } from './llm';
 import { loginPath, mergedPath } from './loginPath';
 import { noteSession } from './sessions';
-import { ATAS } from './env';
+import { anyProfileDenyGlobs, isInsideAnyProfiles } from './browser/profile';
+import { ATAS, DATA_ROOT } from './env';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
@@ -44,9 +45,12 @@ import { shellMcpServer, shellToolImpl, viewImageToolImpl } from './sandbox/engi
 import { EVIDENCE_TOOL_NAMES, evidenceMcpServer, evidenceToolImpls } from './evidence/engineTool';
 import { evidenceMcpToolName } from './evidence/tool';
 import type { EvidenceTools } from './evidence/tool';
+import { procedureMcpServer, procedureToolImpls } from './procedures/engineTool';
+import { procedureMcpToolName, procedureToolNames, type ProcedureTools } from './procedures/tools';
 import { incomingActivity, incomingText } from './engine/incoming';
 import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME, VIEW_IMAGE_MCP_TOOL_NAME, VIEW_IMAGE_TOOL_NAME, offersViewImage } from './sandbox/tool';
 import { ATTACHMENT_TOOL } from '../shared/attachments';
+import { type ScreenToolset, screenMcpServers, screenMcpToolNames, screenToolImpls, screenToolNames } from './browser/engineTool';
 import { ATTACHMENT_MCP_TOOL_NAME, attachmentMcpServer, attachmentToolImpl } from './attachmentTool';
 import type { SandboxSession } from './sandbox/session';
 
@@ -187,6 +191,9 @@ export const SECRET_GLOBS = [
   '~/.claude.json',
   '~/.claude/*.json',
   '~/.claude/projects/**',
+  // The logged-in browsers of the agents (cookies, local storage) live in the workspace's data, and an agent with no shell reads from that folder: its profile files
+  // match none of the names above, so the folder itself is refused, by the absolute path the SDK's rules take, for every workspace of the data folder.
+  ...anyProfileDenyGlobs(DATA_ROOT),
 ];
 export const SECRET_READ_DENY = SECRET_GLOBS.map((g) => `Read(${g})`);
 
@@ -196,6 +203,11 @@ function inClaudeState(p: string): boolean {
   if (!p.startsWith(base)) return false;
   const rel = p.slice(base.length);
   return rel.startsWith('projects/') || (!rel.includes('/') && rel.endsWith('.json'));
+}
+
+// The profiles of the agents' browsers, of any workspace: nothing under them is read by an agent, whichever way the path is written.
+function inBrowserProfiles(p: string): boolean {
+  return isAbsolute(p) && isInsideAnyProfiles(DATA_ROOT, p);
 }
 
 // The path as written, with ~ expanded, absolute against the cwd and with symlinks resolved:
@@ -210,7 +222,7 @@ export function secretPath(p: string, cwd = process.cwd()): boolean {
     // does not exist: the written forms are all there is
   }
   const dir = isDirectory(abs);
-  return forms.some((f) => inClaudeState(f) || KEY_RULE.test(f) || (NAME_RULE.test(f) && !dir));
+  return forms.some((f) => inClaudeState(f) || inBrowserProfiles(f) || KEY_RULE.test(f) || (NAME_RULE.test(f) && !dir));
 }
 
 // A directory named tokens/ has no extension to tell code from data: it can be searched, and the results are judged file by file.
@@ -287,7 +299,9 @@ export function withoutSecretFiles(response: unknown, cwd?: string): object | nu
   const keptLines = lines?.filter((l) => {
     for (const m of l.matchAll(/[:-]\d+[:-]/g)) {
       const file = l.slice(0, m.index);
-      if (!/\s/.test(file) && secretPath(file, cwd)) return false;
+      // A name with a space ("Login Data", "Local State") cannot be told from text, so the secret-name rule skips it; a prefix that leads into a browser profile is cut
+      // all the same: no line of text starts with the path of one.
+      if (/\s/.test(file) ? inBrowserProfiles(isAbsolute(file) ? file : resolve(cwd ?? '.', file)) : secretPath(file, cwd)) return false;
     }
     return true;
   });
@@ -509,8 +523,9 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // The output folder of the session that is running: a host stage names its own, a sandbox has `/coxia/out` and the tools' own wording stands.
   const evidenceOut = req.exec?.outputDir;
   const evidence = req.evidence ? evidenceToolImpls(req.evidence, evidenceOut) : [];
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name)];
+  const procedures = req.procedures ? procedureToolImpls(req.procedures) : [];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? []), ...procedures, ...(req.screen ? screenToolImpls(req.screen) : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name), ...(req.procedures ? procedureToolNames(req.procedures) : []), ...(req.screen ? screenToolNames(req.screen) : [])];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -615,13 +630,18 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   if (req.evidence && !evidence) throw new Error(t('main.evidence.error.tool-missing'));
   // The app tools of a stage that talks while it works (SendMessage, CallAgent) or of a called agent (AskConversation), as an in-process MCP server.
   const runner = req.runnerTools?.length ? await runnerMcpServer(req.runnerTools) : null;
-  const mcp = vcs || shell || release || attachment || evidence || runner ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}), ...(runner ?? {}) } : null;
+  // The procedure tools: unlike the tools above, a server that cannot be built does not stop the call. The list is in its prompt; the thread says the tools are not there.
+  const procedures = req.procedures ? await procedureMcpServer(req.procedures) : null;
+  if (req.procedures && !procedures) req.procedures.unavailable?.();
+  // The agent's screen: the app's browser and the confirmation tool, two more in-process servers.
+  const screen = req.screen ? await screenMcpServers(req.screen) : null;
+  const mcp = vcs || shell || release || attachment || evidence || runner || procedures || screen ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}), ...(runner ?? {}), ...(procedures ?? {}), ...(screen ?? {}) } : null;
   const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
   const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
   const options = {
-    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : [])], confine }),
+    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : []), ...(procedures && req.procedures ? procedureToolNames(req.procedures).map(procedureMcpToolName) : []), ...(screen && req.screen ? screenMcpToolNames(req.screen) : [])], confine }),
     ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
     model: req.target.model,
     env,
@@ -1166,6 +1186,10 @@ export interface AgentCall {
   incoming?: (delivered: (text: string) => void) => Promise<string | null>;
   /** The app tools of a stage that talks (`SendMessage`, `CallAgent`) or of a called agent (`AskConversation`); the engine offers each one by its name. */
   runnerTools?: ToolImpl[];
+  /** The workspace's procedure tools, from the call's procedure session; absent: the call has none (a ceremony, a call with no session, the switch off). */
+  procedures?: ProcedureTools;
+  /** The agent's screen (the app's browser and the confirmation tool), offered by name to either engine. */
+  screen?: ScreenToolset;
   /** What the live activity calls it (the agent's id). */
   label: string;
   /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
@@ -1275,6 +1299,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       onUsage: call.onUsage,
       incoming: call.incoming,
       runnerTools: call.runnerTools,
+      procedures: call.procedures,
+      screen: call.screen,
     };
     let r: Run<T>;
     try {
@@ -1316,6 +1342,8 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
       read: undefined,
       exec: undefined,
       release: undefined,
+      procedures: undefined,
+      screen: undefined,
     });
     return { ...r, sources: [...e.sources, ...r.sources], partial: true };
   } catch (again) {

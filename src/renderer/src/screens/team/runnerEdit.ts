@@ -1,4 +1,5 @@
 import type { RunnerConfig, RunnerConversations, RunnerEvidence, RunnerSandbox, WorkspaceAutonomy } from '../../../../shared/config/types';
+import { proceduresOn } from '../../../../shared/procedures';
 import { soleMaintainerOf } from '../../../../shared/release';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../../../../shared/sandboxPaths';
 
@@ -33,6 +34,8 @@ export interface RunnerDraft {
   /** The autonomy block of the workspace (desktop only: a paired browser cannot raise it). */
   autonomy: WorkspaceAutonomy;
   linkDependencies: boolean;
+  /** Agents keep what they learned as procedures and read them (desktop only: it gives every agent a write into a store other agents' prompts read). */
+  procedures: boolean;
   /** The person is the repository's only maintainer: their yes on a merge of a release stands for the review (desktop only). */
   soleMaintainer: boolean;
   /** The limits of a conversation between team agents inside a run: carried as stored, with no field of their own on this screen. */
@@ -59,6 +62,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     evidence: r.evidence ?? 'app',
     autonomy: structuredClone(r.autonomy),
     linkDependencies: r.linkDependencies !== false,
+    procedures: proceduresOn({ runner: r }),
     soleMaintainer: soleMaintainerOf(r),
     conversations: { ...r.conversations },
   };
@@ -81,6 +85,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     commitMessage: d.commitMessage,
     prTitle: d.prTitle,
     linkDependencies: d.linkDependencies,
+    procedures: d.procedures,
     release: { soleMaintainer: d.soleMaintainer },
     conversations: { ...d.conversations },
   };
@@ -91,7 +96,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
  * whether the person's yes stands for a review are the stored ones whatever the draft says, because only the computer changes them (the save is refused otherwise).
  */
 export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig {
-  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', release: stored.release && { ...stored.release }, conversations: { ...stored.conversations } };
+  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', procedures: stored.procedures, release: stored.release && { ...stored.release }, conversations: { ...stored.conversations } };
 }
 
 export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage' | 'prTitle' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxBrowsers' | 'sandboxLimits';

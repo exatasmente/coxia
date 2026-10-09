@@ -3,11 +3,11 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { listAudit } from '../src/main/auditoria';
 import { putRecording } from '../src/main/evidence/recording';
 import { evidencePath } from '../src/main/evidence/store';
 import { type ScreenHub, createScreenHub } from '../src/main/screen/hub';
 import type { WorkspaceConfig } from '../src/shared/config/types';
-import { runThreadId } from '../src/shared/forum';
 import { recordEvidence } from '../src/shared/runs';
 import type { Run } from '../src/shared/runs';
 import { type Boot, boot, doc, fakeSandbox, keepQaEvidence, work } from './helpers/runner';
@@ -93,7 +93,7 @@ function screens(forum: () => Boot['forum'], sink: FakeSink) {
     encoder: { encode: () => ({ jpeg: Uint8Array.from([1]), width: 1, height: 1 }) },
     connect: async () => conn,
     sink: () => sink,
-    note: (run, stage, code, params) => forum().append(runThreadId(run), { kind: 'system', author: { type: 'app' }, code, params, stage }),
+    note: (thread, stage, code, params) => forum().append(thread, { kind: 'system', author: { type: 'app' }, code, params, stage }),
   });
   return { conn, hub };
 }
@@ -189,6 +189,19 @@ describe('the recording of a QA stage', () => {
     expect([...readFileSync(path).subarray(0, 4)]).toEqual([0x1a, 0x45, 0xdf, 0xa3]);
     expect(w.sink.closed).toBe(1);
     expect(w.conn.closed).toBe(true);
+  });
+
+  it('is audited as a screen reached through the agent\'s own shell: one line when it opens and one when the stage ends, with the recording kept', async () => {
+    const w = await qaStage();
+    const run = await reach(w.b, w.run, 'ready');
+    // The audit log is the file's, shared by every stage this file runs: this run's lines only.
+    const lines = listAudit().filter((e) => (e.kind === 'screen-open' || e.kind === 'screen-close') && e.target === `screen:run:${run.id}`).reverse();
+    expect(lines.map((e) => [e.kind, e.target, e.by, e.via])).toEqual([
+      ['screen-open', `screen:run:${run.id}`, 'qa', 'sandbox'],
+      ['screen-close', `screen:run:${run.id}`, 'qa', 'sandbox'],
+    ]);
+    expect(lines[0].fields).toMatchObject({ place: 'stage', path: 'shell', profile: 'none' });
+    expect(lines[1].fields).toMatchObject({ place: 'stage', reason: 'stage', recording: 'kept' });
   });
 
   it('is written to the run file as version 3 (the recording says when it started, #176), and the run without a recording stays 1', async () => {
@@ -341,7 +354,7 @@ describe('the recording of a QA stage', () => {
       connect: async () => conn,
       sink: () => sink,
       recordingLimits: { bytes: 3000, reserve: 1200 },
-      note: (run, stage, code, params) => b.forum.append(runThreadId(run), { kind: 'system', author: { type: 'app' }, code, params, stage }),
+      note: (thread, stage, code, params) => b.forum.append(thread, { kind: 'system', author: { type: 'app' }, code, params, stage }),
       // The look at the screen goes off at once, as if every second passed.
       schedule: (_ms, fn) => {
         const timer = setTimeout(fn, 0);
@@ -379,7 +392,7 @@ describe('an agent called during a QA stage', () => {
       encoder: { encode: () => ({ jpeg: Uint8Array.from([1]), width: 1, height: 1 }) },
       connect,
       sink: () => sink,
-      note: (run, stage, code, params) => b.forum.append(runThreadId(run), { kind: 'system', author: { type: 'app' }, code, params, stage }),
+      note: (thread, stage, code, params) => b.forum.append(thread, { kind: 'system', author: { type: 'app' }, code, params, stage }),
     });
     const sandbox = fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/stage/x11/X99', kind: 'sandbox' } });
     b = await boot({ sandbox, screens: hub, configure: (c) => { c.language = 'en'; shellOf(c, 'qa', 'sandbox'); shellOf(c, 'developer', 'sandbox'); } });

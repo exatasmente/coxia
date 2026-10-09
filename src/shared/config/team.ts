@@ -55,6 +55,10 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     ...(partial.squad !== undefined ? { squad: partial.squad } : {}),
     // Only a draft carries the mark: every other agent keeps the shape it had before the field existed.
     ...(partial.draft === true ? { draft: true } : {}),
+    // Absent means off and empty: an agent that never had them keeps the shape it had, and `newAgent` never switches one on by itself.
+    ...(partial.screen === true ? { screen: true } : {}),
+    ...(partial.allowedHosts?.length ? { allowedHosts: [...partial.allowedHosts] } : {}),
+    ...(partial.browserProfile === true ? { browserProfile: true } : {}),
     instructions: partial.instructions ?? '',
     system: partial.system ?? false,
   };

@@ -4,6 +4,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CATALOGS, setLanguage, t } from '../src/shared/i18n';
+import type { PendingAsk } from '../src/shared/browser';
+import type { HandoffPaths } from '../src/shared/handoff';
 import type { LiveScreen as LiveScreenState } from '../src/shared/screen';
 import type { Run } from '../src/shared/runs';
 import { drive, flowWithAutonomy, agentFlowStages } from './helpers/runs';
@@ -12,9 +14,10 @@ import { stageDone, startStage } from '../src/shared/runs';
 // src/renderer/src/api.ts reads window.api when it loads, and the viewer asks document whether it runs in a paired browser; the node environment has neither.
 const dom = vi.hoisted(() => {
   const documentElement = { dataset: {} as Record<string, string> };
-  (globalThis as unknown as { window: unknown }).window = { api: {} };
+  const invoke = vi.fn(async (..._args: unknown[]) => null);
+  (globalThis as unknown as { window: unknown }).window = { api: { invoke } };
   (globalThis as unknown as { document: unknown }).document = { documentElement };
-  return { documentElement };
+  return { documentElement, invoke };
 });
 vi.mock('../src/renderer/src/i18n', async (orig) => ({ ...(await orig<typeof import('../src/renderer/src/i18n')>()), useT: () => t }));
 // The document viewer draws diagrams with a library that needs a browser; the card does not open it here.
@@ -66,10 +69,7 @@ describe('the Live screen button on the stage card', () => {
   });
 });
 
-const viewer = (screen: LiveScreenState | null): string => {
-  const { run } = working(() => screen);
-  return renderToStaticMarkup(createElement(LiveScreen, { run, onClose: () => undefined }));
-};
+const viewer = (screen: LiveScreenState | null, screenKey = 'run:r1', canClose = false): string => renderToStaticMarkup(createElement(LiveScreen, { screenKey, state: screen, canClose, onClose: () => undefined }));
 
 describe('the live screen viewer', () => {
   it('offers Take control, off, with the recording state, on the desktop', () => {
@@ -107,6 +107,24 @@ describe('the live screen viewer', () => {
     expect(html).not.toContain(t('ui.cycle.live.recordingOn'));
   });
 
+  it('shows a conversation screen by its key just as a stage\'s', () => {
+    const html = viewer(screenOf(), 'call:general:coder');
+    expect(html).toContain('role="switch"');
+    expect(html).toContain(t('ui.cycle.live.recordingOn'));
+  });
+
+  it('offers to close the agent\'s screen only where the caller allows it, and not once it is gone', () => {
+    expect(viewer(screenOf(), 'call:general:coder', true)).toContain(`>${t('ui.screen.closeScreen')}</button>`);
+    expect(viewer(screenOf(), 'call:general:coder')).not.toContain(t('ui.screen.closeScreen'));
+    expect(viewer(null, 'call:general:coder', true)).not.toContain(t('ui.screen.closeScreen'));
+  });
+
+  it('says the screen was closed, not that a stage ended, for an agent\'s screen in a conversation', () => {
+    const html = viewer(null, 'call:general:coder');
+    expect(html).toContain(t('ui.screen.ended'));
+    expect(html).not.toContain(t('ui.cycle.live.ended'));
+  });
+
   it('says the stage ended, and offers nothing to control, when the run no longer has a screen', () => {
     const html = viewer(null);
     expect(html).toContain(t('ui.cycle.live.ended'));
@@ -116,6 +134,101 @@ describe('the live screen viewer', () => {
 
   it('puts the live screen in a dialog labelled with its title', () => {
     expect(viewer(screenOf())).toContain(`aria-label="${t('ui.cycle.live.title')}"`);
+  });
+});
+
+// #178: the viewer of a screen an agent asked the person to take.
+const request = (paths: HandoffPaths, taken = false): PendingAsk => ({
+  id: 'ask-1',
+  key: 'run:r1',
+  agent: 'coder',
+  kind: 'handoff',
+  why: 'agent',
+  step: null,
+  site: '',
+  agentWords: 'Log in to example.com',
+  since: '2026-10-09T11:59:00.000Z',
+  handoff: { taken, paths },
+});
+const handoffViewer = (ask: PendingAsk | null, screenKey = 'run:r1'): string =>
+  renderToStaticMarkup(createElement(LiveScreen, { screenKey, state: screenOf(), asks: ask ? [ask] : [], onClose: () => undefined }));
+const lines = (html: string): string[] => [...html.matchAll(/data-line="([A-Za-z]+)"/g)].map((m) => m[1]);
+
+describe('the viewer of a screen the agent handed over', () => {
+  it('puts the warning in place of the control, composed from what the agent has, and offers no switch before the click', () => {
+    setLanguage('en');
+    const html = handoffViewer(request({ browser: true, shell: 'sandbox' }));
+    expect(html).toContain(t('ui.screen.handoff.warning.title'));
+    expect(lines(html)).toEqual(['always', 'recorded', 'browser', 'programs', 'last']);
+    expect(html).toContain(`>${t('ui.screen.handoff.understand')}</button>`);
+    expect(html).not.toContain('role="switch"');
+    expect(html).not.toContain(t('ui.screen.handoff.giveBack'));
+    // The request is answered by the warning, not by a second card inside the viewer.
+    expect(html).not.toContain('class="cy-ask"');
+  });
+
+  it('says the recording keeps the interval, and that the video may be played from a paired browser', () => {
+    setLanguage('en');
+    const html = handoffViewer(request({ browser: false, shell: 'none' }));
+    expect(html).toContain('This is recorded.');
+    expect(html).toContain('paired browser');
+  });
+
+  it('adds the sentence about the computer only for an agent that runs there, and the "no program" line for one with no shell', () => {
+    expect(lines(handoffViewer(request({ browser: true, shell: 'host' })))).toEqual(['always', 'recorded', 'browser', 'programs', 'programsHost', 'last']);
+    expect(lines(handoffViewer(request({ browser: true, shell: 'none' })))).toEqual(['always', 'recorded', 'browser', 'noPrograms', 'last']);
+  });
+
+  it('repeats the warning for each request: it is there for a new one, and gone once the screen is taken', () => {
+    expect(handoffViewer(request({ browser: true, shell: 'sandbox' }))).toContain('cy-handoff-warning');
+    expect(handoffViewer(request({ browser: true, shell: 'sandbox' }, true))).not.toContain('cy-handoff-warning');
+  });
+
+  it('once taken shows Give back always and a banner that says whose the screen is, offering control again when it is off; the card is not repeated', () => {
+    setLanguage('en');
+    const html = handoffViewer(request({ browser: true, shell: 'sandbox' }, true));
+    expect(html).toContain(`>${t('ui.screen.handoff.giveBack')}</button>`);
+    // A render before the take's answer has control off (the take turns it on): the viewer says the screen is still the person's, and the switch turns control on again with no warning.
+    expect(html).toContain('with control off');
+    expect(html).toContain('role="switch"');
+    expect(html).not.toContain('class="cy-ask"');
+  });
+
+  it('shows no warning and no Give back in a paired browser, which can only watch', () => {
+    dom.documentElement.dataset.platform = 'web';
+    const html = handoffViewer(request({ browser: true, shell: 'sandbox' }, true));
+    expect(html).not.toContain('cy-handoff-warning');
+    expect(html).not.toContain(t('ui.screen.handoff.giveBack'));
+    expect(html).not.toContain('role="switch"');
+  });
+
+  it('shows the screen as it was for a viewer with no request, and for a request of another screen', () => {
+    const plain = handoffViewer(null);
+    expect(plain).toContain('role="switch"');
+    expect(plain).not.toContain('cy-handoff-warning');
+    expect(handoffViewer(request({ browser: true, shell: 'sandbox' }), 'run:other')).not.toContain('cy-handoff-warning');
+  });
+});
+
+describe('the channels of the viewer', () => {
+  it('ask for a frame, take control and send input by the screen key, whatever the screen', async () => {
+    const { screenApi } = await import('../src/renderer/src/screens/cycle/screenApi');
+    for (const key of ['run:r1', 'call:general:coder']) {
+      dom.invoke.mockClear();
+      await screenApi.frame(key, 3, 640);
+      await screenApi.control(key, true);
+      await screenApi.input(key, [{ t: 'move', x: 1, y: 2 }]);
+      expect(dom.invoke.mock.calls.map((c) => [c[0], c[1]])).toEqual([['runs:screen', key], ['screen:control', key], ['screen:input', key]]);
+    }
+  });
+
+  it('read the person\'s frame, take and give back by the same key, never by the paired browser\'s read', async () => {
+    const { screenApi } = await import('../src/renderer/src/screens/cycle/screenApi');
+    dom.invoke.mockClear();
+    await screenApi.handoffFrame('call:general:coder', 0, 1280);
+    await screenApi.handoffTake('call:general:coder', 'ask-1');
+    await screenApi.handoffGive('call:general:coder');
+    expect(dom.invoke.mock.calls.map((c) => c[0])).toEqual(['screen:handoffFrame', 'screen:handoffTake', 'screen:handoffGive']);
   });
 });
 

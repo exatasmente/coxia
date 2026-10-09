@@ -69,7 +69,7 @@ describe('the run store', () => {
     const store = createRunStore(dir);
     const run = store.create(fresh());
     const path = join(dir, `${run.id}.json`);
-    const newer = JSON.stringify({ ...run, version: 4, somethingNew: true });
+    const newer = JSON.stringify({ ...run, version: 6, somethingNew: true });
     writeFileSync(path, newer);
     expect(store.get(run.id)).toBeNull();
     expect(store.list()).toEqual([]);
@@ -248,6 +248,25 @@ describe('the version of a run file', () => {
     expect(withIt(1.5)).toBe(false);
   });
 
+  it('is 4 once a recording holds a hand-off (#178): the marks of an older app allow no kind', () => {
+    const marked = { ...recording, recording: { ...recording.recording!, durationMs: 4000, marks: [{ fromMs: 1000, toMs: 3000, kind: 'handoff' as const }], handoff: true as const } };
+    expect(runVersionOf({ evidence: { 'ev-1': marked } })).toBe(4);
+    // The flag alone, or a mark of that kind alone, is enough: either is a property the version 3 schema does not know.
+    expect(runVersionOf({ evidence: { 'ev-1': { ...recording, recording: { ...recording.recording!, handoff: true as const } } } })).toBe(4);
+    expect(runVersionOf({ evidence: { 'ev-1': { ...recording, recording: { ...recording.recording!, marks: [{ fromMs: 0, toMs: 5, kind: 'handoff' as const }] } } } })).toBe(4);
+    const store = createRunStore(dir);
+    const run = store.create(fresh());
+    store.update(run.id, (r) => recordEvidence(r, marked, at(2)));
+    expect(onDisk(run.id).version).toBe(4);
+    expect(store.get(run.id)?.evidence?.['ev-1']).toEqual(marked);
+    // A person's own mark (no kind) does not raise the version.
+    expect(runVersionOf({ evidence: { 'ev-1': { ...recording, recording: { ...recording.recording!, marks: [{ fromMs: 0, toMs: 5 }] } } } })).toBe(2);
+    const base = JSON.parse(JSON.stringify(fresh()));
+    const withMark = (m: unknown) => parseRun({ ...base, evidence: { 'ev-1': { ...JSON.parse(JSON.stringify(recording)), recording: { ...recording.recording, marks: [m] } } } }).ok;
+    expect(withMark({ fromMs: 0, toMs: 5, kind: 'handoff' })).toBe(true);
+    expect(withMark({ fromMs: 0, toMs: 5, kind: 'other' })).toBe(false);
+  });
+
   it('reads the version from the content: 1 without a recording, 2 with one, 3 with one that holds cuts', () => {
     expect(runVersionOf({ evidence: { 'ev-1': recording } })).toBe(2);
     expect(runVersionOf({ evidence: { 'ev-1': { ...recording, recording: { ...recording.recording!, cuts: [{ atMs: 1, skippedMs: 2 }] } } } })).toBe(3);
@@ -275,9 +294,9 @@ describe('the version of a run file', () => {
     expect(onDisk(run.id).version).toBe(1);
   });
 
-  it('refuses a 4 as written by a newer app and anything else that is not a version', () => {
+  it('refuses a 6 as written by a newer app and anything else that is not a version', () => {
     const run = JSON.parse(JSON.stringify(fresh()));
-    expect(parseRun({ ...run, version: 4 })).toMatchObject({ ok: false, reason: 'newer' });
+    expect(parseRun({ ...run, version: 6 })).toMatchObject({ ok: false, reason: 'newer' });
     expect(parseRun({ ...run, version: 0 })).toMatchObject({ ok: false, reason: 'invalid' });
     expect(parseRun({ ...run, version: 1.5 })).toMatchObject({ ok: false, reason: 'invalid' });
     expect(parseRun({ ...run, version: '1' })).toMatchObject({ ok: false, reason: 'invalid' });
