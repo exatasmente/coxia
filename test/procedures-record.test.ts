@@ -335,9 +335,22 @@ describe('parseRecord', () => {
     ['a state of its own', stored({ state: 'great' })],
     ['stats missing', stored({ stats: null })],
     ['a bad instant', stored({ lastVerified: 'yesterday' })],
+    ['a recent entry that is not an object', stored({ stats: { ...(stored().stats as object), recent: [null] } })],
+    ['a recent entry with no usage', stored({ stats: { ...(stored().stats as object), recent: [{ at: '2026-10-09T10:00:00.000Z', ref: 'r', failed: false }] } })],
+    ['a recent entry with a usage that is not numbers', stored({ stats: { ...(stored().stats as object), recent: [{ at: '2026-10-09T10:00:00.000Z', ref: 'r', failed: false, usage: { promptTokens: 'a' } }] } })],
+    ['a baseline that is not a usage', stored({ stats: { ...(stored().stats as object), baseline: {} } })],
     ['a surface that does not exist', stored({ origin: { by: 'w', createdBy: 'w', surface: 'moon', at: '2026-10-09T10:00:00.000Z' } })],
   ])('refuses %s as invalid', (_name, raw) => {
     expect(parseRecord(raw).status).toBe('invalid');
+  });
+});
+
+describe('parseRecord: the figures the comparison reads', () => {
+  const usage = { promptTokens: 10, completionTokens: 2, cachedTokens: 0, calls: 1, costUsd: null };
+
+  it('reads well-formed uses and a baseline', () => {
+    const recent = [{ at: '2026-10-09T10:00:00.000Z', ref: 'app#1', failed: false, usage }];
+    expect(parseRecord(stored({ stats: { ...(stored().stats as object), baseline: usage, recent } })).status).toBe('ok');
   });
 });
 

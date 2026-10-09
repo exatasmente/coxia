@@ -279,6 +279,21 @@ describe('save: a replacement', () => {
   });
 });
 
+describe('a stored file with malformed figures', () => {
+  it('is skipped by the list, and the statistics over the others still work', async () => {
+    const store = make();
+    const good = created(store);
+    const bad = created(store, { title: 'The broken one' });
+    const raw = onDisk(bad.id);
+    writeFileSync(fileOf(bad.id), JSON.stringify({ ...raw, stats: { ...raw.stats, recent: [{ at: AT, ref: 'x', failed: false, usage: null }] } }));
+    const listed = store.list();
+    expect(listed.records.map((r) => r.id)).toEqual([good.id]);
+    expect(listed.skipped).toBe(1);
+    const { statsOf } = await import('../src/shared/proceduresView');
+    expect(() => statsOf(listed.records, true, T0)).not.toThrow();
+  });
+});
+
 describe('stale and use', () => {
   it('a stale report sets failing, lastFailed and the step, without moving the revision', () => {
     const store = make();

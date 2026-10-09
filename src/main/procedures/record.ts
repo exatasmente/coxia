@@ -285,6 +285,11 @@ const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 
 const isStr = (v: unknown): v is string => typeof v === 'string';
 const isStrList = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
 const isStepList = (v: unknown): v is ProcedureStep[] => Array.isArray(v) && v.every((s) => isObj(s) && isStr(s.text) && (s.run === undefined || isStr(s.run)));
+const isCount = (v: unknown): boolean => typeof v === 'number' && Number.isFinite(v) && v >= 0;
+// What the comparison reads: a malformed figure here would throw for the whole list, so the record that holds one is not a record.
+const isUsage = (v: unknown): boolean =>
+  isObj(v) && isCount(v.promptTokens) && isCount(v.completionTokens) && isCount(v.cachedTokens) && isCount(v.calls) && (v.costUsd === null || isCount(v.costUsd)) && (v.costEstimated === undefined || typeof v.costEstimated === 'boolean');
+const isUseEntry = (v: unknown): boolean => isObj(v) && isIso(v.at) && isStr(v.ref) && typeof v.failed === 'boolean' && isUsage(v.usage);
 const isIso = (v: unknown): boolean => isStr(v) && Number.isFinite(Date.parse(v));
 
 /**
@@ -316,8 +321,9 @@ export function parseRecord(raw: unknown): Parsed {
     Number.isInteger(stats.failures) &&
     Number.isInteger(stats.failuresSinceSave) &&
     (stats.lastUsed === null || isIso(stats.lastUsed)) &&
-    (stats.baseline === null || isObj(stats.baseline)) &&
+    (stats.baseline === null || isUsage(stats.baseline)) &&
     Array.isArray(stats.recent) &&
+    stats.recent.every(isUseEntry) &&
     isObj(origin) &&
     isStr(origin.by) &&
     isStr(origin.createdBy) &&
