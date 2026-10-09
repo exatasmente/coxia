@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The open engine no longer retries a refusing model without end when the server sends `Retry-After`.** A rate-limit or overload answer carrying that header did not count as an attempt, so a model that kept refusing was called again until the 15-minute limit of the call; it now counts like any other retry and the call fails after `maxRetries` repeats, with or without the header.
+
 ## [0.9.0-beta.12] - 2026-10-09
 
 ### Added

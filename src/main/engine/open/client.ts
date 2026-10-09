@@ -267,7 +267,10 @@ export class ChatClient {
           continue;
         }
         if (err.retryable && transient < (this.cfg.maxRetries ?? 2)) {
-          await sleep(err.retryAfterMs ?? (this.cfg.retryDelayMs ?? 1000) * 2 ** transient++, o.signal);
+          // A Retry-After counts as an attempt too, or a model that keeps refusing is retried forever.
+          const wait = err.retryAfterMs ?? (this.cfg.retryDelayMs ?? 1000) * 2 ** transient;
+          transient++;
+          await sleep(wait, o.signal);
           continue;
         }
         throw err;

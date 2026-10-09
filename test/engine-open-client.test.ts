@@ -253,6 +253,19 @@ describe('errors', () => {
     expect(fake.chats()).toHaveLength(2);
   });
 
+  it('counts a Retry-After as an attempt, so a model that keeps refusing is not retried forever', async () => {
+    fake = await fakeOpenAI([{ status: 429, json: { error: { message: 'Rate limit reached' } }, headers: { 'retry-after': '0' } }]);
+    const e = await failure(client(fake.url, { maxRetries: 2 }).complete({ messages: user }));
+    expect(e.kind).toBe('rate_limit');
+    expect(fake.chats()).toHaveLength(3);
+  });
+
+  it('waits the Retry-After and then gives up at the limit', async () => {
+    fake = await fakeOpenAI([{ status: 503, json: { error: { message: 'overloaded' } }, headers: { 'retry-after': '0' } }, textStep('ok')]);
+    expect((await client(fake.url, { maxRetries: 1 }).complete({ messages: user })).text).toBe('ok');
+    expect(fake.chats()).toHaveLength(2);
+  });
+
   it('an exhausted quota is not retried', async () => {
     fake = await fakeOpenAI([errorStep(429, 'You exceeded your current quota, please check your plan and billing details.', { code: 'insufficient_quota' })]);
     const e = await failure(client(fake.url).complete({ messages: user }));
