@@ -309,4 +309,9 @@ Each with the recommended answer, for the maintainer at gate 1.
 
 ## Gate 1 decisions
 
-To be filled with the maintainer's answers to the open questions and the changes to the proposed rules, when gate 1 closes.
+Gate 1 is still open: the maintainer is reading the spec. Answers taken so far (2026-10-09):
+
+1. **The "two doors" rule (rule 40) is approved** as written: Actions, and the app's browser with its structural hold; the shell path keeps only the recording, the host list and the voluntary `screen_confirm`.
+2. **Unclassifiable steps are held** (fail closed), with "Yes for the rest of this screen on this site", which never applies to an irreversible step (open question 5, as recommended).
+
+The other open questions are pending.
