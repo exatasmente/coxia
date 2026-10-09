@@ -48,6 +48,35 @@ describe('the argument list of the sandbox', () => {
     expect(at('/clones/app/.git')).toBeLessThan(a.findIndex((x, i) => x === '--bind' && a[i + 1] === wt));
   });
 
+  it('gives an agent a /tmp of its own and binds nothing of the host\'s: the folder of the app\'s browser server (its control socket) is out of reach', () => {
+    for (const gui of [undefined, { browsers: '/home/p/.cache/ms-playwright', xvfb: '/usr/bin/Xvfb' }]) {
+      const a = bwrapArgs(spec({ ...(gui ? { gui } : {}), network: 'proxy' }));
+      expect(a.findIndex((x, i) => x === '--tmpfs' && a[i + 1] === '/tmp')).toBeGreaterThan(-1);
+      expect(a.filter((x) => x.startsWith('/tmp')).every((x) => x === '/tmp' || x === '/tmp/.X11-unix')).toBe(true);
+      expect(a.some((x) => x.includes('cxpw-'))).toBe(false);
+      expect(pairs(a, '--bind').every(([src]) => !src.startsWith('/tmp'))).toBe(true);
+    }
+  });
+
+  it('binds a folder of the stage folder over /tmp/.X11-unix when a display is started, after the tmpfs of /tmp, so the app can dial the socket', () => {
+    const a = bwrapArgs(spec({ gui: { browsers: null, xvfb: '/usr/bin/Xvfb' } }));
+    expect(pairs(a, '--bind')).toContainEqual(['/data/sandbox/abc/x11', '/tmp/.X11-unix']);
+    const tmpfs = a.findIndex((x, i) => x === '--tmpfs' && a[i + 1] === '/tmp');
+    expect(a.findIndex((x, i) => x === '--bind' && a[i + 2] === '/tmp/.X11-unix')).toBeGreaterThan(tmpfs);
+    // The network is still the sandbox's own: a folder is the only way in, and there is no TCP listener.
+    expect(a).toContain('--unshare-net');
+    expect(SUPERVISOR_SH).toContain('-nolisten tcp');
+    expect(SUPERVISOR_SH).not.toContain('-fbdir');
+  });
+
+  it('binds nothing for the display when none is started: the list is the one it always was', () => {
+    for (const gui of [undefined, { browsers: '/b/ms-playwright', xvfb: null }]) {
+      const a = bwrapArgs(spec({ ...(gui ? { gui } : {}) }));
+      expect(pairs(a, '--bind')).toEqual([['/data/sandbox/abc/home', '/home/sandbox'], ['/data/sandbox/abc/out', '/coxia/out'], ['/data/worktrees/app/7-thing', '/data/worktrees/app/7-thing']]);
+      expect(a.join('\n')).not.toContain('.X11-unix');
+    }
+  });
+
   it('mounts a copy over the worktree path for an agent that only reads, and names the folders the workspace listed', () => {
     const a = bwrapArgs(spec({ tree: '/data/sandbox/abc/tree', roBinds: [['/home/u/.nvm/v20', '/home/u/.nvm/v20']] }));
     expect(pairs(a, '--bind')).toContainEqual(['/data/sandbox/abc/tree', '/data/worktrees/app/7-thing']);

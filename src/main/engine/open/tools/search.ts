@@ -3,7 +3,7 @@
 import { execFile } from 'node:child_process';
 import { type Dirent, readdirSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { join, relative, sep } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { isBinary, confine } from './read';
 import { type ToolContext, type ToolImpl, ToolError, clip } from './types';
 import { t } from '../../../../shared/i18n';
@@ -181,7 +181,16 @@ function runRg(args: string[], cwd: string, signal?: AbortSignal): Promise<{ std
 
 async function grepWithRg(g: GrepInput, base: string, ctx: ToolContext): Promise<Record<string, unknown>> {
   const args = ['--hidden', '--no-messages', '--max-columns', '500', '--max-filesize', '2M', '--glob', '!.git/'];
-  for (const sg of ctx.secretGlobs) if (!sg.startsWith('~/')) args.push('--iglob', `!${sg}`);
+  for (const sg of ctx.secretGlobs) {
+    if (sg.startsWith('~/')) continue;
+    // An absolute rule ("//path/**", the SDK's syntax) is turned into the path relative to where ripgrep runs, when it lies under it; elsewhere ripgrep never walks it.
+    if (sg.startsWith('//')) {
+      const under = relative(ctx.cwd, sg.slice(1));
+      if (under && !under.startsWith('..') && !isAbsolute(under)) args.push('--iglob', `!${under}`);
+      continue;
+    }
+    args.push('--iglob', `!${sg}`);
+  }
   if (g.glob) args.push('--glob', g.glob);
   if (g.ignoreCase) args.push('-i');
   if (g.output_mode === 'files_with_matches') args.push('-l');
@@ -204,6 +213,8 @@ function shape(g: GrepInput, lines: string[], ctx: ToolContext): Record<string, 
       const file = l.slice(0, m.index);
       if (!/\s/.test(file) && ctx.isSecret(file)) return false;
     }
+    // `files_with_matches` prints a path alone and `count` a path and a number: neither has a line to cut.
+    if (g.output_mode === 'count') return !ctx.isSecret(l.slice(0, Math.max(l.lastIndexOf(':'), 0)));
     return g.output_mode !== 'files_with_matches' || !ctx.isSecret(l);
   });
   const limited = kept.slice(0, g.headLimit);

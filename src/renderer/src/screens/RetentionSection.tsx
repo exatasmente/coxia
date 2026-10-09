@@ -16,6 +16,7 @@ const KIND_LABEL: Record<RetentionKind, string> = {
   retros: 'ui.retention.kind.retros',
   atividade: 'ui.retention.kind.atividade',
   anexos: 'ui.retention.kind.anexos',
+  screens: 'ui.retention.kind.screens',
   feedback: 'ui.retention.kind.feedback',
 };
 

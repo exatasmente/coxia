@@ -7,7 +7,8 @@ import { flowProblems, producerOf, snapshotOf } from './flow';
 import { scenarioBlocks } from './output';
 import { SEND_BACK_STATUSES, canSendBack, sendBackTargets, sendBackText } from './sendBack';
 import { mergeUsage } from './usage';
-import { HISTORY_DETAIL_MAX, PR_COMMENT, RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunDocs, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
+import type { ProcedureUse } from '../procedures';
+import { HISTORY_DETAIL_MAX, PR_COMMENT, PROCEDURES_PER_STAGE, isTerminal, runVersionOf, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunDocs, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
@@ -219,7 +220,7 @@ export function assertStartable(flow: FlowStage[]): void {
 export function startRun(input: StartInput, flow: FlowStage[], at: string): Transition {
   assertStartable(flow);
   const run: Run = {
-    version: RUN_VERSION,
+    version: runVersionOf({}),
     rev: 0,
     id: input.id,
     issue: structuredClone(input.issue),
@@ -1073,6 +1074,25 @@ export function recordUsage(run: Run, stageId: string, usage: StageUsage, at: st
   return { run: out, messages: [] };
 }
 
+/**
+ * The procedures a stage's agent used in an attempt are added to the stage's record, one entry per procedure (a later attempt's outcome replaces an earlier one's).
+ * Applies in any status, like the usage: the use happened whatever became of the stage. A stage that used none gets no field, and the run stays at its format.
+ */
+export function recordProcedures(run: Run, stageId: string, uses: readonly ProcedureUse[], at: string): Transition {
+  const out = clone(run, at);
+  const rec = record(out, stageId);
+  if (rec && uses.length) {
+    const merged = [...(rec.procedures ?? [])];
+    for (const u of uses) {
+      const i = merged.findIndex((x) => x.id === u.id);
+      if (i >= 0) merged[i] = { ...u };
+      else merged.push({ ...u });
+    }
+    rec.procedures = merged.slice(-PROCEDURES_PER_STAGE);
+  }
+  return { run: out, messages: [] };
+}
+
 /** A review pass ended. The round number is the next one; the record is kept even when the pass approved. */
 export function recordReview(run: Run, input: Omit<ReviewRecord, 'round' | 'at'>, at: string): Transition {
   const out = clone(run, at);
@@ -1104,6 +1124,19 @@ export function deleteEvidence(run: Run, id: string, at: string): Transition {
   if (!out.evidence?.[id]) throw new RunError('unknown-evidence', { id });
   delete out.evidence[id];
   log(out, at, 'evidence-removed', run.stage, 'person', id);
+  return { run: out, messages: [] };
+}
+
+/**
+ * Retention removed the file of the app's own screen recording: the run keeps the record, marked, so the stage says "removed by retention" instead of showing an
+ * error. Nothing else of the run changes, and what was copied elsewhere is never touched.
+ */
+export function markRecordingRemoved(run: Run, id: string, at: string): Transition {
+  const record = run.evidence?.[id];
+  if (!record?.recording) throw new RunError('unknown-evidence', { id });
+  const out = clone(run, at);
+  out.evidence = { ...(out.evidence ?? {}), [id]: { ...structuredClone(record), removed: 'retention' } };
+  log(out, at, 'evidence-removed', record.stage, 'app', `${id}: retention`);
   return { run: out, messages: [] };
 }
 

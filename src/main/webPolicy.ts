@@ -18,8 +18,9 @@ const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)
 // the release sync) waits there, so refusing it refuses all of them. runs:command lets an agent set to `shell: host` run a command on this
 // computer, outside any sandbox: allowing one from a phone is as far-reaching as approving a proposal, so it sits behind the same switch. runs:startRelease
 // starts a run that ends in the repository's own scripts and merged code, run as the person: the same switch decides whether a phone may start one (each push
-// of the release still waits for its own "yes" in actions:approve).
-export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command', 'runs:startRelease', 'runs:retryPr']);
+// of the release still waits for its own "yes" in actions:approve). runs:screenAnswer answers a step the app's browser holds before an irreversible act (a submit, a delete,
+// a payment) or a confirmation an agent asked for: a yes lets that step happen on a site, so a phone gives it only with the same switch.
+export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command', 'runs:startRelease', 'runs:screenAnswer', 'runs:retryPr']);
 
 // forum:* (list, read, post, create, the four attachment channels — attachment-put, attachment-post, attachment-drop, attachment-get — and attachment-delete,
 // which removes one message of the conversation and the files it carried) read and write the workspace's own thread files and its own attachment folder, and
@@ -69,8 +70,20 @@ const DOCS = /^docs:/;
 // out in a conversation: it is the desktop window's, like suggesting agents. A pattern and not a list, so a channel added later is closed from the day it exists.
 const AGENT_ASSIST = /^agentAssist:/;
 
+// Taking control of an agent's virtual screen and sending it clicks and keys (screen:control, screen:input) is the desktop window's, and so is taking it over when the agent
+// hands it over, giving it back and reading its picture while the person holds it (screen:handoffTake, screen:handoffGive, screen:handoffFrame): the phone only watches,
+// through runs:screen, a read like the others (it answers `held`, with no picture, while the person holds the screen), and may decline (runs:handoffDecline). A pattern and not a list, so a channel added under `screen:` later is closed from the day it exists, and with or without the
+// external-effects switch (nothing leaves the machine, but what a person types into the agent's screen is not for a phone to send).
+const SCREEN_INPUT = /^screen:/;
+
+// The learned procedures (#179): a paired browser may read the list, one record and the figures, and change nothing. A record is read by every agent of the workspace, so a
+// phone that could write one could plant text in every prompt; editing, reviewing, restoring and deleting are the desktop window's. A pattern over the whole prefix with
+// the three reads as named exceptions, so a channel added under `procedures:` later is closed from the day it exists, with or without the external-effects switch (nothing
+// leaves the machine). The agents' tools are in process and have no channel at all. test/procedures-policy.test.ts pins it.
+const PROCEDURES_WRITE = /^procedures:(?!(list|get|stats)$)/;
+
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel)) return 'deny';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

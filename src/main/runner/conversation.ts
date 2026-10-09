@@ -2,13 +2,20 @@ import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import type { FlowStage, Run } from '../../shared/runs';
+import { callKey } from '../../shared/browser';
+import { type CallScreen, type ScreenPorts, modelSeesImages, openCallScreen, promptFor } from '../browser/callScreen';
+import { grantsFor } from '../browser/guard';
 import type { AgentCall } from '../agents';
 import type { ForumStore } from '../forum-core';
 import type { SandboxSession } from '../sandbox';
 import type { StageEngine } from './executor';
 import { type RunnerTools, calledAgentTools } from './tools';
+import { screenRules } from './screenPrompt';
 import { confinedHooks } from './hooks';
 import type { Denial } from './hooks';
+import type { ProceduresPort } from '../procedures/port';
+import { prompt as cp } from '../cyclePrompts';
+import { fence } from './prompt';
 
 // A conversation between two agents of the team, started by a stage that is working: the caller asks about a point, the called agent answers, and the two go
 // back and forth inside a limit of rounds. The called agent starts as a reader and, when the point needs it, uses its own permissions in the team (commands per
@@ -62,12 +69,16 @@ export interface ConversationDeps {
    * return: the conversation commits nothing (the called agent changed nothing, or the caller does not commit for it).
    */
   commit?: (message: string) => Promise<string | null>;
+  /** The workspace's learned procedures: the called agent gets the list and the tools, and its uses are marked on this conversation. Absent: none. */
+  procedures?: ProceduresPort;
   /** The abort of the run: it ends the conversation with everything else. */
   abort: AbortController;
   /** The chain of calls that brought the run here (the caller first): the cycle is refused against it. */
   chain: string[];
   /** Where the conversation happens: the run's own thread, or a new thread of the forum linked to the run. */
   place: 'run' | 'new';
+  /** The app's browser and the questions to the person, for a called agent with the screen switch; absent: it gets none (a build or a docs run without screens). */
+  screens?: ScreenPorts | null;
   /** The title of a new thread (read only when `place` is `new`). */
   title: string;
 }
@@ -130,6 +141,17 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
   let session: SandboxSession | null = null;
   let reason: ConversationResult['reason'] = 'ended';
   let rounds = 0;
+  // The called agent's screen, held for the whole conversation under its own key (the agent and the thread, as a mention's is, so it outlives the conversation), and the
+  // abort the call hears: the run's, or the screen's closing.
+  let screen: CallScreen | null = null;
+  let held: HeldScreen | undefined;
+  let screenGone = false;
+  let unhook = (): void => undefined;
+  const screenStopped = (): void => {
+    if (screenGone) return;
+    screenGone = true;
+    say({ kind: 'system', author: { type: 'app' }, code: 'runner.mention.stoppedScreen', params: { agent: deps.called.id }, stage });
+  };
   try {
     if (deps.openSession) {
       session = await deps.openSession(deps.called, writes, clock).catch((e: unknown) => {
@@ -148,21 +170,54 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
     const first = await nextFromCaller();
     if (first !== null) {
       say({ kind: 'post', author: { type: 'agent', id: deps.caller.id }, text: clipped(first), stage, public: false });
+      if (deps.screens) {
+        screen = await openCallScreen(deps.screens, { key: callKey(thread, deps.called.id), agent: deps.called, thread, place: 'conversation', stage, issue: deps.run.issue.iid, display: null, seesImages: modelSeesImages(deps.called), pause: clock.pause, signal: deps.abort.signal }).catch((e: unknown) => {
+          console.error('[runner] could not open the screen of a called agent', deps.run.id, e instanceof Error ? e.message : e);
+          return null;
+        });
+        if (screen) held = { screen, abort: deps.abort };
+        const lease = screen?.lease;
+        if (screen && lease) {
+          // A screen that closes under the conversation ends it: nothing the called agent was doing can go on. The run's own abort still ends it too.
+          const stop = new AbortController();
+          const onRun = (): void => stop.abort();
+          const gone = (): void => {
+            screenStopped();
+            stop.abort();
+          };
+          deps.abort.signal.addEventListener('abort', onRun, { once: true });
+          if (deps.abort.signal.aborted) stop.abort();
+          lease.closed.addEventListener('abort', gone, { once: true });
+          if (lease.closed.aborted) gone();
+          unhook = () => {
+            deps.abort.signal.removeEventListener('abort', onRun);
+            lease.closed.removeEventListener('abort', gone);
+          };
+          held = { screen, abort: stop };
+        }
+      }
       for (;;) {
-        if (deps.abort.signal.aborted) break;
+        if (deps.abort.signal.aborted || screenGone) break;
         if (rounds >= cap) {
           reason = 'rounds';
           say({ kind: 'system', author: { type: 'app' }, code: 'runner.conversation.rounds', params: { caller: deps.caller.id, called: deps.called.id, cap }, stage });
           break;
         }
         rounds++;
-        const turn = await turnOf(deps, session, clock, nextFromCaller, say);
+        // A turn the screen's closing cut short ends the conversation, not the run.
+        const turn = await turnOf(deps, thread, session, clock, nextFromCaller, say, held).catch((e: unknown) => {
+          if (screenGone) return null;
+          throw e;
+        });
         if (turn === null) break;
         ex.answered(turn);
-        if (closed) break;
+        if (closed || screenGone) break;
       }
     }
   } finally {
+    // The screen is let go, not closed: it stays open and counting down for the next call of the agent in this thread.
+    unhook();
+    screen?.release();
     await session?.close().catch(() => undefined);
   }
   // A called agent that writes owns the worktree while it works here; what it changed is committed with the calling stage before the stage commits its own
@@ -175,16 +230,24 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
   return { thread, rounds, reason, head, log: session?.log.filter((e) => !e.refused) };
 }
 
+/** The called agent's screen for the conversation, and the abort its calls hear (the run's, or the screen's closing). */
+interface HeldScreen {
+  screen: CallScreen;
+  abort: AbortController;
+}
+
 /**
  * One turn of the called agent: it reads the caller's message and answers; calling its tool asks for the next message of the caller, and the text of the call is
  * posted in the thread as its message. A turn with no answer at all ends the conversation.
  */
 async function turnOf(
   deps: ConversationDeps,
+  thread: string,
   session: SandboxSession | null,
   clock: ConversationClock,
   nextFromCaller: () => Promise<string | null>,
   say: (m: Parameters<ForumStore['append']>[1]) => void,
+  held?: HeldScreen,
 ): Promise<string | null> {
   // The messages the called agent says through the tool, and what it answers as its final text.
   const spoken: string[] = [];
@@ -213,21 +276,46 @@ async function turnOf(
       console.error('[runner] could not record a refusal of a called agent', deps.run.id, e instanceof Error ? e.message : e);
     }
   };
+  // The called agent reads and writes the workspace's procedures like the stage that called it; its uses are marked on this conversation's thread.
+  const procedures = deps.procedures?.open({
+    surface: 'called',
+    agent: deps.called,
+    ref: thread,
+    issue: deps.run.issue.iid,
+    stage: deps.stage.kind,
+    repos: [deps.run.repo],
+    requests: true,
+    note: (code, params) => say({ kind: 'system', author: { type: 'app' }, code, params, stage: deps.stage.id }),
+  });
+  const listed = procedures?.list.text ? cp('runner.section.procedures', { text: fence(procedures.list.text) }) : '';
   const call: AgentCall = {
     agent: deps.called,
-    prompt: writes ? t('main.runner.conversation.systemWrite', { called: deps.called.name, caller: deps.caller.name }) : t('main.runner.conversation.system', { called: deps.called.name, caller: deps.caller.name }),
+    prompt: [writes ? t('main.runner.conversation.systemWrite', { called: deps.called.name, caller: deps.caller.name }) : t('main.runner.conversation.system', { called: deps.called.name, caller: deps.caller.name }), listed].filter(Boolean).join('\n\n'),
     schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'], additionalProperties: false },
-    system: t('main.runner.conversation.role', { called: deps.called.name }),
+    system: [
+      t('main.runner.conversation.role', { called: deps.called.name }),
+      procedures ? cp('runner.rules.procedures') : '',
+      held ? screenRules(promptFor(held.screen, deps.called, deps.config().runner.sandbox, grantsFor(deps.called), false)) : '',
+    ].filter(Boolean).join('\n\n'),
     cwd: deps.run.worktree,
     confine: writes ? { root: deps.run.worktree, hooks: confinedHooks({ root: deps.run.worktree, commands: deps.commands, onDenied: denied }) } : undefined,
     exec: session ?? undefined,
     label: deps.called.id,
     maxTurns: 12,
-    abort: deps.abort,
+    abort: held?.abort ?? deps.abort,
     runnerTools: calledAgentTools(tools),
-    onUsage: deps.onUsage,
+    procedures: procedures?.tools,
+    onUsage: procedures ? procedures.wrapUsage(deps.onUsage) : deps.onUsage,
+    ...(held?.screen.toolset ? { screen: held.screen.toolset } : {}),
   };
-  const r = await deps.engine(call, deps.commands);
+  let r: Awaited<ReturnType<StageEngine>>;
+  try {
+    r = await deps.engine(call, deps.commands);
+  } catch (e) {
+    procedures?.finish('failed');
+    throw e;
+  }
+  procedures?.finish('done');
   if (ended) return null;
   const text = typeof (r.data as { texto?: unknown })?.texto === 'string' ? (r.data as { texto: string }).texto.trim() : '';
   // What the agent said through the tool is already posted; the final text is its closing word, if any.

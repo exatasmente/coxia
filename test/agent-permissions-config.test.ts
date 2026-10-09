@@ -177,4 +177,12 @@ describe('what an import shows', () => {
     expect(fields).not.toContain('agents.team[refiner].shell');
     expect(collectPaths(c).map((x) => x.field)).toContain('runner.sandbox.readOnlyPaths[0]');
   });
+
+  it('lists an agent with a screen, hosts to reach or a logged-in browser, and says which hosts', () => {
+    const c = neutralConfig();
+    c.agents.team.push(newAgent({ id: 'scout', screen: true, allowedHosts: ['example.com', 'docs.example.com'], browserProfile: true }), newAgent({ id: 'plain' }));
+    const found = collectCommands(c).filter((x) => x.field.startsWith('agents.team[scout]') || x.field.startsWith('agents.team[plain]'));
+    expect(found.map((x) => x.field)).toEqual(['agents.team[scout].screen', 'agents.team[scout].allowedHosts', 'agents.team[scout].browserProfile']);
+    expect(found.find((x) => x.field.endsWith('allowedHosts'))?.command).toContain('example.com, docs.example.com');
+  });
 });

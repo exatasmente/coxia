@@ -59,6 +59,8 @@ export interface ForumStore {
    * so the caller can delete them from disk.
    */
   remove(thread: string, seq: number): ForumMessage | null;
+  /** Records that the file of an attachment of a message was taken away (the retention sweep): the message keeps the ref, marked `removed`. Returns the message, or null when there is no such attachment. */
+  markAttachmentRemoved(thread: string, seq: number, id: string): ForumMessage | null;
   /**
    * Deletes a whole conversation: its file and what the store remembers of it. Returns the header it had, or null when there was none (so calling it again is
    * nothing to do). A conversation that does not exist is not an error, but an id that cannot name one is (`bad-thread`). It tells nobody: the store only announces
@@ -123,7 +125,7 @@ const MESSAGE: JsonSchema = {
     refs: { type: 'array', items: { type: 'object', properties: { path: { type: 'string', maxLength: 200 }, label: { type: 'string', maxLength: 200 } }, required: ['path'], additionalProperties: false } },
     attachments: {
       type: 'array',
-      items: { type: 'object', properties: { id: { type: 'string', maxLength: 32 }, name: { type: 'string', maxLength: 200 }, kind: { type: 'string', enum: ['image', 'text', 'pdf', 'json', 'csv'] }, bytes: { type: 'integer', minimum: 0 } }, required: ['id', 'name', 'kind', 'bytes'], additionalProperties: false },
+      items: { type: 'object', properties: { id: { type: 'string', maxLength: 32 }, name: { type: 'string', maxLength: 200 }, kind: { type: 'string', enum: [...ATTACHMENT_KINDS] }, bytes: { type: 'integer', minimum: 0 }, removed: { type: 'boolean', const: true } }, required: ['id', 'name', 'kind', 'bytes'], additionalProperties: false },
     },
     anchor: { type: ['string', 'null'], maxLength: 80 },
     evidence: { type: 'array', items: { type: 'object', properties: { id: { type: 'string', maxLength: 16 }, name: { type: 'string', maxLength: 200 }, media: { type: 'string', maxLength: 100 }, bytes: { type: 'integer', minimum: 0 } }, required: ['id', 'name', 'media', 'bytes'], additionalProperties: false }, maxItems: 10 },
@@ -141,6 +143,12 @@ const ANNOTATION: JsonSchema = {
   type: 'object',
   properties: { v: { type: 'integer', const: 1 }, type: { type: 'string', const: 'published' }, seq: { type: 'integer', minimum: 1 }, published: publishedSchema },
   required: ['v', 'type', 'seq', 'published'],
+  additionalProperties: false,
+};
+const ATTACHMENT_GONE: JsonSchema = {
+  type: 'object',
+  properties: { v: { type: 'integer', const: 1 }, type: { type: 'string', const: 'attachment-removed' }, seq: { type: 'integer', minimum: 1 }, id: { type: 'string', maxLength: 32 } },
+  required: ['v', 'type', 'seq', 'id'],
   additionalProperties: false,
 };
 const REMOVAL: JsonSchema = {
@@ -162,6 +170,7 @@ function parse(text: string): Parsed {
   const messages = new Map<number, ForumMessage>();
   const published = new Map<number, PublishedRef>();
   const removed = new Set<number>();
+  const gone = new Map<number, Set<string>>();
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
     let raw: unknown;
@@ -180,12 +189,17 @@ function parse(text: string): Parsed {
       published.set(a.seq, a.published);
     } else if (kind === 'removed' && !validateSchema(raw, REMOVAL).length) {
       removed.add((raw as { seq: number }).seq);
+    } else if (kind === 'attachment-removed' && !validateSchema(raw, ATTACHMENT_GONE).length) {
+      const a = raw as { seq: number; id: string };
+      gone.set(a.seq, (gone.get(a.seq) ?? new Set<string>()).add(a.id));
     }
   }
   const sorted = [...messages.values()]
     .filter((m) => !removed.has(m.seq))
     .sort((a, b) => a.seq - b.seq)
-    .map((m) => (published.has(m.seq) ? { ...m, published: published.get(m.seq) as PublishedRef } : m));
+    .map((m) => (published.has(m.seq) ? { ...m, published: published.get(m.seq) as PublishedRef } : m))
+    // A file the retention sweep took away stays named by its message, marked, so the conversation can say so.
+    .map((m) => (gone.has(m.seq) && Array.isArray(m.attachments) ? { ...m, attachments: m.attachments.map((a) => (gone.get(m.seq)?.has(a.id) ? { ...a, removed: true as const } : a)) } : m));
   // A message written before attachments existed carries none; the field the type promises is filled in here, not stored.
   for (const m of sorted) if (!Array.isArray(m.attachments)) m.attachments = [];
   return { header, messages: sorted, endsClean: text === '' || text.endsWith('\n') };
@@ -285,7 +299,7 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
   const cleanAttachments = (list: AttachmentRef[] | undefined): AttachmentRef[] =>
     (list ?? [])
       .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && ATTACHMENT_KINDS.includes(a.kind) && typeof a.name === 'string' && Number.isFinite(a.bytes) && a.bytes >= 0)
-      .map((a) => ({ id: a.id, name: a.name.slice(0, 200), kind: a.kind, bytes: Math.floor(a.bytes) }))
+      .map((a) => ({ id: a.id, name: a.name.slice(0, 200), kind: a.kind, bytes: Math.floor(a.bytes), ...(a.removed === true ? { removed: true as const } : {}) }))
       .slice(0, 50);
 
   /** The evidence a message carries, as stored: the id is an evidence id, and the name and the media type are short strings. */
@@ -396,6 +410,16 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       appendFileSync(path(thread), `${state.endsClean ? '' : '\n'}${JSON.stringify({ v: 1, type: 'removed', seq })}\n`);
       cache.set(thread, stateOf({ ...before, header: before.header as ThreadHeader, endsClean: true }));
       return found;
+    },
+    markAttachmentRemoved(thread, seq, id) {
+      const state = load(thread);
+      if (!state) throw new ForumError('unknown-thread', { id: thread });
+      const before = parse(readFileSync(path(thread), 'utf8'));
+      const found = before.messages.find((m) => m.seq === seq && m.attachments?.some((a) => a.id === id)) ?? null;
+      if (!found) return null;
+      appendFileSync(path(thread), `${state.endsClean ? '' : '\n'}${JSON.stringify({ v: 1, type: 'attachment-removed', seq, id })}\n`);
+      cache.set(thread, { ...state, endsClean: true });
+      return store.read(thread, seq - 1, 1)?.messages[0] ?? null;
     },
     deleteThread(thread) {
       const file = path(thread);

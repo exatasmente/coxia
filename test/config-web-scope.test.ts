@@ -91,6 +91,14 @@ describe('what a browser may change', () => {
     expect(refused((c) => { c.runner.release = { soleMaintainer: true }; })).toEqual(['runner.release.soleMaintainer']);
   });
 
+  it('refuses the learned procedures switch, turned on or off: only the computer decides what writes into a store other agents read', () => {
+    expect(refused((c) => { c.runner.procedures = false; })).toEqual(['runner.procedures']);
+    const off = edit((c) => { c.runner.procedures = false; });
+    expect(refusedPaths(off, edit((c) => { c.runner.procedures = true; }))).toEqual(['runner.procedures']);
+    // The switch is not in the editable list at all, so no path under it can be reached.
+    expect(WEB_EDITABLE.some((p) => 'runner.procedures'.startsWith(p))).toBe(false);
+  });
+
   it('refuses the external tools, the documents, the projects, the models, the hosts, the voice and everything else', () => {
     expect(refused((c) => { c.externalTools.terminal.command = 'sh'; })).toEqual(['externalTools.terminal.command']);
     expect(refused((c) => { c.docs.specsDir = '/etc'; })).toEqual(['docs.specsDir']);
@@ -230,6 +238,43 @@ describe('the two permissions of an agent, from a paired browser', () => {
     expect(refusedPaths(before, withAgent('none', 'none'))).toEqual([]);
     expect(refusedPaths(before, withAgent('allowlist', 'none'))).toEqual(['agents.team[dev].shell']);
     expect(refusedPaths(before, withAgent('none', 'read'))).toEqual(['agents.team[dev].tracker']);
+  });
+
+  describe('the screen, the hosts and the logged-in browser', () => {
+    it('may lower them, and change what is not them', () => {
+      const before = edit((c) => { c.agents.team.push(newAgent({ id: 'dev', screen: true, allowedHosts: ['example.com', 'docs.example.com'], browserProfile: true })); });
+      expect(refusedPaths(before, agentOf(before, (a) => { a.screen = undefined; a.browserProfile = undefined; }))).toEqual([]);
+      expect(refusedPaths(before, agentOf(before, (a) => { a.allowedHosts = ['example.com']; }))).toEqual([]);
+      expect(refusedPaths(before, agentOf(before, (a) => { delete a.allowedHosts; }))).toEqual([]);
+      expect(refusedPaths(before, agentOf(before, (a) => { a.instructions = 'x'; }))).toEqual([]);
+    });
+
+    it('may not raise them, and the refusal names the agent and the field', () => {
+      const before = withAgent('none', 'none');
+      expect(refusedPaths(before, agentOf(before, (a) => { a.screen = true; }))).toEqual(['agents.team[dev].screen']);
+      expect(refusedPaths(before, agentOf(before, (a) => { a.browserProfile = true; }))).toEqual(['agents.team[dev].browserProfile']);
+      expect(refusedPaths(before, agentOf(before, (a) => { a.allowedHosts = ['example.com']; }))).toEqual(['agents.team[dev].allowedHosts']);
+      expect(refusedPaths(before, agentOf(before, (a) => { a.screen = true; a.browserProfile = true; a.allowedHosts = ['example.com']; }))).toEqual(['agents.team[dev].screen', 'agents.team[dev].allowedHosts', 'agents.team[dev].browserProfile']);
+    });
+
+    it('refuses a host added to a list that already has others, and one swapped for another', () => {
+      const before = edit((c) => { c.agents.team.push(newAgent({ id: 'dev', allowedHosts: ['example.com'] })); });
+      expect(refusedPaths(before, agentOf(before, (a) => { a.allowedHosts = ['example.com', 'docs.example.com']; }))).toEqual(['agents.team[dev].allowedHosts']);
+      expect(refusedPaths(before, agentOf(before, (a) => { a.allowedHosts = ['docs.example.com']; }))).toEqual(['agents.team[dev].allowedHosts']);
+    });
+
+    it('may make an agent with none of them, and not one with any of them', () => {
+      const made = (extra: Partial<Parameters<typeof newAgent>[0]>): WorkspaceConfig => edit((c) => { c.agents.team.push(newAgent({ id: 'dev', ...extra })); });
+      expect(refusedPaths(base(), made({}))).toEqual([]);
+      expect(refusedPaths(base(), made({ screen: true }))).toEqual(['agents.team[dev].screen']);
+      expect(refusedPaths(base(), made({ allowedHosts: ['example.com'] }))).toEqual(['agents.team[dev].allowedHosts']);
+      expect(refusedPaths(base(), made({ browserProfile: true }))).toEqual(['agents.team[dev].browserProfile']);
+    });
+
+    it('is not fooled by an agent that is turned on and renamed in the same save', () => {
+      const before = edit((c) => { c.agents.team.push(newAgent({ id: 'dev' })); });
+      expect(refusedPaths(before, agentOf(before, (a) => { a.name = 'Other'; a.screen = true; }))).toEqual(['agents.team[dev].screen']);
+    });
   });
 
   it('may not touch the sandbox settings', () => {

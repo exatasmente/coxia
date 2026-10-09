@@ -101,6 +101,7 @@
   "ui.retention.kind.historico.own-ceremony": "{Ceremony} history",
   "ui.retention.kind.qa": "QA handoffs",
   "ui.retention.kind.retros": "Retros",
+  "ui.retention.kind.screens": "Screen recordings of the stages",
   "ui.retention.kind.sessoes": "Agent sessions (Claude)",
   "ui.retention.look": "See what would be deleted",
   "ui.retention.nothingExpired": "Nothing is past the {days}-day deadline. Sessions outside the app, which the filter ignores: {untouched}.",

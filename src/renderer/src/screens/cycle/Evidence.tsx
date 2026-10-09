@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { EvidenceView } from '../../../../shared/evidence';
-import { isEvidenceImage } from '../../../../shared/evidence';
+import { evidenceDataUrl, isEvidenceImage } from '../../../../shared/evidence';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
+import { RecordingPlayer } from './RecordingPlayer';
+import { keepSame } from './recording';
+import { ZoomViewer } from '../ZoomViewer';
 import { runsApi } from './runsApi';
 
 // The evidence a run kept, as the person handles it: the list of a stage with a thumbnail or a card, opening it in full and downloading it, and deleting it. Reading the
@@ -14,7 +17,7 @@ const size = (t: (key: string, params?: Record<string, string | number>) => stri
 
 const stamp = (iso: string): string => new Date(iso).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
 
-/** A blob address of one piece of evidence, read once and freed when the component goes. */
+/** The image of one piece of evidence as a `data:` address, read once: the desktop's content policy refuses a `blob:` image. Only an image is shown through it. */
 function useEvidenceUrl(runId: string, record: EvidenceView | null): { url: string | null; error: boolean } {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState(false);
@@ -30,8 +33,11 @@ function useEvidenceUrl(runId: string, record: EvidenceView | null): { url: stri
           if (live) setError(true);
           return;
         }
-        made = URL.createObjectURL(new Blob([bytes], { type: record.media }));
-        setUrl(made);
+        // Both content policies allow an image only from data: and a video only from blob:.
+        if (record.media.startsWith('video/')) {
+          made = URL.createObjectURL(new Blob([bytes], { type: record.media }));
+          setUrl(made);
+        } else setUrl(evidenceDataUrl(bytes, record.media));
       },
       () => {
         if (live) setError(true);
@@ -45,6 +51,24 @@ function useEvidenceUrl(runId: string, record: EvidenceView | null): { url: stri
   return { url, error };
 }
 
+/** An image of evidence that opens full screen on a click, with the zoom and drag of the diagrams. */
+function EvidenceImage({ url, title, className }: { url: string; title: string; className: string }) {
+  const t = useT();
+  const [full, setFull] = useState(false);
+  return (
+    <>
+      <button type="button" className="cy-evidence-zoom" aria-label={t('ui.cycle.evidenceBlock.fullAria', { title })} title={t('ui.diagram.expand')} onClick={() => setFull(true)}>
+        <img className={className} src={url} alt={title} />
+      </button>
+      {full && (
+        <ZoomViewer title={title} onClose={() => setFull(false)}>
+          {(style) => <img className="cy-evidence-full" style={style} src={url} alt={title} draggable={false} />}
+        </ZoomViewer>
+      )}
+    </>
+  );
+}
+
 /** One piece of evidence: the image (or a card for anything else), with open, download and delete. */
 function EvidenceItem({ runId, record, onRemoved }: { runId: string; record: EvidenceView; onRemoved: (id: string) => void }) {
   const t = useT();
@@ -53,6 +77,9 @@ function EvidenceItem({ runId, record, onRemoved }: { runId: string; record: Evi
   const [error, setError] = useState<string | null>(null);
   const { url, error: readFailed } = useEvidenceUrl(runId, open ? record : null);
   const image = isEvidenceImage(record.kind);
+  // The app's own screen recording: played in the block once opened, unless retention removed its file (the record stays and says so).
+  const video = record.kind === 'webm';
+  const removed = video && !!record.removed;
   const download = async () => {
     setError(null);
     const bytes = await runsApi.evidenceBytes(runId, record.id).catch(() => null);
@@ -82,22 +109,31 @@ function EvidenceItem({ runId, record, onRemoved }: { runId: string; record: Evi
         <strong className="small">{record.title}</strong>
         <span className="badge cy-tone-quiet">{record.kind.toUpperCase()}</span>
         <span className="faint small">{record.by} · {stamp(record.at)}</span>
+        {record.recording?.handoff && <span className="badge cy-tone-blocked">{t('ui.cycle.rec.handoffBadge')}</span>}
         {record.inCycle && <span className="badge cy-tone-done">{t('ui.cycle.evidenceBlock.inCycle')}</span>}
       </div>
       {record.description && <p className="small cy-evidence-desc">{record.description}</p>}
       <p className="faint small mono">{record.id} · {record.name} · {size(t, record.bytes)}{record.from ? ` · ${t('ui.cycle.evidenceBlock.from', { from: record.from })}` : ''}</p>
+      {removed && <p className="small cy-evidence-removed">{t('ui.cycle.rec.removed')}</p>}
+      {open && video && !removed && (
+        <div className="cy-evidence-view">
+          {readFailed && <p className="small error">{t('ui.cycle.evidenceBlock.failed')}</p>}
+          {!url && !readFailed && <p className="small faint"><span className="spinner" aria-hidden="true" /> {t('ui.cycle.evidenceBlock.loading')}</p>}
+          {url && <RecordingPlayer record={record} url={url} />}
+        </div>
+      )}
       {open && image && (
         <div className="cy-evidence-view">
           {readFailed && <p className="small error">{t('ui.cycle.evidenceBlock.failed')}</p>}
           {!url && !readFailed && <p className="small faint"><span className="spinner" aria-hidden="true" /> {t('ui.cycle.evidenceBlock.loading')}</p>}
-          {url && <img className="cy-evidence-image" src={url} alt={record.title} />}
+          {url && <EvidenceImage className="cy-evidence-image" url={url} title={record.title} />}
         </div>
       )}
       <div className="row cy-evidence-actions">
-        {image && (
+        {(image || (video && !removed)) && (
           <button type="button" className="btn cy-mini" aria-pressed={open} onClick={() => setOpen((v) => !v)}>{t('ui.cycle.evidenceBlock.open')}</button>
         )}
-        <button type="button" className="btn cy-mini" onClick={() => void download()}>{t('ui.cycle.evidenceBlock.download')}</button>
+        {!removed && <button type="button" className="btn cy-mini" onClick={() => void download()}>{t('ui.cycle.evidenceBlock.download')}</button>}
         {asked ? (
           <span className="row cy-evidence-confirm">
             <span className="small">{t('ui.cycle.evidenceBlock.confirm', { id: record.id })}</span>
@@ -113,15 +149,21 @@ function EvidenceItem({ runId, record, onRemoved }: { runId: string; record: Evi
   );
 }
 
-/** The evidence of a run, read once and shared by the block and the scenario list; null while it is read, undefined when the read failed. */
-export function useEvidenceList(runId: string): { list: EvidenceView[] | null | undefined; remove: (id: string) => void } {
+/**
+ * The evidence of a run, read and shared by the block and the scenario list; null while it is read, undefined when the read failed. It is read again when `version`
+ * changes (see `evidenceKey`): the screen recording lands when its stage ends, after the list was read.
+ */
+export function useEvidenceList(runId: string, version = ''): { list: EvidenceView[] | null | undefined; remove: (id: string) => void } {
   const [list, setList] = useState<EvidenceView[] | null | undefined>(undefined);
+  const read = useRef<string | null>(null);
   useEffect(() => {
     let live = true;
-    setList(undefined);
+    // Another run is read from a blank; the same run read again keeps what it shows until the new list comes.
+    if (read.current !== runId) setList(undefined);
+    read.current = runId;
     void runsApi.evidenceList(runId).then(
       (r) => {
-        if (live) setList(r ?? null);
+        if (live) setList((cur) => keepSame(cur, r ?? null));
       },
       () => {
         if (live) setList(null);
@@ -130,7 +172,7 @@ export function useEvidenceList(runId: string): { list: EvidenceView[] | null | 
     return () => {
       live = false;
     };
-  }, [runId]);
+  }, [runId, version]);
   return { list, remove: (id: string) => setList((cur) => (cur ?? []).filter((x) => x.id !== id)) };
 }
 
@@ -161,7 +203,10 @@ export function EvidenceAttachment({ runId, attachment }: { runId: string; attac
   const [open, setOpen] = useState(false);
   const [failed, setFailed] = useState(false);
   const image = attachment.media.startsWith('image/');
-  const { url } = useEvidenceUrl(runId, open ? ({ id: attachment.id, media: attachment.media } as EvidenceView) : null);
+  const video = attachment.media.startsWith('video/');
+  // One object for the life of the attachment: the hook reads the bytes again whenever the record it is given changes, and a recording is megabytes.
+  const piece = useMemo(() => ({ id: attachment.id, media: attachment.media }) as EvidenceView, [attachment.id, attachment.media]);
+  const { url, error: gone } = useEvidenceUrl(runId, open && (image || video) ? piece : null);
   const download = async () => {
     setFailed(false);
     const bytes = await runsApi.evidenceBytes(runId, attachment.id).catch(() => null);
@@ -181,7 +226,9 @@ export function EvidenceAttachment({ runId, attachment }: { runId: string; attac
       <button type="button" className="cy-evidence-link" aria-pressed={open} onClick={() => setOpen((v) => !v)}>{t('ui.cycle.evidence.attachment')}: {attachment.name || attachment.id}</button>
       <span className="faint small"> · {size(t, attachment.bytes)}</span>
       <button type="button" className="btn cy-mini" onClick={() => void download()}>{t('ui.cycle.evidenceBlock.download')}</button>
-      {open && image && url && <img className="cy-evidence-thumb" src={url} alt={attachment.name} />}
+      {open && image && url && <EvidenceImage className="cy-evidence-thumb" url={url} title={attachment.name || attachment.id} />}
+      {open && video && url && <video className="cy-rec-video" src={url} controls preload="none" />}
+      {open && video && gone && <span className="small faint">{t('ui.cycle.rec.gone')}</span>}
       {failed && <span className="small error">{t('ui.cycle.evidenceBlock.failed')}</span>}
     </span>
   );
@@ -213,9 +260,9 @@ export function EvidenceCites({ runId, ids, list }: { runId: string; ids: string
 function EvidenceCite({ runId, record, id }: { runId: string; record: EvidenceView | undefined; id: string }) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const { url } = useEvidenceUrl(runId, open ? (record ?? null) : null);
+  const image = !!record && isEvidenceImage(record.kind);
+  const { url } = useEvidenceUrl(runId, open && image ? (record ?? null) : null);
   if (!record) return <span className="faint small mono">{id}</span>;
-  const image = isEvidenceImage(record.kind);
   return (
     <span className="cy-evidence-cite">
       {image ? (
@@ -223,7 +270,7 @@ function EvidenceCite({ runId, record, id }: { runId: string; record: EvidenceVi
       ) : (
         <a className="cy-evidence-link" href="#" onClick={(e) => { e.preventDefault(); setOpen((v) => !v); }}>{record.id} · {record.title}</a>
       )}
-      {open && url && image && <img className="cy-evidence-thumb" src={url} alt={record.title} />}
+      {open && url && image && <EvidenceImage className="cy-evidence-thumb" url={url} title={record.title} />}
       {open && !image && <span className="faint small"> ({t('ui.cycle.evidence.attachment')})</span>}
     </span>
   );

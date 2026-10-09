@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 
@@ -22,7 +23,13 @@ export default defineConfig({
     },
   },
   preload: {
-    build: { rollupOptions: { output: { format: 'cjs', entryFileNames: '[name].cjs' } } },
+    // Two bridges: the app's window, and the hidden window that encodes the screen recording (out/preload/encoder.cjs).
+    build: {
+      rollupOptions: {
+        input: { index: fileURLToPath(new URL('./src/preload/index.ts', import.meta.url)), encoder: fileURLToPath(new URL('./src/preload/encoder.ts', import.meta.url)) },
+        output: { format: 'cjs', entryFileNames: '[name].cjs' },
+      },
+    },
   },
   renderer: { plugins: [react()] },
 });

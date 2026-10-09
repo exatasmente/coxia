@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
 import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, mentionableIds, parseMentions, runThreadId } from '../../shared/forum';
+import { runKey } from '../../shared/browser';
 import { ATTACHMENT_KINDS, type AttachmentRef } from '../../shared/attachments';
 import { createTranslator, t } from '../../shared/i18n';
 import {
@@ -52,6 +53,7 @@ import {
   recordEvidence,
   deleteEvidence,
   recordReview,
+  recordProcedures,
   recordUsage,
   addReport,
   emptyUsage,
@@ -111,9 +113,14 @@ import { crMarkOf } from '../../shared/i18n/terms';
 import { prompt } from '../cyclePrompts';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
+import type { ScreenHub } from '../screen/hub';
+import type { ScreenAsks } from '../browser/asks';
+import type { RecordingOutcome } from '../screen/recorder';
+import type { ScreenSessions } from '../browser/sessions';
+import type { HandoffService } from '../screen/handoff';
 import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../shared/evidence';
 import { dropEvidence, readEvidence } from '../evidence/store';
-import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
+import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, keepScreenRecording, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
 import { type ActivityFront, createSharedMemory, sortedFronts } from './activities';
 import { inboxOf } from './inbox';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree, workBase } from './git';
@@ -122,6 +129,7 @@ import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
+import type { ProceduresPort } from '../procedures/port';
 import { runDocsAsk, stageOfRun } from '../harness/deliver';
 import type { MentionPlace } from '../mentions/place';
 import { proposeMention } from '../mentions/propose';
@@ -181,7 +189,7 @@ function takeCarried(runId: string, stage: string): AttachmentRef[] | undefined 
 /** The files a person attached, as the runner takes them from a caller: only what holds its own shape, so a hand-made call cannot smuggle anything in. */
 function cleanAttachments(list: readonly AttachmentRef[] | undefined): AttachmentRef[] {
   return (list ?? [])
-    .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && (ATTACHMENT_KINDS as readonly string[]).includes(a.kind) && typeof a.name === 'string')
+    .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && (ATTACHMENT_KINDS as readonly string[]).includes(a.kind) && a.kind !== 'video' && typeof a.name === 'string')
     .map((a) => ({ id: a.id, name: a.name.slice(0, 200), kind: a.kind, bytes: Number(a.bytes) || 0 }))
     .slice(0, 50);
 }
@@ -216,6 +224,13 @@ export interface RunnerDeps {
   commandRunner?: CommandRunner;
   /** Makes the sandboxes of the agents set to `shell: sandbox`. Without it a run whose team has such an agent is refused. */
   sandbox?: SandboxService;
+  /** The live screens of the stages that have a virtual display; without it no stage opens one and no run carries `screen`. */
+  screens?: ScreenHub;
+  /** The screens of the agents that have one (the app's browser) and the questions they ask the person; without them no stage gets a browser. */
+  sessions?: ScreenSessions;
+  asks?: ScreenAsks;
+  /** The hand-off of an agent's screen to the person (#178); without it no agent is offered the tool. */
+  handoff?: HandoffService | null;
   /** Makes one small call to a provider to find out whether its key has budget again. Without it the runs that hit the refusal keep waiting. */
   probeBudget?: BudgetProbeFn;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
@@ -237,6 +252,8 @@ export interface RunnerDeps {
   pluginRelease?(runId: string): void;
   /** What the plugins that are on tell the agents, added to every stage's context; absent: nothing. */
   pluginNotes?(): { name: string; note: string }[];
+  /** The workspace's learned procedures: stages, the agents they call and the answers in a run's thread get their list and tools from here. Absent: none. */
+  procedures?: ProceduresPort;
 }
 
 export type GateAction = 'approve' | 'reject' | 'skip';
@@ -250,6 +267,11 @@ export interface Runner {
   evidenceBytes(runId: string, id: string): { bytes: Uint8Array; record: EvidenceRecord } | null;
   /** The person removes one piece of evidence (never an agent): the file goes and the run's record with it. */
   removeEvidence(runId: string, id: string): boolean;
+  /**
+   * Keeps the recording of the screen of an agent called in the run's thread as a piece of the run's evidence, as a stage's recording is. `not` when the run is gone or the
+   * recording could not be kept (the thread then says why).
+   */
+  keepCallRecording(runId: string, agent: string, outcome: RecordingOutcome | null): 'kept' | 'not';
   start(ref: string, repoId?: string): Promise<Run>;
   /**
    * Starts the run of a release: its subject is a version, not an issue. The worktree is the run's own (the cycle documents live there); the release steps run in the
@@ -359,14 +381,17 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
     void done;
     const media = evidenceViewOf(record).media;
+    // The app's own recording of the screen is the app's: its post is authored by the app, internal (the stage's tracker comment is linked to the latest public
+    // message of the stage, which a recording must never become) and carries the video for the player.
+    const own = !!record.recording;
     const messages = deps.forum.append(runThreadId(runId), {
       kind: 'post',
-      author: { type: 'agent', id: record.by },
-      code: 'runner.evidence.kept',
-      params: { title: record.title, kind: record.kind, description: record.description, id: record.id },
+      author: own ? { type: 'app' } : { type: 'agent', id: record.by },
+      code: own ? 'runner.evidence.recorded' : 'runner.evidence.kept',
+      params: { title: record.title, kind: record.kind, description: record.description, id: record.id, ...(own ? { agent: record.by } : {}) },
       evidence: [{ id: record.id, name: record.name, media, bytes: record.bytes }],
       stage: record.stage,
-      public: true,
+      public: !own,
     });
     return messages[0] ?? null;
   }
@@ -380,7 +405,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref) };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref), procedures: deps.procedures, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
 
   /** The record of the activities as a call reads it: the front named whole, the others in short. Never a model call, never the file. */
   function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = []): string {
@@ -417,6 +442,11 @@ export function createRunner(deps: RunnerDeps): Runner {
   const withCommand = (run: Run | null): Run | null => {
     const c = run ? commands.get(run.id) : undefined;
     return run && c ? { ...run, command: c.pending } : run;
+  };
+  // The live screen of the working stage's display, handed out like the command: never written to the run's file.
+  const withScreen = (run: Run | null): Run | null => {
+    const live = run ? deps.screens?.state(runKey(run.id)) : null;
+    return run && live ? { ...run, screen: live } : run;
   };
 
   // A stage and an agent named in the thread may both want a command at once: the person answers one at a time, in the order they asked.
@@ -1109,8 +1139,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   const api: Runner = {
-    list: () => deps.runs.list().map((r) => withCommand(r) as Run),
-    get: (id) => withCommand(deps.runs.get(id)),
+    list: () => deps.runs.list().map((r) => withScreen(withCommand(r)) as Run),
+    get: (id) => withScreen(withCommand(deps.runs.get(id))),
     evidence: (runId) => {
       const run = deps.runs.get(runId);
       if (!run) return null;
@@ -1124,6 +1154,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!run || !record) return null;
       const bytes = readEvidence(deps.env().dataDir, run.id, record);
       return bytes ? { bytes, record } : null;
+    },
+    keepCallRecording: (runId, agent, outcome) => {
+      const run = deps.runs.get(runId);
+      return run ? keepScreenRecording(exec, run, { id: run.stage ?? '' }, { id: agent }, outcome) : 'not';
     },
     removeEvidence: (runId, id) => {
       const run = deps.runs.get(runId);
@@ -1455,13 +1489,14 @@ export function createRunner(deps: RunnerDeps): Runner {
       engine: deps.engine,
       sandbox: exec.sandbox,
       env: deps.env,
-      openSession: async (p, def, cwd, stage, signal, watch) => {
+      screens: () => (deps.sessions && deps.asks ? { sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff } : null),
+      openSession: async (p, def, cwd, stage, signal, watch, wants) => {
         const r = p.run;
         if (!r || !stage) return null;
         const flowStage = flowFor(r).find((s) => s.id === stage);
         if (!flowStage || !existsSync(r.worktree)) return null;
         const clock: StageClock = { pause: watch.pause, beat: watch.beat, allowed: new Set() };
-        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock);
+        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock, false, wants?.display === true, { held: wants?.held, mask: wants?.mask });
       },
       // The line each agent got when the message was accepted goes on in the answer, and the next call of the run may begin when this one ends.
       callOf: (id) => calls.get(callKey(runId, message.seq, id)) ?? null,
@@ -1475,6 +1510,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       propose: proposeMention,
       // What the answer is told of the activities: its own front whole, and whatever else the message named.
       memory: (_place, msg) => sharedTextOf(run.issue.ref, callsOfMention(msg)),
+      procedures: deps.procedures,
       // An agent named in a run's thread reads only inside that run's worktree; a refusal is told in the thread, like a stage's.
       readRoot: (p, def, _cwd) => {
         const r = p.run;

@@ -1,5 +1,5 @@
 import { shellRaised, trackerRaised } from '../shared/config/team';
-import type { WorkspaceConfig } from '../shared/config/types';
+import type { AgentDef, WorkspaceConfig } from '../shared/config/types';
 
 // What a paired browser may change in the configuration. config:save is desktop-only because the configuration names programs to run (runner.commands, the
 // external tools) and folders to read or write (docs, projects, runner.worktreesDir), and holds the places of the secrets. The team and cycle screens still have
@@ -60,7 +60,7 @@ const covered = (path: string): boolean => WEB_EDITABLE.some((p) => path === p |
 /**
  * What a paired browser may do with the two permissions of an agent: lower them, never raise them. `agents.team` is one editable path, so the field-by-field check is
  * made here: an agent whose `shell` or `tracker` goes up is refused by name, and an agent that did not exist may only be made with `none` for both (what it can run and
- * read is what the person at the computer gave it).
+ * read is what the person at the computer gave it). The screen, the hosts and the logged-in browser follow the same rule (`screenRaised`).
  */
 export function raisedPermissions(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
   const was = new Map(before.agents.team.map((a) => [a.id, a]));
@@ -70,6 +70,7 @@ export function raisedPermissions(before: WorkspaceConfig, after: WorkspaceConfi
     // From here a change of `shell` is only ever to `none`: "lowering" sandbox to the listed commands would swap one reach for another that is not below it.
     if (a.shell !== old.shell && (a.shell !== 'none' || shellRaised(old.shell, a.shell))) out.push(`agents.team[${a.id}].shell`);
     if (trackerRaised(old.tracker, a.tracker)) out.push(`agents.team[${a.id}].tracker`);
+    out.push(...screenRaised(was.get(a.id), a, a.id));
   }
   // What an agent with commands can reach depends on its permission too: a reader with a sandbox works in a throwaway copy, an agent that changes files in the real
   // worktree. Giving it that permission while it runs commands is a raise, even though neither command field moved.
@@ -77,6 +78,19 @@ export function raisedPermissions(before: WorkspaceConfig, after: WorkspaceConfi
     const old = was.get(a.id);
     if (old && old.permission === 'read' && a.permission === 'worktree' && a.shell !== 'none') out.push(`agents.team[${a.id}].permission`);
   }
+  return out;
+}
+
+/**
+ * The three fields that give an agent a virtual screen: the switch, the hosts it may reach and the logged-in browser. A paired browser may lower them and never raise
+ * them: a switch off to on, a host added to the list, or a new agent made with any of them is refused by name.
+ */
+export function screenRaised(old: AgentDef | undefined, now: AgentDef, id: string): string[] {
+  const out: string[] = [];
+  if (now.screen === true && old?.screen !== true) out.push(`agents.team[${id}].screen`);
+  const had = new Set(old?.allowedHosts ?? []);
+  if ((now.allowedHosts ?? []).some((h) => !had.has(h))) out.push(`agents.team[${id}].allowedHosts`);
+  if (now.browserProfile === true && old?.browserProfile !== true) out.push(`agents.team[${id}].browserProfile`);
   return out;
 }
 
