@@ -90,8 +90,11 @@ export interface LiveScreen {
   since: string;
   /** Someone is controlling it from the desktop. */
   control: boolean;
-  /** The screen is being recorded as evidence of the stage; `stopped` once a limit was reached (or the encoder failed): what came before is still kept. */
-  recording: 'on' | 'stopped';
+  /**
+   * The screen is being recorded as evidence of the stage (`on`); `waiting` while no window is mapped on it, when nothing is recorded yet (#176); `stopped` once a limit
+   * was reached (or the encoder failed): what came before is still kept.
+   */
+  recording: 'on' | 'waiting' | 'stopped';
 }
 
 /**

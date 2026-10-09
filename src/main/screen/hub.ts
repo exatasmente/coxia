@@ -267,10 +267,17 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     const used = await live.conn.inUse();
     if (live.ended) return;
     if (used !== true) {
-      live.usedSince = null;
+      // The run is handed out as waiting for a window again: the list refreshes to say so.
+      if (live.usedSince !== null) {
+        live.usedSince = null;
+        changed(live.run);
+      }
       return;
     }
-    live.usedSince ??= checkedAt;
+    if (live.usedSince === null) {
+      live.usedSince = checkedAt;
+      changed(live.run);
+    }
     live.sawWindow = true;
     const got = await read(live, live.usedSince);
     if (live.ended || !got) return;
@@ -317,7 +324,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     state(run) {
       const live = lives.get(run);
       if (!live) return null;
-      return { stage: live.stage, width: live.grabbed?.frame.width ?? live.conn.size.width, height: live.grabbed?.frame.height ?? live.conn.size.height, since: live.since, control: live.control, recording: live.rec?.state ?? 'stopped' };
+      return { stage: live.stage, width: live.grabbed?.frame.width ?? live.conn.size.width, height: live.grabbed?.frame.height ?? live.conn.size.height, since: live.since, control: live.control, recording: !live.rec || live.rec.state === 'stopped' ? 'stopped' : live.usedSince === null ? 'waiting' : 'on' };
     },
     async frame(run, since, width) {
       const live = lives.get(run);

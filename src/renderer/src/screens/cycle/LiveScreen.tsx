@@ -253,7 +253,7 @@ export function LiveScreen({ run, onClose }: { run: Run; onClose: () => void }) 
     <Sheet label={t('ui.cycle.live.title')} onClose={onClose} wide captureKeys={control}>
       <div className="cy-live">
         <div className="row cy-live-bar">
-          {recording && <span className={`badge ${recording === 'on' ? 'cy-tone-blocked' : 'cy-tone-quiet'}`}>{t(recording === 'on' ? 'ui.cycle.live.recordingOn' : 'ui.cycle.live.recordingStopped')}</span>}
+          {recording && <span className={`badge ${recording === 'on' ? 'cy-tone-blocked' : 'cy-tone-quiet'}`}>{recording === 'on' ? t('ui.cycle.live.recordingOn') : recording === 'waiting' ? t('ui.cycle.live.recordingWaiting') : t('ui.cycle.live.recordingStopped')}</span>}
           {frames.remote && !control && <span className="badge cy-tone-person">{t('ui.cycle.live.remote')}</span>}
           {!web && !ended && (
             <div className="cy-switch-row cy-live-switch">
@@ -269,7 +269,7 @@ export function LiveScreen({ run, onClose }: { run: Run; onClose: () => void }) 
         </div>
         {control && (
           <p className="cy-live-banner" role="status">
-            {t(recording === 'stopped' ? 'ui.cycle.live.controlStopped' : 'ui.cycle.live.controlOn')}
+            {recording === 'stopped' ? t('ui.cycle.live.controlStopped') : recording === 'waiting' ? t('ui.cycle.live.controlWaiting') : t('ui.cycle.live.controlOn')}
           </p>
         )}
         {rejected > 0 && <p className="small cy-live-rejected" role="status">{t('ui.cycle.live.rejected', { count: rejected })}</p>}

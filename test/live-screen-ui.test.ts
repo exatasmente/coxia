@@ -91,6 +91,16 @@ describe('the live screen viewer', () => {
     expect(html).toContain(t('ui.cycle.live.recordingOn'));
   });
 
+  it('says it waits for a window, not that it records, while the screen is bare (#176)', () => {
+    const html = viewer(screenOf({ recording: 'waiting' }));
+    expect(html).toContain(t('ui.cycle.live.recordingWaiting'));
+    expect(html).not.toContain(t('ui.cycle.live.recordingOn'));
+    expect(html).not.toContain(t('ui.cycle.live.recordingStopped'));
+    // The badge is a quiet one, not the red of a recording under way.
+    expect(html).toContain('badge cy-tone-quiet');
+    expect(html).not.toContain('cy-tone-blocked');
+  });
+
   it('says the recording stopped when a limit was reached', () => {
     const html = viewer(screenOf({ recording: 'stopped' }));
     expect(html).toContain(t('ui.cycle.live.recordingStopped'));
@@ -118,5 +128,7 @@ describe('the words of the viewer', () => {
       expect([...CATALOGS.en[k].matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort(), k).toEqual([...CATALOGS['pt-BR'][k].matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort());
     }
     expect(CATALOGS.en['ui.cycle.live.controlOn']).toMatch(/recorded/);
+    // On a bare screen nothing is recorded yet, and the banner of Take control must not say it is.
+    expect(CATALOGS.en['ui.cycle.live.controlWaiting']).not.toMatch(/is being recorded/);
   });
 });

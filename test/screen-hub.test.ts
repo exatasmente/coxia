@@ -737,8 +737,37 @@ describe('a screen in use', () => {
     expect(r.conn.grabs).toBe(0);
     expect(r.sink.opened).toEqual([]);
     expect(r.sink.fed).toEqual([]);
-    expect(r.hub.state('r-1')).toMatchObject({ recording: 'on' });
+    // Nothing is recorded yet: the viewer is told it waits for a window, not that it is recording (#176).
+    expect(r.hub.state('r-1')).toMatchObject({ recording: 'waiting' });
     expect(r.timers.filter((t) => t.live && t.ms === 1000)).toHaveLength(1);
+  });
+
+  it('is handed out as recording once a window is on the screen, waiting again when it is bare, and tells the list each time', async () => {
+    const r = await bare();
+    const changes = () => r.changed.length;
+    const before = changes();
+    r.conn.windows = true;
+    await r.second();
+    expect(r.hub.state('r-1')).toMatchObject({ recording: 'on' });
+    expect(changes()).toBe(before + 1);
+    await r.second();
+    expect(changes()).toBe(before + 1);
+    r.conn.windows = false;
+    await r.second();
+    expect(r.hub.state('r-1')).toMatchObject({ recording: 'waiting' });
+    expect(changes()).toBe(before + 2);
+    // A display that did not answer the question is not a window: still waiting, and no news.
+    r.conn.silent = true;
+    await r.second();
+    expect(r.hub.state('r-1')).toMatchObject({ recording: 'waiting' });
+    expect(changes()).toBe(before + 2);
+  });
+
+  it('is stopped, not waiting, once the recording hit a limit or there is no encoder', async () => {
+    const none = setup();
+    none.conn.windows = false;
+    await none.open();
+    expect(none.hub.state('r-1')).toMatchObject({ recording: 'stopped' });
   });
 
   it('starts the video with the frame in which the first window shows, at time 0, and not when the display opened', async () => {
