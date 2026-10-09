@@ -1,0 +1,136 @@
+# Let an agent hand its screen to the person for a login or a confidential input, and go on after: technical plan
+
+The plan for `1_SPEC.md` (gate 1 approved on 2026-10-09 with answer 1 recorded at its end; gate 2 waived by the maintainer, so this plan is followed directly by the implementation). It says what is built and where; the spec argues the why. Base: `release/0.9.0` at 0.9.0-beta.6 (`7678170f`), schema 20, **plus #177 merged into this branch before the work starts**. `file:line` cites code that exists on this tree today (read 2026-10-09); a name in backticks that has no line is **#177's planned name** (its `2_PLAN.md`, section 6 and the maintainer's gate 2 decisions) and is checked against the merged code in the first minutes of phase A. Nothing was run: no test, no `tsc`, no app.
+
+## 0. Decisions that shape this plan
+
+- **From #177's gate 2.** The app's browser shares the agent's shell display: **one screen per agent session**, so `screen_handoff` has no "which screen" argument and `ctx.key` is the screen. Page text returned to the agent is **not** redacted: the only mask is `MaskSet`, which this issue fills.
+- **Gate 1 answer 1 amends the spec.** The recording **keeps** the interval and marks it. So: spec rule 27's "skip" and criterion 7's "recorder receives no picture" are replaced by "the recorder keeps being fed and the interval is one mark of kind `handoff`"; rule 19's first line says the interval **is recorded and kept with the run's evidence**; Take control's per-burst marks are replaced by that one mark inside an interval. Everything else in rules 23-25 stands (the frames stay out of every reader the app serves **to the model or to a phone**).
+- **Masking: mechanism B only.** The app masks in the intermediary (`MaskSet`, `finishText`). `--secrets` is **not used** (#177 already runs the server without it): no dotenv file, no typed text on disk, criterion 11a's file tests do not apply. Open question 2 takes its recommended answers: the same masker on the shell path's command output and on GUI memory writes (#179's seam, section 6); a picture of a page that shows a typed value is refused.
+- **`maskExact.ts` is not in this base.** Phase A copies `src/main/maskExact.ts` and `test/maskExact.test.ts` from `origin/cycle/170-let-a-stage-test-the-app-under-developme` **byte for byte** (`secretForms`, `ExactMask`, `stageMasker`, `maskerFromResolved`, `maskerFor`; it needs only `secrets-core.ts` and `errorlog-core.ts`, both here), so an identical add/add merges clean in either order. The hand-off uses `secretForms` and its own `exactMask` (no `redact`, since page text is not redacted), kept in `typedValues.ts`, not in the copied file.
+
+## 1. What is built, and where
+
+New code in `src/main/screen/` (`typedValues.ts`, `handoff.ts`, `maskExact.ts`), `src/shared/handoff.ts` (types, constants, warning composer) and `test/`.
+
+| Piece (spec rules) | Where it lands |
+|---|---|
+| Typed text, in memory only (28) | `src/main/screen/typedValues.ts`: `createTypedCollector()` (from `ScreenInput` events) and `createTypedValues()` (per call) |
+| Hand-off interval in the hub: withhold, collect, one mark, no control lines or bursts (14, 16, 23, 24, 27) | `src/main/screen/hub.ts` (`Live` at `:84`, `read` `:225`, `closeBurst` `:150`, `control` `:348`, `input` `:364`, `finish` `:390`, `drop` `:175`), `src/main/screen/recorder.ts:57,226` (`mark` gets a kind), `src/shared/screen.ts:23` (`marks[].kind`, `RecordingMeta.handoff`, `ScreenFrameAnswer` gets `held`) |
+| Refuse and mask the shell path (12, 28) | `src/main/sandbox/session.ts:99,269,288,313`, `src/main/sandbox/host.ts:29,111,152,181` (options `held` and `mask`, `ExecResult.refused` gets `'handoff'`), `src/main/sandbox/tool.ts:35` (`renderExec`), `src/main/runner/executor.ts:310` (`endedAs`, no change needed: it reads the catalog by the reason) |
+| The state machine of one hand-off: request, take, give back, decline, expiry, abort (1-5, 9-11, 15, 16) | `src/main/screen/handoff.ts` (`createHandoffService`), accessor `handoffService()` beside `screenHub()` in `src/main/runner/module.ts` |
+| The card, as a view of #177's asks store (17) | `ScreenAsks.show(ask): { set(patch), remove() }` (new, in `src/main/browser/asks.ts`): list membership and `SCREEN_ASKS_EVENT` only; the promise and the timers are the service's |
+| `screen_handoff` in both engines (1, 2, 4) | one entry appended to `screenTools(ctx)` in `src/main/browser/engineTool.ts`, allowed-tool name in `src/main/agents.ts` beside `screen_confirm` |
+| Stage and conversation wiring, clocks, abort, end of call (6-9, 15) | `src/main/runner/executor.ts:512-513,955-966` (`executeStage`: create the call object before `openStageSandbox`, `end()` in the `finally`), `src/main/mentions/answer.ts:331-352,356-357` (`openMentionSession`: same hooks; `end()` where #177's `release(key)` runs) |
+| Browser path: refuse every call, mask every read, refuse a picture, one step (12, 25, 28) | `src/main/browser/intermediary.ts` (first check of every call; `finishText` already applies `ctx.masks`), `stepLog.ts` |
+| Channels (17, 20, 24) | `screen:handoffTake`, `screen:handoffGive`, `screen:handoffFrame` in `src/main/screen/module.ts` (desktop-only by `^screen:` at `src/main/webPolicy.ts:72`); `runs:handoffDecline` in `src/main/runner/module.ts` (open) |
+| Thread lines, audit, notice (16, 18) | `handoff.ts`; `AuditKind` gets `screen-handoff` (`src/shared/auditoria.ts:1`, label in `src/renderer/src/screens/Auditoria.tsx:19`); notice through `ctx.notify` (`src/main/index.ts:78-80`) |
+| Interface (17-20, 24) | `src/renderer/src/screens/cycle/{LiveScreen,screenApi,RecordingPlayer,recording}.ts*`, new `HandoffCard.tsx` (run top, next to `CommandApproval` at `RunScreen.tsx:180`; conversation: on the call's line and in #177's `ScreenStrip`) |
+| Prompt (22) | `rules.screenHandoff` in the prompt catalogs, appended by `guiRules` (`src/main/runner/prompt.ts:125`) and `mentionCall` (`src/main/mentions/call.ts:165`) only when the tool is offered |
+| Docs | `docs/runner.md`, `CHANGELOG.md` |
+
+## 2. Data and types
+
+- `src/shared/handoff.ts`: `HANDOFF_ASK_MS = 15 min`, `HANDOFF_IDLE_MS = 30 min`, `HANDOFF_TEXT_MAX = 300`; `HandoffResult = 'done' | 'declined' | 'expired' | 'unavailable'`; `HandoffPaths = { browser: boolean; shell: 'sandbox' | 'host' | 'none' }`; `composeWarning(paths): string[]` (catalog keys, in order: `always`, `recorded`, `browser` if `paths.browser`, `programs` if shell is not `none`, `programsHost` if `host`, `noPrograms` if `none`, `last`).
+- #177's `PendingAsk.kind` gets `'handoff'` (already reserved); the entry carries `agentWords: { what, why? }`, `taken: boolean`, `paths: HandoffPaths`. No new field on `Run`: the spec's "record handed out with the run" (rule 6) is met by `OpenScreenInfo.pending` of `runs:screens(thread)`, which a run's screen and a conversation read alike (decision D2).
+- `ScreenFrameAnswer` gets `{ state: 'held' }`. `RecordingMeta` gets `handoff?: true`; `marks[]` entries get `kind?: 'handoff'`. `Recorder.mark(from, to, kind?)`. `RecordingOutcome` is unchanged.
+- `ExecResult.refused` gets `'handoff'`; `SessionOptions` and `HostSessionOptions` get `held?: () => boolean` and `mask?: (text: string) => string`.
+- Hub: `Live.interval: { from: number; last: number; typed: TypedCollector; on: { input(): void; end(r: IntervalEnd): void } } | null` and `Live.epoch: number`; `ScreenHub` gets `beginInterval(key, on): boolean`, `endInterval(key, why): void`, `held(key): boolean`; `frame(key, since, width, viewer = 'web' | 'person')`. `IntervalEnd = { from: number; to: number; typed: string[]; why: 'back' | 'expired' | 'aborted' | 'lost' | 'ended' }`.
+- `TypedValues` (per call, `typedValues.ts`): `add(values)`, `mask(text)`, `hits(text)`, `had`, `clear()`. `CallHandoff` (per call, `handoff.ts`): `typed`, `request(input)`, `active()`, `end()`.
+- Audit entry `screen-handoff`: `fields = { agent, place, what, outcome, from, to }`, `via` `sandbox | host`, never a typed value. Thread codes (both `main` catalogs): `runner.screen.handoffAsked` (with `what`), `handoffTaken`, `handoffBack`, `handoffDeclined`, `handoffExpired`, `handoffUsed` (the one interval line; the existing `runner.screen.used` says "stage", wrong in a conversation).
+
+## 3. Configuration and migration
+
+None. The wait limits, the warning and the masker have no setting (spec, out of scope), so `SCHEMA_VERSION` stays and no step is added to `STEPS` (`rules/config-schema.md`); `test/config-schema.test.ts` and `test/config-migrations.test.ts` are not touched, which also keeps the merge with #170 (schema bump) conflict-free. Nothing is written to disk by this feature (spec rules 19, 21, 28); a test greps the new files for fs writes.
+
+## 4. Flow and prompts
+
+**The call object.** `executeStage` and `answerMentions` create `const handoff = handoffService().begin({ key, thread, place, agent, agentName, about, open, paths, clock, signal, masks, steps })` when the agent has a screen, **before** the sandbox session is opened (the session is made at `executor.ts:512`), and pass `held: handoff.active` and `mask: handoff.typed.mask` into `openStageSandbox` / `openMentionSession` and from there to `sandbox.open` / `openHost` (`src/main/sandbox/index.ts:62,269,312`). `handoff.end()` runs in the same `finally` that finishes the screen. `masks` is #177's `ctx.masks`; `end()` calls the remover that `masks.add(typed.mask)` returned.
+
+**`request({ what, why })`** (the tool). (1) `unavailable` if a hand-off is open on the screen, the call already ended one as `declined` or `expired`, or `hub.state(key)` is null. (2) `phase = 'asked'`; `resume = clock.pause()`; `asks.show(...)`; thread line `handoffAsked` (`what` through `redact`, clipped to 300); the notice; a 15 min timer. (3) awaits the settled promise. The result text is a fixed English sentence per result in `handoff.ts` (`// i18n-lint: allow-file`, like `sandbox/tool.ts:1`), no other content.
+**`take(key, askId)`** (`screen:handoffTake`, after the click on the warning), all of it before the first `await`: check the ask is `asked`; cancel the 15 min timer; `phase = 'taken'`; `hub.beginInterval` (withhold: sets `Live.interval`, `epoch++`, drops `grabbed` and `pictures`); only then `await hub.control(key, true)`; line `handoffTaken`; start the 30 min timer, restarted by `on.input()` (each delivered event); `asks.set({ taken: true })`. This order is the "withhold first, control on after" of rule 24.
+**`give(key)`** and every other end go through one idempotent `settle(result)`: cancel timers; `hub.endInterval` (releases held keys, control off with no control line, closes the burst, adds the one mark of kind `handoff`, writes `handoffUsed`, drops the cache again, calls `on.end`); **`typed.add(r.typed)` and `masks.add(typed.mask)` happen before `active()` turns false and before the promise resolves**, so no read can race the mask; `asks` entry removed; `resume()`; thread line and audit entry; one step in `StepLog` (`tool: 'screen_handoff'`, `class: 'free'`, `outcome`, no `name`). `declined`, `expired` set `closedForCall`. Abort of the call's signal, `end()`, a lost display (`on.end` with `why: 'lost'` → `unavailable`) and the stage finishing end it with **no result** (nobody reads it), outcome `aborted` in the audit.
+**Gate.** `active()` is true from `beginInterval` to `settle`. Shell: `exec` returns an unlogged `refused: 'handoff'` result at once while `held()`; `run` checks again at its start (a command queued before the interval), before `approve` on the host, so no approval is asked (`session.ts:269`, `host.ts:111`). Browser: the first line of every `coxia_browser` call, of `screen_confirm` and of a second `screen_handoff` returns "the person has the screen; wait for the hand-off result". During `asked` nothing is refused.
+**Mask.** Session: `output: redact(mask(tail(text)))` at `session.ts:288` and `host.ts:152` (mask first, so `redact` cannot reshape a typed value). Browser: `finishText` already applies `ctx.masks.apply`; the intermediary also refuses `browser_take_screenshot` with "the page shows what the person typed; read it as text instead" when its own snapshot text changes under `typed.mask` (`mask(t) !== t`), and returns it otherwise.
+**Typed text.** The collector reads `{ t: 'key', key, down: true }` events the hub accepted (the first `room` events of the call, `hub.ts:371`; an event the planner rejects is still collected: over-masking is harmless). A key of one code point is text unless Control, Alt or Meta is held (AltGraph composes); Backspace removes the last code point; Enter, Tab, Escape, the arrows, Home, End, Page keys, Delete and any button press end the current segment (the caret may have moved); a segment is kept up to 512 characters, 64 segments. `secretForms` (plain, URL-encoded, JSON-escaped, 4 or more characters, longest first) then replaces with `[secret]`.
+**Warning and viewer.** The card's *Take the screen* opens the viewer on the ask; the viewer shows `composeWarning(paths)` in place of the control and sends nothing until *I understand, take the screen* calls `screen:handoffTake`. Taken: control on without the switch, banner (`ui.screen.handoff.banner`: the person has the screen, nothing typed goes to the agent, the agent's programs are running, this is recorded), frames from `screen:handoffFrame` (`hub.frame(..., 'person')`), *Give back* always visible. Exit chord and closing the viewer call `screen:control(key, false)`; the interval stays (rule 14); control can be turned on again without the warning. A paired browser's viewer shows `ui.cycle.live.held` on `held` and never `ended`.
+**Notice.** `ctx.notify` with fixed catalog text (agent and `about`, never `what`), only when `config().notifications` (as `service.ts:455`), click target `{ type: 'open', screen: { name: 'run', id } }` for a stage and `{ name: 'forum', id: thread, thread }` for a conversation: the desktop reads `thread` (`App.tsx:70`) and the push reads `id` (`src/shared/push.ts:52-60`, `pushTarget.ts:22`), so one object serves both and the open question about the conversation target is closed.
+**Prompt (rule 22).** One key `prompt.sdd.runner.rules.screenHandoff` per catalog, with the content of rule 22, appended only when the tool is offered; goldens move only for agents with a screen.
+
+## 5. The seam #179 needs
+
+- **Did this session have a hand-off (#179 rule 24).** `TypedValues.had`, read from the call's context (`ctx.typed` of `screenTools`, the same object the shell path got). It is true for the rest of the call once an interval was taken **and** for later calls on the same screen while it lives, through `handoffService().hadHandoff(key)` (cleared when the hub ends the screen). A draft created while `had` is `unreviewed`.
+- **The masker.** `ctx.typed.hits(text): boolean` for the refusal of a `procedures_save` ("any form of a typed value appears in any field") and `ctx.typed.mask(text): string` for anything that must be masked rather than refused. Same object, same forms (`secretForms`: plain, URL-encoded, JSON-escaped, 4 or more characters). The values are in memory for the call's life and `clear()`ed by `end()`; after that only `had` remains, so #179 must refuse **during** the call, which is where `procedures_save` runs.
+- **The step.** One `StepEntry` per hand-off with no `name` (contentless, #179 rule 31).
+
+## 6. Order of the work: phases and commits
+
+Each phase leaves `npx tsc --noEmit`, `npx vitest run`, `node scripts/theme-audit.mjs`, `npm run i18n:lint` and `node scripts/public-audit.mjs` green; each commit carries its tests and, when visible, a line under `## [Unreleased]`. Commit 1 is this plan alone (`feat: add the plan of #178`). **Before commit 2**, read the merged #177 code and fix any name in this plan that differs (`screenTools`, `MaskSet`, `ScreenAsks`, `StepLog`, the screen key, `ctx`); a difference is edited here in the same commit as the code.
+
+**Phase A, the main process core (4 commits).** Read first: `src/main/screen/{hub,recorder,xinput}.ts`, `src/shared/screen.ts`, `src/main/sandbox/{session,host,tool}.ts`, `src/main/errorlog-core.ts` (`redact`), `test/screen-hub.test.ts`, `test/helpers/{fakeX,screen,recorderSink}.ts`.
+2. `feat: collect what the person types and mask it in memory` (copied `maskExact.ts` and its test; `typedValues.ts`; tests: layouts, Backspace, shortcuts, segment breaks, forms, under 4 characters, `had`, `clear`).
+3. `feat: add the hand-off interval to the screen hub` (withhold first, `epoch` guard on an in-flight read, `held` answer, caches dropped at both ends, no control lines or bursts in an interval, one mark of kind `handoff` and `RecordingMeta.handoff`, `finish`/`drop` close the interval, desktop frame viewer; tests in `screen-hub`, `screen-recorder`; Take control outside an interval unchanged).
+4. `feat: refuse and mask an agent's shell while the person has the screen` (`held`, `mask`, `refused: 'handoff'`, `renderExec` text, catalog `main.runner.exec.refused.handoff`; tests in `sandbox-session`, `host-session`: no approval asked, queued command refused, runs again after).
+5. `feat: add the hand-off service` (`handoff.ts` with injected `schedule`, hub, asks, audit, notice, forum; `ScreenAsks.show`; audit kind and label; tests with a fake clock: every state, the limits, `unavailable`, order of `typed.add` before the promise, abort without result, clocks via a fake `pause`).
+
+**Phase B, the tool in both call paths (4 commits).** Read first: `src/main/browser/{engineTool,intermediary,asks,stepLog,mask}.ts` as merged, `src/main/runner/executor.ts:300-520,940-970`, `src/main/mentions/answer.ts:150-360`, `src/main/runner/module.ts:100-135,228`, `src/main/agents.ts` (the `screen_confirm` entries).
+6. `feat: let an agent hand its screen over in a stage and in a conversation` (`screen_handoff` in both engine shapes, allowed names, offered only with a live screen and never to a documentation run, `begin`/`end` in `executeStage` and `answerMentions`, `held`/`mask` passed to the sandbox and host sessions; tests: offered/not offered in both engines and both places, clocks, cancel).
+7. `feat: refuse and mask the app's browser around a hand-off` (intermediary: first-line refusal, picture refusal, masks added/removed, step; test with a fake server: every read kind masked in the three forms on the first and later reads, a 3-character value not masked, a picture refused/returned, no typed value in a step).
+8. `feat: tell the agent how to hand the screen over` (`rules.screenHandoff` in both catalogs, `guiRules`, `mentionCall`; prompt test in both languages; goldens for the changed keys only).
+9. `feat: add the channels of the hand-off` (`screen:handoffTake`, `screen:handoffGive`, `screen:handoffFrame`, `runs:handoffDecline`; `test/screen-policy.test.ts` lists the three, `test/runs-policy.test.ts` adds `runs:handoffDecline` to `MOVES`; the rpc context test for criterion 8).
+
+**Phase C, the interface and closing (4 commits).** Read first: `src/renderer/src/screens/cycle/{LiveScreen,screenApi,screenKeys,RunScreen,CommandApproval,RecordingPlayer,recording}.ts*` as merged by #177 (viewer by `screenKey`, `ScreenStrip`, `AskCard`), `rules/theme.md`, `rules/i18n.md`, `test/live-screen-ui.test.ts`.
+10. `feat: show the hand-off card and notify the person` (`HandoffCard` in the run and on the conversation's call line, paired browser text and *Decline*, `held` in the phone viewer, notice; catalogs `ui-cycle`, `main`; test `handoff-ui` by static render).
+11. `feat: take the screen behind a warning and give it back` (viewer: warning from `composeWarning`, banner, person frames, *Give back*, exit chord; player: hand-off marks labelled apart, "holds a hand-off" note on the evidence; tests for 12b and the player helpers).
+12. `feat: document the hand-off` (`docs/runner.md`, `CHANGELOG.md`).
+13. `feat: review the hand-off against the spec` (a pass over the criteria below with the list of what covers each; the scan test of criterion 8; the manual acceptance on a display, criteria 13 and 14, run on a throwaway data dir; fixes only). Outside the repository the main session updates `rules/paired-phone.md` (the four channels), `rules/secrets.md` (typed text in memory only) and `rules/agent-read-only.md` if the gate touches it.
+
+## 7. Test plan
+
+New: `typed-values`, `maskExact` (copied), `handoff-service`, `handoff-ui`, `handoff-warning`. Extended: `screen-hub`, `screen-recorder`, `sandbox-session`, `host-session`, `browser-intermediary`, `browser-engine-tools`, `mentions-*`, `runner-screen`, `screen-policy`, `runs-policy`, `live-screen-ui`, prompt goldens. Fixtures use `example.com` and a marker string; no real credential; fakes only.
+
+| Spec criterion | Covered by |
+|---|---|
+| 1, 4 | `handoff-service` (the four results are the fixed sentences, nothing else; unavailable cases), `browser-engine-tools` (offered only with a live screen, both engines, stage and conversation), abort without result |
+| 2, 3 | `handoff-service` with a fake clock and fake `pause` (15 and 30 minute limits, input restarts, resume with what was left, expiry turns control off, releases keys, closes the interval, fails nothing) |
+| 5 | `sandbox-session`, `host-session` (no approval asked), `browser-intermediary` (every call kind refused, then runs again) |
+| 6 | `screen-policy`, `runs-policy`, `web-server` (the card is read from `runs:screens`) |
+| 7 (amended) | `screen-hub`: `held` before control is on (a `frame` polled between the two steps), caches dropped at both ends, an in-flight read of the interval not cached, **the recorder keeps being fed and one `handoff` mark covers the interval**, Take control outside an interval still marks per burst |
+| 8 | scan test: marker typed through `hub.input`; searched in forum files, activity, `auditoria` calls, run file, evidence store, `RecordingMeta`, tool result, `console.error`, `rpcContext` (`src/main/errorlog-core.ts:213` logs the first argument only); the thread has exactly the lines of rule 16 |
+| 9 | tool-surface test: no tool the app offers returns a frame, the recording or the typed text |
+| 10 | notice has the fixed text, no `what`, and honours `notifications` |
+| 11, 11b | `browser-intermediary` (fake server, three forms, 4-character floor, picture refused, dropped at the end, not in a step) and `sandbox-session`/`host-session` (output masked); 11a is **not applicable** (no `--secrets`) |
+| 12, 12b, 15 | prompt tests, `handoff-warning` (composition by paths, both catalogs), `npm run i18n:lint`, theme and public audits |
+| 13, 14 | manual, last commit, with numbers |
+
+## 8. Risks and what the maintainer must decide
+
+1. **Names from #177 may differ** (`screenTools`, `ctx`, `ScreenAsks`, `MaskSet`, `StepLog`, the key shape). The first step of phase A reads the merged code; this plan is edited with the code, not around it.
+2. **The recording now holds what the person typed, in clear, and `runs:evidence` is open to a paired browser** (`src/main/webPolicy.ts` lists no evidence channel). The warning says the interval is recorded and kept with the run's evidence. If the maintainer wants a hand-off recording to be playable on the computer only, that is a check inside the evidence handler (the policy is per channel, not per record): **a decision for the main session before commit 11**.
+3. **The step record.** Spec rule 16 writes "handed the screen over: {what}"; #179's spec makes the interval a contentless step. This plan follows #179 (no `name`; `what` stays in the thread and the audit). Say if the other is wanted.
+4. **The tool call waits for up to 15 minutes plus the time the person holds the screen.** The open engine has no per-tool timeout (`src/main/engine/open/client.ts:242` limits a model request, not a tool); whether the Claude SDK's MCP client times out a long call is **not verified** and is the first check of commit 6 (a `Shell` call waiting on a host approval is the precedent). If it does, the tool must return `expired` before that bound.
+5. **Reconstructing the typed text from keys can miss** (a dead key, autofill, a caret moved by the mouse, a code split over several boxes joined by the page, a value under 4 characters): the masker is exact-match and the guarantee on the shell path stays best effort (spec rules 28, 29).
+6. **A model may call `screen_handoff` and `Shell` in parallel.** A command already running when the interval opens is not stopped (D5); the gate covers every command that starts after.
+7. **`ScreenAsks.show` and a hold ask can both be listed** only before an interval (calls are refused during one); the card code must not assume one entry per screen.
+8. **Merge order.** #177 first (this branch merges it); #170 only adds an identical `maskExact.ts`; this issue bumps no schema.
+
+## 9. Decision log
+
+| # | Decision | Rejected alternative |
+|---|---|---|
+| D1 | Mechanism B (the intermediary masks); `--secrets` unused | A per-session dotenv file: typed text on disk and a third-party option nobody ran here |
+| D2 | The card is an entry of #177's asks list (`ScreenAsks.show`), read through `OpenScreenInfo.pending`; no `Run.handoff` field | The spec's separate field handed out with the run: a second list of the same thing, and it would not serve a conversation |
+| D3 | The service owns the promise and the timers; the asks store only lists | Using `ScreenAsks.ask`: its 15 min timeout cannot tell `expired` from `declined` |
+| D4 | One call object per stage attempt or answer owns the typed values; `masks.add` returns the remover run by `end()` | A mask per screen: a conversation's screen outlives the answer and the values must not |
+| D5 | Withhold, then control: both inside one function with no `await` before the withhold | Control first and a flag: a phone polling twice a second could read a frame typed into |
+| D6 | The recorder keeps being fed; the interval is one mark of kind `handoff` (gate 1 answer 1) | Skipping the interval (the spec's recommendation, overruled) |
+| D7 | `exec` refuses unlogged at the door, and `run` refuses again for a queued command | A gate in `run` only: a refusal waits behind a long command |
+| D8 | Mask before `redact` on command output | `redact` first: it may reshape the typed value so the exact forms no longer match |
+| D9 | Copy `maskExact.ts` byte for byte; the page mask lives in `typedValues.ts` | A changed copy: a real conflict with #170 |
+| D10 | The wait limits are constants; no setting, no schema bump | A setting (spec open question 3) |
+| D11 | The notice target carries both `id` and `thread` | A new push screen name |
+| D12 | The warning is composed from `paths` in `src/shared/handoff.ts`, every time | Remembering the acknowledgement per agent |
+
+## 10. What was and was not verified
+
+Read on this tree today: every `file:line` above, the spec, the #177 plan and spec, the #179 spec (rule 24), and `maskExact.ts` on #170's branch. Not run: tests, `tsc`, the app, a display, the Claude SDK's MCP timeout, `@playwright/mcp`'s output shapes (the mask walks the text #177's intermediary already normalises).
