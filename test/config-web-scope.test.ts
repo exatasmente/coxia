@@ -131,6 +131,44 @@ describe('what a browser may change', () => {
   });
 });
 
+describe('the reserve models of an agent, from a paired browser', () => {
+  const ref = (model: string) => ({ provider: 'p1', model });
+  const withPool = (c: WorkspaceConfig, extra: object = {}): void => {
+    c.llm.providers = [{ id: 'p1' } as never];
+    c.agents.team.push({ id: 'dev', name: 'Dev', job: '', model: { role: null, provider: 'p1', model: 'own', fallbacks: [ref('a'), ref('b')], activities: { shell: [ref('a')] }, ...extra }, stages: [], permission: 'read', tracker: 'none', shell: 'none', autonomous: false, turnsTo: null, instructions: '', system: false });
+  };
+  const stored = edit((c) => withPool(c));
+  const next = (change: (a: WorkspaceConfig['agents']['team'][number]) => void): WorkspaceConfig => {
+    const c = structuredClone(stored);
+    change(c.agents.team.find((a) => a.id === 'dev')!);
+    return c;
+  };
+
+  it('may take a reserve out, reorder the list and change the rest of the agent', () => {
+    expect(refusedPaths(stored, next((a) => { a.model.fallbacks = [ref('b')]; }))).toEqual([]);
+    expect(refusedPaths(stored, next((a) => { a.model.fallbacks = [ref('b'), ref('a')]; }))).toEqual([]);
+    expect(refusedPaths(stored, next((a) => { delete a.model.fallbacks; delete a.model.activities; }))).toEqual([]);
+    expect(refusedPaths(stored, next((a) => { a.instructions = 'Be brief.'; a.autonomous = true; }))).toEqual([]);
+  });
+
+  it('may not add a reserve to the list, or to the list of an activity, and the refusal names the agent and the list', () => {
+    expect(refusedPaths(stored, next((a) => { a.model.fallbacks = [...a.model.fallbacks!, ref('c')]; }))).toEqual(['agents.team[dev].model.fallbacks']);
+    expect(refusedPaths(stored, next((a) => { a.model.activities = { ...a.model.activities, edit: [ref('a')] }; }))).toEqual(['agents.team[dev].model.activities.edit']);
+    expect(refusedPaths(stored, next((a) => { a.model.activities = { shell: [ref('a'), ref('c')] }; }))).toEqual(['agents.team[dev].model.activities.shell']);
+  });
+
+  it('may not make an agent that already has a pool, and may make one without', () => {
+    const made = (extra: object) => edit((c) => { withPool(c, extra); c.agents.team[c.agents.team.length - 1].id = 'new'; });
+    expect(refusedPaths(stored, made({}))).toEqual(['agents.team[new].model.fallbacks', 'agents.team[new].model.activities.shell']);
+    expect(refusedPaths(stored, made({ fallbacks: undefined, activities: undefined }))).toEqual([]);
+  });
+
+  it('may not touch the pool of a role: the five of them are llm.roles, which the browser cannot change', () => {
+    expect(refused((c) => { c.llm.roles.turn.fallbacks = [ref('a')]; })).toEqual(['llm.roles.turn.fallbacks']);
+    expect(refused((c) => { c.llm.scoreOverrides = { floors: { shell: 1 } }; })).toEqual(['llm.scoreOverrides']);
+  });
+});
+
 describe('the channel', () => {
   // A confirmed test secret is handed to the next stage that takes the test environment: confirming or revoking one is the computer's, like the secrets.
   it('keeps confirming and revoking a test secret on the computer, and leaves the list of confirmations open', () => {
