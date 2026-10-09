@@ -1,6 +1,6 @@
 // The ways a run can stop, wait and be redirected: refusals at the start, a stage that fails, times out or is cancelled, the person sending work
 // back, agents that wait for the person, the review limit, a restart in the middle of a stage and the runs the app starts by itself.
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { applyTemplate, kanban } from '../src/shared/cycles';
@@ -449,6 +449,34 @@ describe('a stage that goes wrong', () => {
     await b.settle();
     expect(existsSync(join(run.worktree, run.cycleFolder, '9_EXTRA.md'))).toBe(false);
     expect(b.thread(run).find((m) => m.code === 'runner.artifactIgnored')?.params).toMatchObject({ agent: 'refiner', name: '9_EXTRA.md' });
+  });
+
+  it('keeps a document the agent wrote itself outside the cycle folder out of the commit and says so', async () => {
+    const b = await boot();
+    easy(b);
+    b.deps.updateConfig((c) => ({ ...c, agents: { ...c.agents, team: c.agents.team.map((a) => (a.id === 'refiner' ? { ...a, permission: 'worktree' as const } : a)) } }));
+    const refused: (string | null)[] = [];
+    b.engine.script('refiner', async (call, tools) => {
+      // its own Write is refused; what the shell writes gets past the hook and is cleaned before the commit
+      refused.push(await tools.write('1_SPEC.md', '# Spec\n'));
+      refused.push(await tools.write(`${call.cwd}/docs/1_SPEC.md`, '# Spec\n'));
+      writeFileSync(join(call.cwd, '1_SPEC.md'), '# Spec\n');
+      mkdirSync(join(call.cwd, 'notes'));
+      writeFileSync(join(call.cwd, 'notes/0_ISSUE.md'), '# Issue\n');
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    expect(refused.every((r) => r && /docs\/cycles\/101-/.test(r))).toBe(true);
+    expect(b.thread(run).filter((m) => m.code === 'runner.denied')).toHaveLength(2);
+    const stray = b.thread(run).filter((m) => m.code === 'runner.artifactStray');
+    expect(stray).toHaveLength(1);
+    expect(stray[0].params).toMatchObject({ agent: 'refiner', files: '1_SPEC.md, notes/0_ISSUE.md', folder: run.cycleFolder });
+    expect(existsSync(join(run.worktree, '1_SPEC.md'))).toBe(false);
+    expect(existsSync(join(run.worktree, run.cycleFolder, '1_SPEC.md'))).toBe(true);
+    const files = git(run.worktree, 'log', '--name-only', '--format=', 'main..HEAD').split('\n').filter(Boolean);
+    expect(files.filter((f) => !f.startsWith(`${run.cycleFolder}/`))).toEqual([]);
+    expect(git(run.worktree, 'log', '--format=%s', '-1')).toBe('feat: add the refine documents #101');
   });
 });
 
