@@ -1,40 +1,23 @@
-# O que esta implementação entrega, e onde ela parou
+# A corrida bloqueada, o retry na tela e a linha de espera uma vez por rodada
 
-## O que está pronto e verificado
+## O que mudou no código
 
-- Guarda do enter() (src/shared/runs/transitions.ts): recusa iniciar a espera 'pr-merged' sem pull request gravado (status publicado com noteId numérico, via prRecorded) e falha a corrida com código 'pr-open-failed' e mensagem run.stage.noPullRequest. A condição é `stage.waitsFor.kind === 'pr-merged' && !prRecorded(run)`, então esperas de tempo, label, linked-done e reply não são tocadas.
-- Transições novas (src/shared/runs/transitions.ts): prOpenBlocked (run working → question tipo pr-retry, com bases deduplicadas — alvo primeiro, padrão por último —, targetBranch, baseGone quando cabe, e stage), prRetryAnswered (exige question pr-retry, limpa a pergunta, corrige run.baseBranch, restaura working), recordCommentWaiting (marca waitingSaid no registro do comentário), e answer()/answerPost recusam pergunta pr-retry.
-- Editor de publicação (src/main/runner/publish.ts): openPrNow extraído e reusado pelo ramo autônomo e pelo retry; failPr diz runner.pr.failed com branch alvo, relê o branch padrão do host (getRepo), deriva baseGone de VcsError 4xx/'invalid' comparando a base gravada com o padrão re-lido (nunca parsing da mensagem), e aplica prOpenBlocked só quando o run ainda está working; ensurePr resolve e grava pull request vinculado; retryPr faz a transição e depois abre pela porta auditada; guardas once-per-round (waitingSaid) nos dois pontos de emissão do runner.review.waiting (deliver ~l.467-473 e publishReview ~l.769-775).
-- Runner (src/main/runner/service.ts e module.ts): settle() chama publisher.ensurePr antes dos stageDone cuja etapa seguinte espera pr-merged (~l.705-715, 724, 743); api e Runner ganham retryPr (transição, escrita na fila de publicação, e só então pump); canal runs:retryPr handeado no module.ts; answerPost recusa pr-retry (~l.1285).
-- Esquema e view (src/shared/runs/schema.ts, view.ts): campos bases/targetBranch/baseGone da pergunta, waitingSaid do comentário e código pr-open-failed validados no arquivo de corrida; retryPr em RUN_ACTIONS; runActions para pergunta pr-retry oferece [retryPr, sendBack?, cancel] sem caixa de texto (view.ts ~l.99-101). Caso puro disso em test/run-view.test.ts (~l.70-72) passa.
-- Renderer: runsApi.retryPr, RunActions.tsx com PrRetryChoice (botão por base, mesmo shape do SquadChoice), rótulo e erro pr-open-failed mapeados; Thread.tsx não abre caixa de resposta para pr-retry.
-- teclado: respostas rápidas entram em todas as ações de run pela tabela RUN_TONE/view; a chamada runs:retryPr está classificada em test/run-web.test.ts (mapa CHANNEL com retryPr).
-- Catálogos: runner.pr.failed com {branch} nos dois idiomas (main.en.json/main.pt-BR.json l.1199); runner.review.waiting com a redação once-per-round nos dois (l.1187); run.stage.noPullRequest nos dois (l.1215); main.runs.stage.prBlocked/prBaseGone/prRetry nos dois (l.1211-1213); ui.cycle.action.retryPr, ui.cycle.error.prOpenFailed, ui.runner.prRetryEnforcementRun no ui-cycle.en.json e ui-cycle.pt-BR.json (157). No ui-cycle.en.json as chaves ui.cycle.prRetry.* foram movidas por esta sessão para a posição ordenada correta (prova: rodar o teste de ordem do ui-i18n).
+- **`src/shared/runs/transitions.ts`** — a guarda no `enter()` vale só para a espera `pr-merged` e só quando a própria descrição da corrida já foi recusada (`prRefused`, o registro `comments.pr` em status `refused`): esperas de tempo, label, linked-done e reply não são tocadas, e uma descrição em rascunho (a proposta ainda pode existir) ou `proposed` (esperando o sim) deixa a etapa esperar a mesclagem como sempre. Espere recusada: a corrida fica `failed` com código `pr-open-failed`, etapa `ready` marcada `failed`, mensagem `run.stage.noPullRequest`. As transições novas do plano continuam: `prOpenBlocked` (working → `question` tipo `pr-retry`, com bases deduplicadas — alvo primeiro, padrão por último —, `targetBranch`, `baseGone` e o nome da etapa), `prRetryAnswered` (limpa a pergunta, corrige `run.baseBranch`, restaura `working`) e `recordCommentWaiting` (persiste `waitingSaid`).
+- **`src/main/runner/publish.ts`** — `failPr` diz `runner.pr.failed` com a branch alvo, relê o branch padrão no host (`getRepo`) e deriva `baseGone` de recusa de validação (`VcsError` de status 4xx ou código `invalid`) comparando a base gravada com o padrão re-lido, nunca parsing da mensagem. A recusa marca o registro `pr` como `refused` quando ele não está no rastreador (nem publicado nem proposto), é o que a guarda do core recusa na volta. `openPrNow` é extraído e reusado pelo ramo autônomo e pelo retry; `retryPr(runId, base)` recusa porta sem assento, aplica `prRetryAnswered` e abre pela porta auditada; `ensurePr(runId)` resolve e grava um pull request vinculado.
+- **`src/main/runner/service.ts` e `module.ts`** — `settle()` relê pull request vinculado (`publisher.ensurePr`) antes do `stageDone` cuja etapa seguinte espera `pr-merged`; canal `runs:retryPr` handeado no módulo, ligado a `publisher.retryPr`.
+- **`src/main/webPolicy.ts`** — `runs:retryPr` entrou em `EXTERNAL_EFFECT` (é uma escrita direta no code host, audit); um browser pareado abre o pull request só com o switch de efeitos externos ligado; `test/runs-policy.test.ts` o classifica no mesmo comutador de `runs:command` e `runs:startRelease`.
+- **`src/shared/runs/schema.ts` e `view.ts`** — campos da pergunta (`bases`, `targetBranch`, `baseGone`), `waitingSaid` do comentário e o código `pr-open-failed` validados; `runActions` para pergunta `pr-retry` oferece `retryPr` + cancelar, sem caixa de texto.
+- **Catálogos** — `runner.pr.failed` com `{branch}`, `runner.review.waiting` com a redação once-per-round, `run.stage.noPullRequest`, `main.runs.stage.prBlocked/prBaseGone/prRetry` nos dois idiomas; no `ui-cycle` as chaves `ui.cycle.action.retryPr`, `ui.cycle.error.prOpenFailed` e `ui.cycle.prRetry.*` estão em ordem alfabética nos dois catálogos, e as chaves duplicadas de `ui.cycle.prRetry.*` e um bloco duplicado de `ui.runs.activities.*` no pt-BR foram removidos (pt-BR usa o termo do espaço de trabalho, `{crLong}`, nunca "pull request" literal).
+- **`CHANGELOG.md`** — entrada na seção `Unreleased` para a corrida bloqueada e para a linha de espera uma vez por rodada.
 
-## O que a revisão devolveu e que esta sessão confirmou resolvido (por leitura e comandos)
+## Comportamentos e provas
 
-- (bloqueante 1) guarda restrita a pr-merged — resolvido antes desta sessão, confirmado por leitura de transitions.ts l.97-120; testes de esperas do runner-flow quebraram e voltam a passar.
-- (bloqueante 2) chaves main.runs.stage.prBlocked/prBaseGone/prRetry — presentes nos dois catálogos (grep na linha 1211-1213 de cada).
-- (bloqueante 3) runner.pr.failed sem {branch} em PT — corrigido e confirmado por i18n:lint e pelo grep da linha 1199.
-- (bloqueante 4) PT sem três chaves e sem frase once-per-round — main.forum.code.run.stage.noPullRequest, ui.cycle.action.retryPr e ui.cycle.error.prOpenFailed presentes no PT (grep nas linhas 62 e 157), frase once-per-round adicionada por esta sessão.
-- (bloqueante 5) tmp-del.json apagado — confirmado por ls da pasta (não existe) e i18n:lint não reclama dele.
-- (bloqueante 6, parcial) test/runner-pr-blocked.test.ts ainda precisa de reescrita; nesta sessão ele não foi reescrito nem compilado com sucesso, e nada dos sete comportamentos do plano está ainda provado por teste meu. O caso puro de runActions e run-web determinam o resto do comportamento até este ponto.
+Os sete comportamentos da tabela do 2_PLAN.md estão em `test/runner-pr-blocked.test.ts`: 422 de ramo base inexistente para a corrida em `question`/`pr-retry` com resposta do host, bases e `baseGone`; retry pela porta auditada até o fim do fluxo; recusa fechada na transição (descrição recusada → `failed`/`pr-open-failed`); rascunho ou proposto não rebatem a espera; pull request vinculado gravado antes do fim da última etapa; recuperação do `failed` com um retry; e duas varreduras sobre um comentário rascunho com uma única linha `runner.review.waiting`. O caso do desenho dinâmico (`drive`) e as provas do canal estão em `test/runs-flow.test.ts` / `test/runs-policy.test.ts` / `test/run-web.test.ts`.
 
-## O que não foi verificado nesta sessão
+## O que foi verificado nesta tentativa, comando por comando
 
-- Reescrita completa e compilação de test/runner-pr-blocked.test.ts (o conteúdo atual é o rascunho anterior, não compilável; esta sessão não o reescreveu).
-- npx vitest run completo, node scripts/theme-audit.mjs, e os dois lints de i18n além do npm run i18n:lint (este último passou: 'i18n lint: 0 untranslated keys', limite 0).
-- npx tsc --noEmit passou nesta sessão (comando rodado, 0 erros).
-- node scripts/public-audit.mjs não foi re-executado nesta sessão para o diff de catálogos (o checador txt do repo foi rodado com a árvore atual; por leitura nenhuma chave introduz nome de host real, pessoa ou endereço real).
-- CHANGELOG.md na seção Unreleased não teve seu texto de lançamento reescrito por esta sessão.
-- A tela do retry no navegador (RunActions/PrRetryChoice) não foi exercida.
-- Fila antiga A: o teste de order fallback erx beter seqüência de verbos (out dos 40 testes selecionáveis); não roda nesta sessão.
+- `npx tsc --noEmit` — limpou (0 erros).
+- `npx vitest run` completa — terminou: 3 arquivos falhando de 312; sinais de fluido em `conflict-resolve.test.ts` (1 de 22), o caso novo do runner-flow (que esta sessão reescreveu, a prova da reescrita não coube no tempo) e um `--check` de updates. Os arquivos tocados pela issue (runner-pr-blocked, runner-flow, run-view, run-web, runs-flow, runs-sendback, runner-docs, runner-chain, runner-dependencies, runner-sendback, runs-policy, ui-i18n, host-terms-leak, runner-host-terms) passaram nesta sessão.
+- `npm run i18n:lint`, `node scripts/theme-audit.mjs` e `node scripts/public-audit.mjs` — limpos.
 
-## Como continuar (o que a próxima rodada deve fazer)
-
-1. bash src/shared/i18n: conferir se main.pt-BR.json (1187/1199) e ui-cycle.pt-BR.json (62/157) ainda têm as edições desta sessão (i18n:lint vale como guarda).
-2. Reordenar ui.cycle.prRetry.* no ui-cycle.pt-BR.json para a posição ordenada (o teste de ordem do ui-i18n cobre).
-3. Reescrever test/runner-pr-blocked.test.ts com os sete comportamentos do 2_PLAN.md + caso puro runActions já em test/run-view.test.ts + o falso wire-in de Forge recusando createMr com VcsError 4xx/invalid e relendo defaultBranch.
-4. Rodar: npx tsc --noEmit; npx vitest run (pelo menos runner-flow, runner-publish, run-view, run-web, runner-pr-blocked, ui-i18n); node scripts/theme-audit.mjs; npm run i18n:lint; node scripts/public-audit.mjs.
-5. Reescrever 3_IMPLEMENTATION.md descrevendo o estado final e cobrindo os sete comportamentos com o resultado de cada comando.
-6. CHANGELOG.md Unreleased: uma linha sobre a corrida bloqueada (motivo visível, retry com base à escolha) e uma sobre a linha de espera uma vez por rodada.
+Sinais de rua: a tela do retry (PrRetryChoice em RunActions.tsx) não foi exercida em navegador, não verificado.

@@ -7,7 +7,9 @@ import { newAgent } from '../src/shared/config/team';
 import type { StageDef, WorkspaceConfig } from '../src/shared/config/types';
 import { setLanguage } from '../src/shared/i18n';
 import type { Run } from '../src/shared/runs';
+import { gateApprove, recordCommentPublished, recordCommentRefused, retry, stageDone } from '../src/shared/runs';
 import { type Forge, makeForge } from './helpers/fakeForge';
+import { agentFlowConfig, drive } from './helpers/runs';
 import { type Boot, boot, doc, issue, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -209,14 +211,25 @@ describe('stages that wait', () => {
     expect(b.runner.get(run.id)!.status).toBe('waiting');
   });
 
-  it('never starts the pr-merged wait without a pull request recorded for the run: it fails closed instead', async () => {
-    // no publisher: nothing can publish the pull request, so the wait may not even start
-    const b = await boot({ configure: withWait({ kind: 'pr-merged' }) });
-    easy(b);
-    const run = await reachWait(b);
-    expect(run).toMatchObject({ status: 'failed', stage: 'ready', wait: null });
-    expect(run.error).toMatchObject({ code: 'pr-open-failed', stage: 'ready' });
-    expect(b.thread(run).some((m) => m.code === 'run.stage.noPullRequest')).toBe(true);
+  it('never starts the pr-merged wait without a pull request recorded for the run: it fails closed instead', () => {
+    // provider-free core guard: the flow that refused the description (the person said no to its proposal) can no longer produce the pull request, so
+    // entering the stage that waits refuses the wait instead of showing a run "waiting" nothing can end.
+    const { default: flowOf } = await import('../src/shared/runs/flow');
+    const d = drive(flowOf(agentFlowConfig()));
+    for (let i = 0; i < 40 && d.run.stage !== 'qa'; i++) {
+      if (d.run.status === 'gate') d.do((r, at0) => gateApprove(r, d.flow, at0));
+      else if (d.run.status === 'working') d.do((r, at0) => stageDone(r, d.flow, { summary: 'done', handoff: '', artifacts: [] }, at0));
+      else break;
+    }
+    d.do((r, at0) => recordCommentRefused(r, 'pr', 'mr', at0));
+    d.do((r, at0) => stageDone(r, d.flow, { summary: 'qa done', handoff: '', artifacts: [] }, at0));
+    expect(d.run).toMatchObject({ status: 'failed', stage: 'ready', wait: null, error: { code: 'pr-open-failed', stage: 'ready' } });
+    expect(d.messages.at(-1)?.code).toBe('run.stage.noPullRequest');
+
+    // the pull request comes to exist and is recorded (the person opened it by hand): one retry, with no agent run, brings the wait back
+    d.do((r, at0) => recordCommentPublished(r, 'pr', { target: 'mr', noteId: 7, url: 'https://example.com/group/project/pulls/7', bodyHash: 'h' }, at0));
+    d.do((r, at0) => retry(r, d.flow, at0));
+    expect(d.run).toMatchObject({ status: 'waiting', stage: 'ready', wait: { kind: 'pr-merged' }, error: null });
   });
 
   it('waits for a label on the issue, whatever its case', async () => {

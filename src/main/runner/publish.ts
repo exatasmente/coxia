@@ -989,9 +989,15 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       const baseGone = (run.baseBranch ?? '') !== defaultBranch && isValidationRefusal(error);
       // A run that already moved on (the failure arrived while the flow was elsewhere, or it stopped otherwise) keeps what happened on the surface as it is.
       if (deps.runs.get(runId)?.status !== 'working') return;
-      moveRun(d, runId, (r) =>
-        prOpenBlocked(r, { by: 'app', text: tr(baseGone ? 'main.runs.stage.prBaseGone' : 'main.runs.stage.prBlocked', { stage: stageLabelOfRun(r, stage ?? r.stage), branch: target, reason: message(error) }), bases: [...new Set([target, defaultBranch])], targetBranch: target, baseGone, stage: stage ?? r.stage }, now()),
-      );
+      moveRun(d, runId, (r) => {
+        const stopped = prOpenBlocked(r, { by: 'app', text: tr(baseGone ? 'main.runs.stage.prBaseGone' : 'main.runs.stage.prBlocked', { stage: stageLabelOfRun(r, stage ?? r.stage), branch: target, reason: message(error) }), bases: [...new Set([target, defaultBranch])], targetBranch: target, baseGone, stage: stage ?? r.stage }, now());
+        // The description's own record is refused when it is not on the tracker (published or proposed) yet: a wait that follows must not be able to rely on it.
+        if (r.comments.pr && r.comments.pr.status !== 'published' && r.comments.pr.status !== 'proposed') {
+          const refused = recordCommentRefused(stopped.run, 'pr', 'mr', now());
+          return { run: refused.run, messages: [...stopped.messages, ...refused.messages] };
+        }
+        return stopped;
+      });
     } catch (e) {
       console.error('[runner] could not stop the run for the failed pull request', message(e));
     }

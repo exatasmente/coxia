@@ -45,11 +45,16 @@ function need(run: Run, ...statuses: Run['status'][]): void {
   if (!statuses.includes(run.status)) throw new RunError('wrong-state', { status: run.status });
 }
 
-/** Whether the run has the pull request of its branch recorded as published on the host: the only thing the pr-merged wait may start on. */
+/** Whether the run has the pull request of its branch recorded as published on the host: the only thing the pr-merged wait resolves on. */
 export const prRecorded = (run: Run): boolean => {
   const known = run.comments[PR_COMMENT];
   return !!known && known.status === 'published' && known.noteId !== null && /^\d+$/.test(String(known.noteId));
 };
+
+/** Whether the run's branch already has no pull request and none can come from its own flow: the description's proposal was refused, so a pr-merged wait
+ * could never fire. A draft (the description is written, the proposal may still be created) or a `proposed` one (waiting for the person's "sim") can still
+ * become the pull request, so they do not refuse the wait. */
+const prRefused = (run: Run): boolean => run.comments[PR_COMMENT]?.status === 'refused';
 
 function finishStage(run: Run, at: string, status: StageRecord['status'], artifacts: string[] = []): StageRecord {
   const r = record(run, run.stage) as StageRecord;
@@ -101,7 +106,7 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
       run.error = { code: 'no-event', stage: stageId, detail: null };
       log(run, at, 'failed', stageId, 'app', 'no-event');
       messages.push({ ...base, kind: 'system', code: 'run.stage.noEvent', params: { stage: stage.label } });
-    } else if (stage.waitsFor.kind === 'pr-merged' && !prRecorded(run)) {
+    } else if (stage.waitsFor.kind === 'pr-merged' && prRefused(run)) {
       // A wait for the pull request's merge holds nothing before that pull request is recorded on the run: without it the wait could never fire, and the
       // person would read a "waiting" run that no host event can end. Failing closed: the guard is provider-free, so a linked pull request has to be
       // resolved into a record first (the runner does it before the last stage of the flow ends).

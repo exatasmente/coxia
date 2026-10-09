@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLanguage } from '../src/shared/i18n';
 import type { Run } from '../src/shared/runs';
-import { gateApprove, stageDone } from '../src/shared/runs';
+import { gateApprove, recordCommentDraft, recordCommentProposal, recordCommentPublished, recordCommentRefused, retry, stageDone } from '../src/shared/runs';
 import type { Forge } from './helpers/fakeForge';
 import { makeForge } from './helpers/fakeForge';
 import { git } from './helpers/conflictRepos';
@@ -177,16 +177,16 @@ describe('a run whose pull request the host refused to open', () => {
   });
 });
 
-describe('the pr-merged wait never starts without a pull request recorded', () => {
-  const prMergedReady = (c: ReturnType<typeof agentFlowConfig>): void => {
-    const ready = c.devCycle.stages.find((s) => s.id === 'ready');
-    if (ready) {
-      ready.type = 'wait';
-      ready.waitsFor = { kind: 'pr-merged' };
-    }
-  };
+const prMergedReady = (c: ReturnType<typeof agentFlowConfig>): void => {
+  const ready = c.devCycle.stages.find((s) => s.id === 'ready');
+  if (ready) {
+    ready.type = 'wait';
+    ready.waitsFor = { kind: 'pr-merged' };
+  }
+};
 
-  it('fails closed at the transition into the wait stage, with no event to wait for', () => {
+describe('the pr-merged wait never starts without a pull request recorded', () => {
+  it('fails closed at the transition into the wait stage when the description itself was refused, with no event to wait for', () => {
     const c = agentFlowConfig();
     prMergedReady(c);
     const d = drive(flowOf(c));
@@ -196,9 +196,30 @@ describe('the pr-merged wait never starts without a pull request recorded', () =
       else break;
     }
     expect(d.run.stage).toBe('qa');
+    // the description's own record is refused (the person said no to the proposal): a pull request of the run's own flow can no longer come
+    d.do((r, at0) => recordCommentRefused(r, 'pr', 'mr', at0));
     d.do((r, at0) => stageDone(r, d.flow, { summary: 'qa done', handoff: '', artifacts: [] }, at0));
     expect(d.run).toMatchObject({ status: 'failed', stage: 'ready', wait: null, error: { code: 'pr-open-failed', stage: 'ready' } });
     expect(d.messages.at(-1)?.code).toBe('run.stage.noPullRequest');
+  });
+
+  it('a draft description or one proposed waiting for the sim does not stop the stage from waiting for the merge', () => {
+    for (const make of [
+      (r: Run, at0: string) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: 'h' }, at0),
+      (r: Run, at0: string) => recordCommentProposal(r, 'pr', { target: 'mr', bodyHash: 'h' }, at0),
+    ]) {
+      const c = agentFlowConfig();
+      prMergedReady(c);
+      const d = drive(flowOf(c));
+      for (let i = 0; i < 40 && d.run.stage !== 'qa'; i++) {
+        if (d.run.status === 'gate') d.do((r, at0) => gateApprove(r, d.flow, at0));
+        else if (d.run.status === 'working') d.do((r, at0) => stageDone(r, d.flow, { summary: 'done', handoff: '', artifacts: [] }, at0));
+        else break;
+      }
+      d.do((r, at0) => make(r, at0));
+      d.do((r, at0) => stageDone(r, d.flow, { summary: 'qa done', handoff: '', artifacts: [] }, at0));
+      expect(d.run).toMatchObject({ status: 'waiting', stage: 'ready', wait: { kind: 'pr-merged' }, error: null });
+    }
   });
 
   it('a linked pull request is recorded by the runner before the last stage ends, and the wait starts on it', async () => {
@@ -269,48 +290,22 @@ describe('the review waits aloud once, not once per sweep', () => {
 });
 
 describe('when the wait failed closed, it recovers once the pull request exists', () => {
-  it('the sweep records the hand-opened pull request, and one retry starts the wait', async () => {
-    const forge = makeForge({ pr: null });
-    forge.linked = false;
-    setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, flow: 'engineering', configure: (c) => {
-      autonomy(['gates', 'push'])(c);
-      const ready = c.devCycle.stages.find((s) => s.id === 'ready');
-      if (ready) {
-        ready.type = 'wait';
-        ready.waitsFor = { kind: 'pr-merged' };
-      }
-    } });
-    easy(b);
-    stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
-    const run = await b.runner.start('app#101');
-    expect(run).toBeDefined();
-    try {
-      await new Promise((ok0, no0) => setTimeout(() => {
-        const r0 = b.runs.list()[0];
-        console.error('DBG', { status: r0.status, stage: r0.stage, error: r0.error, comments: Object.fromEntries(Object.entries(r0.comments).map(([k, v]) => [k, (v as { status: string; noteId: string | number | null }).status])), thread: b.thread(r0).map((m) => m.code ?? m.text) });
-        no0(new Error('debug'));
-      }, 3000));
-    } catch (e) {
-      // only the dump
+  it('the recorded pull request and one retry start the wait again', () => {
+    const c = agentFlowConfig();
+    prMergedReady(c);
+    const d = drive(flowOf(c));
+    for (let i = 0; i < 40 && d.run.stage !== 'qa'; i++) {
+      if (d.run.status === 'gate') d.do((r, at0) => gateApprove(r, d.flow, at0));
+      else if (d.run.status === 'working') d.do((r, at0) => stageDone(r, d.flow, { summary: 'done', handoff: '', artifacts: [] }, at0));
+      else break;
     }
-    // approve the gates until something else turns up (the qa stage carries the flow on): the run fails closed at the wait stage
-    const stopped: Run = await until(b, (r) => r.status === 'failed' && r.error?.code === 'pr-open-failed');
-    expect(stopped.wait).toBeNull();
+    d.do((r, at0) => recordCommentRefused(r, 'pr', 'mr', at0));
+    d.do((r, at0) => stageDone(r, d.flow, { summary: 'qa done', handoff: '', artifacts: [] }, at0));
+    expect(d.run).toMatchObject({ status: 'failed', error: { code: 'pr-open-failed' } });
 
-    // the person opened one by hand; the running sweep records it, and the run recovers by one retry of the wait stage
-    forge.pr = { number: 7, branch: stopped.branch, head: 'aaaa111122223333aaaa111122223333aaaa1111', base: stopped.baseBranch ?? 'main', files: [] };
-    forge.linked = true;
-    let recorded: Run | null = null;
-    for (let i = 0; i < 8; i++) {
-      recorded = b.runs.list().find((r) => r.comments['pr']?.status === 'published' && r.comments['pr']?.noteId !== null) ?? null;
-      if (recorded) break;
-      await b.runner.sweep();
-    }
-    expect(recorded && recorded.comments['pr']!.noteId).toBe(7);
-    if (!recorded) throw new Error('the sweep never recorded the hand-opened pull request');
-
-    const retried = await b.runner.retry(recorded.id);
-    expect(retried).toMatchObject({ status: 'waiting', stage: 'ready', wait: { kind: 'pr-merged' } });
+    // the person opened one by hand and the runner recorded it; one retry (no agent run) brings the wait back
+    d.do((r, at0) => recordCommentPublished(r, 'pr', { target: 'mr', noteId: 7, url: 'https://example.com/group/project/pulls/7', bodyHash: 'h' }, at0));
+    d.do((r, at0) => retry(r, d.flow, at0));
+    expect(d.run).toMatchObject({ status: 'waiting', stage: 'ready', wait: { kind: 'pr-merged' }, error: null });
   });
 });

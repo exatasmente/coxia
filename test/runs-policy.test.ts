@@ -12,7 +12,7 @@ const MOVES = ['runs:start', 'runs:startStage', 'runs:accept', 'runs:return', 'r
 const OPEN = [...READS, ...MOVES];
 // Starting a release run ends in the repository's own scripts and merged code, run as the person, and allowing a host command runs one outside any sandbox: a paired browser
 // does either only when its external effects are on, as it approves a proposal.
-const EXTERNAL = ['runs:command', 'runs:startRelease'];
+const EXTERNAL = ['runs:command', 'runs:startRelease', 'runs:retryPr'];
 
 const files = readdirSync(SRC).filter((f) => f.endsWith('.ts'));
 const source = (f: string) => readFileSync(join(SRC, f), 'utf8');
