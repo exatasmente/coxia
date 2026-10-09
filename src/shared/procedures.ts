@@ -151,3 +151,6 @@ export interface ProcedureUse {
   title: string;
   outcome: 'ok' | 'failed' | 'replaced';
 }
+
+/** The switch of the learned procedures: absent (a config stored before it) reads as off. Off offers no tool and no prompt section, and the view still works. */
+export const proceduresOn = (config: { runner?: { procedures?: boolean } | null } | null | undefined): boolean => config?.runner?.procedures === true;

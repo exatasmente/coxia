@@ -91,6 +91,14 @@ describe('what a browser may change', () => {
     expect(refused((c) => { c.runner.release = { soleMaintainer: true }; })).toEqual(['runner.release.soleMaintainer']);
   });
 
+  it('refuses the learned procedures switch, turned on or off: only the computer decides what writes into a store other agents read', () => {
+    expect(refused((c) => { c.runner.procedures = false; })).toEqual(['runner.procedures']);
+    const off = edit((c) => { c.runner.procedures = false; });
+    expect(refusedPaths(off, edit((c) => { c.runner.procedures = true; }))).toEqual(['runner.procedures']);
+    // The switch is not in the editable list at all, so no path under it can be reached.
+    expect(WEB_EDITABLE.some((p) => 'runner.procedures'.startsWith(p))).toBe(false);
+  });
+
   it('refuses the external tools, the documents, the projects, the models, the hosts, the voice and everything else', () => {
     expect(refused((c) => { c.externalTools.terminal.command = 'sh'; })).toEqual(['externalTools.terminal.command']);
     expect(refused((c) => { c.docs.specsDir = '/etc'; })).toEqual(['docs.specsDir']);

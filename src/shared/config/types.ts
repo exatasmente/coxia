@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 21): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 22): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 21;
+export const CONFIG_SCHEMA_VERSION = 22;
 
 export type Language = 'pt-BR' | 'en';
 export const LANGUAGES: Language[] = ['pt-BR', 'en'];
@@ -847,6 +847,12 @@ export interface RunnerConfig {
    * Optional: absent in a config stored before it reads as 'app' (`evidencePlacementOf`).
    */
   evidence?: RunnerEvidence;
+  /**
+   * Agents keep what they learned doing a recurring thing as procedures in the workspace (a prompt list and four tools) and read them the next time. Only the computer
+   * changes it: it gives every agent, a reading one too, a write into a store other agents' prompts read. Off: no tool and no prompt section; the Procedures view still
+   * lists, edits and deletes. A workspace that existed before it was added has it off (the migration), a new one has it on. Optional: absent reads as off (`proceduresOn`).
+   */
+  procedures?: boolean;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
   /** The title of the pull request a run opens; `{title}` (the agent's title, or the issue's) and `{iid}` are replaced. */

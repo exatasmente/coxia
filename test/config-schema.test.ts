@@ -40,6 +40,14 @@ describe('config schema', () => {
     expect(validateConfig({ ...neutralConfig(), runner: { ...runner, release: { soleMaintainer: 'yes' } } }).ok).toBe(false);
   });
 
+  it('has the learned procedures switch in the type, the schema and the defaults: on for a new workspace, a boolean, and nothing else allowed beside it', () => {
+    expect(neutralConfig().runner.procedures).toBe(true);
+    expect(CONFIG_SCHEMA.properties?.runner?.properties?.procedures?.type).toBe('boolean');
+    expect(CONFIG_SCHEMA.properties?.runner?.additionalProperties).toBe(false);
+    expect(validateConfig({ ...neutralConfig(), runner: { ...neutralConfig().runner, procedures: false } }).ok).toBe(true);
+    expect(validateConfig({ ...neutralConfig(), runner: { ...neutralConfig().runner, procedures: 'yes' } }).errors.map((e) => e.path)).toEqual(['runner.procedures']);
+  });
+
   it('reads a config stored without the conversation limits as the defaults, and refuses a limit outside its range', () => {
     const { conversations: _gone, ...runner } = neutralConfig().runner;
     const r = validateConfig({ ...neutralConfig(), runner });
