@@ -48,6 +48,23 @@ export type ScreenInput =
   /** A `KeyboardEvent.key`: a name such as `Enter`, or one character. */
   | { t: 'key'; key: string; down: boolean };
 
+/** The answer to Take control on or off: `none` is a run with no live screen (the stage ended). */
+export interface ScreenControlAnswer {
+  ok: boolean;
+  reason?: 'none';
+}
+
+/**
+ * The answer to a batch of input: `delivered` events of the viewer reached the screen, `rejected` did not (a shape or a key the screen has no key for, past the limits).
+ * `reason` says why nothing was sent at all: no live screen, or Take control is off.
+ */
+export interface ScreenInputAnswer {
+  ok: boolean;
+  delivered: number;
+  rejected: number;
+  reason?: 'none' | 'off';
+}
+
 /** Most events one call carries. */
 export const SCREEN_INPUT_MAX = 64;
 /** Most events accepted for a run in one second. */

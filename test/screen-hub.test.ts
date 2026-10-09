@@ -2,7 +2,8 @@
 // ends a live screen (the stage, a display that stops answering, a connection that is lost). The display is a fake connection and the clock is ours.
 import { describe, expect, it, vi } from 'vitest';
 import { type FrameEncoder } from '../src/main/screen/frame';
-import { FRAME_MIN_MS, type ScreenHub, createScreenHub } from '../src/main/screen/hub';
+import { BURST_GAP_MS, FRAME_MIN_MS, type ScreenHub, createScreenHub } from '../src/main/screen/hub';
+import { SCREEN_INPUT_MAX, SCREEN_INPUT_PER_SECOND } from '../src/shared/screen';
 import { type FakeConn, H, W, fakeConn } from './helpers/screen';
 
 function setup(over: { enabled?: boolean; connectFails?: boolean; encode?: FrameEncoder['encode'] } = {}) {
@@ -10,6 +11,9 @@ function setup(over: { enabled?: boolean; connectFails?: boolean; encode?: Frame
   const clock = { t: 1_000_000 };
   const encoded: number[] = [];
   const changed: string[] = [];
+  const notes: { run: string; stage: string; code: string; params: Record<string, string> }[] = [];
+  // The timers of the hub, by hand: the burst of input is closed when the clock says so.
+  const timers: { ms: number; fn: () => void; live: boolean }[] = [];
   const connect = vi.fn(async () => {
     if (over.connectFails) throw new Error('refused');
     return conn;
@@ -27,9 +31,19 @@ function setup(over: { enabled?: boolean; connectFails?: boolean; encode?: Frame
     now: () => clock.t,
     connect,
     changed: (run) => changed.push(run),
+    note: (run, stage, code, params) => notes.push({ run, stage, code, params }),
+    schedule: (ms, fn) => {
+      const timer = { ms, fn, live: true };
+      timers.push(timer);
+      return () => void (timer.live = false);
+    },
   });
-  const open = () => hub.open({ run: 'r-1', stage: 'qa', socket: '/x/X99', kind: 'sandbox' });
-  return { conn, clock, encoded, changed, connect, hub, open };
+  const open = () => hub.open({ run: 'r-1', stage: 'qa', agent: 'qa', socket: '/x/X99', kind: 'sandbox' });
+  /** Lets the silence after the last input pass: the timers that are still wanted go off. */
+  const quiet = () => {
+    for (const timer of timers.splice(0)) if (timer.live) timer.fn();
+  };
+  return { conn, clock, encoded, changed, notes, timers, quiet, connect, hub, open };
 }
 
 describe('a live screen', () => {
@@ -252,7 +266,226 @@ describe('the end of a live screen', () => {
   it('is not troubled by a listener that throws', async () => {
     const conn = fakeConn();
     const hub = createScreenHub({ enabled: true, encoder: { encode: () => null }, connect: async () => conn, changed: () => { throw new Error('x'); } });
-    await expect(hub.open({ run: 'r-1', stage: 'qa', socket: '/x', kind: 'host' })).resolves.toBe(true);
+    await expect(hub.open({ run: 'r-1', stage: 'qa', agent: 'qa', socket: '/x', kind: 'host' })).resolves.toBe(true);
     expect(() => hub.end('r-1')).not.toThrow();
+  });
+});
+
+const key = (k: string, down: boolean) => ({ t: 'key', key: k, down });
+const move = (x: number, y: number) => ({ t: 'move', x, y });
+const sentFlat = (s: ReturnType<typeof setup>) => s.conn.sent.flat();
+const local = (ms: number) => {
+  const d = new Date(ms);
+  return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':');
+};
+
+describe('taking control', () => {
+  it('is off until the person turns it on, and says so in the conversation both ways, once each', async () => {
+    const s = setup();
+    await s.open();
+    expect(s.hub.state('r-1')?.control).toBe(false);
+    expect(await s.hub.control('r-1', true)).toEqual({ ok: true });
+    expect(await s.hub.control('r-1', true)).toEqual({ ok: true });
+    expect(s.hub.state('r-1')?.control).toBe(true);
+    expect(await s.hub.frame('r-1', 0, 640)).toMatchObject({ state: 'frame', control: true });
+    expect(await s.hub.control('r-1', false)).toEqual({ ok: true });
+    expect(await s.hub.control('r-1', false)).toEqual({ ok: true });
+    expect(s.hub.state('r-1')?.control).toBe(false);
+    expect(s.notes).toEqual([
+      { run: 'r-1', stage: 'qa', code: 'runner.screen.controlOn', params: { agent: 'qa' } },
+      { run: 'r-1', stage: 'qa', code: 'runner.screen.controlOff', params: { agent: 'qa' } },
+    ]);
+    // The run list refreshes each time, so a phone shows the mark at once.
+    expect(s.changed.length).toBe(3);
+  });
+
+  it('answers none for a run that has no live screen', async () => {
+    const s = setup();
+    expect(await s.hub.control('r-1', true)).toEqual({ ok: false, reason: 'none' });
+    expect(await s.hub.input('r-1', [move(1, 1)])).toEqual({ ok: false, delivered: 0, rejected: 0, reason: 'none' });
+  });
+
+  it('sends nothing while it is off', async () => {
+    const s = setup();
+    await s.open();
+    expect(await s.hub.input('r-1', [move(1, 1), key('a', true)])).toEqual({ ok: false, delivered: 0, rejected: 0, reason: 'off' });
+    expect(s.conn.sent).toEqual([]);
+    await s.hub.control('r-1', true);
+    await s.hub.control('r-1', false);
+    expect(await s.hub.input('r-1', [move(1, 1)])).toMatchObject({ reason: 'off' });
+    expect(s.conn.sent).toEqual([]);
+  });
+
+  it('writes the lines under the stage and in the app\'s name, not as anything the agent did', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    expect(s.notes.every((n) => n.stage === 'qa' && n.params.agent === 'qa')).toBe(true);
+  });
+});
+
+describe('the person\'s input', () => {
+  it('reaches the screen through the connection: pointer, button, wheel and keys, in order', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    const r = await s.hub.input('r-1', [move(5.4, 2), { t: 'button', b: 1, down: true }, { t: 'button', b: 1, down: false }, { t: 'scroll', dy: 1 }, key('a', true), key('a', false)]);
+    expect(r).toEqual({ ok: true, delivered: 6, rejected: 0 });
+    expect(sentFlat(s)).toEqual([
+      { type: 'motion', x: 5, y: 2 },
+      { type: 'button', button: 1, down: true },
+      { type: 'button', button: 1, down: false },
+      { type: 'button', button: 5, down: true },
+      { type: 'button', button: 5, down: false },
+      { type: 'key', keycode: 8, down: true },
+      { type: 'key', keycode: 8, down: false },
+    ]);
+  });
+
+  it('keeps the pointer on the screen as it is now', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [move(500, 500)]);
+    expect(sentFlat(s)).toEqual([{ type: 'motion', x: W - 1, y: H - 1 }]);
+  });
+
+  it('counts what is not an event, a key the layout has no key for and the way out of control, and sends the rest', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    const r = await s.hub.input('r-1', [{ t: 'nope' }, key('é', true), move(1, 1), null, 7]);
+    expect(r).toEqual({ ok: true, delivered: 1, rejected: 4 });
+    expect(sentFlat(s)).toEqual([{ type: 'motion', x: 1, y: 1 }]);
+  });
+
+  it('never sends Control, Alt and Shift with Escape', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    const r = await s.hub.input('r-1', [key('Control', true), key('Alt', true), key('Shift', true), key('Escape', true), key('Escape', false)]);
+    expect(r.rejected).toBe(1);
+    expect(sentFlat(s).some((e) => e.type === 'key' && e.keycode === 14)).toBe(false);
+  });
+
+  it('still moves the pointer when the keymap cannot be read, and rejects the keys', async () => {
+    const s = setup();
+    s.conn.keymap = async () => null;
+    await s.open();
+    await s.hub.control('r-1', true);
+    expect(await s.hub.input('r-1', [move(2, 2), key('a', true)])).toEqual({ ok: true, delivered: 1, rejected: 1 });
+  });
+
+  it('says it was not delivered when the display did not take it', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    s.conn.failInput = true;
+    expect(await s.hub.input('r-1', [move(1, 1), move(2, 2)])).toEqual({ ok: false, delivered: 0, rejected: 2 });
+    // Nothing was done, so there is no burst to speak of.
+    s.quiet();
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn']);
+  });
+
+  it(`takes at most ${SCREEN_INPUT_MAX} events in a call and ${SCREEN_INPUT_PER_SECOND} in a second, and rejects the rest`, async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    const many = Array.from({ length: 100 }, (_, i) => move(i % W, 1));
+    expect(await s.hub.input('r-1', many)).toEqual({ ok: true, delivered: SCREEN_INPUT_MAX, rejected: 36 });
+    await s.hub.input('r-1', many);
+    await s.hub.input('r-1', many);
+    expect(await s.hub.input('r-1', many)).toEqual({ ok: true, delivered: SCREEN_INPUT_PER_SECOND - 3 * SCREEN_INPUT_MAX, rejected: 100 - (SCREEN_INPUT_PER_SECOND - 3 * SCREEN_INPUT_MAX) });
+    s.clock.t += 1000;
+    expect(await s.hub.input('r-1', many)).toEqual({ ok: true, delivered: SCREEN_INPUT_MAX, rejected: 36 });
+  });
+
+  it('is not the agent\'s: it reads no frame and asks the display for nothing but the input', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [move(1, 1)]);
+    expect(s.conn.grabs).toBe(0);
+  });
+});
+
+describe('bursts of input', () => {
+  it('end 3 s after the last event: one line with when it began and when it ended, in local time', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    const t0 = s.clock.t;
+    await s.hub.input('r-1', [move(1, 1)]);
+    s.clock.t += 1000;
+    await s.hub.input('r-1', [move(2, 2)]);
+    s.clock.t += 800;
+    await s.hub.input('r-1', [key('a', true), key('a', false)]);
+    expect(s.notes.filter((n) => n.code === 'runner.screen.used')).toEqual([]);
+    s.quiet();
+    expect(s.notes.filter((n) => n.code === 'runner.screen.used')).toEqual([{ run: 'r-1', stage: 'qa', code: 'runner.screen.used', params: { agent: 'qa', from: local(t0), to: local(t0 + 1800) } }]);
+    expect(s.timers.every((t) => !t.live || t.ms === BURST_GAP_MS)).toBe(true);
+  });
+
+  it('start again after a silence, one line each', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [move(1, 1)]);
+    s.clock.t += BURST_GAP_MS + 1;
+    // The timer has not fired yet (the clock jumped): the next event closes the old burst and begins another.
+    await s.hub.input('r-1', [move(2, 2)]);
+    expect(s.notes.filter((n) => n.code === 'runner.screen.used')).toHaveLength(1);
+    s.quiet();
+    expect(s.notes.filter((n) => n.code === 'runner.screen.used')).toHaveLength(2);
+  });
+
+  it('end when control is given back, with the line before the one that says so, and the keys still held put up', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [key('A', true), { t: 'button', b: 1, down: true }]);
+    s.conn.sent.length = 0;
+    await s.hub.control('r-1', false);
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used', 'runner.screen.controlOff']);
+    const up = sentFlat(s);
+    expect(up).toEqual(expect.arrayContaining([{ type: 'button', button: 1, down: false }, { type: 'key', keycode: 8, down: false }, { type: 'key', keycode: 12, down: false }]));
+    expect(up.every((e) => (e.type === 'motion' ? false : !e.down))).toBe(true);
+    // A burst that was closed is not closed twice.
+    s.quiet();
+    expect(s.notes.filter((n) => n.code === 'runner.screen.used')).toHaveLength(1);
+  });
+
+  it('end with the stage, which also gives control back and puts up what is held, before the connection closes', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [key('Tab', true)]);
+    s.conn.sent.length = 0;
+    await s.hub.finish('r-1');
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used', 'runner.screen.controlOff']);
+    expect(sentFlat(s)).toEqual([{ type: 'key', keycode: 10, down: false }]);
+    expect(s.conn.closed).toBe(true);
+    // Nothing goes off after the stage: the timer of the burst was cancelled.
+    s.quiet();
+    expect(s.notes).toHaveLength(3);
+    expect(await s.hub.input('r-1', [move(1, 1)])).toMatchObject({ reason: 'none' });
+  });
+
+  it('end without a line when the app drops the screen (the stage never got to finish)', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    await s.hub.input('r-1', [move(1, 1)]);
+    s.hub.end('r-1');
+    s.quiet();
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn']);
+  });
+
+  it('are not a line when control was on and nothing was sent', async () => {
+    const s = setup();
+    await s.open();
+    await s.hub.control('r-1', true);
+    await s.hub.control('r-1', false);
+    expect(s.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.controlOff']);
   });
 });

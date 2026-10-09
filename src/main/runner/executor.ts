@@ -368,7 +368,7 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     if (gui?.display === 'missing' || gui?.display === 'failed') appendGui(gui.display === 'missing' ? 'runner.sandbox.noDisplay' : 'runner.sandbox.displayFailed', {});
     // The app's own connection to the stage's display is made now, before the agent has run a single command: what is at the socket's path is the agent's to change from
     // then on. A display that cannot be reached leaves the stage without a live screen and says so; nothing else changes.
-    if (d.screens && display && session.screen && gui?.display === 'on' && !(await d.screens.open({ run: run.id, stage: stage.id, socket: session.screen.socket, kind: session.screen.kind }))) appendGui('runner.screen.noConnect', {});
+    if (d.screens && display && session.screen && gui?.display === 'on' && !(await d.screens.open({ run: run.id, stage: stage.id, agent: agent.id, socket: session.screen.socket, kind: session.screen.kind }))) appendGui('runner.screen.noConnect', {});
     return session;
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });

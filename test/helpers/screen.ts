@@ -1,4 +1,5 @@
-import type { X11Connection, X11Frame } from '../../src/main/screen/x11';
+import type { X11Connection, X11Frame, X11Input } from '../../src/main/screen/x11';
+import { defaultSyms } from './fakeX';
 
 // A display that is only an object: what it shows can be changed, its reads counted, held or made to fail, and its connection lost.
 
@@ -8,6 +9,10 @@ export interface FakeConn extends X11Connection {
   pixels: Buffer;
   /** Answers the next reads with nothing. */
   failReads: number;
+  /** Every batch of input the connection was given, in order. */
+  sent: X11Input[][];
+  /** The next batches of input are not delivered. */
+  failInput: boolean;
   /** Holds the next read until released. */
   hold: (() => void) | null;
   release(): void;
@@ -27,6 +32,8 @@ export function fakeConn(): FakeConn {
     grabs: 0,
     pixels: Buffer.alloc(W * H * 4, 3),
     failReads: 0,
+    sent: [],
+    failInput: false,
     hold: null,
     release: () => release(),
     async geometry() {
@@ -45,10 +52,12 @@ export function fakeConn(): FakeConn {
       return conn.closed ? null : { width: W, height: H, data: Buffer.from(conn.pixels) };
     },
     async keymap() {
-      return null;
+      return { first: 8, width: 2, syms: Uint32Array.from(defaultSyms().flat()) };
     },
-    async fakeInput() {
-      return { ok: true, delivered: 0 };
+    async fakeInput(events) {
+      if (conn.closed || conn.failInput) return { ok: false, delivered: 0 };
+      conn.sent.push(events);
+      return { ok: true, delivered: events.length };
     },
     onClose: (cb) => void closers.push(cb),
     close() {

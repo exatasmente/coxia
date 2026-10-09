@@ -66,8 +66,13 @@ const DOCS = /^docs:/;
 // out in a conversation: it is the desktop window's, like suggesting agents. A pattern and not a list, so a channel added later is closed from the day it exists.
 const AGENT_ASSIST = /^agentAssist:/;
 
+// Taking control of an agent's virtual screen and sending it clicks and keys (screen:control, screen:input) is the desktop window's: the phone only watches, through
+// runs:screen, a read like the others. A pattern and not a list, so a channel added under `screen:` later is closed from the day it exists, and with or without the
+// external-effects switch (nothing leaves the machine, but what a person types into the agent's screen is not for a phone to send).
+const SCREEN_INPUT = /^screen:/;
+
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel)) return 'deny';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

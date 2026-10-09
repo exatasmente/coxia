@@ -4,10 +4,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import type { WorkspaceConfig } from '../src/shared/config/types';
+import { runThreadId } from '../src/shared/forum';
 import type { Run } from '../src/shared/runs';
 import type { ScreenSocket } from '../src/main/sandbox/session';
 import { type ScreenHub, createScreenHub } from '../src/main/screen/hub';
-import { type Boot, boot, doc, fakeSandbox, keepQaEvidence, work } from './helpers/runner';
+import { type Boot, type FakeSession, boot, doc, fakeSandbox, keepQaEvidence, work } from './helpers/runner';
 import { type FakeConn, fakeConn } from './helpers/screen';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -47,7 +48,7 @@ async function reach(b: Boot, run: Run, id: string): Promise<Run> {
 
 const SOCKET: ScreenSocket = { socket: '/stage/x11/X99', kind: 'sandbox' };
 
-function screens(o: { connectFails?: boolean } = {}) {
+function screens(o: { connectFails?: boolean; forum?: () => Boot['forum'] } = {}) {
   const conn: FakeConn = fakeConn();
   const events: string[] = [];
   const connected: string[] = [];
@@ -60,6 +61,7 @@ function screens(o: { connectFails?: boolean } = {}) {
       if (o.connectFails) throw new Error('refused');
       return conn;
     },
+    note: (run, stage, code, params) => o.forum?.().append(runThreadId(run), { kind: 'system', author: { type: 'app' }, code, params, stage }),
   });
   return { conn, hub, events, connected };
 }
@@ -191,5 +193,67 @@ describe('a QA stage with a virtual display', () => {
     other = await reach(none, other, 'ready');
     expect(other.status).toBe('done');
     expect(none.runner.get(other.id)?.screen).toBeUndefined();
+  });
+});
+
+describe('the person using the screen of a QA stage', () => {
+  it('is not a command of the agent: it does not wait for one that is running, is not in the stage\'s log or its commands, and the conversation says it in the app\'s own words', async () => {
+    let b!: Boot;
+    const s = screens({ forum: () => b.forum });
+    const sandbox = fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: SOCKET });
+    b = await boot({ sandbox, screens: s.hub, configure: (c) => shellOf(c, 'qa', 'sandbox') });
+    const answers: unknown[] = [];
+    let session!: FakeSession;
+    // What the app itself ran before QA is in the log already; the person's input must add nothing to it.
+    let before: { log: number; asked: number; lines: number } = { log: -1, asked: -1, lines: -1 };
+    const execLines = (id: string) => b.thread(id).filter((m) => m.kind === 'system' && m.code === 'runner.exec').length;
+    easy(b, async (call) => {
+      const id = b.runner.list()[0].id;
+      session = call.exec as FakeSession;
+      before = { log: session.log.length, asked: session.asked.length, lines: execLines(id) };
+      // A command of the agent that does not end: whatever waited behind it would wait for ever.
+      session.exec = () => new Promise(() => undefined);
+      void session.exec('sleep 600');
+      answers.push(await s.hub.control(id, true));
+      answers.push(await s.hub.input(id, [{ t: 'move', x: 2, y: 1 }, { t: 'button', b: 1, down: true }, { t: 'button', b: 1, down: false }]));
+      expect(b.runner.get(id)?.screen?.control).toBe(true);
+      answers.push(await s.hub.control(id, false));
+      return passes(call);
+    });
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    expect(answers).toEqual([{ ok: true }, { ok: true, delivered: 3, rejected: 0 }, { ok: true }]);
+    expect(s.conn.sent.flat()).toHaveLength(3);
+    // Not in the agent's log, not asked of its session, not a command in the thread.
+    expect(before.log).toBeGreaterThanOrEqual(0);
+    expect(session.log).toHaveLength(before.log);
+    expect(session.asked).toHaveLength(before.asked);
+    const lines = b.thread(run).filter((m) => m.kind === 'system');
+    expect(lines.filter((m) => m.code === 'runner.exec')).toHaveLength(before.lines);
+    const ours = lines.filter((m) => m.code?.startsWith('runner.screen.'));
+    expect(ours.map((m) => m.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used', 'runner.screen.controlOff']);
+    expect(ours.every((m) => m.author.type === 'app' && m.stage === 'qa')).toBe(true);
+    expect(ours[1].params).toMatchObject({ agent: 'qa' });
+  });
+
+  it('is given back when the stage ends with control still on: the conversation says so and the connection closes', async () => {
+    let b!: Boot;
+    const s = screens({ forum: () => b.forum });
+    const sandbox = fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: SOCKET });
+    b = await boot({ sandbox, screens: s.hub, configure: (c) => shellOf(c, 'qa', 'sandbox') });
+    easy(b, async (call) => {
+      const id = b.runner.list()[0].id;
+      await s.hub.control(id, true);
+      await s.hub.input(id, [{ t: 'key', key: 'A', down: true }]);
+      return passes(call);
+    });
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    expect(b.thread(run).filter((m) => m.code?.startsWith('runner.screen.')).map((m) => m.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used', 'runner.screen.controlOff']);
+    // What was held down was put up before the display went.
+    expect(s.conn.sent.flat().filter((e) => e.type === 'key' && !e.down).length).toBe(2);
+    expect(s.conn.closed).toBe(true);
   });
 });

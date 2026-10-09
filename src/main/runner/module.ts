@@ -25,6 +25,7 @@ import { createPublisher } from './publish';
 import { applyDocsFlow, startDocsRun } from '../harness/docsRun';
 import { docsStatus } from '../harness/status';
 import { docsFlowOf } from '../../shared/config/squads';
+import { runThreadId } from '../../shared/forum';
 import { SCREEN_EVENT } from '../../shared/screen';
 import { type NativeImageLike, createFrameEncoder } from '../screen/frame';
 import { type ScreenHub, createScreenHub } from '../screen/hub';
@@ -104,6 +105,14 @@ export const runsModule: Module = (ctx) => {
     enabled: process.platform === 'linux',
     encoder: createFrameEncoder({ nativeImage: nativeImage as unknown as NativeImageLike }),
     changed: (run) => ctx.emit({ type: 'module', name: SCREEN_EVENT, payload: { run } }),
+    // The conversation says when the person took control of the screen and what they did with it: written by the app, never by the agent.
+    note: (run, stage, code, params) => {
+      try {
+        forumStore().append(runThreadId(run), { kind: 'system', author: { type: 'app' }, code, params, stage });
+      } catch (e) {
+        console.error('[runner] could not record a note on the screen', e instanceof Error ? e.message : e);
+      }
+    },
   });
   screens = hub;
   const r = createRunner({
