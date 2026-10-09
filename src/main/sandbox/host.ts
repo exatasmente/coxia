@@ -202,15 +202,3 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
 
 const SIGNALS: Partial<Record<NodeJS.Signals, number>> = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGKILL: 9, SIGTERM: 15 };
 const signalNumber = (s: NodeJS.Signals): number | undefined => SIGNALS[s];
-.catch(() => undefined);
-      return next;
-    },
-    get log() {
-      return results;
-    },
-    close,
-  };
-}
-
-const SIGNALS: Partial<Record<NodeJS.Signals, number>> = { SIGHUP: 1, SIGINT: 2, SIGQUIT: 3, SIGKILL: 9, SIGTERM: 15 };
-const signalNumber = (s: NodeJS.Signals): number | undefined => SIGNALS[s];

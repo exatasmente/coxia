@@ -34,6 +34,8 @@ export interface SandboxSpec {
   tmpMb: number;
   /** What the sandbox offers to test an interface: the browsers folder (already among the read-only binds) and the display program to start. */
   gui?: { browsers: string | null; xvfb: string | null };
+  /** The test environment's variables, applied over every other environment decision (delivered by the launcher, never by the agent). */
+  testEnv?: Record<string, string>;
 }
 
 /** The display a sandbox starts for a stage: the socket of `:99` lives in the sandbox's own /tmp. */

@@ -14,6 +14,8 @@ export interface ProxyOptions {
   socketPath: string;
   /** Exact host names (lowercase). */
   hosts: string[];
+  /** Hosts of `hosts` the person marked as reachable even on a private address (a test environment's opt-in); default: none private is allowed. */
+  privateHosts?: string[];
   /** Told about every request: what was asked and what was decided. */
   onDecision?: (d: ProxyDecision) => void;
   /** Replaced in tests. */

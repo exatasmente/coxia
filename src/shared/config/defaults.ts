@@ -2,7 +2,7 @@
 import { neutralDevCycle } from '../cycles/neutral';
 import { newSquad } from './squads';
 import { ensureSystemAgents, newAgent, systemAgents } from './team';
-import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type PluginsConfig, type RoleModel, type RunnerConfig, type RunnerSandbox, type WorkspaceAutonomy, type WorkspaceConfig } from './types';
+import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type PluginsConfig, type RoleModel, type RunnerConfig, type RunnerSandbox, type TestEnvironment, type WorkspaceAutonomy, type WorkspaceConfig } from './types';
 
 // What a fresh install gets: nothing that belongs to one company or one machine.
 // A person's own values reach a workspace only through the optional legacy profile of the v1 migration (legacy.ts).
@@ -129,10 +129,6 @@ export function withConfigDefaults(partial: DeepPartial<WorkspaceConfig> | Recor
     vcs: c.vcs.map((v) => ({ ...VCS_DEFAULTS, ...v })),
     devCycle: { ...c.devCycle, stageMapping: c.devCycle.stageMapping.map((r) => ({ ...r, name: r.name ?? '' })), comments: Object.fromEntries(Object.entries(c.devCycle.comments ?? {}).map(([id, tpl]) => [id, { ...tpl, sections: tpl.sections ?? [], technicalDetail: tpl.technicalDetail ?? false }])) },
     squads: Array.isArray(c.squads) ? c.squads.map(newSquad) : [],
-    agents: { ...c.agents, team: ensureSystemAgents(Array.isArray(c.agents.team) ? c.agents.team.map(newAgent) : [], c.agents.roles) },
-  };
-}
- [],
     agents: { ...c.agents, team: ensureSystemAgents(Array.isArray(c.agents.team) ? c.agents.team.map(newAgent) : [], c.agents.roles) },
   };
 }

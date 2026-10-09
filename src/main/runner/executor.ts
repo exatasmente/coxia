@@ -23,6 +23,9 @@ import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commi
 import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCommands } from './commands';
 import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
+import { resolveStageTestEnv, registerTestEnvForms, stageAllowsTestEnv, formsOfValues, type StageTestEnv } from '../testEnv';
+import { testEnvLedger, secrets } from '../secrets';
+import { maskerFromResolved } from '../maskExact';
 import { type ExecResult, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
 import { type EvidenceRecord, evidencePlacementOf } from '../../shared/evidence';
 import { evidenceToolsOf, evidenceProblemText, outputProblemText } from '../evidence/handlers';
@@ -316,7 +319,9 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
   // The test environment of this stage, resolved once: variables and secrets straight into the shells, and the exact values into this launch's masker.
   // A refusal is named here — in the thread and the audit log — and the entry is simply not delivered (spec 11, never a crash).
   const testEnv: StageTestEnv | null = resolveStageTestEnv(stage, config.testEnvironment, secrets(), { confirmed: (ref) => testEnvLedger().approved(ref), text: t });
-  const mask = testEnv && testEnv.entries.length ? stageMasker(testEnv.values) : null;
+  const mask = testEnv && testEnv.entries.length ? maskerFromResolved(testEnv.values) : null;
+  // The stage's exact forms go under the Actions door's scan for as long as this session lives (a commit, a pull request or an image that would carry one is refused, not sent).
+  const unscan = testEnv && testEnv.entries.length ? registerTestEnvForms(formsOfValues(testEnv.values)) : undefined;
   for (const refusal of testEnv?.refusals ?? []) {
     try {
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.testEnv.refusal', params: { agent: agent.id, entry: refusal.name, reason: refusal.reason }, stage: stage.id });
@@ -384,7 +389,10 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
     if (gui?.display === 'missing' || gui?.display === 'failed') appendGui(gui.display === 'missing' ? 'runner.sandbox.noDisplay' : 'runner.sandbox.displayFailed', {});
-    return session;
+    // The scan of the door lives with the session: when it closes (the stage ended), the stage's forms leave the scan.
+    if (!unscan) return session;
+    const close = session.close.bind(session);
+    return { ...session, close: () => close().finally(() => unscan()) };
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
     throw e;
@@ -653,6 +661,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     commandResults: ran,
     numberedCommands: !!session,
     evidence: !!(evidenceRoot && d.keepEvidence),
+    // The prompt sentence of an entry-carrying stage: exactly what the launcher delivered (an empty section of the config behaves as none).
+    testEnv: stageAllowsTestEnv(stage) && (!!config.testEnvironment && (config.testEnvironment.variables.length > 0 || config.testEnvironment.secrets.length > 0)),
     sandbox: session
       ? {
           network: config.runner.sandbox.network,

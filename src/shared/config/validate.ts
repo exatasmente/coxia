@@ -14,7 +14,8 @@ import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA, ID } from './schema';
 import { DOCS_COMMENT_EVENTS, DOCS_FLOW_KEY, RELEASE_COMMENT_EVENTS, RELEASE_FLOW_KEY, RUN_KIND_FLOW_KEYS, isRunKindFlowKey } from './squads';
 import { isSystemId } from './team';
-import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, ENV_NAME, LLM_ROLES, SECRET_REF, TEST_ENV_REF_PREFIX, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
+import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, TEST_ENV_REF_PREFIX, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
+import { ENV_NAME, SECRET_REF } from '../secrets';
 
 export interface ConfigIssue {
   path: string;

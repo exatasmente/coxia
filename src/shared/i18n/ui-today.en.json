@@ -6,6 +6,7 @@
   "ui.audit.kind.minutes": "Minutes",
   "ui.audit.kind.noteEdit": "Note edit",
   "ui.audit.kind.pluginRequest": "Plugin request",
+  "ui.audit.kind.testEnv": "Test environment",
   "ui.audit.kind.pluginWrite": "Plugin write",
   "ui.audit.kind.publish": "Publishing",
   "ui.audit.kind.push": "Branch push",

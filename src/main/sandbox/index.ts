@@ -56,7 +56,12 @@ export interface OpenOptions {
    * worktree's. Ignored when the tree is a worktree, whose clone git names.
    */
   clone?: string;
+  /** The stage's test environment: the variables delivered to every command, and the hosts the proxy may reach even on a private address. */
+  testEnv?: { vars: Record<string, string>; privateHosts?: string[] };
 }
+
+/** The data-folder variables a host stage testing the app under development gets as fresh empty folders (spec rule 9). */
+export const TEST_ENV_DATA_VARS = ['CERIMONIAS_DATA_DIR', 'CERIMONIAS_SPECS_DIR'];
 
 /** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders; to test an interface it asks, like a sandbox, for the browsers folder and (a QA stage) a display. */
 export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display' | 'testEnv'> & Pick<HostSessionOptions, 'approve'>;
@@ -343,49 +348,3 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
   };
 }
 
-export { invalidateSandboxStatus };
-n its own; the display is looked for on the system's path then.
-      const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(listedBins(config)) ? 'ready' : 'missing';
-      return { browsers, display };
-    },
-    purge() {
-      try {
-        for (const name of readdirSync(o.dir)) removeTree(join(o.dir, name));
-      } catch {
-        // Nothing was ever made.
-      }
-    },
-  };
-}
-
-export { invalidateSandboxStatus };
-y is looked for on the system's path then.
-      const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(listedBins(config)) ? 'ready' : 'missing';
-      return { browsers, display };
-    },
-    purge() {
-      try {
-        for (const name of readdirSync(o.dir)) removeTree(join(o.dir, name));
-      } catch {
-        // Nothing was ever made.
-      }
-    },
-  };
-}
-
-export { invalidateSandboxStatus };
-n its own; the display is looked for on the system's path then.
-      const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(listedBins(config)) ? 'ready' : 'missing';
-      return { browsers, display };
-    },
-    purge() {
-      try {
-        for (const name of readdirSync(o.dir)) removeTree(join(o.dir, name));
-      } catch {
-        // Nothing was ever made.
-      }
-    },
-  };
-}
-
-export { invalidateSandboxStatus };
