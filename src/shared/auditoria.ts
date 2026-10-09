@@ -1,4 +1,4 @@
-export type AuditKind = 'gitlab' | 'github' | 'bitbucket' | 'graphql' | 'sync' | 'publish' | 'note-edit' | 'push' | 'minutes' | 'exec' | 'release' | 'plugin-write' | 'plugin-request' | 'screen-open' | 'screen-close' | 'screen-hold' | 'screen-confirm' | 'screen-use';
+export type AuditKind = 'gitlab' | 'github' | 'bitbucket' | 'graphql' | 'sync' | 'publish' | 'note-edit' | 'push' | 'minutes' | 'exec' | 'release' | 'plugin-write' | 'plugin-request' | 'screen-open' | 'screen-close' | 'screen-hold' | 'screen-confirm' | 'screen-use' | 'procedure';
 
 /** The kinds an agent's virtual screen writes: its opening and closing, a step held for the person, a confirmation the agent asked for, and the person's use of the screen. */
 export const SCREEN_AUDIT_KINDS = ['screen-open', 'screen-close', 'screen-hold', 'screen-confirm', 'screen-use'] as const satisfies readonly AuditKind[];

@@ -77,14 +77,14 @@ function matchRank(r: ProcedureRecord, ctx: SelectContext, repos: string[], tool
 }
 
 /** The records that fit the call, in the order they are listed: kind, key match, ok before unverified before failing, most recently used. */
-export function selectProcedures(records: readonly ProcedureRecord[], ctx: SelectContext): ProcedureRecord[] {
+export function selectProcedures(records: readonly ProcedureRecord[], ctx: SelectContext, opts: { withFailing?: boolean } = {}): ProcedureRecord[] {
   const repos = lower(ctx.repos);
   const tools = lower(ctx.tools);
   const hosts = lower(ctx.hosts);
   const ranked: { r: ProcedureRecord; rank: number }[] = [];
   for (const r of records) {
     // A record that failed twice since it was last saved is not offered; the person still sees it and the agent can find it with procedures_list.
-    if (r.stats.failuresSinceSave >= FAILING_OUT_OF_LIST) continue;
+    if (r.stats.failuresSinceSave >= FAILING_OUT_OF_LIST && !opts.withFailing) continue;
     const rank = matchRank(r, ctx, repos, tools, hosts);
     if (rank !== null) ranked.push({ r, rank });
   }
