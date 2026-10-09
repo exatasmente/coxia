@@ -191,11 +191,11 @@ describe('the recording of a QA stage', () => {
     expect(w.conn.closed).toBe(true);
   });
 
-  it('is written to the run file as version 2, and the run without a recording stays 1', async () => {
+  it('is written to the run file as version 3 (the recording says when it started, #176), and the run without a recording stays 1', async () => {
     const w = await qaStage();
     const run = await reach(w.b, w.run, 'ready');
     const file = (id: string) => JSON.parse(readFileSync(join(w.b.dir, 'runs', `${id}.json`), 'utf8')) as { version: number; evidence: Record<string, { kind: string }> };
-    expect(file(run.id).version).toBe(2);
+    expect(file(run.id).version).toBe(3);
     expect(Object.values(file(run.id).evidence).map((e) => e.kind)).toEqual(['text', 'webm']);
     const plain = await boot({ sandbox: fakeSandbox(), configure: (c) => shellOf(c, 'qa', 'sandbox') });
     easy(plain, passes);
