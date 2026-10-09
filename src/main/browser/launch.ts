@@ -10,13 +10,13 @@ import { removeTree } from '../sandbox/remove';
 import { FORWARDER_JS } from '../sandbox/policy';
 import { type ProxyOptions, type RegistryProxy, createRegistryProxy } from '../sandbox/proxy';
 import { displayProgram } from '../sandbox';
-import { nameResolverBinds, systemLayout } from '../sandbox/system';
+import { etcEntries, nameResolverBinds, systemLayout } from '../sandbox/system';
 import { dropControlSockets } from './controlSocket';
 import { type DisplayDeps, type DisplaySandbox, startDisplaySandbox } from './display';
 import { type HostsTally, createHostsTally } from './hosts';
 import { EXPOSED_TOOLS, PROBE_TOOLS } from './allowlist';
 import { type McpClient, spawnMcp } from './mcpClient';
-import { BROWSER_PROXY_LIMITS, LAUNCH_SH, browserBwrapArgs, displayNameOf, serverArgs, serverConfig, serverEnv, wrapperScript } from './policy';
+import { BROWSER_PROXY_LIMITS, CHROMIUM_POLICY, CHROMIUM_POLICY_ETC_NAMES, CHROMIUM_POLICY_FILE, LAUNCH_SH, browserBwrapArgs, displayNameOf, serverArgs, serverConfig, serverEnv, wrapperScript } from './policy';
 
 // Starts the app's browser for one screen session. Three things, none of them in the agent's reach: the Playwright MCP server, a child of the app that holds the control
 // channel on its standard input and output (nothing else can write to it); the browser, which the server launches through a script of the app's that makes it a `bwrap`
@@ -160,10 +160,13 @@ export async function startBrowser(o: BrowserStartOptions, deps: BrowserDeps = {
       display: display ? { socket: display.socket, name: display.name } : null,
       network: o.network.mode,
       resolver: o.network.mode === 'open' ? nameResolverBinds() : [],
+      // `/etc` is rebuilt to hold the managed policy; the folders Chromium reads policies from are left out of it, since the policy is the app's.
+      etc: etcEntries(CHROMIUM_POLICY_ETC_NAMES),
       fileMb: FILE_MB,
       tmpMb: TMP_MB,
     };
     writeFileSync(join(sessionDir, 'ctl', 'launch.sh'), LAUNCH_SH, { mode: 0o600 });
+    writeFileSync(join(sessionDir, 'ctl', CHROMIUM_POLICY_FILE), JSON.stringify(CHROMIUM_POLICY), { mode: 0o600 });
     const wrapper = join(sessionDir, 'chrome.sh');
     writeFileSync(wrapper, wrapperScript(bwrap, browserBwrapArgs(spec)), { mode: 0o700 });
     chmodSync(wrapper, 0o700);

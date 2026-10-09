@@ -18,8 +18,9 @@ import { createIntermediary } from '../src/main/browser/intermediary';
 import { createMaskSet } from '../src/main/browser/mask';
 import { createStepLog } from '../src/main/browser/stepLog';
 import { BrowserStartError, type BrowserRuntime, startBrowser } from '../src/main/browser/launch';
-import { BROWSER_PROXY_URL, browserBwrapArgs, browserEnv, browserNetwork, displayBwrapArgs, displayNameOf, serverArgs, serverConfig, serverEnv, shellQuote, wrapperScript } from '../src/main/browser/policy';
+import { BROWSER_PROXY_URL, CHROMIUM_POLICY, CHROMIUM_POLICY_DESTS, CHROMIUM_POLICY_ETC_NAMES, browserBwrapArgs, browserEnv, browserNetwork, displayBwrapArgs, displayNameOf, serverArgs, serverConfig, serverEnv, shellQuote, wrapperScript } from '../src/main/browser/policy';
 import { displayProgram } from '../src/main/sandbox';
+import { etcEntries, nameResolverBinds, systemLayout } from '../src/main/sandbox/system';
 import { probeSandbox } from '../src/main/sandbox/probe';
 import type { ProxyDecision } from '../src/main/sandbox/proxy';
 
@@ -71,6 +72,43 @@ describe('the browser\'s sandbox', () => {
     expect(pairs(browserBwrapArgs(spec({ network: 'open', resolver })), '--ro-bind')).toContainEqual(['/run/stub/resolv.conf', '/etc/resolv.conf']);
     expect(browserEnv(spec({ network: 'proxy' })).COXIA_FORWARD).toBe('1');
     for (const mode of ['off', 'open'] as const) expect(browserEnv(spec({ network: mode })).COXIA_FORWARD).toBeUndefined();
+  });
+
+  it('rebuilds /etc as links to the real one, bound beside it, to hold the managed policy where each Chromium build reads it', () => {
+    const etc = [{ name: 'hostname', link: null }, { name: 'ssl', link: null }, { name: 'localtime', link: '/usr/share/zoneinfo/UTC' }, { name: 'os-release', link: '../usr/lib/os-release' }];
+    const a = browserBwrapArgs(spec({ etc }));
+    const ro = pairs(a, '--ro-bind').map(([src, dest]) => `${src}>${dest}`);
+    expect(ro).toContain('/etc>/.coxia-etc');
+    expect(ro).not.toContain('/etc>/etc');
+    // The policy file of the session is bound in every place a build looks, read-only, after the folder of links is made.
+    for (const dest of CHROMIUM_POLICY_DESTS) expect(ro).toContain(`/data/sandbox/abc123/ctl/chromium-policy.json>${dest}`);
+    const tmpfs = a.findIndex((x, i) => x === '--tmpfs' && a[i + 1] === '/etc');
+    expect(tmpfs).toBeGreaterThan(-1);
+    expect(a.findIndex((x, i) => x === '--ro-bind' && a[i + 2] === CHROMIUM_POLICY_DESTS[0])).toBeGreaterThan(tmpfs);
+    const links = pairs(a, '--symlink').map(([target, name]) => `${name}>${target}`);
+    expect(links).toEqual(expect.arrayContaining(['/etc/hostname>/.coxia-etc/hostname', '/etc/ssl>/.coxia-etc/ssl', '/etc/localtime>/usr/share/zoneinfo/UTC', '/etc/os-release>../usr/lib/os-release']));
+    // It is still read-only, and a name the sandbox binds a file over itself (the resolver) is not linked.
+    const open = browserBwrapArgs(spec({ etc: [...etc, { name: 'resolv.conf', link: '../run/stub/resolv.conf' }], network: 'open', resolver: [['/run/stub/resolv.conf', '/etc/resolv.conf']] }));
+    expect(pairs(open, '--symlink').map(([, name]) => name)).not.toContain('/etc/resolv.conf');
+    expect(pairs(open, '--ro-bind')).toContainEqual(['/run/stub/resolv.conf', '/etc/resolv.conf']);
+    // Without the list of names nothing changes: the plain read-only /etc, and no policy.
+    const plain = browserBwrapArgs(spec());
+    expect(pairs(plain, '--ro-bind')).toContainEqual(['/etc', '/etc']);
+    expect(plain.join(' ')).not.toContain('chromium-policy');
+  });
+
+  it('blocks Chromium\'s own pages, the files of its sandbox, its tools and a page source, and nothing a page of a listed host needs', () => {
+    for (const must of ['file://*', 'chrome://*', 'devtools://*', 'view-source:*']) expect(CHROMIUM_POLICY.URLBlocklist, must).toContain(must);
+    expect(CHROMIUM_POLICY.URLBlocklist.some((u) => /^(https?|about|data|blob|chrome-error)/.test(u))).toBe(false);
+    // The folders the policy is put in are the ones a build reads, and their top-level names are the ones /etc leaves unlinked.
+    expect(new Set(CHROMIUM_POLICY_DESTS.map((d) => d.split('/')[2]))).toEqual(new Set(CHROMIUM_POLICY_ETC_NAMES));
+  });
+
+  it('lists what /etc holds, link by link, without the names asked to be left out', () => {
+    const links: Record<string, string | null> = { '/etc/hostname': null, '/etc/localtime': '/usr/share/zoneinfo/UTC', '/etc/chromium': null, '/etc/opt': null };
+    const out = etcEntries(CHROMIUM_POLICY_ETC_NAMES, () => Object.keys(links).map((p) => p.slice(5)), (p) => links[p] ?? null);
+    expect(out).toEqual([{ name: 'hostname', link: null }, { name: 'localtime', link: '/usr/share/zoneinfo/UTC' }]);
+    expect(etcEntries([], () => { throw new Error('no /etc'); })).toEqual([]);
   });
 
   it('sets the display from the socket\'s name, and refuses a name that is not an X server\'s', () => {
@@ -392,6 +430,27 @@ describe.skipIf(!real)('a real browser in its sandbox', () => {
   let runtime: BrowserRuntime;
   const refusedBy: ProxyDecision[] = [];
   const HOST = 'allowed.example.com';
+  let sitePort = 0;
+
+  /** A browser like the first one, behind its own proxy to the fake site. */
+  const openAnother = (): Promise<BrowserRuntime> =>
+    startBrowser(
+      {
+        dir: join(root, 'sandbox'),
+        config: neutralSandbox(),
+        network: { mode: 'proxy', hosts: [HOST] },
+        profile: null,
+        display: null,
+        browsers: join(homedir(), '.cache', 'ms-playwright'),
+        chromium: (chromium as { executable: string }).executable,
+        seesImages: true,
+      },
+      {
+        // The name resolves to a public-looking address and the connection goes to the fake site: nothing leaves this machine.
+        proxy: { resolve: async () => ['8.8.8.8'], open: (_address: string, _port: number): Socket => connect({ host: '127.0.0.1', port: sitePort }) },
+        serverExtra: ['--ignore-https-errors'],
+      },
+    );
 
   const call = (name: string, args: Record<string, unknown>) => runtime.client.callTool(name, args, { timeoutMs: 45_000 });
   const textOf = (r: Awaited<ReturnType<typeof call>>): string => r.content.map((c) => ('text' in c ? String(c.text) : '')).join('\n');
@@ -410,24 +469,8 @@ describe.skipIf(!real)('a real browser in its sandbox', () => {
       res.end('a service on the computer\'s loopback');
     });
     await new Promise<void>((r) => loopback.listen(0, '127.0.0.1', r));
-    const sitePort = (site.address() as AddressInfo).port;
-    runtime = await startBrowser(
-      {
-        dir: join(root, 'sandbox'),
-        config: neutralSandbox(),
-        network: { mode: 'proxy', hosts: [HOST] },
-        profile: null,
-        display: null,
-        browsers: join(homedir(), '.cache', 'ms-playwright'),
-        chromium: (chromium as { executable: string }).executable,
-        seesImages: true,
-      },
-      {
-        // The name resolves to a public-looking address and the connection goes to the fake site: nothing leaves this machine.
-        proxy: { resolve: async () => ['8.8.8.8'], open: (_address: string, _port: number): Socket => connect({ host: '127.0.0.1', port: sitePort }) },
-        serverExtra: ['--ignore-https-errors'],
-      },
-    );
+    sitePort = (site.address() as AddressInfo).port;
+    runtime = await openAnother();
     const tally = runtime.hosts;
     const decide = tally.decide.bind(tally);
     tally.decide = (d) => {
@@ -518,6 +561,42 @@ describe.skipIf(!real)('a real browser in its sandbox', () => {
     // `http://` reaches the proxy as a request that is not CONNECT: refused, and counted under no host.
     expect(refusedBy.some((d) => !d.allowed && d.why === 'method')).toBe(true);
   }, 120_000);
+
+  it('cannot be driven to its own pages, its tools or a page source, by the policy Chromium reads', async () => {
+    // The server\'s own checks are not what is tried here: an X client in the shell session drives the browser around them, and only the browser\'s policy stops it. The
+    // navigation is made over the control channel, which does not check the scheme of a chrome page. Each address gets a browser of its own: Chromium sometimes closes the
+    // tab that was sent to a blocked page, and a browser that is gone would make the rest pass for nothing.
+    const urls = ['chrome://version', 'chrome://settings/cookies', 'devtools://devtools/bundled/inspector.html', `view-source:https://${HOST}/`];
+    for (const url of urls) {
+      const own = await openAnother();
+      try {
+        const ok = await own.client.callTool('browser_navigate', { url: `https://${HOST}/` }, { timeoutMs: 45_000 });
+        expect(ok.isError, textOf(ok)).not.toBe(true);
+        const r = await own.client.callTool('browser_navigate', { url }, { timeoutMs: 45_000 });
+        const text = textOf(r);
+        expect(r.isError === true && /ERR_BLOCKED_BY_ADMINISTRATOR|has been closed/.test(text), `${url}: ${text.slice(0, 200)}`).toBe(true);
+      } finally {
+        await own.close();
+      }
+    }
+  }, 180_000);
+
+  it('has the managed policy in the place each Chromium build reads it, and the real /etc under it', () => {
+    const wrapper = readFileSync(join(runtime.sessionDir, 'chrome.sh'), 'utf8');
+    const probe = wrapper.replace(/ -- \/bin\/sh \/coxia\/ctl\/launch\.sh "\$@"\n$/, ` -- /bin/sh -c 'cat ${CHROMIUM_POLICY_DESTS.join(' ')}; ls /etc/hostname /etc/ssl/certs > /dev/null && echo etc-ok'\n`);
+    const out = execFileSync('/bin/sh', ['-c', probe], { encoding: 'utf8' });
+    expect(out.match(/file:\/\/\*/g)).toHaveLength(CHROMIUM_POLICY_DESTS.length);
+    expect(out).toContain('etc-ok');
+  }, 30_000);
+
+  it('keeps the resolver and the rest of /etc readable on the computer\'s own network, with /etc rebuilt for the policy', () => {
+    const wrapper = readFileSync(join(runtime.sessionDir, 'chrome.sh'), 'utf8');
+    const bwrap = /exec '([^']+)'/.exec(wrapper)?.[1] ?? 'bwrap';
+    const args = browserBwrapArgs(spec({ network: 'open', resolver: nameResolverBinds(), etc: etcEntries(CHROMIUM_POLICY_ETC_NAMES), system: systemLayout(), sessionDir: runtime.sessionDir, profile: runtime.profile.dir, browsers: join(homedir(), '.cache', 'ms-playwright'), chromium: '/bin/true', executable: '/bin/true', extraReadOnly: [], display: null }));
+    const out = execFileSync(bwrap, [...args, '--', '/bin/sh', '-c', 'cat /etc/hosts > /dev/null && ls /etc/ssl/certs > /dev/null && cat /etc/resolv.conf > /dev/null && cat /etc/chromium/policies/managed/coxia.json && echo etc-ok'], { encoding: 'utf8' });
+    expect(out).toContain('"URLBlocklist"');
+    expect(out).toContain('etc-ok');
+  }, 30_000);
 
   it('has nothing but its own loopback to go out by', async () => {
     // The sandbox shows only `lo`: the executable of the browser's sandbox is the one the server launched, so look at it with a probe of the same arguments.
