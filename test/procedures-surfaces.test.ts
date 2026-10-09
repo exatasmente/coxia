@@ -101,6 +101,8 @@ describe('a stage', () => {
     expect(onDisk()[0]).toMatchObject({ state: 'ok', stats: { uses: 1 } });
     // The next stage does not read it: nothing is marked used for a call that read nothing.
     expect(b.thread(run).filter((m) => m.code === 'runner.procedures.used')).toHaveLength(1);
+    // A system line: the prompt builders leave those out, so a later call never reads it.
+    expect(used?.kind).toBe('system');
   });
 
   it('writes a record stamped with the stage, the run, and what the agent could do', async () => {
