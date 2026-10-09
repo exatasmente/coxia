@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { LlmProvider, LlmRole, ModelRef, ProviderKind } from '../../../../shared/config/types';
 import type { CatalogModel } from '../../../../shared/modelCatalog';
 import { poolFieldsOf, poolWithoutProvider } from '../../../../shared/config/pool';
-import { LLM_ROLES } from '../../../../shared/config/types';
+import { DEFAULT_POOL_MODE, LLM_ROLES, POOL_MODES } from '../../../../shared/config/types';
 import {
   DOC_LINKS,
   OPEN_PRESETS,
@@ -462,6 +462,23 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
           );
         })}
       </section>
+
+      <fieldset className="wz-stack wz-fieldset" aria-labelledby="wz-poolmode">
+        <legend id="wz-poolmode" className="wz-sub">{t('wizard.poolMode.title')}</legend>
+        <p className="small muted">{t('wizard.poolMode.intro')}</p>
+        {POOL_MODES.map((m) => {
+          const current = cfg.llm.poolMode ?? DEFAULT_POOL_MODE;
+          return (
+            <label key={m} className={`wz-card-item wz-choice ${current === m ? 'wz-on' : ''}`}>
+              <input type="radio" name="pool-mode" checked={current === m} onChange={() => setCfg((c) => ({ ...c, llm: { ...c.llm, poolMode: m } }))} />
+              <span>
+                <span className="wz-card-title">{t(`wizard.poolMode.${m}`)}</span>
+                <span className="small muted wz-block">{t(`wizard.poolMode.${m}.hint`)}</span>
+              </span>
+            </label>
+          );
+        })}
+      </fieldset>
     </div>
   );
 }

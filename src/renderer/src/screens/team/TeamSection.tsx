@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { offeredStages } from '../../../../shared/agentAssist';
 import { squadsOf } from '../../../../shared/config/squads';
 import { isDraft, removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
-import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
+import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, POOL_MODES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type PoolMode, type WorkspaceConfig } from '../../../../shared/config/types';
 import { flowIssueText } from '../../../../shared/runs/flowCheck';
 import { squadIssueText } from '../../../../shared/runs/squadCheck';
 import { errorText, api } from '../../api';
@@ -10,9 +10,9 @@ import { forgetNow, reloadThreads } from '../cycle/forumApi';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { AgentAssist } from './AgentAssist';
-import { applyAgent, agentModelPool, agentModelWith, agentProblems, blankAgent, draftOf, promoteDraft, shellAfterPermission, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
+import { applyAgent, agentModelPool, agentModelWith, agentProblems, blankAgent, draftOf, promoteDraft, shellAfterPermission, slugOf, stagesLosingAgent, stagesOfAgent, subagentsOff, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
 import { editorOf, startAssist, type AssistState } from './assistEdit';
-import { PERMISSION_HINT, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL, SHELL_HINT, SHELL_LABEL, TRACKER_HINT, TRACKER_LABEL } from './labels';
+import { PERMISSION_HINT, POOL_MODE_HINT, POOL_MODE_LABEL, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL, SHELL_HINT, SHELL_LABEL, TRACKER_HINT, TRACKER_LABEL } from './labels';
 import { PoolEditor } from '../../wizard/PoolEditor';
 import { Recommended } from './Recommended';
 import { ScreenFields } from './ScreenFields';
@@ -523,8 +523,29 @@ function ModelFields({ config, draft, set, error }: { config: WorkspaceConfig; d
         </div>
       )}
       {!byRole && <OwnPool config={config} draft={draft} set={set} />}
+      <PoolModeField config={config} draft={draft} set={set} />
       {error && <div className="tm-field-error small" role="alert">{error}</div>}
     </fieldset>
+  );
+}
+
+/** How the agent's pool is used: its own choice, or the stage's and then the workspace's. The pool decides nothing alone; a mode only acts where a list of an activity exists. */
+function PoolModeField({ config, draft, set }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void }) {
+  const t = useT();
+  const hint = draft.poolMode === null ? t('ui.team.poolMode.inherit.hint') : t(POOL_MODE_HINT[draft.poolMode]);
+  return (
+    <div className="wz-stack">
+      <Labeled label={t('ui.team.poolMode')} hint={t('ui.team.poolMode.hint')}>
+        {(id) => (
+          <select id={id} className="text-input" value={draft.poolMode ?? ''} onChange={(e) => set({ poolMode: (e.target.value || null) as PoolMode | null })}>
+            <option value="">{t('ui.team.poolMode.inherit')}</option>
+            {POOL_MODES.map((m) => <option key={m} value={m}>{t(POOL_MODE_LABEL[m])}</option>)}
+          </select>
+        )}
+      </Labeled>
+      <p className="small muted">{hint}</p>
+      {draft.poolMode === 'delegate' && subagentsOff(config, draft) && <p className="small muted" role="note">{t('ui.team.poolMode.subagentsOff')}</p>}
+    </div>
   );
 }
 

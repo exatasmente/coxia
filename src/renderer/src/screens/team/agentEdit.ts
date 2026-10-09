@@ -113,6 +113,15 @@ function poolProblems(config: WorkspaceConfig, model: AgentModel): AgentProblem[
   return out;
 }
 
+/**
+ * Whether the switch of sub-agents is off for what the draft's agent runs as: an agent that writes works its stages under the workspace's tools, any other call under the
+ * agent's own when it names them. With it off, delegation hands no work out and the pool is a reserve only.
+ */
+export function subagentsOff(config: WorkspaceConfig, draft: Pick<AgentDraft, 'permission' | 'tools'>): boolean {
+  const tools = draft.permission === 'worktree' ? config.agents.tools : (draft.tools ?? config.agents.tools);
+  return tools.subagents === false;
+}
+
 export function blankAgent(): AgentDraft {
   return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, screen: false, allowedHosts: [], browserProfile: false, poolMode: null, stages: [] };
 }
