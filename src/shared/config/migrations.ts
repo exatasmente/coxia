@@ -42,6 +42,7 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //       empty, so nothing is raised. Nothing stored changes; the bump makes an older app refuse the file instead of repairing a team it cannot read.
 //   v22 `runner.procedures`: the learned procedures of the agents, off for a workspace that existed and on for a new one. Nothing else moves.
 //   v23 `testEnvironment`: the workspace's test environment (variables and secret references delivered to the stages that allow it), empty by default. Nothing else moves.
+//   v24 `mcpState`: the opt-in of the local read-only state server a terminal session adds over stdio, off for every workspace. Nothing else moves.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -368,7 +369,14 @@ function v22ToV23(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 23, testEnvironment: old.testEnvironment ?? { variables: [], secrets: [] } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23 };
+// The workspace gains the opt-in of the local state server, off for every workspace (the person turns it on in Settings). A section the person
+// already had (a doc saved by a later build carried into an older install) must survive the step untouched; nothing else moves.
+function v23ToV24(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  notes.push('the local state server opt-in was added (off; turn it on in Settings)');
+  return { ...old, schemaVersion: 24, mcpState: old.mcpState ?? { enabled: false } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

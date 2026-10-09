@@ -48,7 +48,7 @@ export const assertNoTestEnvLeak = (c: VcsCommand): void => {
   if (leak) throw new VcsError('unsupported', { kind: c.via.toUpperCase(), what: leak });
 };
 import { type ReleaseUnit, alwaysWaits, isReleasePush, parseReleaseUnit, releaseBlockers, releaseWaits, soleMaintainerOf } from '../shared/release';
-import { type ReleasePr, previewRelease, releaseCommandLine, runReleaseOp, sameSha } from './releaseGit';
+import { ReleaseConflictError, freeBranchCheckout, type ReleasePr, previewRelease, releaseCommandLine, runReleaseOp, sameSha } from './releaseGit';
 import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
 import { STATUS_MUTATION } from './vcs/gitlab';
 import type { ExecMeta } from './vcs/types';
@@ -635,7 +635,9 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
     if (done.kind === 'conflict-push') return await afterPublish(done);
     return done;
   } catch (e) {
-    return update(id, (x) => ({ ...x, state: 'failed', finishedAt: new Date().toISOString(), output: String((e as Error).message) }));
+    // A worktree conflict is said on the card itself (and offered to be resolved there), not only in the raw output.
+    const conflict = e instanceof ReleaseConflictError ? e.conflict : undefined;
+    return update(id, (x) => ({ ...x, state: 'failed', finishedAt: new Date().toISOString(), output: String((e as Error).message), ...(conflict ? { conflict } : {}) }));
   }
 }
 
@@ -1288,6 +1290,28 @@ async function previewReleaseAction(a: ReleaseAction): Promise<string> {
   const unit = parseReleaseUnit(a.unit);
   const { clone } = await releaseContextOf(unit);
   return previewRelease(unit, clone);
+}
+
+/**
+ * The "sim" of a failed release step that stopped on a worktree conflict: the branch is freed from the worktree that holds it (its tree is left whole, on the
+ * same commit, detached) and the step waits again, so it can be run at once. The detach is local git like anything that writes, audited and refused in a test
+ * workspace; the run's own worktree (which may hold the branch between steps) is never the one detached.
+ */
+export async function freeReleaseCheckout(id: string): Promise<ReleaseAction> {
+  const a = read().actions.find((x) => x.id === id);
+  if (!a || a.kind !== 'release-git') throw new Error(t('main.actions.missing', { id }));
+  if (a.state === 'running') throw new Error(t('main.actions.stepRunning'));
+  const conflict = a.conflict;
+  if (!conflict) throw new Error(t('main.release.noConflict'));
+  const unit = parseReleaseUnit(a.unit);
+  const { run, clone } = await releaseContextOf(unit);
+  const own = join(dirname(run.worktree), `release-${unit.version}-steps`);
+  const output = await audited(originOf(a), { kind: 'worktree', target: `worktree ${conflict.path} detach (${conflict.branch})`, via: 'git', fields: {} }, async () => {
+    const at = await freeBranchCheckout(clone, conflict.branch, own);
+    // what the audit line keeps as its result, and what the output says either way
+    return at ? t('main.release.worktreeFreed', { branch: conflict.branch, path: at }) : t('main.release.worktreeAlreadyFree', { branch: conflict.branch });
+  });
+  return update(id, (x) => ({ ...x, state: 'pending', finishedAt: null, output, conflict: undefined }));
 }
 
 // After a successful push: clean up, close the conflict and hand the QA comment to its own "sim".

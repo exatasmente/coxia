@@ -305,6 +305,23 @@ describe('leftovers of a write that died', () => {
     expect(existsSync(young)).toBe(true);
     expect(existsSync(foreign)).toBe(true);
   });
+
+  it('a read-only store lists and gets without sweeping, and every write method throws', () => {
+    const r = created(make());
+    const old = `${fileOf(r.id)}.tmp-4242`;
+    writeFileSync(old, '{');
+    utimesSync(old, (clock - 2 * 3600_000) / 1000, (clock - 2 * 3600_000) / 1000);
+    const ro = make({ readOnly: true });
+    expect(ro.list().records).toHaveLength(1);
+    expect(ro.get(r.id).status).toBe('ok');
+    expect(existsSync(old)).toBe(true);
+    expect(() => ro.save(req())).toThrow(/read-only/);
+    expect(() => ro.remove(r.id)).toThrow(/read-only/);
+    expect(() => ro.stale(r.id, 1, '2026-10-03T10:00:00.000Z')).toThrow(/read-only/);
+    expect(() => ro.review(r.id)).toThrow(/read-only/);
+    expect(() => ro.finishUse({} as CallEnd)).toThrow(/read-only/);
+    expect(existsSync(fileOf(r.id))).toBe(true);
+  });
 });
 
 describe('a stored file with malformed figures', () => {

@@ -194,13 +194,61 @@ async function prepareWorktree(env: ReleaseEnv): Promise<string> {
 }
 
 /** A branch that another worktree (the person's checkout, say) has checked out cannot be checked out here too: git says so late and badly, this says it first. */
-async function checkedOutElsewhere(clone: string, branch: string): Promise<string | null> {
+async function checkedOutElsewhere(clone: string, branch: string, keep?: string): Promise<string | null> {
   const listing = (await out(clone, ['worktree', 'list', '--porcelain'])).split('\n\n');
   for (const block of listing) {
     const lines = block.split('\n');
     const path = lines.find((l) => l.startsWith('worktree '))?.slice('worktree '.length);
-    if (path && resolve(path) !== resolve(clone) && lines.includes(`branch refs/heads/${branch}`)) return path;
+    const other = path && resolve(path) !== resolve(clone) && (!keep || resolve(path) !== resolve(keep));
+    if (path && other && lines.includes(`branch refs/heads/${branch}`)) return path;
   }
+  return null;
+}
+
+/** The refusal of a step that ran into the branch of the release being checked out elsewhere: the action may then offer to free it. */
+export class ReleaseConflictError extends Error {
+  constructor(message: string, readonly conflict: { branch: string; path: string }) {
+    super(message);
+    this.name = 'ReleaseConflictError';
+  }
+}
+
+/**
+ * The worktree conflict of a step, refused BEFORE anything runs: only the steps that check the release branch out (merge-pr, beta and a push of it) and the
+ * run's own worktree (`own`, where the branch may legitimately sit between steps) are in the picture; `open` refuses a branch that exists and `stable` never
+ * checks it out, so neither can hit a double checkout.
+ */
+export async function assertBranchFree(unit: ReleaseUnit, clone: string, own?: string): Promise<void> {
+  if (unit.op !== 'merge-pr' && unit.op !== 'beta' && !(unit.op === 'push-branch' && unit.branch !== 'main')) return;
+  const branch = releaseBranchOf(unit.version);
+  const held = await checkedOutElsewhere(clone, branch, own);
+  if (held) throw new ReleaseConflictError(t('main.release.branchElsewhere', { branch, path: held }), { branch, path: held });
+}
+
+/**
+ * Frees the branch from the worktree that holds it: the other worktree is left on a detached HEAD at the commit it was on (nothing moves in its tree). Each
+ * unknown shape is refused for the person to settle, never inferred: a registration whose folder is gone, a worktree of another repository, a tree with
+ * changes that are not committed, a checkout that moved off the branch between the reads. Null when the branch was already free (the person freed it by hand).
+ * `keep` is the run's own worktree, which may hold the branch between steps and is never touched.
+ */
+export async function freeBranchCheckout(clone: string, branch: string, own?: string): Promise<string | null> {
+  const held = await checkedOutElsewhere(clone, branch, own);
+  if (!held) return null;
+  if (await registeredButGone(clone, held)) throw new Error(t('main.release.worktreeGone', { branch, path: held }));
+  const commonAt = async (dir: string): Promise<string> => resolve(dir, (await out(dir, ['rev-parse', '--git-common-dir'])));
+  if ((await commonAt(held)) !== (await commonAt(clone))) throw new Error(t('main.release.worktreeBusy', { path: held }));
+  if ((await git(held, ['status', '--porcelain'])).stdout.trim()) throw new Error(t('main.release.worktreeDirty', { path: held }));
+  if ((await currentBranch(held)) !== branch) throw new Error(t('main.release.worktreeNotBranch', { path: held, branch }));
+  await git(held, ['switch', '--quiet', '--detach']);
+  const still = await checkedOutElsewhere(clone, branch, own);
+  if (still) throw new ReleaseConflictError(t('main.release.branchElsewhere', { branch, path: still }), { branch, path: still });
+  return held;
+}
+
+/** The text the script's own refusal cannot carry: what to do next, appended to its output, which is never replaced. */
+export function scriptFailGuidance(detail: string): string | null {
+  if (/tag v\S+ already exists/.test(detail)) return t('main.release.tagExistsNext');
+  if (/\[Unreleased\] is empty/.test(detail)) return t('main.release.unreleasedEmptyNext');
   return null;
 }
 
@@ -299,7 +347,11 @@ async function script(env: ReleaseEnv, mode: 'open' | 'beta' | 'stable', extra: 
     await recoverWorktree(env.clone, startedAt, version, before);
     throw new Error(t('main.release.scriptTimedOut', { mode, minutes: Math.max(1, Math.round(limit / 60_000)) }));
   }
-  if (code !== 0) throw new Error(t('main.release.scriptFailed', { mode, detail: tail(text.trim() || `exit ${code}`) }));
+  if (code !== 0) {
+    const detail = tail(text.trim() || `exit ${code}`);
+    const guidance = scriptFailGuidance(detail);
+    throw new Error(t('main.release.scriptFailed', { mode, detail: guidance ? `${detail}\n\n${guidance}` : detail }));
+  }
   return tail(text.trim());
 }
 
@@ -526,6 +578,8 @@ export function runReleaseOp(unit: ReleaseUnit, given: ReleaseEnv): Promise<Rele
   // One step at a time per worktree, in the order they were asked.
   return serialized(resolve(given.worktree), async () => {
     await assertRepo(given.clone);
+    // The worktree conflict is refused here, in the person's clone (which reads every registration of the repository), before the run's worktree is made or anything runs.
+    await assertBranchFree(unit, given.clone, given.worktree);
     // Every step runs in the worktree of the run; the person's checkout is only the place it is made from.
     return dispatch(unit, { ...given, clone: await prepareWorktree(given) });
   });

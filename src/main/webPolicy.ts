@@ -9,7 +9,8 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // (test/updates-policy.test.ts checks that no update channel is missing), and the VCS probe (it takes a token typed in the setup
 // screen: a token never travels through the browser channel), and the decisions about a plugin: switching it, answering its requests and
 // taking a permission back are the person's on the computer (spec rule 10); blocking an announced write is actions:skip, which only takes away.
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited', 'plugins:set-enabled', 'plugins:settings', 'plugins:set-setting', 'plugins:set-secret', 'plugins:answer', 'plugins:revoke', 'plugins:revoke-write']);
+// Freeing a release branch held by another worktree (actions:freeBranch) switches that folder's checkout on this machine, so it stays here too.
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited', 'plugins:set-enabled', 'plugins:settings', 'plugins:set-setting', 'plugins:set-secret', 'plugins:answer', 'plugins:revoke', 'plugins:revoke-write', 'actions:freeBranch']);
 
 // The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
@@ -83,8 +84,12 @@ const SCREEN_INPUT = /^screen:/;
 // leaves the machine). The agents' tools are in process and have no channel at all. test/procedures-policy.test.ts pins it.
 const PROCEDURES_WRITE = /^procedures:(?!(list|get|stats)$)/;
 
+// The local state server's doors: the opt-in writes the workspace config, the write offer writes a project folder's .mcp.json (a path of this
+// machine), and the view answers machine-local paths. Desktop-only in full; a paired browser never sees the panel.
+const MCP_STATE_ADMIN = /^mcpstate:/;
+
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MCP_STATE_ADMIN.test(channel)) return 'deny';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

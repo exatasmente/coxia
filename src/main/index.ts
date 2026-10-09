@@ -4,7 +4,7 @@ import type { HunkChoice } from '../shared/conflict';
 import type { Settings } from '../shared/settings';
 import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, TurnOptions, Voice } from '../shared/types';
 import { ACTIVITY_EVENT, ACTIVITY_GET } from '../shared/activity';
-import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
+import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, freeReleaseCheckout, listActions, previewAction, skipAction, startActions } from './actions';
 import { activityLog, setActivitySink } from './activity';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
@@ -197,6 +197,7 @@ function handlers(): void {
   handle('actions:detect', () => detectRelease(true));
   handle('actions:preview', (id: string) => previewAction(id));
   handle('actions:approve', (id: string) => approveAction(id));
+  handle('actions:freeBranch', (id: string) => freeReleaseCheckout(id));
   handle('actions:skip', (id: string) => skipAction(id));
   handle('actions:conflict', (id: string, question: string) => conflictTalk(id, question));
   handle('conflict:fromMr', (card: Card, ref: string) => conflictFromMr(card, ref));

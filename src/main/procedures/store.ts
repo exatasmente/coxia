@@ -105,6 +105,8 @@ export interface StoreDeps {
   rename?: (from: string, to: string) => void;
   /** Where a folder that cannot be read is reported (the error log). It gets a sentence with no path in it, once. */
   onError?: (error: Error) => void;
+  /** The local state server reads this folder from outside the app: list and get never sweep or write, and every write method throws. */
+  readOnly?: boolean;
 }
 
 export interface ProcedureStore {
@@ -177,6 +179,7 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
 
   // A write that died between the temporary file and the move leaves `<file>.tmp-<pid>` behind; one older than an hour is no write in progress.
   function sweep(name: string): void {
+    if (deps.readOnly) return;
     if (!/^(?:p-[0-9a-f]{8}\.json|deleted\.json)\.tmp-\d+$/.test(name)) return;
     try {
       const path = join(root, name);
@@ -374,5 +377,11 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
     return out;
   }
 
+  if (deps.readOnly) {
+    const refuse = (): never => {
+      throw new Error('the procedure store is read-only');
+    };
+    return { list, get: read, save: refuse, remove: refuse, stale: refuse, review: refuse, finishUse: refuse };
+  }
   return { list, get: read, save, remove, stale, review, finishUse };
 }

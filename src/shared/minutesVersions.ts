@@ -22,7 +22,9 @@ export interface Covered {
 export interface MinutesSnapshot {
   decisions: Decision[];
   effects: Effect[];
-  unanswered: { ref: string; question: string }[];
+  // `stage`: the stage of the activity the question asks about (the card's when the snapshot comes from a call; a snapshot literal built from a
+  // Minutes, or a day index written before the field, has none: the pairing then falls back to the covered list or to ref alone).
+  unanswered: { ref: string; question: string; stage?: string | null }[];
   covered: Covered[];
 }
 
@@ -62,7 +64,9 @@ export function snapshotOf(s: SnapshotSource): MinutesSnapshot {
   return {
     decisions: s.decisions,
     effects: s.effects,
-    unanswered: cards.map((c) => ({ ref: c.ref, question: s.turns[c.ref]?.question ?? null })).filter((u): u is { ref: string; question: string } => !!u.question && !s.answered[u.ref]),
+    unanswered: cards
+      .map((c) => ({ ref: c.ref, question: s.turns[c.ref]?.question ?? null, stage: c.stage }))
+      .filter((u): u is { ref: string; question: string; stage: string | null } => !!u.question && !s.answered[u.ref]),
     covered: cards
       .filter((c) => s.spoken?.[c.ref] || s.turns[c.ref]?.sameDay)
       .map((c) => ({ ref: c.ref, iid: c.iid, title: c.title, status: s.turns[c.ref]?.sameDay?.kind ?? 'new', url: c.url, stage: c.stage, blockers: c.blockers, changes: c.changes })),
@@ -137,7 +141,7 @@ export interface MergedDay {
   decisions: (Decision & { version: number })[];
   superseded: (Decision & { version: number })[];
   effects: (Effect & { version: number })[];
-  unanswered: { ref: string; question: string; version: number }[];
+  unanswered: { ref: string; question: string; stage: string | null; version: number }[];
   covered: Covered[];
 }
 
@@ -146,7 +150,7 @@ export function mergeDay(versions: MinutesVersion[]): MergedDay {
   const decisions = new Map<string, (Decision & { version: number })[]>();
   const superseded: MergedDay['superseded'] = [];
   const effects = new Map<string, Effect & { version: number }>();
-  const unanswered = new Map<string, { ref: string; question: string; version: number }>();
+  const unanswered = new Map<string, { ref: string; question: string; stage: string | null; version: number }>();
   const covered = new Map<string, Covered>();
   for (const v of sorted) {
     for (const [ref, now] of byRef(v.snapshot.decisions)) {
@@ -160,7 +164,11 @@ export function mergeDay(versions: MinutesVersion[]): MergedDay {
       unanswered.delete(c.ref);
       covered.set(c.ref, c);
     }
-    for (const u of v.snapshot.unanswered) unanswered.set(u.ref, { ...u, version: v.n });
+    for (const u of v.snapshot.unanswered) {
+      // A day index written before the stage was kept says it in the version's covered list; still unknown, ref alone is the pairing.
+      const stage = u.stage !== undefined ? u.stage : (v.snapshot.covered.find((c) => c.ref === u.ref)?.stage ?? null);
+      unanswered.set(u.ref, { ref: u.ref, question: u.question, stage, version: v.n });
+    }
   }
   const starts = sorted.map((v) => v.startedAt).filter((x): x is number => x !== null);
   const ends = sorted.map((v) => v.endedAt).filter((x): x is number => x !== null);
@@ -209,6 +217,53 @@ export const versionFile = (date: string, n: number): string => `${date}-pre-dai
 export const indexFile = (date: string): string => `${date}-pre-daily.versions.json`;
 export const dayFile = (date: string): string => `${date}-pre-daily.md`;
 
+// ---- what repeated across days
+
+// One question-forma of a day: ref and stage make the subject (a model-free pairing), squad keeps a repetition out of another squad's minutes.
+export interface DayUnansweredEntry {
+  ref: string;
+  question: string;
+  stage: string | null;
+  squad?: string;
+}
+
+export interface DayUnanswered {
+  date: string;
+  unanswered: DayUnansweredEntry[];
+}
+
+export interface RepeatedQuestion {
+  ref: string;
+  // The text of the latest occurrence (today's).
+  question: string;
+  stage: string | null;
+  squad?: string;
+  dates: string[];
+  count: number;
+}
+
+// An unknown stage (null) is not evidence that the form changed: it pairs with any stage of the same activity.
+const sameForm = (a: DayUnansweredEntry, b: DayUnansweredEntry): boolean => a.ref === b.ref && (a.squad ?? undefined) === (b.squad ?? undefined) && (a.stage === b.stage || a.stage === null || b.stage === null);
+
+/**
+ * What the day's unanswered questions repeat from earlier days: up to `previousDays`, each day the merged unanswered of its index. Repetition is
+ * counted between different days only (spec rule 1); the dates come out ascending, today last.
+ */
+export function repeatedUnanswered(date: string, today: DayUnansweredEntry[], previousDays: DayUnanswered[]): RepeatedQuestion[] {
+  const out: RepeatedQuestion[] = [];
+  for (const t of today) {
+    const dates = [date];
+    for (const d of previousDays) {
+      if (d.date === date) continue;
+      if (d.unanswered.some((u) => sameForm(u, t))) dates.push(d.date);
+    }
+    if (dates.length < 2) continue;
+    dates.sort();
+    out.push({ ref: t.ref, question: t.question, stage: t.stage, ...(t.squad ? { squad: t.squad } : {}), dates, count: dates.length });
+  }
+  return out;
+}
+
 // ---- what the screens read and what the deletion tells the person
 
 export interface VersionView extends MinutesVersion {
@@ -225,6 +280,8 @@ export interface DayView {
   merged: MergedDay;
   dayTeams: DayIndex['dayTeams'];
   dayKey: string;
+  // The questions whose form stayed unanswered for more than one day (computed for today: it is not kept in the day index).
+  repeated: RepeatedQuestion[];
   // The generated document with every version of the day.
   dayPath: string | null;
 }

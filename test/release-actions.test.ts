@@ -6,8 +6,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { neutralConfig } from '../src/shared/config';
 import { setLanguage } from '../src/shared/i18n';
 import { flowOf, freezePlan, recordSubject, startRun } from '../src/shared/runs';
+import type { ReleaseAction } from '../src/shared/types';
 import { type Forge, HEAD, makeForge } from './helpers/fakeForge';
-import { AUTHOR, ReleaseWorld, cleanWorlds } from './helpers/releaseWorld';
+import { AUTHOR, Checkout, ReleaseWorld, cleanWorlds } from './helpers/releaseWorld';
 import { type Repo, runnerConfig } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 60_000 });
@@ -421,6 +422,56 @@ describe('a step an agent\'s autonomy lets go out', () => {
   it('judges the unit like an approval does', async () => {
     await expect(actions.runReleaseAuto(meta, unit({ op: 'open', cwd: '/etc' }))).rejects.toThrow(/unknown-field/);
     expect(w.argv()).toEqual([]);
+  });
+});
+
+describe('a step that hits a worktree conflict', () => {
+  /** The release branch open, stepped out of the worktree of the run, and checked out again in a second worktree of the same repository. */
+  async function conflictedCut(): Promise<ReleaseAction> {
+    await approve(propose('o', unit({ op: 'open' })).id);
+    w.steps.git('switch', '--quiet', '--detach');
+    const person = join(w.root, 'person');
+    w.git('worktree', 'add', person, 'release/0.5.0');
+    const cut = propose('cut', unit({ op: 'beta' }));
+    return approve(cut.id);
+  }
+
+  it('fails with the branch and the path on the card itself, and the freeing of the checkout is refused in a test workspace', async () => {
+    const failed = await conflictedCut();
+    expect(failed.state).toBe('failed');
+    expect(failed.conflict).toMatchObject({ branch: 'release/0.5.0', path: join(w.root, 'person') });
+    const audits = listAudit().filter((l) => l.kind === 'worktree');
+    expect(audits).toEqual([]);
+    asReal(true);
+    await expect(actions.freeReleaseCheckout(failed.id)).rejects.toThrow(/Test workspace/);
+    expect(actions.listActions().find((x) => x.id === failed.id)?.conflict).toMatchObject({ branch: 'release/0.5.0' });
+    expect(listAudit().filter((l) => l.kind === 'worktree')).toEqual([]);
+  });
+
+  it('frees the branch from the other worktree behind an audit line, and the step waits again to be run at once, without a new skip', async () => {
+    const failed = await conflictedCut();
+    const person = failed.conflict!.path;
+    const wasAt = w.git('rev-parse', 'release/0.5.0');
+    const freed = await actions.freeReleaseCheckout(failed.id);
+    expect(freed.state).toBe('pending');
+    expect(freed.conflict).toBeUndefined();
+    expect(freed.output).toMatch(/was freed|liberada/);
+    expect(w.git('worktree', 'list', '--porcelain')).not.toContain('branch refs/heads/release/0.5.0');
+    expect(listAudit()[0]).toMatchObject({ kind: 'worktree', via: 'git', ok: true, target: `worktree ${person} detach (release/0.5.0)` });
+    // the freed worktree stayed where it was, detached; the step now runs like today and cuts the beta
+    const other = new Checkout(person, w.env);
+    expect(other.git('rev-parse', 'HEAD')).toBe(wasAt);
+    expect(other.git('status', '--porcelain')).toBe('');
+    await approve(failed.id);
+    expect(actions.listActions().find((x) => x.id === failed.id)?.state).toBe('done');
+  });
+
+  it('is refused, with no checkout to free, for a step that stopped on anything else', async () => {
+    const a = propose('x', unit({ op: 'open', runId: 'r-nope01-aaaa' }));
+    const failed = await approve(a.id);
+    expect(failed.state).toBe('failed');
+    expect(failed.conflict).toBeUndefined();
+    await expect(actions.freeReleaseCheckout(failed.id)).rejects.toThrow(/no checkout to free/);
   });
 });
 
