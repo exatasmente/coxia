@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.6] - 2026-10-09
+
 ### Fixed
 
 - **The screen recording of a stage starts when the agent first uses the screen.** It used to start when the stage's virtual display opened, so a stage whose agent took minutes to open a window began with minutes of black. The recording now starts with the first window mapped on the screen and holds nothing of the screen while it is empty again. A stage whose agent never opened a window keeps no recording and says so once in the conversation ("no window was opened on the screen"), as it does for any recording that was not kept. While the screen is bare, the live viewer says it is waiting for a window to record, not that it is recording.
@@ -342,7 +344,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.5...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.6...HEAD
+[0.9.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.5...v0.9.0-beta.6
 [0.9.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.4...v0.9.0-beta.5
 [0.9.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.3...v0.9.0-beta.4
 [0.9.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.2...v0.9.0-beta.3
