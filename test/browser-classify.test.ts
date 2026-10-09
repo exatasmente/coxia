@@ -135,12 +135,15 @@ const rows: Row[] = [
   ['Tab, Escape and the arrows', 'browser_press_key', { key: 'Tab' }, () => ({ focus: focused('send') }), FREE],
   ['Escape', 'browser_press_key', { key: 'Escape' }, () => ({}), FREE],
   ['ArrowDown', 'browser_press_key', { key: 'ArrowDown' }, () => ({}), FREE],
-  ['a letter', 'browser_press_key', { key: 'a' }, () => ({}), FREE],
-  ['a capital letter', 'browser_press_key', { key: 'Shift+A' }, () => ({}), FREE],
+  ['a letter in a text field', 'browser_press_key', { key: 'a' }, () => ({ focus: focused('name') }), FREE],
+  ['a capital letter in a text field', 'browser_press_key', { key: 'Shift+A' }, () => ({ focus: focused('name') }), FREE],
+  ['a letter in a text area', 'browser_press_key', { key: 'a' }, () => ({ focus: focused('notes') }), FREE],
+  ['a digit in a field outside any form', 'browser_press_key', { key: '7' }, () => ({ focus: focused('search') }), FREE],
+  ['a letter in an editable region', 'browser_press_key', { key: 'a' }, () => ({ focus: { ref: 'e3', role: 'textbox', name: 'Doc', active: true, probe: { ...focused('name').probe!, editable: true, tag: 'div', form: false } } }), FREE],
   ['Control+A', 'browser_press_key', { key: 'Control+A' }, () => ({}), FREE],
   ['Control+C and Control+V', 'browser_press_key', { key: 'Control+v' }, () => ({}), FREE],
   ['Control+Z', 'browser_press_key', { key: 'ControlOrMeta+z' }, () => ({}), FREE],
-  ['Enter in a text area (a new line)', 'browser_press_key', { key: 'Enter' }, () => ({ focus: focused('notes') }), FREE],
+  ['Space in a text area', 'browser_press_key', { key: 'Space' }, () => ({ focus: focused('notes') }), FREE],
   ['Enter on a select', 'browser_press_key', { key: 'Enter' }, () => ({ focus: focused('plan') }), FREE],
   ['Enter with nothing focused', 'browser_press_key', { key: 'Enter' }, () => ({ focus: focused('body') }), FREE],
   ['Space on a checkbox', 'browser_press_key', { key: 'Space' }, () => ({ focus: focused('agree') }), FREE],
@@ -154,6 +157,16 @@ const rows: Row[] = [
   ['a click on a ref the page does not have', 'browser_click', { target: 'e99' }, () => ({ target: null }), UNCLEAR, 'unclassified'],
   ['a click on a canvas', 'browser_click', { target: 'e5' }, () => ({ target: { ref: 'e5', role: 'img', name: 'Sheet', active: false, probe: { ...el('link Next').probe!, tag: 'canvas' } } }), UNCLEAR, 'unclassified'],
   ['a drag', 'browser_drag', { startTarget: 'e1', endTarget: 'e2' }, () => ({}), UNCLEAR, 'unclassified'],
+  ['Enter in a text area (chat boxes send on it)', 'browser_press_key', { key: 'Enter' }, () => ({ focus: focused('notes') }), UNCLEAR, 'unclassified'],
+  ['a line break in a text area', 'browser_press_key', { key: '\n' }, () => ({ focus: focused('notes') }), UNCLEAR, 'unclassified'],
+  ['a letter with the focus on the page (a single-key shortcut)', 'browser_press_key', { key: 'a' }, () => ({ focus: focused('body') }), UNCLEAR, 'unclassified'],
+  ['a capital letter with the focus on the page', 'browser_press_key', { key: 'Shift+A' }, () => ({ focus: focused('body') }), UNCLEAR, 'unclassified'],
+  ['a symbol with the focus on the page', 'browser_press_key', { key: '#' }, () => ({ focus: focused('body') }), UNCLEAR, 'unclassified'],
+  ['a letter named by its code with the focus on the page', 'browser_press_key', { key: 'KeyE' }, () => ({ focus: focused('body') }), UNCLEAR, 'unclassified'],
+  ['a letter on a button', 'browser_press_key', { key: 'e' }, () => ({ focus: focused('send') }), UNCLEAR, 'unclassified'],
+  ['a letter on a checkbox', 'browser_press_key', { key: 'e' }, () => ({ focus: focused('agree') }), UNCLEAR, 'unclassified'],
+  ['a letter where the focus could not be read', 'browser_press_key', { key: 'e' }, () => ({ focus: null }), UNCLEAR, 'unclassified'],
+  ['a letter in a frame of another site', 'browser_press_key', { key: 'e' }, () => ({ focus: { ...focused('name'), probe: { ...focused('name').probe!, frame: 'other' as const } } }), UNCLEAR, 'unclassified'],
   ['Enter in a field outside any form', 'browser_press_key', { key: 'Enter' }, () => ({ focus: focused('search') }), UNCLEAR, 'unclassified'],
   ['Enter where the focus could not be read', 'browser_press_key', { key: 'Enter' }, () => ({ focus: null }), UNCLEAR, 'unclassified'],
   ['Enter in an editable region', 'browser_press_key', { key: 'Enter' }, () => ({ focus: { ref: 'e3', role: 'textbox', name: 'Doc', active: true, probe: { ...focused('name').probe!, editable: true, tag: 'div', form: false } } }), UNCLEAR, 'unclassified'],
@@ -182,7 +195,8 @@ describe('the class of a step', () => {
   it('types Enter when text with a line break is typed key by key into a field of a form', () => {
     const name = el('textbox Name');
     expect(classify({ tool: 'browser_type', args: { target: 'e8', text: 'a\nb', slowly: true }, target: name })).toMatchObject({ class: HELD, why: 'submit' });
-    expect(classify({ tool: 'browser_type', args: { target: 'e10', text: 'a\nb', slowly: true }, target: el('textbox Notes') }).class).toBe(FREE);
+    // Typed key by key into a text area, the break is an Enter the page may take as send.
+    expect(classify({ tool: 'browser_type', args: { target: 'e10', text: 'a\nb', slowly: true }, target: el('textbox Notes') }).class).toBe(UNCLEAR);
     expect(classify({ tool: 'browser_type', args: { target: 'e8', text: 'a\nb' }, target: name }).class).toBe(FREE);
   });
 
@@ -254,6 +268,8 @@ describe('keys', () => {
     expect(needsTarget('browser_press_key', { key: 'Space' })).toBe('focus');
     expect(needsTarget('browser_press_key', { key: 'Control+S' })).toBeNull();
     expect(needsTarget('browser_press_key', { key: 'Tab' })).toBeNull();
+    for (const key of ['a', 'Shift+A', '7', '#', 'KeyE', 'Digit3']) expect(needsTarget('browser_press_key', { key }), key).toBe('focus');
+    expect(needsTarget('browser_press_key', { key: 'Control+a' })).toBeNull();
     expect(needsTarget('browser_type', { target: 'e1', text: 'a\nb', slowly: true })).toBe('target');
     expect(needsTarget('browser_type', { target: 'e1', text: 'ab' })).toBeNull();
     expect(needsTarget('browser_navigate', { url: 'https://example.com/' })).toBeNull();

@@ -223,7 +223,9 @@ function activateByKey(key: string | undefined, space: boolean, focus: TargetInf
   const p = focus.probe as Probe;
   if (p.frame === 'other' || OPAQUE_TAGS.has(p.tag)) return unclassified(words());
   if (p.editable) return space ? free(words()) : unclassified(words());
-  if (p.tag === 'textarea' || p.tag === 'select' || p.tag === 'body' || p.tag === 'html' || p.tag === '') return free(words());
+  // Chat and comment boxes send on Enter: what a textarea does with it is the page's script, which the app cannot read. A new line there is still free for Space.
+  if (p.tag === 'textarea') return space ? free(words()) : unclassified(words());
+  if (p.tag === 'select' || p.tag === 'body' || p.tag === 'html' || p.tag === '') return free(words());
   if (p.tag === 'input' && !BUTTON_INPUTS.has(p.type)) {
     // Space types a space or toggles; Enter in a field is the form's implicit submission, and with no form the page's script decides.
     if (space) return free(words());
@@ -235,6 +237,23 @@ function activateByKey(key: string | undefined, space: boolean, focus: TargetInf
     return activate('press', focus, key);
   }
   return free(words());
+}
+
+/** Whether a key types a character (a letter, a digit, a symbol), by its name once the aliases are read. */
+const isPrintable = (key: string): boolean => (key.length === 1 && isKnownKey(key)) || /^(key[a-z]|digit\d)$/.test(key);
+
+/** Whether the element takes typed characters: a field, a text area, an editable region. */
+function takesText(p: Probe): boolean {
+  return p.editable || p.tag === 'textarea' || (p.tag === 'input' && TEXT_INPUTS.has(p.type));
+}
+
+/** A printable key pressed with the focus where it is: typed text in a field, but a single-key shortcut (delete, archive, send) of the page anywhere else. */
+function typedKey(words: StepWords, focus: TargetInfo | null | undefined): Classification {
+  const on = wordsFor('press', focus, words.key ? { key: words.key } : {});
+  if (unreadable(focus)) return unclassified(on);
+  const p = focus.probe as Probe;
+  if (p.frame === 'other' || OPAQUE_TAGS.has(p.tag)) return unclassified(on);
+  return takesText(p) ? free(on) : unclassified(on);
 }
 
 function pressKey(raw: string, focus: TargetInfo | null | undefined): Classification {
@@ -253,6 +272,7 @@ function pressKey(raw: string, focus: TargetInfo | null | undefined): Classifica
   }
   if (key === 'enter') return activateByKey(shown, false, focus);
   if (key === 'space') return activateByKey(undefined, true, focus);
+  if (isPrintable(key)) return typedKey(words, focus);
   return free(words);
 }
 
@@ -308,7 +328,7 @@ export function needsTarget(tool: string, args: Record<string, unknown>): 'targe
     if (typeof args.key !== 'string') return null;
     const { mods, key } = parseKey(args.key);
     const shortcut = [...mods].some((m) => m !== 'shift');
-    return !shortcut && (key === 'enter' || key === 'space') ? 'focus' : null;
+    return !shortcut && (key === 'enter' || key === 'space' || isPrintable(key)) ? 'focus' : null;
   }
   if (tool === 'browser_type' && args.slowly === true && typesEnter(args.text)) return 'target';
   return null;
