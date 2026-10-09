@@ -1,6 +1,6 @@
 # Keep what an agent learned, as procedures, and follow them the next time
 
-Gate 1: **not approved yet**. This is the draft for the maintainer to read and answer; nothing here is built. The plan (`2_PLAN.md`) is written only after gate 1.
+Gate 1: **approved on 2026-10-09** (answers at the end). Gate 2 waived by the maintainer; the plan (`2_PLAN.md`) follows.
 
 The issue is titled for GUI work ("driving an app or a site"). On 2026-10-09 the maintainer widened the scope to the whole app, and this spec follows the wider wording: **a workspace memory of learned procedures**, of which driving an app or a site is the first kind and the only one that depends on #177. The issue text itself ("every GUI task leaves a record") is narrower than this spec; if the issue is kept as the tracker, its title and first bullet should be edited to match.
 
@@ -349,4 +349,7 @@ Each with the recommended answer, for the maintainer at gate 1.
 
 ## Gate 1 decisions
 
-Pending. Answers of the maintainer are recorded here when gate 1 closes.
+Gate 1 approved on 2026-10-09. Answers of the maintainer:
+
+1. **Every open question takes its recommended answer** (open questions 1 to 14, as written above), by the maintainer's choice on 2026-10-09.
+2. **Gate 2 is waived** by the maintainer: the plan (`2_PLAN.md`) is written and the implementation follows it without a separate approval; push and pull request still wait for the maintainer's yes.
