@@ -11,7 +11,7 @@ export interface ScreenSource {
   /** The screen's key: `run:<id>` for a stage, `call:<thread>:<agent>` for an agent in a conversation. */
   key: string;
   /** Where the steps of an open screen are; absent: the call has no log (a build or a test with no screens). */
-  sessions?: Pick<ScreenSessions, 'stepsOf' | 'markOf'> | null;
+  sessions?: Pick<ScreenSessions, 'stepsOf' | 'markOf' | 'mark'> | null;
   /** What the person typed in this call's hand-offs, in memory. Present when the call is offered the hand-off. */
   typed?: TypedValues;
   /** The hand-off service, for a hand-off that took place in an earlier call on the same screen. */
@@ -28,6 +28,10 @@ export interface ProcedureScreen {
   readonly browser: boolean;
   /** The steps of the whole screen since its draft mark (0 when the screen opened), across the answers that took them, oldest first. */
   steps(): StepEntry[];
+  /** The number of the screen's last step, 0 when it has none: what a draft is made up to. */
+  lastStep(): number;
+  /** Moves the screen's draft mark forward to a step number (never back): the steps up to it are not drafted again. */
+  advance(n: number): void;
   /** The hosts the app's browser was on in this screen: the keys a `gui` procedure may have. A navigation the host list refused is not a visit. */
   visited(): string[];
   /** The person used the screen in this call, or in an earlier call on the same screen. */
@@ -64,6 +68,15 @@ export function procedureScreen(source: ScreenSource): ProcedureScreen {
     key,
     browser: source.browser,
     steps,
+    lastStep: () => entries().reduce((top, e) => Math.max(top, e.n), 0),
+    advance(n) {
+      try {
+        const now = markOf();
+        if (n > now) sessions?.mark(key, n);
+      } catch {
+        // a screen that is gone has no mark to move
+      }
+    },
     visited: () => [...new Set(entries().filter((e) => e.site && !(e.outcome === 'not-run' && NAVIGATES.has(e.tool))).map((e) => e.site.toLowerCase()))],
     handedOff: () => typed?.had === true || active?.() === true || (handoff?.hadHandoff(key) ?? false),
     typedIn: (text) => typed?.hits(text) ?? false,

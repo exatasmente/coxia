@@ -100,7 +100,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
   let finished = false;
   let unavailable = false;
   // The app's drafts of this call, by id: a `gui` procedure is saved from one of them, and they end with the call.
-  const drafts = new Map<string, { steps: DraftStep[]; waits: string[]; replaces?: { id: string; revision: number } }>();
+  const drafts = new Map<string, { steps: DraftStep[]; waits: string[]; upTo: number; replaces?: { id: string; revision: number } }>();
   let draftCount = 0;
   // The command drafts (`c-N`): a `repo` or `tool` procedure is saved from one of them, and they end with the call too.
   const commandDrafts = new Map<string, { steps: CommandDraftStep[] }>();
@@ -169,6 +169,8 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
         if (awaitsReview(got.record)) return answer(`${id} was written in a call in which the person used the screen, and waits for their review. No agent can read it until they mark it as reviewed.`);
         read.add(id);
         seen.set(id, got.record.revision);
+        // A call that reads the screen's procedure and then works the site has this screen's earlier steps as known: what a draft holds is what changed after the read.
+        if (got.record.kind === 'gui' && ctx.screen?.browser && ctx.screen.visited().some((h) => sameKey(h, got.record.key))) ctx.screen.advance(ctx.screen.lastStep());
         return answer(renderRecord(got.record, lineOf(got.record)));
       case 'deleted':
         return answer(`${id} was deleted by the person; it is gone. Save a new one if it is worth keeping (no id).`);
@@ -219,6 +221,8 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     content: Record<string, unknown>;
     stepsFrom: StepsFrom;
     id?: unknown;
+    /** A screen draft: the last step of the screen it was made up to. Saving it moves the mark there. */
+    upTo?: number;
   }
   const refused = (code: string, fields: string[], text: string): Refused => ({ ok: false, code, fields, text: `Not saved: ${text}` });
 
@@ -282,7 +286,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
       id = d.replaces.id;
     }
     const content: Record<string, unknown> = { kind: 'gui', key, title: input.title, steps, pitfalls: input.pitfalls ?? [], waits: input.waits ?? d.waits };
-    return { ok: true, content, stepsFrom: untouched ? 'recording' : 'edited', id };
+    return { ok: true, content, stepsFrom: untouched ? 'recording' : 'edited', id, upTo: d.upTo };
   }
 
   /**
@@ -313,6 +317,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     let content: unknown;
     let stepsFrom: StepsFrom = 'agent';
     let keyedBy: 'app' | undefined;
+    let upTo: number | undefined;
     let id: unknown = input.id;
     if (input.kind === 'gui' || (input.draft !== undefined && (input.kind === 'repo' || input.kind === 'tool'))) {
       const g = input.kind === 'gui' ? fromDraft(input) : fromCommandDraft(input);
@@ -324,6 +329,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
       stepsFrom = g.stepsFrom;
       // The app chose the key of a screen draft; a command draft's key is the agent's, checked like any other.
       if (input.kind === 'gui') keyedBy = 'app';
+      upTo = g.upTo;
       id = g.id;
     } else {
       if (input.draft !== undefined) return answer('Not saved: a draft is for kind gui (a draft of the screen) or kind repo or tool (a draft of commands).');
@@ -358,6 +364,8 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     if (r.created) created.add(rec.id);
     else replaced.add(rec.id);
     seen.set(rec.id, rec.revision);
+    // What the draft held is kept now: the next draft of this screen starts after it.
+    if (upTo !== undefined) ctx.screen?.advance(upTo);
     audit({ op: r.created ? 'save' : 'replace', record: rec, ...(handoff ? { held: true } : {}) });
     say(r.created ? 'runner.procedures.saved' : 'runner.procedures.replaced', { id: rec.id, revision: rec.revision, title: rec.title });
     if (handoff) say('runner.procedures.heldForReview', { id: rec.id, title: rec.title });
@@ -418,7 +426,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     const same = compare !== null && compare.changed === 0 && compare.added === 0 && compare.gone === 0;
     const replaces = followed && !same ? { id: followed.id, revision: followed.revision } : undefined;
     const id = `d-${++draftCount}`;
-    drafts.set(id, { steps: body.steps, waits: body.waits, ...(replaces ? { replaces } : {}) });
+    drafts.set(id, { steps: body.steps, waits: body.waits, upTo: screen.lastStep(), ...(replaces ? { replaces } : {}) });
     if (drafts.size > DRAFTS_KEPT) drafts.delete(drafts.keys().next().value as string);
 
     const data = [

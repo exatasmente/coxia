@@ -35,12 +35,31 @@ describe('the steps of a screen', () => {
     expect(screen.steps()).toEqual([]);
   });
 
+  it('know the last step of the screen and move the mark forward to a step, never back, and quietly when there is no screen', () => {
+    const f = fakeSteps(KEY);
+    const screen = procedureScreen({ key: KEY, sessions: f.sessions, browser: true });
+    expect(screen.lastStep()).toBe(0);
+    f.navigate('/a');
+    f.click('button', 'Save');
+    f.navigate('/b');
+    expect(screen.lastStep()).toBe(3);
+    screen.advance(2);
+    expect(f.sessions.markOf(KEY)).toBe(2);
+    expect(screen.steps().map((s) => s.n)).toEqual([3]);
+    screen.advance(1);
+    expect(f.sessions.markOf(KEY)).toBe(2);
+    screen.advance(screen.lastStep());
+    expect(screen.steps()).toEqual([]);
+    expect(() => procedureScreen({ key: KEY, browser: true }).advance(5)).not.toThrow();
+    expect(procedureScreen({ key: KEY, browser: true }).lastStep()).toBe(0);
+  });
+
   it('are none when there is no log: no sessions, another key, or a log that throws', () => {
     const f = fakeSteps(KEY);
     f.navigate('/a');
     expect(procedureScreen({ key: KEY, browser: true }).steps()).toEqual([]);
     expect(procedureScreen({ key: 'call:t-2:agent', sessions: f.sessions, browser: true }).steps()).toEqual([]);
-    const broken = procedureScreen({ key: KEY, sessions: { stepsOf: () => { throw new Error('gone'); }, markOf: () => { throw new Error('gone'); } }, browser: true });
+    const broken = procedureScreen({ key: KEY, sessions: { stepsOf: () => { throw new Error('gone'); }, markOf: () => { throw new Error('gone'); }, mark: () => undefined }, browser: true });
     expect(broken.steps()).toEqual([]);
     expect(broken.visited()).toEqual([]);
   });
