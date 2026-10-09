@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mergeDeep, migrateConfig, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
+import { newAgent } from '../src/shared/config/team';
 import { BUILT_IN_TEMPLATES, DOCS_FLOW_STAGES, RELEASE_FLOW_STAGES, applyTemplate, mergeTemplateTeam, builtInTemplate, cycleOf, exportTemplateText, needsOf, parseTemplate, promptFamilies, sdd, templateFromConfig } from '../src/shared/cycles';
 import { CEREMONY_IDS } from '../src/shared/config/types';
 import { RECOMMENDED, removeAgent } from '../src/shared/config/team';
@@ -327,6 +328,25 @@ describe.each([['agent-flow'], ['agent-flow-engineering']])('the template %s', (
     expect(check.errors).toEqual([]);
     expect(applyTemplate(neutralConfig(), check.template!)).toEqual({ ...source, devCycle: { ...source.devCycle, templateId: 'mine' } });
     expect(templateFromConfig(neutralConfig(), { id: 'plain', name: 'Plain', description: '' }).team).toBeUndefined();
+  });
+
+  it('never brings a screen, hosts or a logged-in browser: not when applied, not when exported, and the file is told so', () => {
+    const withPowers = [...flow.team!.map((a) => ({ ...a })), { id: 'scout', name: 'Scout', job: '', model: { role: 'deep' as const, provider: '', model: '' }, stages: [], permission: 'read' as const, tracker: 'none' as const, shell: 'none' as const, autonomous: false, turnsTo: null, instructions: '', system: false, screen: true, allowedHosts: ['example.com'], browserProfile: true }];
+    const merged = mergeTemplateTeam(neutralConfig().agents.team, withPowers, cycleOf(flow));
+    const scout = merged.find((a) => a.id === 'scout')!;
+    expect(scout.screen).toBeUndefined();
+    expect(scout.allowedHosts).toBeUndefined();
+    expect(scout.browserProfile).toBeUndefined();
+    expect(scout.name).toBe('Scout');
+    const checked = parseTemplate({ id: 'mine', name: 'Mine', devCycle: {}, team: withPowers });
+    expect(checked.warnings.map((w) => w.path)).toEqual(expect.arrayContaining(['template.team[scout].screen', 'template.team[scout].allowedHosts', 'template.team[scout].browserProfile']));
+    const source = applied();
+    source.agents.team.push(newAgent({ id: 'scout', name: 'Scout', screen: true, allowedHosts: ['example.com'], browserProfile: true }));
+    const exported = templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' });
+    const out = exported.team!.find((a) => a.id === 'scout')!;
+    expect(out).toMatchObject({ id: 'scout', name: 'Scout' });
+    expect('screen' in out || 'allowedHosts' in out || 'browserProfile' in out).toBe(false);
+    expect(JSON.stringify(applyTemplate(neutralConfig(), exported).agents.team)).not.toMatch(/example\.com|browserProfile|"screen"/);
   });
 
   it('lists in the setup wizard with its team', async () => {

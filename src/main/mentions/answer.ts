@@ -10,6 +10,7 @@ import { mentionJob } from '../../shared/activity';
 import { type RunActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import type { ReadConfinement } from '../engine/contract';
+import { grantsFor, withheldText } from '../browser/guard';
 import { ATAS } from '../env';
 import { redact } from '../errorlog-core';
 import type { ForumStore } from '../forum-core';
@@ -337,6 +338,9 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
       // A note that cannot be recorded does not stop the answer.
     }
   };
+  // The proxy of a sandbox says what it decided, as a stage's does: a conversation's agent with hosts of its own shows the person which names it asked for.
+  const onProxy = (p: { host: string; port: number; allowed: boolean; why?: string }): void =>
+    say('runner.proxy', { agent: def.id, host: p.host || '—', port: p.port, result: p.allowed ? t('main.runner.proxy.allowed') : t(`main.runner.proxy.refused.${p.why}`) });
   const onExec = (r: { n: number; command: string; exitCode: number | null; timedOut: boolean; ms: number; output: string; refused?: string }): void =>
     say(host ? 'runner.exec.host' : 'runner.exec', { agent: def.id, n: r.n, command: redact(r.command.replace(/\s+/g, ' ')).slice(0, 300), result: r.refused ? t('main.runner.exec.refused.denied') : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }), ms: Math.round(r.ms / 100) / 10, tail: r.output.slice(0, 600) || '—' });
   // A host command runs on the person's computer: like a run's thread, each one waits for their yes, here through the command notice every screen shows. The
@@ -353,7 +357,10 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
       resume();
     }
   };
+  // A test workspace never reaches real sites: the agent's own hosts are withheld, and the thread says so.
+  const grants = grantsFor(def);
+  if (def.shell !== 'host' && grants.withheld.includes('hosts')) say('runner.screen.testWorkspace', { agent: def.id, what: withheldText('hosts') });
   if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, approve, signal });
-  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, signal, ...(source.clone ? { clone: source.clone } : {}) });
+  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, agent: { allowedHosts: grants.allowedHosts }, ...(source.clone ? { clone: source.clone } : {}) });
 }
 

@@ -505,6 +505,8 @@
   "ui.team.draft.inUse": "Está aberto no assistente: feche o assistente para descartá-lo.",
   "ui.team.edit": "Editar",
   "ui.team.editAria": "Editar {name}",
+  "ui.team.err.allowedHost": "“{host}” não é um nome de host que o proxy aceita: letras minúsculas, dígitos, pontos e hífens, com um ponto, sem esquema, porta, caminho nem curinga.",
+  "ui.team.err.allowedHostsMax": "No máximo {max} hosts para um agente.",
   "ui.team.err.allowlist": "Os comandos da lista rodam no worktree de verdade, então precisam da permissão de mudar arquivos. Um agente que só lê roda comandos numa sandbox.",
   "ui.team.err.idReserved": "\"{id}\" é o id de um agente do app.",
   "ui.team.err.idShape": "O id usa letras minúsculas, números, \"-\" e \"_\", e começa por letra ou número.",

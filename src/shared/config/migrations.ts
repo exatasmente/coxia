@@ -38,6 +38,8 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v19 agents.team[].draft: the mark of an agent the AI assistant saved to be tested; absent keeps an agent of the team. Nothing stored changes; the bump makes an
 //       older app refuse the file instead of repairing (and then saving) a team it cannot read.
 //   v20 `runner.autonomy.board`: the board's own autonomy (its writes to the code host skip the "yes" in Actions), off by default. Nothing else moves.
+//   v21 agents.team[].screen, .allowedHosts and .browserProfile: the virtual screen of an agent, the hosts it may reach and its logged-in browser; absent means off and
+//       empty, so nothing is raised. Nothing stored changes; the bump makes an older app refuse the file instead of repairing a team it cannot read.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -340,7 +342,14 @@ function v19ToV20(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 20, runner: { ...runner, autonomy: { ...autonomy, board: false } } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20 };
+// An agent may now carry `screen`, `allowedHosts` and `browserProfile`. A v20 file has none, and an agent without them has no screen, reaches no host of its own and
+// keeps no logins: nothing is raised. The bump is what keeps an app that does not know the fields from reading a file that carries them as a team to repair.
+function v20ToV21(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  notes.push('an agent may have a virtual screen, a list of hosts it may reach and a logged-in browser of its own (screen, allowedHosts, browserProfile); one without them has none');
+  return { ...old, schemaVersion: 21 };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

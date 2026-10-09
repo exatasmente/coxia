@@ -27,6 +27,7 @@ import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchang
 import { claudeSdkEnv, providerSecret } from './llm';
 import { loginPath, mergedPath } from './loginPath';
 import { noteSession } from './sessions';
+import { isInsideProfiles, profileDenyGlobs } from './browser/profile';
 import { ATAS } from './env';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
@@ -187,6 +188,9 @@ export const SECRET_GLOBS = [
   '~/.claude.json',
   '~/.claude/*.json',
   '~/.claude/projects/**',
+  // The logged-in browsers of the agents (cookies, local storage) live in the workspace's data, and an agent with no shell reads from that folder: its profile files
+  // match none of the names above, so the folder itself is refused, by the absolute path the SDK's rules take.
+  ...profileDenyGlobs(ATAS),
 ];
 export const SECRET_READ_DENY = SECRET_GLOBS.map((g) => `Read(${g})`);
 
@@ -196,6 +200,11 @@ function inClaudeState(p: string): boolean {
   if (!p.startsWith(base)) return false;
   const rel = p.slice(base.length);
   return rel.startsWith('projects/') || (!rel.includes('/') && rel.endsWith('.json'));
+}
+
+// The profiles of the agents' browsers: nothing under them is read by an agent, whichever way the path is written.
+function inBrowserProfiles(p: string): boolean {
+  return isAbsolute(p) && isInsideProfiles(ATAS, p);
 }
 
 // The path as written, with ~ expanded, absolute against the cwd and with symlinks resolved:
@@ -210,7 +219,7 @@ export function secretPath(p: string, cwd = process.cwd()): boolean {
     // does not exist: the written forms are all there is
   }
   const dir = isDirectory(abs);
-  return forms.some((f) => inClaudeState(f) || KEY_RULE.test(f) || (NAME_RULE.test(f) && !dir));
+  return forms.some((f) => inClaudeState(f) || inBrowserProfiles(f) || KEY_RULE.test(f) || (NAME_RULE.test(f) && !dir));
 }
 
 // A directory named tokens/ has no extension to tell code from data: it can be searched, and the results are judged file by file.
@@ -287,7 +296,9 @@ export function withoutSecretFiles(response: unknown, cwd?: string): object | nu
   const keptLines = lines?.filter((l) => {
     for (const m of l.matchAll(/[:-]\d+[:-]/g)) {
       const file = l.slice(0, m.index);
-      if (!/\s/.test(file) && secretPath(file, cwd)) return false;
+      // A name with a space ("Login Data", "Local State") cannot be told from text, so the secret-name rule skips it; a prefix that leads into a browser profile is cut
+      // all the same: no line of text starts with the path of one.
+      if (/\s/.test(file) ? inBrowserProfiles(isAbsolute(file) ? file : resolve(cwd ?? '.', file)) : secretPath(file, cwd)) return false;
     }
     return true;
   });

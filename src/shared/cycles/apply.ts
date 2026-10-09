@@ -64,7 +64,8 @@ export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], br
     .filter((a) => !have.has(a.id))
     .map((a) => {
       // Nor does it bring commands allowed always: those are the person's answers on this computer.
-      const made = newAgent({ ...structuredClone(a), system: false, squad: undefined, allowedCommands: undefined });
+      // The screen, the hosts it reaches and its logged-in browser are the person's choice on this computer too: a template never brings them.
+      const made = newAgent({ ...structuredClone(a), system: false, squad: undefined, allowedCommands: undefined, screen: undefined, allowedHosts: undefined, browserProfile: undefined });
       const agent = made.shell === 'host' ? { ...made, shell: 'sandbox' as const } : made;
       return options.sandbox === true ? agent : { ...agent, shell: withoutSandbox(agent.shell, agent.permission) };
     });
@@ -98,7 +99,8 @@ export function templateFromConfig(config: WorkspaceConfig, meta: TemplateMeta):
   // The flows of the squads and of a release or documentation run are not part of a template file, so an agent that works only their stages does not list them there.
   // A draft is an agent still being tried out: it is not part of the cycle that is shared.
   const team = pruneAgentStages(config.agents.team.filter((a) => !a.system && !isDraft(a)), cycle).map((a) => {
-    const { squad: _squad, ...rest } = structuredClone(a);
+    // The squad is the workspace's own, and so are the screen, the hosts and the logged-in browser: a shared template carries none of them.
+    const { squad: _squad, screen: _screen, allowedHosts: _hosts, browserProfile: _profile, ...rest } = structuredClone(a);
     return rest;
   });
   return { id: meta.id, name: meta.name, description: meta.description, needs: needsOf(cycle), devCycle: withoutNeutral(cycle), ...(team.length ? { team } : {}) };
@@ -186,5 +188,11 @@ export function parseTemplate(raw: unknown): TemplateCheck {
     ...(p.shell === 'host' ? [{ path: `template.team[${p.agent}].shell`, message: 'host is never given by a template: the agent gets a sandbox instead (only where this computer can make one)' }] : p.shell === 'sandbox' ? [{ path: `template.team[${p.agent}].shell`, message: 'the agent may run any command, inside a sandbox (only where this computer can make one)' }] : p.shell === 'allowlist' ? [{ path: `template.team[${p.agent}].shell`, message: 'the agent may run the commands of runner.commands in its worktree, outside any sandbox' }] : []),
     ...(p.tracker === 'read' ? [{ path: `template.team[${p.agent}].tracker`, message: 'the agent may read the code host (never write)' }] : []),
   ]);
-  return { ok: issues.length === 0, template: issues.length ? null : template, errors: issues, warnings: [...prefix(checked.warnings), ...notes], powers };
+  // A template is a file anyone can hand over: it never gives an agent a screen, hosts to reach or a logged-in browser, and says so instead of dropping them silently.
+  const ignored = brought.flatMap((a) => [
+    ...(a.screen ? [{ path: `template.team[${a.id}].screen`, message: 'ignored: a template never gives an agent a virtual screen; turn it on in Settings, on the computer' }] : []),
+    ...(a.allowedHosts?.length ? [{ path: `template.team[${a.id}].allowedHosts`, message: 'ignored: a template never gives an agent hosts to reach; add them in Settings, on the computer' }] : []),
+    ...(a.browserProfile ? [{ path: `template.team[${a.id}].browserProfile`, message: 'ignored: a template never gives an agent a logged-in browser; turn it on in Settings, on the computer' }] : []),
+  ]);
+  return { ok: issues.length === 0, template: issues.length ? null : template, errors: issues, warnings: [...prefix(checked.warnings), ...notes, ...ignored], powers };
 }

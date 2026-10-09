@@ -1,4 +1,5 @@
 import { ID } from '../../../../shared/config/schema';
+import { MAX_REGISTRY_HOSTS, isRegistryHost } from '../../../../shared/sandboxPaths';
 import { flowStagesOf, setAgentSquad } from '../../../../shared/config/squads';
 import { addAgent, isDraft, isSystemId, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
 import { t } from '../../../../shared/i18n';
@@ -30,11 +31,17 @@ export interface AgentDraft {
   autonomous: boolean;
   squad: string | null;
   turnsTo: string | null;
+  /** The agent has a virtual screen and the app's browser. */
+  screen: boolean;
+  /** The hosts the agent may reach through the proxy (not used on `shell: host`). */
+  allowedHosts: string[];
+  /** The agent's browser keeps its logins between uses. */
+  browserProfile: boolean;
   /** The stage ids the agent lists (the flow editor keeps them in step with the stages that name it). */
   stages: string[];
 }
 
-export type AgentField = 'id' | 'name' | 'model' | 'turnsTo' | 'shell';
+export type AgentField = 'id' | 'name' | 'model' | 'turnsTo' | 'shell' | 'allowedHosts';
 
 export interface AgentProblem {
   field: AgentField;
@@ -58,12 +65,15 @@ export function draftOf(a: AgentDef): AgentDraft {
     autonomous: a.autonomous,
     squad: a.squad ?? null,
     turnsTo: a.turnsTo,
+    screen: a.screen === true,
+    allowedHosts: [...(a.allowedHosts ?? [])],
+    browserProfile: a.browserProfile === true,
     stages: [...a.stages],
   };
 }
 
 export function blankAgent(): AgentDraft {
-  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, stages: [] };
+  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, screen: false, allowedHosts: [], browserProfile: false, stages: [] };
 }
 
 /** What is wrong with the draft on its own (the checks that need the whole team come from `teamIssues`). */
@@ -81,11 +91,22 @@ export function agentProblems(config: WorkspaceConfig, draft: AgentDraft, isNew:
   }
   // Commands in the real worktree could leave files that the app then commits for an agent that promised only to read: a reader runs commands in a sandbox.
   if (draft.shell === 'allowlist' && draft.permission !== 'worktree') out.push({ field: 'shell', key: 'ui.team.err.allowlist' });
+  // The same rules the file is checked with (validate.ts): one message for the list, one per host that is not a plain host name.
+  const hosts = draft.allowedHosts.map((h) => h.trim().toLowerCase()).filter(Boolean);
+  const bad = hosts.find((h) => !isRegistryHost(h));
+  if (bad !== undefined) out.push({ field: 'allowedHosts', key: 'ui.team.err.allowedHost', params: { host: bad } });
+  else if (hosts.length > MAX_REGISTRY_HOSTS) out.push({ field: 'allowedHosts', key: 'ui.team.err.allowedHostsMax', params: { max: String(MAX_REGISTRY_HOSTS) } });
   return out;
 }
 
 /** The shell a draft has after its permission changes: `allowlist` needs the permission to write, so a reader falls to `none`. */
 export const shellAfterPermission = (shell: AgentShell, permission: AgentPermission): AgentShell => (shell === 'allowlist' && permission !== 'worktree' ? 'none' : shell);
+
+/** The hosts of the form as the config keeps them: trimmed, lowercase, once each; null when there are none. */
+function hostsOf(draft: AgentDraft): string[] | null {
+  const hosts = [...new Set(draft.allowedHosts.map((h) => h.trim().toLowerCase()).filter(Boolean))];
+  return hosts.length ? hosts : null;
+}
 
 /** The fields of an agent that the form holds, as the config keeps them. */
 function fieldsOf(draft: AgentDraft) {
@@ -101,6 +122,10 @@ function fieldsOf(draft: AgentDraft) {
     tools: draft.tools ?? undefined,
     autonomous: draft.autonomous,
     turnsTo: draft.turnsTo,
+    // Absent means off and empty: the editor writes none of the three for an agent that has none, and clearing one removes the field.
+    screen: draft.screen ? true : undefined,
+    allowedHosts: hostsOf(draft) ?? undefined,
+    browserProfile: draft.browserProfile ? true : undefined,
     stages: draft.stages,
   };
 }

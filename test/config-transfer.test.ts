@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { newProvider, neutralConfig } from '../src/shared/config/defaults';
+import { newAgent } from '../src/shared/config/team';
 import { EXPORT_FORMAT, buildExport, diffConfig, parseImport } from '../src/shared/config/transfer';
 import { CONFIG_SCHEMA_VERSION, type WorkspaceConfig } from '../src/shared/config/types';
 import { collectSecretRequirements, validateConfig } from '../src/shared/config/validate';
@@ -164,6 +165,19 @@ describe('preview', () => {
     expect(p.changes.find((c) => c.path === 'language')).toMatchObject({ kind: 'changed', before: 'pt-BR', after: 'en' });
     present.clear();
     expect(previewImport(deps, { text }, { mode: 'new', name: 'x' }).missingPaths.map((m) => m.field)).toEqual(expect.arrayContaining(['projects.roots[0]', 'projects.repos[api].path']));
+  });
+
+  it('says an agent of the file has a screen, hosts to reach or a logged-in browser, and keeps them when the person applies it', () => {
+    const theirs = sample();
+    theirs.agents.team.push(newAgent({ id: 'scout', name: 'Scout', screen: true, allowedHosts: ['example.com'], browserProfile: true }));
+    const text = exportText(theirs, { workspaceName: 'Acme', appVersion: '1', now: new Date(0) });
+    const p = previewImport(deps, { text }, { mode: 'new', name: 'x' });
+    expect(p.ok).toBe(true);
+    expect(p.commands.map((c) => c.field)).toEqual(expect.arrayContaining(['agents.team[scout].screen', 'agents.team[scout].allowedHosts', 'agents.team[scout].browserProfile']));
+    expect(p.changes.map((c) => c.path)).toEqual(expect.arrayContaining(['agents.team[scout].screen', 'agents.team[scout].allowedHosts']));
+    applyImport(deps, { source: { text }, target: { mode: 'new', name: 'x' }, secrets: [] }, null);
+    const saved = readConfigFile(workspaceDir(root, 'x')) as WorkspaceConfig;
+    expect(saved.agents.team.find((a) => a.id === 'scout')).toMatchObject({ screen: true, allowedHosts: ['example.com'], browserProfile: true });
   });
 
   it('reports every validation problem with its path and writes nothing', () => {
