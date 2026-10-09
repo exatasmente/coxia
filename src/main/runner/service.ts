@@ -1516,6 +1516,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       // What the answer is told of the activities: its own front whole, and whatever else the message named.
       memory: (_place, msg) => sharedTextOf(run.issue.ref, callsOfMention(msg)),
       procedures: deps.procedures,
+      offers: deps.offers,
       // An agent named in a run's thread reads only inside that run's worktree; a refusal is told in the thread, like a stage's.
       readRoot: (p, def, _cwd) => {
         const r = p.run;

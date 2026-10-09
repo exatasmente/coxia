@@ -33,6 +33,8 @@ import { type CallStops, callStops } from './stop';
 import { reposOnDisk, runRepo, type MentionPlace } from './place';
 import { type DocsAsk, runDocsAsk, stageOfRun } from '../harness/deliver';
 import type { ProceduresPort } from '../procedures/port';
+import type { ProcedureOffers } from '../procedures/offers';
+import { runWrapUp } from '../procedures/wrapup';
 import { procedureScreen } from '../procedures/screen';
 import type { ProcedureSession } from '../procedures/session';
 
@@ -104,6 +106,13 @@ export interface MentionDeps {
   memory?: (place: MentionPlace, message: ForumMessage) => string;
   /** The workspace's learned procedures: an answer outside a ceremony gets their list and tools, and what it read is marked in the thread. Absent: none. */
   procedures?: ProceduresPort;
+  /**
+   * Where the offers to keep a procedure are held (#187). With it, an answer whose work had trial and error and kept no procedure gets one last turn once the answer is
+   * posted, detached from the thread's queue. Absent: no last turn.
+   */
+  offers?: Pick<ProcedureOffers, 'raise' | 'turned'>;
+  /** The last turn's runner; a test replaces it to wait for the detached turn (the default is `runWrapUp`). */
+  wrapUp?: typeof runWrapUp;
 }
 
 /** What a mention answer produced, for a caller that records it elsewhere (a ceremony). */
@@ -206,6 +215,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
     // The procedures the answer is given (none in a ceremony), and whether the engine ended in an answer: what a failed call read is no use of a procedure.
     let procedures: ProcedureSession | null = null;
     let answered = false;
+    // The last turn took over closing the procedures: its task does, once it is over.
+    let detached = false;
     // The person's Stop (or the screen closing under the answer) ends this answer only: what the thread says then is not a failure.
     let stoppedBy: 'person' | 'screen' | null = null;
     const stopper = new AbortController();
@@ -335,6 +346,11 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       const text = answerText((r.data as { text?: unknown })?.text);
       if (!text) throw new Error(t('main.runner.error.empty-answer'));
       deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
+      // The answer is out: the work may have earned one last turn, which runs beside the thread and not in front of its next message.
+      if (procedures && deps.offers && !deps.chain?.length) {
+        const session = procedures;
+        detached = giveLastTurn(deps, session, ports, { agent: reader, place, id, text, about, stage, cwd: deps.env().fallbackCwd });
+      }
       if (mayPropose(def, deps, place)) await raiseWrites(deps, place, def, message.seq, id, readProposedWrites((r.data as { proposals?: unknown }).proposals));
       if (r.partial) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.partial', params: { agent: id }, stage });
       out.push({ agent: id, text });
@@ -345,7 +361,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       if (stoppedBy) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: stoppedBy === 'person' ? 'runner.mention.stopped' : 'runner.mention.stoppedScreen', params: { agent: id }, stage });
       else deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
     } finally {
-      procedures?.finish(answered ? 'done' : 'failed');
+      if (!detached) procedures?.finish(answered ? 'done' : 'failed');
       unregister();
       // A hand-off still open ends first, with no result; the typed values are forgotten with the answer.
       offer?.call.end();
@@ -366,6 +382,47 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
 
 /** Whether the agent is autonomous now: the team's current entry, which a change in Settings updates, before the definition the call started with. */
 const autonomyOf = (config: WorkspaceConfig, def: AgentDef): boolean => config.agents.team.find((a) => a.id === def.id)?.autonomous ?? def.autonomous;
+
+/**
+ * Plans the last turn of an answer and starts it, detached. True when it began (the caller then leaves closing the procedures to it). The turn is given once for a screen at a
+ * draft mark: a later answer on the same screen, before anything moved the mark, only waits for the person to answer the card. Nothing here fails the answer.
+ */
+function giveLastTurn(deps: MentionDeps, session: ProcedureSession, ports: ScreenPorts | null, w: { agent: AgentDef; place: MentionPlace; id: string; text: string; about: string; stage: string | null; cwd: string }): boolean {
+  try {
+    const offers = deps.offers as NonNullable<MentionDeps['offers']>;
+    const plan = session.plan({ words: w.text });
+    if (!plan) return false;
+    if (plan.screen && ports) {
+      const key = callKey(w.place.thread, w.id);
+      let mark = 0;
+      try {
+        mark = ports.sessions.markOf(key);
+      } catch {
+        // a screen that is gone has no mark: its turn is the first
+      }
+      if (offers.turned(key, mark)) return false;
+    }
+    const task = (deps.wrapUp ?? runWrapUp)(
+      {
+        engine: deps.engine,
+        offers,
+        note: (code, params) => {
+          try {
+            deps.forum.append(w.place.thread, { kind: 'system', author: { type: 'app' }, code, params, stage: w.stage });
+          } catch (e) {
+            console.error('[mentions] could not record a note', e instanceof Error ? e.message : e);
+          }
+        },
+      },
+      { agent: w.agent, session, plan, ref: w.about, thread: w.place.thread, ...(w.stage ? { stage: w.stage } : {}), cwd: w.cwd },
+    );
+    void task.catch(() => undefined).finally(() => session.finish('done'));
+    return true;
+  } catch (e) {
+    console.error('[mentions] could not plan the last turn', e instanceof Error ? e.message : e);
+    return false;
+  }
+}
 
 /**
  * The text of an answer. A model sometimes writes its whole answer object as the text (`{"text": "…"}`, the line ends escaped): the person would read the JSON, so

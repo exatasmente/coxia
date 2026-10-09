@@ -72,6 +72,7 @@ describe('a work that earned a last turn', () => {
     expect(plan?.text).toMatch(/^Draft c-1\./);
     expect(plan?.text).toContain('<data>');
     expect(plan?.words).toBe('Tests pass now.');
+    expect(plan?.screen).toBe(false);
     const offers = plan?.settle() ?? [];
     expect(offers).toHaveLength(1);
     expect(offers[0]).toMatchObject({ id: 'c-1', kind: 'repo', key: 'api', stepsFrom: 'recording', leftOut: 0, handoff: false });
@@ -233,6 +234,7 @@ describe('the screen', () => {
     four.f.click('button', 'Download');
     const plan = four.session.plan({ words: 'Exported.' });
     expect(plan?.text).toMatch(/^Draft d-1\./);
+    expect(plan?.screen).toBe(true);
     const offers = plan?.settle() ?? [];
     expect(offers).toHaveLength(1);
     expect(offers[0]).toMatchObject({ id: 'd-1', kind: 'gui', key: 'docs.example.com', title: 'Steps on docs.example.com', keyedBy: 'app', screen: KEY, stepsFrom: 'recording', leftOut: 0, handoff: false });

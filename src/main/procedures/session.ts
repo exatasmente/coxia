@@ -60,6 +60,8 @@ export interface WrapUpPlan {
   text: string;
   /** The agent's closing words, masked and cut: data for the turn's prompt. */
   words: string;
+  /** The turn holds a draft of the screen: a conversation gives that turn once for a screen at a draft mark. */
+  screen: boolean;
   /** After the turn: the drafts no save of the turn came from, as offers. Copies the app made while the call's screen and shell were still there. */
   settle(): OfferDraft[];
 }
@@ -620,6 +622,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     return {
       text: parts.join('\n\n'),
       words,
+      screen: planned.some((x) => x.source === 'screen'),
       settle: () => offers.flatMap((x) => (x.offer && !savedFrom.has(x.source) ? [x.offer] : [])),
     };
   }

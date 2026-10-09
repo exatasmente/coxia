@@ -228,6 +228,8 @@ export const runsModule: Module = (ctx) => {
   openSessions.onClosed((screen) => {
     handoffs.closed(screen.key);
     handoffs.forget(screen.key);
+    // The last turn given for this screen is forgotten with it; an offer it raised stays until it is answered or expires.
+    procedureOffers().forget(screen.key);
   });
   // An agent that is gone, loses its screen or changes its shell, or a workspace that switches the display off, ends the screens that depended on it.
   onConfigChange((config) => void openSessions.reconcile(config));
