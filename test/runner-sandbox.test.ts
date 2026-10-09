@@ -278,6 +278,38 @@ describe('what QA claims to have executed', () => {
     expect(Object.keys(run.evidence ?? {})).toHaveLength(1);
   });
 
+  it('finishes a retried QA that cites the evidence an earlier attempt of the stage kept, and not one citing an id the run never kept', async () => {
+    const b = await boot({ sandbox: fakeSandbox(), configure: (c) => { shellOf(c, 'qa', 'sandbox'); c.runner.commands = []; } });
+    easy(b);
+    const scenario = (evidenceIds: string[]) => ({ name: 'a', result: 'pass' as const, detail: '', evidence: 'executed' as const, commands: [1], evidenceIds });
+    b.engine.script('qa', async (c) => {
+      await c.exec!.exec('node probe.js');
+      await keepQaEvidence(c);
+      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [scenario([])] });
+    });
+    let run = await reach(b, await b.runner.start('app#101'), 'ready');
+    expect(run.status).toBe('failed');
+    const [earlier] = Object.keys(run.evidence ?? {});
+
+    b.engine.script('qa', async (c) => {
+      await c.exec!.exec('node probe.js');
+      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [scenario(['ev-99'])] });
+    });
+    b.runner.retry(run.id);
+    run = await reach(b, b.runner.get(run.id)!, 'ready');
+    expect(run.status).toBe('failed');
+    expect(run.error?.detail).toMatch(/evidenceIds/);
+
+    b.engine.script('qa', async (c) => {
+      await c.exec!.exec('node probe.js');
+      return work('Checked.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [scenario([earlier])] });
+    });
+    b.runner.retry(run.id);
+    run = await reach(b, b.runner.get(run.id)!, 'ready');
+    expect(run.status).toBe('done');
+    expect(run.qa.at(-1)!.scenarios[0].evidenceIds).toEqual([earlier]);
+  });
+
   it('is "only read" for every scenario of a QA agent with no sandbox', async () => {
     const r = await run([{ name: 'a', result: 'pass', detail: '', evidence: 'executed', commands: [1] }, { name: 'b', result: 'fail', severity: 'non-blocking', detail: 'x' }], false);
     expect(r.qa[0].scenarios.map((s) => [s.evidence, s.unbacked ?? false])).toEqual([['read', false], ['read', false]]);

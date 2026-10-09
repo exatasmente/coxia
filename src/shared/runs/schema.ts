@@ -4,7 +4,7 @@ import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
 import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_DETAIL_MAX, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 import { EVIDENCE_KINDS } from '../evidence';
-import { RECORDING_MARKS_MAX } from '../screen';
+import { RECORDING_CUTS_MAX, RECORDING_MARKS_MAX } from '../screen';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -165,11 +165,14 @@ const evidenceRecord = object(
     recording: object(
       'Only on the app\'s own recording of a stage\'s screen.',
       {
-        durationMs: { type: 'integer', description: 'Recorded time.', minimum: 0, maximum: 86_400_000 },
+        durationMs: { type: 'integer', description: 'The length of the video: its media time, with the idle stretches shortened.', minimum: 0, maximum: 86_400_000 },
+        startedAfterMs: { type: 'integer', description: 'The time from the screen opening to the first frame of the video.', minimum: 0, maximum: 4_294_967_295 },
+        realMs: { type: 'integer', description: 'The stage\'s own time on the screen, with the cuts put back.', minimum: 0, maximum: 4_294_967_295 },
         width: { type: 'integer', description: 'Width of the picture.', minimum: 1, maximum: 16_384 },
         height: { type: 'integer', description: 'Height of the picture.', minimum: 1, maximum: 16_384 },
         truncated: enumOf('Why it stopped before the stage did.', ['size', 'time']),
         marks: { type: 'array', description: 'The intervals in which the person used the screen, in ms from the start.', items: object('One interval.', { fromMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, toMs: { type: 'integer', minimum: 0, maximum: 86_400_000 } }, ['fromMs', 'toMs']), maxItems: RECORDING_MARKS_MAX },
+        cuts: { type: 'array', description: 'Where an idle stretch was shortened: the video time at which its pause ends and the stage time left out.', items: object('One cut.', { atMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, skippedMs: { type: 'integer', minimum: 1, maximum: 4_294_967_295 } }, ['atMs', 'skippedMs']), maxItems: RECORDING_CUTS_MAX },
       },
       ['durationMs', 'width', 'height', 'marks'],
     ),
@@ -273,7 +276,7 @@ const docsRun = object('What the run is about when it drafts the documentation o
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
-    version: { type: 'integer', description: 'Version of this file format: 2 when the run holds a screen recording, else 1.', enum: [1, 2] },
+    version: { type: 'integer', description: 'Version of this file format: 3 when a screen recording of the run holds cuts or the time it started after the screen opened, 2 when the run holds one without, else 1.', enum: [1, 2, 3] },
     rev: { type: 'integer', description: 'Grows by one on every save.', minimum: 0 },
     id: string('Run id.', { pattern: RUN_ID.source }),
     issue: object('The issue.', { ref: string('How the cards write it.', { minLength: 1, maxLength: 200 }), iid: { type: 'integer', description: 'Issue number.', minimum: 0 }, title: string('Title.', { maxLength: 500 }), url: nullableString('Web address.') }, ['ref', 'iid', 'title', 'url']),
