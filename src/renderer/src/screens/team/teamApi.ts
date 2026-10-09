@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import type { RevokeResult, SitesResult } from '../../../../shared/browser';
 import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { CONFIG_EVENT, type ConfigView } from '../../../../shared/configView';
 import type { Run } from '../../../../shared/runs';
@@ -15,6 +16,9 @@ export const teamApi = {
   setSquadAutonomous: (squad: string, on: boolean) => api.invoke<boolean>('runs:setSquadAutonomous', squad, on),
   removeSquad: (squad: string, confirm: boolean) => api.invoke<{ removed: boolean; runs: string[] }>('runs:removeSquad', squad, confirm),
   runs: () => api.invoke<Run[]>('runs:list'),
+  // What an agent's logged-in browser holds, and taking a site (or all) away: the window's alone, refused to a paired browser by a pattern.
+  sites: (agent: string) => api.invoke<SitesResult>('screen:sites', agent),
+  revoke: (agent: string, site?: string) => api.invoke<RevokeResult>('screen:revoke', agent, site),
 };
 
 // The agent assistant's channels: the window's alone (a paired browser is refused), and what they throw is already worded for the person.
