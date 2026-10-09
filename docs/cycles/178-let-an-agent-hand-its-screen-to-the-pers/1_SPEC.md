@@ -1,6 +1,6 @@
 # Let an agent hand its screen to the person for a login or a confidential input, and go on after
 
-Gate 1: **waiting for the maintainer.** Nothing here is built; the plan (`2_PLAN.md`) is written only after this is approved.
+Gate 1: **approved on 2026-10-09** (answers at the end). Gate 2 waived by the maintainer; the plan (`2_PLAN.md`) follows.
 
 Marks used below: **decided** is a maintainer decision taken in chat on 2026-10-09 (decision numbers are those of that chat); **assumed from #177** is something the spec of #177, written in parallel, is expected to deliver, and this spec only references it; **proposed — confirm at gate 1** is a product choice this spec makes and the maintainer may change; **read 2026-10-09** is a fact checked that day by reading the code on `release/0.9.0` at `040d0db5` (no test, no `tsc`, no app run).
 
@@ -228,8 +228,9 @@ Each with the recommended answer, for the maintainer at gate 1.
 
 ## Gate 1 decisions
 
-Gate 1 is still open: the maintainer is reading the spec. Answer taken so far (2026-10-09):
+Gate 1 approved on 2026-10-09. Answers of the maintainer:
 
 1. **The recording keeps the hand-off interval and marks it** (open question 1, against the recommendation to skip it). What the person types while they hold the screen can therefore appear in the recording. Consequences the plan must carry: the warning before typing says the interval is recorded; the recording piece of an interval with a hand-off is marked as holding one; the frames of that interval stay out of everything given to the model (unchanged); and the retention of that recording follows the `screens` group as any other.
 
-The other open questions are pending.
+2. **Every other open question takes its recommended answer** (open questions 2 to 9, as written above), by the maintainer's choice on 2026-10-09.
+3. **Gate 2 is waived** by the maintainer: the plan (`2_PLAN.md`) is written and the implementation follows it without a separate approval; push and pull request still wait for the maintainer's yes.
