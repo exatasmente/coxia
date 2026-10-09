@@ -54,7 +54,7 @@ export interface StageUsage {
   costEstimated?: boolean;
 }
 
-export const QUESTION_KINDS = ['agent', 'review-limit', 'squad'] as const;
+export const QUESTION_KINDS = ['agent', 'review-limit', 'squad', 'pr-retry'] as const;
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 
 /** How many agents a question may pass through before it goes to the person, whatever the agents say. */
@@ -84,10 +84,16 @@ export interface PendingQuestion {
   text: string;
   askedAt: string;
   stage: string;
+  /** Candidate bases to open the pull request against, for a `pr-retry` question. */
+  bases?: string[];
+  /** The branch the failed pull request was aiming at. */
+  targetBranch?: string;
+  /** The host's refusal was probably the base branch not being there any more. */
+  baseGone?: boolean;
 }
 
 export interface RunFailure {
-  code: 'no-agent' | 'stage-failed' | 'no-event';
+  code: 'no-agent' | 'stage-failed' | 'no-event' | 'pr-open-failed';
   stage: string;
   detail: string | null;
 }
@@ -132,6 +138,8 @@ export interface CommentRecord {
   title?: string | null;
   /** The evidence ids the description cites, for the `pr` record: the images go up with the pull request's own proposal, on its "sim". */
   evidenceIds?: string[];
+  /** The "waiting for the pull request" line was already said for this comment of the run: the sweep does not say it again. */
+  waitingSaid?: boolean;
 }
 
 /** What a transition may record about a comment besides where it stands. */

@@ -46,6 +46,8 @@ import {
   producerOf,
   defaultSendBackTarget,
   sendBackTo,
+  prRecorded,
+  prRetryAnswered,
   recordQa,
   recordEvidence,
   deleteEvidence,
@@ -130,7 +132,7 @@ import type { IssueMade, Publisher } from './publish';
 // for the person waits (to-start, to-accept). Everything goes through the run store and the forum (moveRun), so a restart resumes where the run was.
 // Nothing here writes to the code host: the issue is only read, and what the agents do stays in the worktree.
 
-export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'no-docs-flow', 'bad-docs-mode', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'worktree-gone', 'memory-busy', 'docs-folder-unsafe'] as const;
+export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'no-docs-flow', 'bad-docs-mode', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'no-host', 'worktree-gone', 'memory-busy', 'docs-folder-unsafe'] as const;
 export type RunnerErrorCode = (typeof RUNNER_ERROR_CODES)[number];
 
 export class RunnerError extends Error {
@@ -270,6 +272,8 @@ export interface Runner {
   gate(id: string, action: GateAction, reason?: string): Run;
   answer(id: string, text: string, attachments?: AttachmentRef[]): Run;
   retry(id: string): Run;
+  /** The person chose the base and asked for the pull request again (a `pr-retry` question was open): it is opened audited, and the run resumes on it. */
+  retryPr(id: string, base: string): Promise<Run>;
   cancel(id: string): Run;
   /** The person's answer to the command an agent set to `shell: host` waits to run; `commandId` must be the one waiting, so a late click never answers a newer one. */
   command(id: string, commandId: string, decision: CommandDecision, note?: string): Run;
@@ -696,6 +700,19 @@ export function createRunner(deps: RunnerDeps): Runner {
       ended();
       return;
     }
+    // A pull request linked from outside (the person may have opened it by hand) is resolved and recorded now, so the guard that holds the pr-merged wait
+    // sees it when the flow enters the stage that waits: nothing is forced, without one the wait refuses and the run fails closed.
+    const ensureNextPr = async (): Promise<void> => {
+      if (!deps.publisher) return;
+      const from = flow.find((s) => s.id === stage);
+      const next = from?.next ? flow.find((s) => s.id === from.next) ?? null : null;
+      if (!next || next.type !== 'wait' || next.waitsFor?.kind !== 'pr-merged') return;
+      try {
+        await deps.publisher.ensurePr(run.id);
+      } catch (e) {
+        console.error('[runner] could not look for a linked pull request', run.id, e instanceof Error ? e.message : e);
+      }
+    };
     if (r.kind === 'review') {
       const recorded = moveRun(d, run.id, (x) => recordReview(x, { stage, by, verdict: out.verdict ?? 'approved', summary: out.summary, findings: out.findings, head: r.head }, now()));
       const text = findingsText(out.summary, out.findings);
@@ -704,6 +721,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         ended(recorded.reviews.length);
         return;
       }
+      await ensureNextPr();
       apply((x) => stageDone(x, flow, { summary: text, handoff: out.handoff, artifacts: r.written }, now()));
       ended(recorded.reviews.length);
       return;
@@ -722,6 +740,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       }
     }
     const notes = r.kind === 'qa' ? notesText(out.scenarios) : '';
+    await ensureNextPr();
     apply((x) => stageDone(x, flow, { summary: [out.summary, notes].filter(Boolean).join('\n\n'), handoff: out.handoff, artifacts: r.written }, now()));
     ended();
   }
@@ -1125,6 +1144,20 @@ export function createRunner(deps: RunnerDeps): Runner {
       return gateBy(id, action, reason, 'person');
     },
     retry: (id) => move(id, (r, f, at) => retryMove(r, f, at)),
+    async retryPr(id, base) {
+      const before = need(id);
+      if (before.status !== 'question' || before.question?.kind !== 'pr-retry') throw new RunError('wrong-state', { status: before.status });
+      const branch = String(base ?? '').trim();
+      if (!branch) throw new RunError('empty-reason');
+      if (!deps.publisher) throw new RunnerError('no-host');
+      // The write goes through the publishing queue like every other of the run, and the run is pumped on only after it came back: nothing of the resumed
+      // flow then asks for a pull request while it is not on the host yet, and one or the other is never out of order.
+      publish(id, (p) => p.retryPr(id, branch));
+      const queued = publishing.get(id);
+      if (queued) await queued;
+      pump(id);
+      return need(id);
+    },
     cancel(id) {
       const run = move(id, (r, _f, at) => cancelMove(r, 'person', at));
       aborts.get(id)?.abort();
@@ -1249,7 +1282,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     answerPost(thread, text, attachments) {
       const id = thread.startsWith('run-') ? thread.slice(4) : '';
       const run = id ? deps.runs.get(id) : null;
-      if (!run || run.status !== 'question' || run.question?.kind === 'squad' || !text.trim()) return null;
+      if (!run || run.status !== 'question' || run.question?.kind === 'squad' || run.question?.kind === 'pr-retry' || !text.trim()) return null;
       // Naming an agent asks that agent something; it is not the answer to the question that waits.
       if (parseMentions(text, mentionableIds(deps.config().agents.team, thread)).length) return null;
       // The files the message carries ride on the answer the runner writes, so the message shows them and the retention sees them as referenced.

@@ -209,6 +209,16 @@ describe('stages that wait', () => {
     expect(b.runner.get(run.id)!.status).toBe('waiting');
   });
 
+  it('never starts the pr-merged wait without a pull request recorded for the run: it fails closed instead', async () => {
+    // no publisher: nothing can publish the pull request, so the wait may not even start
+    const b = await boot({ configure: withWait({ kind: 'pr-merged' }) });
+    easy(b);
+    const run = await reachWait(b);
+    expect(run).toMatchObject({ status: 'failed', stage: 'ready', wait: null });
+    expect(run.error).toMatchObject({ code: 'pr-open-failed', stage: 'ready' });
+    expect(b.thread(run).some((m) => m.code === 'run.stage.noPullRequest')).toBe(true);
+  });
+
   it('waits for a label on the issue, whatever its case', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());

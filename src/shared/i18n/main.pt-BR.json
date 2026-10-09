@@ -1010,6 +1010,7 @@
   "main.runner.memory.answer": "Resposta",
   "main.runner.memory.handoff": "Passagem",
   "main.runner.error.memory-busy": "A execução está trabalhando: espere a etapa acabar para editar a memória do ciclo.",
+  "main.runner.error.no-host": "Não há host de código para este espaço de trabalho, então nada pode ser publicado.",
   "main.runner.activities.stage": "Etapa",
   "main.runner.activities.stage.none": "nada registrado ainda",
   "main.runner.activities.stage.done": "terminou",

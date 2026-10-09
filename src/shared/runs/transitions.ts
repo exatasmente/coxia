@@ -7,7 +7,7 @@ import { flowProblems, producerOf, snapshotOf } from './flow';
 import { scenarioBlocks } from './output';
 import { SEND_BACK_STATUSES, canSendBack, sendBackTargets, sendBackText } from './sendBack';
 import { mergeUsage } from './usage';
-import { HISTORY_DETAIL_MAX, RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunDocs, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
+import { HISTORY_DETAIL_MAX, PR_COMMENT, RUN_VERSION, isTerminal, type CommentDetails, type CommentRecord, type CommentStatus, type CommentTarget, type FlowStage, type HistoryEntry, type HistoryType, type PendingResult, type QaRecord, type ReviewRecord, type RoutedBy, type RoutingWhy, type Run, type RunLink, type RunIssue, type RunDocs, type RunSubject, type StageRecord, type StageUsage, type Transition } from './types';
 
 // Every move of a run is a pure function: (run, flow, input, at) -> { run, messages }. The input run is never changed. `messages` are what the
 // forum is to record about the move, in order; the caller saves the run first and then appends them. `at` is an ISO time.
@@ -44,6 +44,12 @@ const record = (run: Run, stage: string): StageRecord | undefined => run.stages.
 function need(run: Run, ...statuses: Run['status'][]): void {
   if (!statuses.includes(run.status)) throw new RunError('wrong-state', { status: run.status });
 }
+
+/** Whether the run has the pull request of its branch recorded as published on the host: the only thing the pr-merged wait may start on. */
+export const prRecorded = (run: Run): boolean => {
+  const known = run.comments[PR_COMMENT];
+  return !!known && known.status === 'published' && known.noteId !== null && /^\d+$/.test(String(known.noteId));
+};
 
 function finishStage(run: Run, at: string, status: StageRecord['status'], artifacts: string[] = []): StageRecord {
   const r = record(run, run.stage) as StageRecord;
@@ -95,6 +101,16 @@ function enter(run: Run, flow: FlowStage[], stageId: string, at: string, message
       run.error = { code: 'no-event', stage: stageId, detail: null };
       log(run, at, 'failed', stageId, 'app', 'no-event');
       messages.push({ ...base, kind: 'system', code: 'run.stage.noEvent', params: { stage: stage.label } });
+    } else if (!prRecorded(run)) {
+      // A wait for the pull request's merge holds nothing before that pull request is recorded on the run: without it the wait could never fire, and the
+      // person would read a "waiting" run that no host event can end. Failing closed: the guard is provider-free, so a linked pull request has to be
+      // resolved into a record first (the runner does it before the last stage of the flow ends).
+      run.status = 'failed';
+      rec.status = 'failed';
+      if (rec.startedAt !== null) rec.endedAt = at;
+      run.error = { code: 'pr-open-failed', stage: stageId, detail: run.baseBranch ?? null };
+      log(run, at, 'failed', stageId, 'app', 'pr-open-failed');
+      messages.push({ ...base, kind: 'system', code: 'run.stage.noPullRequest', params: { stage: stage.label, branch: run.baseBranch ?? '' } });
     } else {
       run.status = 'waiting';
       rec.status = 'waiting';
@@ -386,6 +402,46 @@ export function ask(run: Run, question: { by: string; text: string; /** The agen
   return { run: out, messages: [{ kind: 'question', author: agent(question.by), text, to: holder, stage: run.stage, public: holder === null }] };
 }
 
+/** How the run stops when a pull request could not be opened after the push: `pr-retry` question, base to choose on the run screen, no text box. */
+export interface PrOpenFailure {
+  by: string;
+  text: string;
+  /** The bases the person may choose from: the branch the failed one aimed at first, the repository's default last. */
+  bases: string[];
+  targetBranch: string;
+  /** The host's refusal was probably the base branch not being there any more. */
+  baseGone?: boolean;
+  /** The stage that pushed the branch, named in the history: the run pauses at the stage it is in now. */
+  stage?: string;
+}
+
+/** The push went out but the host refused the pull request: the run stops where it stands, blocked, and the person decides the base it is retried against. */
+export function prOpenBlocked(run: Run, input: PrOpenFailure, at: string): Transition {
+  need(run, 'working');
+  const out = clone(run, at);
+  out.status = 'question';
+  out.question = { by: 'app', holder: null, hops: 0, kind: 'pr-retry', text: input.text, askedAt: at, stage: out.stage, bases: [...new Set(input.bases)], targetBranch: input.targetBranch, ...(input.baseGone ? { baseGone: true } : {}) };
+  (record(out, out.stage) as StageRecord).status = 'waiting';
+  log(out, at, 'question', out.stage, 'app', `${input.stage ?? out.stage}:${input.targetBranch}`);
+  return { run: out, messages: [{ kind: 'question', author: app, text: input.text, to: 'person', stage: out.stage, public: true }] };
+}
+
+/** The person chose a base on the run screen: the question is cleared, the run's base branch is corrected, and the flow resumes where it was held. */
+export function prRetryAnswered(run: Run, base: string, at: string): Transition {
+  need(run, 'question');
+  const q = run.question;
+  if (!q || q.kind !== 'pr-retry') throw new RunError('wrong-state', { status: run.status });
+  const branch = base.trim();
+  if (!branch) throw new RunError('empty-reason');
+  const out = clone(run, at);
+  out.question = null;
+  out.baseBranch = branch;
+  out.status = 'working';
+  (record(out, out.stage) as StageRecord).status = 'running';
+  log(out, at, 'answer', out.stage, 'person', branch);
+  return { run: out, messages: [{ kind: 'answer', author: person, text: t('main.runs.stage.prRetry', { branch }), stage: out.stage, public: true }] };
+}
+
 /**
  * The agent a question is with cannot answer it (or it is not its to answer): it goes on to the next agent, or to the person, with the reason said in the thread.
  * `to` null: the person. Every step is a message, so the thread shows who asked whom and why it reached whoever finally answers.
@@ -429,8 +485,8 @@ export function answer(run: Run, flow: FlowStage[], text: string, at: string, at
   const said = text.trim();
   if (!said) throw new RunError('empty-text');
   const q = run.question;
-  // Which squad the run works in is decided with `routeSquad`, not answered in words.
-  if (q?.kind === 'squad') throw new RunError('wrong-state', { status: run.status });
+  // Which squad the run works in is decided with `routeSquad`, not answered in words; the base of a failed pull request is chosen on the run screen (`retryPr`).
+  if (q?.kind === 'squad' || q?.kind === 'pr-retry') throw new RunError('wrong-state', { status: run.status });
   const out = clone(run, at);
   out.question = null;
   log(out, at, 'answer', run.stage, 'person', said);
@@ -993,6 +1049,11 @@ export function recordCommentEdited(run: Run, key: string, input: { bodyHash: st
 /** The proposal was refused or skipped (a test workspace, or the person said no). A comment already published stays published. */
 export function recordCommentRefused(run: Run, key: string, target: CommentTarget, at: string): Transition {
   return noteComment(run, key, at, 'refused', (c) => ({ ...(c ?? fresh(target, 'refused', at)), status: c?.noteId !== null && c?.noteId !== undefined ? 'published' : 'refused', updatedAt: at }));
+}
+
+/** The comment has already said it waits for the pull request: a sweep that finds no pull request again says nothing. Applies in any status. */
+export function recordCommentWaiting(run: Run, key: string, at: string): Transition {
+  return noteComment(run, key, at, 'draft', (c) => ({ ...(c ?? fresh('mr', 'draft', at)), waitingSaid: true, updatedAt: at }));
 }
 
 // ---- what the agents found --------------------------------------------------------------------------------------------------------------

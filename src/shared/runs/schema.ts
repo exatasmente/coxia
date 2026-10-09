@@ -68,6 +68,7 @@ const comment = object(
     headline: { type: ['string', 'null'], description: 'The first line of the body: its status.', maxLength: 1000 },
     title: { type: ['string', 'null'], description: 'The title of the pull request (the `pr` record).', maxLength: 500 },
     evidenceIds: EVIDENCE_REFS,
+    waitingSaid: { type: 'boolean', description: 'The "waiting for the pull request" line is already said for it; the sweep does not repeat it.' },
   },
   ['target', 'noteId', 'url', 'bodyHash', 'status', 'updatedAt'],
 );
@@ -286,7 +287,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     flow: object('The flow the run follows: a copy of its stages and its version.', { hash: string('Version of the flow.', { maxLength: 64 }), stages: { type: 'array', description: 'The stages, in order.', items: flowStage, maxItems: 60 } }, ['hash', 'stages']),
     review: { type: 'object', description: 'Superseded by returns; read and dropped.' },
     error: {
-      ...object('Why the run is failed.', { code: enumOf('What went wrong.', ['no-agent', 'stage-failed', 'no-event']), stage: string('The stage.', { pattern: ID }), detail: nullableString('Detail.') }, ['code', 'stage', 'detail']),
+      ...object('Why the run is failed.', { code: enumOf('What went wrong.', ['no-agent', 'stage-failed', 'no-event', 'pr-open-failed']), stage: string('The stage.', { pattern: ID }), detail: nullableString('Detail. For a pull request not on the host: the branch it was to be opened against.') }, ['code', 'stage', 'detail']),
       type: ['object', 'null'],
     },
     history: { type: 'array', description: 'Every transition, in order.', items: history, maxItems: 1000 },

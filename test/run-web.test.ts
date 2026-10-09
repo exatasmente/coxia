@@ -20,6 +20,7 @@ const CHANNEL: Record<RunActionId, string> = {
   skip: 'runs:gate',
   answer: 'runs:answer',
   chooseSquad: 'runs:setSquad',
+  retryPr: 'runs:retryPr',
   skipWait: 'runs:skipWait',
   sendBack: 'runs:sendBack',
   retry: 'runs:retry',

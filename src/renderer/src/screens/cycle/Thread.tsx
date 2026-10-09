@@ -526,7 +526,7 @@ export function Thread({ thread, run = null, team, title, onSendBack }: Props) {
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [rows.length, last]);
 
-  const asking = run?.status === 'question' && run.question?.kind !== 'squad';
+  const asking = run?.status === 'question' && run.question?.kind !== 'squad' && run.question?.kind !== 'pr-retry';
   const note = asking ? t('ui.forum.noteAnswers') : t('ui.forum.noteMention');
 
   return (
