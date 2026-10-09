@@ -13,7 +13,7 @@ const OPEN = [...READS, ...MOVES];
 // Starting a release run ends in the repository's own scripts and merged code, run as the person, and allowing a host command runs one outside any sandbox: a paired browser
 // does either only when its external effects are on, as it approves a proposal.
 // Answering a step the app's browser holds (or a confirmation an agent asked for) lets an irreversible step happen on a site: the same switch as allowing a host command.
-const EXTERNAL = ['runs:command', 'runs:startRelease', 'runs:screenAnswer'];
+const EXTERNAL = ['runs:command', 'runs:startRelease', 'runs:screenAnswer', 'runs:retryPr'];
 
 const files = readdirSync(SRC).filter((f) => f.endsWith('.ts'));
 const source = (f: string) => readFileSync(join(SRC, f), 'utf8');

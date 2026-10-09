@@ -85,6 +85,7 @@ const comment = object(
     headline: { type: ['string', 'null'], description: 'The first line of the body: its status.', maxLength: 1000 },
     title: { type: ['string', 'null'], description: 'The title of the pull request (the `pr` record).', maxLength: 500 },
     evidenceIds: EVIDENCE_REFS,
+    waitingSaid: { type: 'boolean', description: 'The "waiting for the pull request" line is already said for it; the sweep does not repeat it.' },
   },
   ['target', 'noteId', 'url', 'bodyHash', 'status', 'updatedAt'],
 );
@@ -293,7 +294,7 @@ const docsRun = object('What the run is about when it drafts the documentation o
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
-    version: { type: 'integer', description: 'Version of this file format: 5 when a stage of the run used a procedure, 4 when a screen recording of the run holds a hand-off, 3 when it holds cuts or the time it started after the screen opened, 2 when the run holds one without, else 1.', enum: [1, 2, 3, 4, 5] },
+    version: { type: 'integer', description: 'Version of this file format: 6 when the run is blocked by its pull request (a pr-retry question, a pr-open-failed error or a comment that said it waits), 5 when a stage of the run used a procedure, 4 when a screen recording of the run holds a hand-off, 3 when it holds cuts or the time it started after the screen opened, 2 when the run holds one without, else 1.', enum: [1, 2, 3, 4, 5, 6] },
     rev: { type: 'integer', description: 'Grows by one on every save.', minimum: 0 },
     id: string('Run id.', { pattern: RUN_ID.source }),
     issue: object('The issue.', { ref: string('How the cards write it.', { minLength: 1, maxLength: 200 }), iid: { type: 'integer', description: 'Issue number.', minimum: 0 }, title: string('Title.', { maxLength: 500 }), url: nullableString('Web address.') }, ['ref', 'iid', 'title', 'url']),
@@ -306,7 +307,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     stage: string('The stage the run is in.', { pattern: ID }),
     stages: { type: 'array', description: 'One record per stage entered.', items: stageRecord, maxItems: 60 },
     question: {
-      ...object('What the run waits for the person to answer.', { by: string('Agent id or "app".', { maxLength: 48 }), holder: { type: ['string', 'null'], description: 'The agent the question is with now; null: the person.', maxLength: 48 }, hops: { type: 'integer', description: 'How many times it was passed on.', minimum: 0, maximum: 100 }, kind: enumOf('Who raised it.', QUESTION_KINDS), text: string('The question.', { maxLength: 20_000 }), askedAt: time('When.'), stage: string('The stage.', { pattern: ID }) }, ['by', 'kind', 'text', 'askedAt', 'stage']),
+      ...object('What the run waits for the person to answer.', { by: string('Agent id or "app".', { maxLength: 48 }), holder: { type: ['string', 'null'], description: 'The agent the question is with now; null: the person.', maxLength: 48 }, hops: { type: 'integer', description: 'How many times it was passed on.', minimum: 0, maximum: 100 }, kind: enumOf('Who raised it.', QUESTION_KINDS), text: string('The question.', { maxLength: 20_000 }), askedAt: time('When.'), stage: string('The stage.', { pattern: ID }), bases: { type: 'array', description: 'For pr-retry: the branches it may be opened against, the branch the failed one aimed at first.', items: string('A branch name.', { minLength: 1, maxLength: 300 }), maxItems: 8 }, targetBranch: string('For pr-retry: the branch the failed pull request was aimed at.', { maxLength: 300 }), baseGone: { type: 'boolean', description: 'For pr-retry: the host\'s refusal reads as the base branch not being on the host any more.' } }, ['by', 'kind', 'text', 'askedAt', 'stage']),
       type: ['object', 'null'],
     },
     pending,
@@ -319,7 +320,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     flow: object('The flow the run follows: a copy of its stages and its version.', { hash: string('Version of the flow.', { maxLength: 64 }), stages: { type: 'array', description: 'The stages, in order.', items: flowStage, maxItems: 60 } }, ['hash', 'stages']),
     review: { type: 'object', description: 'Superseded by returns; read and dropped.' },
     error: {
-      ...object('Why the run is failed.', { code: enumOf('What went wrong.', ['no-agent', 'stage-failed', 'no-event']), stage: string('The stage.', { pattern: ID }), detail: nullableString('Detail.') }, ['code', 'stage', 'detail']),
+      ...object('Why the run is failed.', { code: enumOf('What went wrong.', ['no-agent', 'stage-failed', 'no-event', 'pr-open-failed']), stage: string('The stage.', { pattern: ID }), detail: nullableString('Detail. For a pull request not on the host: the branch it was to be opened against.') }, ['code', 'stage', 'detail']),
       type: ['object', 'null'],
     },
     history: { type: 'array', description: 'Every transition, in order.', items: history, maxItems: 1000 },

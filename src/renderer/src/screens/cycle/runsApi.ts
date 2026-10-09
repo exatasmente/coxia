@@ -36,6 +36,8 @@ export const runsApi = {
   gate: (id: string, action: GateAction, reason?: string) => api.invoke<Run>('runs:gate', id, action, reason),
   answer: (id: string, text: string) => api.invoke<Run>('runs:answer', id, text),
   retry: (id: string) => api.invoke<Run>('runs:retry', id),
+  // The pull request of a run blocked on its failed opening is tried again against a base chosen on the screen; the answer is the run as it goes on.
+  retryPr: (id: string, base: string) => api.invoke<Run>('runs:retryPr', id, base),
   cancel: (id: string) => api.invoke<Run>('runs:cancel', id),
   command: (id: string, command: string, decision: CommandDecision, note: string) => api.invoke<Run>('runs:command', id, command, decision, note),
   skipWait: (id: string, reason: string) => api.invoke<Run>('runs:skipWait', id, reason),

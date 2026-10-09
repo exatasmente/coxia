@@ -385,6 +385,7 @@ export const runsModule: Module = (ctx) => {
         : undefined,
     ));
   ctx.handle('runs:retry', (run: unknown) => r.retry(id(run)));
+  ctx.handle('runs:retryPr', (run: unknown, base: unknown) => r.retryPr(id(run), text(base)));
   ctx.handle('runs:cancel', (run: unknown) => r.cancel(id(run)));
   // Lets a `shell: host` agent run a command on this computer: from a paired browser only with the same switch as approving a proposal (webPolicy.ts).
   ctx.handle('runs:command', (run: unknown, command: unknown, decision: unknown, note?: unknown) => r.command(id(run), text(command), decision as CommandDecision, text(note)));

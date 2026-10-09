@@ -20,7 +20,7 @@ const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)
 // starts a run that ends in the repository's own scripts and merged code, run as the person: the same switch decides whether a phone may start one (each push
 // of the release still waits for its own "yes" in actions:approve). runs:screenAnswer answers a step the app's browser holds before an irreversible act (a submit, a delete,
 // a payment) or a confirmation an agent asked for: a yes lets that step happen on a site, so a phone gives it only with the same switch.
-export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command', 'runs:startRelease', 'runs:screenAnswer']);
+export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command', 'runs:startRelease', 'runs:screenAnswer', 'runs:retryPr']);
 
 // forum:* (list, read, post, create, the four attachment channels — attachment-put, attachment-post, attachment-drop, attachment-get — and attachment-delete,
 // which removes one message of the conversation and the files it carried) read and write the workspace's own thread files and its own attachment folder, and
@@ -35,8 +35,11 @@ export const EXTERNAL_EFFECT = new Set(['actions:approve', 'runs:command', 'runs
 // which only the computer can switch on (runner.autonomy is not editable from a browser). sendAll makes at most 50 issues in one call. The guard inside each
 // handler is what refuses a test workspace. test/board-policy.test.ts pins the list.
 
-// runs:* are all open to a paired browser, except runs:startRelease and runs:command (above, behind the external-effects switch), the reads and the moves alike (start, startStage, accept, return, gate, answer, retry, cancel, skipWait, sendBack, migrateFlow,
-// undoPost, setSquad, removeSquad, setSquadAutonomous, setAutonomous): the cycle is managed from the phone as much as from the window. None of them lets a
+// runs:* are all open to a paired browser, except runs:startRelease and runs:command (above, behind the external-effects switch), and runs:retryPr: it opens the
+// pull request itself through the audited direct path, a write to the code host like the one it retries, so a paired browser does it only when its external
+// effects are on — the reads and the moves alike (start, startStage, accept, return, gate, answer, retry, cancel, skipWait, sendBack, migrateFlow,
+// undoPost, setSquad, removeSquad, setSquadAutonomous, setAutonomous) stay open (the cycle is managed from the phone as much as from the window). None of them
+// lets a
 // browser name a program or a folder: the runner only runs what the configuration says (runner.commands, the worktrees folder and the identity are changed
 // only on the computer, see configScope.ts), and its writes to the code host still wait in the proposals of actions:approve. The autonomy switches change how
 // far an agent goes by itself inside that same confinement. test/runs-policy.test.ts pins the list.

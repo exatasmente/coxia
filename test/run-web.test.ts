@@ -20,6 +20,7 @@ const CHANNEL: Record<RunActionId, string> = {
   skip: 'runs:gate',
   answer: 'runs:answer',
   chooseSquad: 'runs:setSquad',
+  retryPr: 'runs:retryPr',
   skipWait: 'runs:skipWait',
   sendBack: 'runs:sendBack',
   retry: 'runs:retry',
@@ -31,10 +32,11 @@ describe('the run screen in a browser', () => {
     const question = { by: 'developer', holder: null, kind: 'agent' as const, text: 'x', askedAt: '', stage: 'plan' };
     const seen = new Set<RunActionId>();
     for (const status of RUN_STATUSES) {
-      for (const question_ of [null, question, { ...question, kind: 'squad' as const }]) {
+      for (const question_ of [null, question, { ...question, kind: 'squad' as const }, { ...question, kind: 'pr-retry' as const, bases: ['release/0.8.0', 'main'], targetBranch: 'release/0.8.0', baseGone: true }]) {
         for (const a of runActions({ status, question: question_ })) {
           seen.add(a.id);
-          expect(webAccess(CHANNEL[a.id]), `${status}/${a.id}`).toBe('allow');
+          // the pull request retry writes the host directly, behind the same switch as approving a proposal (webPolicy.ts)
+          expect(webAccess(CHANNEL[a.id]), `${status}/${a.id}`).toBe(a.id === 'retryPr' ? 'external' : 'allow');
         }
       }
     }

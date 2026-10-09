@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Fixed
 
 - **The app's browser starts in the installed app.** In the package, the Playwright that the browser server needs was left inside `app.asar`, where the server (unpacked so that it runs as a real file) cannot read it, so an agent's screen answered that the browser server did not start. Both builds now unpack it too.
+- **A run whose change request could not be opened stops blocked where the person can act.** When the branch was pushed but the host refused to open the change request (for example because the release branch it aimed at left the host while the run worked), the run no longer carries on as if nothing had happened: it stops blocked with the host's answer and the branch the request aimed at as the reason, on the run screen, in the runs list and in the thread. When the branch it aimed at is gone, the reason says so, and the run screen offers to open the request again against a base chosen there (the branch the run knows first, the project's default branch last), reusing the description the run already drafted; the stage that waits for the merge never starts on a request that is not on the host. The stage waits aloud once, not once per sweep: the review says "waiting for the change request" at most once per round, and the sweep stays silent about it until the request exists.
 
 ## [0.9.0-beta.7] - 2026-10-09
 
