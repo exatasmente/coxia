@@ -33,7 +33,8 @@ export function mergeMcpEntry(existing: unknown, entry: ReturnType<typeof stateS
     servers = doc.mcpServers as Record<string, unknown>;
   }
   const there = servers[MCP_SERVER_NAME];
-  if (there && (typeof there !== 'object' || Array.isArray(there) || !sameEntry(there, entry))) return { ok: false, conflict: true };
+  if (there && (typeof there !== 'object' || Array.isArray(there) || !sameEntry(there as Record<string, unknown>, entry)))
+    return { ok: false, conflict: true };
   if (there) return { ok: true, status: 'same', text: serverEntryText(entry) };
   const text = JSON.stringify({ ...doc, mcpServers: { ...servers, [MCP_SERVER_NAME]: entry } }, null, 2);
   return { ok: true, status: 'written', text };

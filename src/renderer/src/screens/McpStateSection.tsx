@@ -34,7 +34,7 @@ export function McpStatePanel({ shown, onToggle, onWrite }: { shown: McpStateVie
       <div className="wz-label">{t('ui.settings.mcp.entry.title')}</div>
       <p className="small muted">{t('ui.settings.mcp.entry.hint', { workspaceId: shown.workspaceId })}</p>
       <pre
-        style={{ fontFamily: 'var(--mono)', border: '1px solid var(--line-2)', padding: 10, borderRadius: 8, overflowX: 'auto', fontSize: 12, whiteSpace: 'pre-wrap' }}
+        style={{ fontFamily: 'var(--mono)', border: '1px solid var(--line-2)', padding: 10, borderRadius: 8, overflowX: 'auto', fontSize: 12, whiteSpace: 'pre-wrap' }} // i18n-ignore: CSS values, not prose
       >{shown.entry}</pre>
       {shown.path && <p className="small muted">{t('ui.settings.mcp.path.hint', { path: shown.path })}</p>}
       <div className="row" style={{ gap: 8 }}>
@@ -99,6 +99,7 @@ export function McpStatePanel({ shown, onToggle, onWrite }: { shown: McpStateVie
 }
 
 export function McpStateSection() {
+  const t = useT();
   const [view, setView] = useState<McpStateView | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);

@@ -88,7 +88,7 @@ const PROCEDURES_WRITE = /^procedures:(?!(list|get|stats)$)/;
 const MCP_STATE_ADMIN = /^mcpstate:/;
 
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MCP_STATE_ADMIN.test(channel)) return 'deny';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

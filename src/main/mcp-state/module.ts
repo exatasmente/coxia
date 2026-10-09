@@ -4,8 +4,8 @@ import { app } from 'electron';
 import type { Module } from '../module';
 import type { McpStateView } from '../../shared/mcpState';
 import { MCP_DATA_DIR_ENV, mergeMcpFile, serverEntryText, stateServerEntry } from './entry';
-import { HOME, WORKSPACE_ID } from './env';
-import { getConfig, updateConfig } from './workspaceConfig';
+import { HOME, WORKSPACE_ID } from '../env';
+import { getConfig, updateConfig } from '../workspaceConfig';
 import { expandHome, shrinkHome } from '../../shared/config/paths';
 import { t } from '../../shared/i18n';
 
@@ -55,7 +55,7 @@ export const mcpStateModule: Module = (ctx) => {
     // Only a folder the view offers is written into; the entry derived from the workspace id is the thing being written.
     const known = targets().find((t) => t.path === target);
     if (!known) throw new Error(t('main.mcpstate.badTarget', { path: shrinkHome(String(target).slice(0, 80), HOME) }));
-    const file = join(expandHome(target, HOME), '.mcp.json');
+    const file = join(expandHome(String(target), HOME), '.mcp.json');
     const result = mergeMcpFile(
       (f) => {
         try {
