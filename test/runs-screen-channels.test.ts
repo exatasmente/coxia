@@ -34,7 +34,16 @@ afterEach(() => {
 
 describe('the channels are served', () => {
   it('has the four, next to the frame read', () => {
-    for (const channel of ['runs:screens', 'runs:screenClose', 'runs:callStop', 'runs:screenAnswer', 'runs:screen']) expect(ipc.has(channel), channel).toBe(true);
+    for (const channel of ['runs:screens', 'runs:screenClose', 'runs:callStop', 'runs:screenAnswer', 'runs:screen', 'runs:handoffDecline']) expect(ipc.has(channel), channel).toBe(true);
+  });
+});
+
+describe('runs:handoffDecline', () => {
+  it('says gone for a request nobody asked, for a made-up id and for no id, from the window and from a paired browser, and never throws', async () => {
+    for (const id of ['ask-nobody', '', 7, null, {}]) {
+      expect(await window('runs:handoffDecline', id), String(id)).toEqual({ ok: false, reason: 'gone' });
+      expect(await paired('runs:handoffDecline', id), String(id)).toEqual({ ok: false, reason: 'gone' });
+    }
   });
 });
 

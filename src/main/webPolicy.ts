@@ -67,8 +67,9 @@ const DOCS = /^docs:/;
 // out in a conversation: it is the desktop window's, like suggesting agents. A pattern and not a list, so a channel added later is closed from the day it exists.
 const AGENT_ASSIST = /^agentAssist:/;
 
-// Taking control of an agent's virtual screen and sending it clicks and keys (screen:control, screen:input) is the desktop window's: the phone only watches, through
-// runs:screen, a read like the others. A pattern and not a list, so a channel added under `screen:` later is closed from the day it exists, and with or without the
+// Taking control of an agent's virtual screen and sending it clicks and keys (screen:control, screen:input) is the desktop window's, and so is taking it over when the agent
+// hands it over, giving it back and reading its picture while the person holds it (screen:handoffTake, screen:handoffGive, screen:handoffFrame): the phone only watches,
+// through runs:screen, a read like the others (it answers `held`, with no picture, while the person holds the screen), and may decline (runs:handoffDecline). A pattern and not a list, so a channel added under `screen:` later is closed from the day it exists, and with or without the
 // external-effects switch (nothing leaves the machine, but what a person types into the agent's screen is not for a phone to send).
 const SCREEN_INPUT = /^screen:/;
 

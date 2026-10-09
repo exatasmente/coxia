@@ -349,6 +349,9 @@ export const runsModule: Module = (ctx) => {
       throw e;
     }
   });
+  // The person declines a request to take the agent's screen, from the computer or from a paired browser (a person away from the computer would otherwise leave the agent waiting
+  // for the whole wait). It gives the agent nothing and takes no screen; taking it and giving it back are the window's (`screen:handoffTake`, `screen:handoffGive`).
+  ctx.handle('runs:handoffDecline', (askId: unknown) => handoffs.decline(text(askId)));
   // Removing a piece of evidence is the person's action, never an agent's; the file goes and the run drops the record.
   ctx.handle('runs:evidenceDelete', (run: unknown, evidence: unknown) => r.removeEvidence(id(run), text(evidence)));
   ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined));

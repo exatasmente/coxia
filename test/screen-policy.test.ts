@@ -8,7 +8,7 @@ import { DESKTOP_ONLY, EXTERNAL_EFFECT, webAccess, webRefusal } from '../src/mai
 const SRC = join(import.meta.dirname, '../src/main');
 
 describe('web policy for the screen channels', () => {
-  it.each(['screen:control', 'screen:input', 'screen:anything-new'])('denies %s to a paired browser, with or without the external-effects switch', (channel) => {
+  it.each(['screen:control', 'screen:input', 'screen:handoffTake', 'screen:handoffGive', 'screen:handoffFrame', 'screen:anything-new'])('denies %s to a paired browser, with or without the external-effects switch', (channel) => {
     expect(webAccess(channel)).toBe('deny');
     expect(webRefusal(channel, false)).not.toBeNull();
     expect(webRefusal(channel, true)).not.toBeNull();
@@ -42,12 +42,12 @@ describe('web policy for the screen channels', () => {
     expect(EXTERNAL_EFFECT.has(channel)).toBe(false);
   });
 
-  it('is every screen channel a module serves: each one is denied, and there are the four this feature has', () => {
+  it('is every screen channel a module serves: each one is denied, and there are the seven this feature has', () => {
     const served: string[] = [];
     for (const file of readdirSync(SRC, { recursive: true }).map(String).filter((f) => f.endsWith('.ts'))) {
       for (const m of readFileSync(join(SRC, file), 'utf8').matchAll(/(?:ctx\.handle|handle)\(\s*'(screen:[\w-]+)'/g)) served.push(m[1]);
     }
-    expect(served.sort()).toEqual(['screen:control', 'screen:input', 'screen:revoke', 'screen:sites']);
+    expect(served.sort()).toEqual(['screen:control', 'screen:handoffFrame', 'screen:handoffGive', 'screen:handoffTake', 'screen:input', 'screen:revoke', 'screen:sites']);
     for (const channel of served) expect(webAccess(channel), channel).toBe('deny');
   });
 
@@ -57,17 +57,29 @@ describe('web policy for the screen channels', () => {
     expect([...module.matchAll(/ctx\.handle\('(runs:[\w-]+)'/g)].map((m) => m[1])).toContain('runs:screen');
   });
 
-  it('serves no frame under screen:, where the web policy denies everything: the picture is a read of the runs family and nothing else', () => {
+  it('serves one picture under screen:, the desktop window\'s own for a hand-off, and every other reader\'s is a read of the runs family', () => {
     const files = readdirSync(SRC, { recursive: true }).map(String).filter((f) => f.endsWith('.ts'));
     const owners = files.filter((f) => /(?:ctx\.handle|handle)\(\s*'screen:[\w-]+'/.test(readFileSync(join(SRC, f), 'utf8')));
     expect(owners.sort()).toEqual(['browser/module.ts', 'screen/module.ts']);
-    for (const f of owners) {
-      const text = readFileSync(join(SRC, f), 'utf8');
-      // A module that serves `screen:` neither asks the hub for a picture nor touches the encoder or an image.
-      expect(text, f).not.toMatch(/\.frame\(|createFrameEncoder|encoderHost|nativeImage|jpeg/i);
-    }
-    for (const m of readFileSync(join(SRC, 'screen/module.ts'), 'utf8').matchAll(/handle\('(screen:[\w-]+)'/g)) expect(m[1]).not.toMatch(/frame|image|picture|shot|pixel/i);
+    // A module that serves `screen:` neither makes a picture nor touches the encoder or an image; the one exception is the hand-off's frame read, which asks the hub for the
+    // person's picture (the one reader the withheld interval lets through) and nothing else.
+    const browser = readFileSync(join(SRC, 'browser/module.ts'), 'utf8');
+    expect(browser).not.toMatch(/\.frame\(|createFrameEncoder|encoderHost|nativeImage|jpeg/i);
+    const screen = readFileSync(join(SRC, 'screen/module.ts'), 'utf8');
+    expect(screen).not.toMatch(/createFrameEncoder|encoderHost|nativeImage|jpeg/i);
+    const reads = [...screen.matchAll(/\.frame\(([^\n]*)\)/g)].map((m) => m[1]);
+    expect(reads).toHaveLength(1);
+    expect(reads[0]).toContain("'person')");
+    const named = [...screen.matchAll(/handle\('(screen:[\w-]+)'/g)].map((m) => m[1]);
+    expect(named.filter((c) => /frame|image|picture|shot|pixel/i.test(c))).toEqual(['screen:handoffFrame']);
     expect(readFileSync(join(SRC, 'runner/module.ts'), 'utf8')).toMatch(/ctx\.handle\('runs:screen',/);
+  });
+
+  it('serves the watching of a paired browser from the runs family only, as the web viewer, which is withheld while the person holds the screen', () => {
+    const module = readFileSync(join(SRC, 'runner/module.ts'), 'utf8');
+    const read = module.split('\n').find((l) => l.includes("ctx.handle('runs:screen',")) ?? '';
+    expect(read).toContain('hub.frame(');
+    expect(read).not.toContain("'person'");
   });
 
   it('has no channel that moves the pointer or the keyboard outside screen:, where it would be open to a paired browser by default', () => {
@@ -90,5 +102,20 @@ describe('web policy for the screen channels', () => {
     expect(webRefusal('runs:screenAnswer', false)).not.toBeNull();
     expect(webRefusal('runs:screenAnswer', true)).toBeNull();
     expect(DESKTOP_ONLY.has('runs:screenAnswer')).toBe(false);
+  });
+});
+
+describe('the hand-off channels', () => {
+  it('keeps taking the screen, giving it back and its picture to the desktop window, and declining open to a paired browser', () => {
+    for (const channel of ['screen:handoffTake', 'screen:handoffGive', 'screen:handoffFrame']) {
+      expect(webAccess(channel), channel).toBe('deny');
+      expect(webRefusal(channel, true), channel).not.toBeNull();
+      expect(DESKTOP_ONLY.has(channel), channel).toBe(false);
+    }
+    // Declining gives the agent nothing and takes no screen: a person away from the computer can do it from the phone.
+    expect(webAccess('runs:handoffDecline')).toBe('allow');
+    expect(webRefusal('runs:handoffDecline', false)).toBeNull();
+    expect(DESKTOP_ONLY.has('runs:handoffDecline')).toBe(false);
+    expect(EXTERNAL_EFFECT.has('runs:handoffDecline')).toBe(false);
   });
 });
