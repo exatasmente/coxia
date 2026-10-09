@@ -15,7 +15,7 @@ import { type InputPlanner, createInputPlanner } from './xinput';
 // The recording (the one thing that reads without a watcher, spec rule 14): while a screen is open a timer asks the display whether a window is mapped on it (#176) and,
 // only if one is, looks at it through the same cache the viewer uses and offers the recorder the picture; it feeds the encoder only when the picture changed. A bare
 // screen is not read for the recording, so the video begins when the screen is first used and a stage that never used it keeps none. A burst of the person's input is
-// also a mark on the recording. The recording is built by `finish`, at the end of the stage; a screen that is lost on the way (the display died) keeps its recorder
+// also a mark on the recording. The recording is built by `finish`, at the end of the stage, after one last look; a screen that is lost on the way (the display died) keeps its recorder
 // aside until `finish` or `end`.
 
 /** A frame read less than this long ago is reused: two viewers cost one read. */
@@ -381,11 +381,17 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       return { ok: true, delivered: plan.accepted, rejected };
     },
     async finish(run) {
-      const live = lives.get(run);
+      let live = lives.get(run);
+      // One last look: a window that mapped less than a second ago (the timer's interval) is on the screen now and is the video's, not an unused screen. The display may
+      // die during it, which sets the recording aside as lost, so the screen is looked up again after.
+      if (live?.rec && !live.ended) await look(live, live.rec).catch(() => undefined);
+      live = lives.get(run);
       let rec: Recorder | null;
       let sawWindow: boolean;
+      // The screen this call ends, kept to read what a look still in flight saw before the screen is gone.
+      const ending = live;
       if (live) {
-        // Taken before anything is awaited: a display that dies meanwhile sets the recording aside as lost, and it is this call's to build.
+        // Taken before anything else is awaited: a display that dies meanwhile sets the recording aside as lost, and it is this call's to build.
         rec = live.rec;
         sawWindow = live.sawWindow;
         // Control is given back with the stage: what the person held down is put up, and the conversation says both.
@@ -408,7 +414,8 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       if (!rec) return null;
       try {
         const out = await rec.finish(now());
-        // Nothing was fed because nothing was ever on the screen: that is not a failure to read it.
+        // Nothing was fed because nothing was ever on the screen: that is not a failure to read it. What a look in flight saw while the screen was being ended counts.
+        sawWindow ||= ending?.sawWindow ?? false;
         return !out.ok && out.reason === 'no-frame' && !sawWindow ? { ok: false, reason: 'unused' } : out;
       } catch {
         return { ok: false, reason: 'encoder' };

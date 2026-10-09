@@ -818,6 +818,58 @@ describe('a screen in use', () => {
     expect(r.conn.grabs).toBe(0);
   });
 
+  it('takes one last look when the stage ends: a window that opened less than a second before is recorded, not called unused (#176)', async () => {
+    const r = await bare();
+    await r.second();
+    // The window maps, and the stage ends before the timer's next look.
+    r.conn.windows = true;
+    r.conn.pixels.fill(5);
+    r.clock.t += 400;
+    const out = await r.hub.finish('r-1');
+    expect(out?.ok).toBe(true);
+    expect(r.sink.firstBytes).toEqual([5]);
+    // Still unused when the last look finds the screen bare.
+    const none = await bare();
+    expect(await none.hub.finish('r-1')).toEqual({ ok: false, reason: 'unused' });
+  });
+
+  it('does not lose a window an in-flight look saw while the stage was giving control back: the label follows what was seen last', async () => {
+    const r = await bare();
+    // The encoder takes no frame, so the recording stays empty though a window was seen.
+    r.sink.behind = 1;
+    await r.hub.control('r-1', true);
+    // The look in flight asks the question and waits for the answer; the one the stage's end makes is answered at once, bare.
+    let answer: (v: boolean) => void = () => undefined;
+    const slow = new Promise<boolean>((res) => (answer = res));
+    const calls: number[] = [];
+    r.conn.inUse = async () => {
+      calls.push(calls.length);
+      return calls.length === 1 ? slow : false;
+    };
+    // The person's key is still down, so ending the stage waits for the display to take the release.
+    await r.hub.input('r-1', [{ t: 'key', key: 'a', down: true }]);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((res) => (release = res));
+    const real = r.conn.fakeInput;
+    r.conn.fakeInput = async (events) => {
+      await held;
+      return real(events);
+    };
+    r.clock.t += 1000;
+    for (const t of r.timers.filter((x) => x.live && x.ms === 1000)) {
+      t.live = false;
+      t.fn();
+    }
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    const finishing = r.hub.finish('r-1');
+    await new Promise((res) => setTimeout(res, 5));
+    // The first look gets its answer while the stage is still giving control back: a window, whose picture the encoder does not take.
+    answer(true);
+    await new Promise((res) => setTimeout(res, 5));
+    release();
+    expect(await finishing).toEqual({ ok: false, reason: 'no-frame' });
+  });
+
   it('says it was never used also for a display that died before any window, and not for one whose picture could not be read', async () => {
     const died = await bare();
     died.conn.close();
