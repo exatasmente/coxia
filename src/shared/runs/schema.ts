@@ -2,8 +2,10 @@
 import type { JsonSchema } from '../config/jsonSchema';
 import { validateSchema } from '../config/jsonSchema';
 import { STAGE_KINDS, STAGE_TYPES, WAIT_KINDS } from '../config/types';
-import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_DETAIL_MAX, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
+import { COMMENT_STATUSES, COMMENT_TARGETS, HISTORY_DETAIL_MAX, HISTORY_TYPES, LINK_KINDS, LINK_ROLES, LINK_STATUSES, QUESTION_KINDS, PROCEDURES_PER_STAGE, ROUTED_BY, ROUTING_WHY, RUN_ID, RUN_STATUSES, RUN_VERSION, SCENARIO_EVIDENCE, SCENARIO_RESULTS, SCENARIO_SEVERITIES, SEVERITIES, STAGE_STATUSES, VERDICTS, type Run } from './types';
 import { EVIDENCE_KINDS } from '../evidence';
+import { PROCEDURE_ID } from '../procedures';
+import { RECORDING_CUTS_MAX, RECORDING_MARKS_MAX } from '../screen';
 
 // What a run file must look like to be believed. The store checks every file it reads against this: a file edited by hand or written by a
 // newer app is not used, and a newer one is never overwritten.
@@ -45,6 +47,21 @@ const stageRecord = object(
       },
       ['promptTokens', 'completionTokens', 'cachedTokens', 'calls', 'costUsd'],
     ),
+    procedures: {
+      type: 'array',
+      description: 'The procedures the stage used and what became of each. Optional: absent when it read none.',
+      items: object(
+        'One procedure the stage read.',
+        {
+          id: string('The procedure.', { pattern: PROCEDURE_ID.source }),
+          revision: { type: 'integer', description: 'The revision the stage read.', minimum: 1 },
+          title: string('Its title when it was used.', { maxLength: 80 }),
+          outcome: enumOf('No failure reported, a step failed, or the stage replaced it with a corrected version.', ['ok', 'failed', 'replaced']),
+        },
+        ['id', 'revision', 'title', 'outcome'],
+      ),
+      maxItems: PROCEDURES_PER_STAGE,
+    },
   },
   ['stage', 'agent', 'status', 'artifacts', 'startedAt', 'endedAt', 'attempts', 'autonomous'],
 );
@@ -68,6 +85,7 @@ const comment = object(
     headline: { type: ['string', 'null'], description: 'The first line of the body: its status.', maxLength: 1000 },
     title: { type: ['string', 'null'], description: 'The title of the pull request (the `pr` record).', maxLength: 500 },
     evidenceIds: EVIDENCE_REFS,
+    waitingSaid: { type: 'boolean', description: 'The "waiting for the pull request" line is already said for it; the sweep does not repeat it.' },
   },
   ['target', 'noteId', 'url', 'bodyHash', 'status', 'updatedAt'],
 );
@@ -161,6 +179,22 @@ const evidenceRecord = object(
     from: { type: ['string', 'null'], description: 'The evidence this one was made from.', pattern: '^ev-\\d{1,6}$', maxLength: 12 },
     message: { type: ['integer', 'null'], description: 'The forum message it was published as an attachment of.', minimum: 1 },
     inCycle: { type: 'boolean', description: 'The file was also copied into the cycle folder.' },
+    recording: object(
+      'Only on the app\'s own recording of a stage\'s screen.',
+      {
+        durationMs: { type: 'integer', description: 'The length of the video: its media time, with the idle stretches shortened.', minimum: 0, maximum: 86_400_000 },
+        startedAfterMs: { type: 'integer', description: 'The time from the screen opening to the first frame of the video.', minimum: 0, maximum: 4_294_967_295 },
+        realMs: { type: 'integer', description: 'The stage\'s own time on the screen, with the cuts put back.', minimum: 0, maximum: 4_294_967_295 },
+        width: { type: 'integer', description: 'Width of the picture.', minimum: 1, maximum: 16_384 },
+        height: { type: 'integer', description: 'Height of the picture.', minimum: 1, maximum: 16_384 },
+        truncated: enumOf('Why it stopped before the stage did.', ['size', 'time']),
+        handoff: { type: 'boolean', description: 'The video holds a hand-off: the person typed on the screen while it was theirs.', enum: [true] },
+        marks: { type: 'array', description: 'The intervals in which the person used the screen, in ms from the start.', items: object('One interval.', { fromMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, toMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, kind: enumOf('The interval of a hand-off: the agent gave the screen to the person.', ['handoff']) }, ['fromMs', 'toMs']), maxItems: RECORDING_MARKS_MAX },
+        cuts: { type: 'array', description: 'Where an idle stretch was shortened: the video time at which its pause ends and the stage time left out.', items: object('One cut.', { atMs: { type: 'integer', minimum: 0, maximum: 86_400_000 }, skippedMs: { type: 'integer', minimum: 1, maximum: 4_294_967_295 } }, ['atMs', 'skippedMs']), maxItems: RECORDING_CUTS_MAX },
+      },
+      ['durationMs', 'width', 'height', 'marks'],
+    ),
+    removed: enumOf('The file was removed by retention; the record stays.', ['retention']),
   },
   ['id', 'stage', 'by', 'title', 'description', 'name', 'kind', 'bytes', 'at', 'from', 'message'],
 );
@@ -260,7 +294,7 @@ const docsRun = object('What the run is about when it drafts the documentation o
 export const RUN_SCHEMA: JsonSchema = object(
   'A run: one issue going through the agent cycle.',
   {
-    version: { type: 'integer', description: 'Version of this file format.', const: RUN_VERSION },
+    version: { type: 'integer', description: 'Version of this file format: 6 when the run is blocked by its pull request (a pr-retry question, a pr-open-failed error or a comment that said it waits), 5 when a stage of the run used a procedure, 4 when a screen recording of the run holds a hand-off, 3 when it holds cuts or the time it started after the screen opened, 2 when the run holds one without, else 1.', enum: [1, 2, 3, 4, 5, 6] },
     rev: { type: 'integer', description: 'Grows by one on every save.', minimum: 0 },
     id: string('Run id.', { pattern: RUN_ID.source }),
     issue: object('The issue.', { ref: string('How the cards write it.', { minLength: 1, maxLength: 200 }), iid: { type: 'integer', description: 'Issue number.', minimum: 0 }, title: string('Title.', { maxLength: 500 }), url: nullableString('Web address.') }, ['ref', 'iid', 'title', 'url']),
@@ -273,7 +307,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     stage: string('The stage the run is in.', { pattern: ID }),
     stages: { type: 'array', description: 'One record per stage entered.', items: stageRecord, maxItems: 60 },
     question: {
-      ...object('What the run waits for the person to answer.', { by: string('Agent id or "app".', { maxLength: 48 }), holder: { type: ['string', 'null'], description: 'The agent the question is with now; null: the person.', maxLength: 48 }, hops: { type: 'integer', description: 'How many times it was passed on.', minimum: 0, maximum: 100 }, kind: enumOf('Who raised it.', QUESTION_KINDS), text: string('The question.', { maxLength: 20_000 }), askedAt: time('When.'), stage: string('The stage.', { pattern: ID }) }, ['by', 'kind', 'text', 'askedAt', 'stage']),
+      ...object('What the run waits for the person to answer.', { by: string('Agent id or "app".', { maxLength: 48 }), holder: { type: ['string', 'null'], description: 'The agent the question is with now; null: the person.', maxLength: 48 }, hops: { type: 'integer', description: 'How many times it was passed on.', minimum: 0, maximum: 100 }, kind: enumOf('Who raised it.', QUESTION_KINDS), text: string('The question.', { maxLength: 20_000 }), askedAt: time('When.'), stage: string('The stage.', { pattern: ID }), bases: { type: 'array', description: 'For pr-retry: the branches it may be opened against, the branch the failed one aimed at first.', items: string('A branch name.', { minLength: 1, maxLength: 300 }), maxItems: 8 }, targetBranch: string('For pr-retry: the branch the failed pull request was aimed at.', { maxLength: 300 }), baseGone: { type: 'boolean', description: 'For pr-retry: the host\'s refusal reads as the base branch not being on the host any more.' } }, ['by', 'kind', 'text', 'askedAt', 'stage']),
       type: ['object', 'null'],
     },
     pending,
@@ -286,7 +320,7 @@ export const RUN_SCHEMA: JsonSchema = object(
     flow: object('The flow the run follows: a copy of its stages and its version.', { hash: string('Version of the flow.', { maxLength: 64 }), stages: { type: 'array', description: 'The stages, in order.', items: flowStage, maxItems: 60 } }, ['hash', 'stages']),
     review: { type: 'object', description: 'Superseded by returns; read and dropped.' },
     error: {
-      ...object('Why the run is failed.', { code: enumOf('What went wrong.', ['no-agent', 'stage-failed', 'no-event']), stage: string('The stage.', { pattern: ID }), detail: nullableString('Detail.') }, ['code', 'stage', 'detail']),
+      ...object('Why the run is failed.', { code: enumOf('What went wrong.', ['no-agent', 'stage-failed', 'no-event', 'pr-open-failed']), stage: string('The stage.', { pattern: ID }), detail: nullableString('Detail. For a pull request not on the host: the branch it was to be opened against.') }, ['code', 'stage', 'detail']),
       type: ['object', 'null'],
     },
     history: { type: 'array', description: 'Every transition, in order.', items: history, maxItems: 1000 },

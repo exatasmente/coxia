@@ -9,7 +9,7 @@ import { openAgentDraft, openTeamSettings, takeTeamRequest, viewOfRequest } from
 
 const SOURCE = join(import.meta.dirname, '../src/renderer/src/screens/team/TeamSettings.tsx');
 
-const draft = (): AgentDraft => ({ id: 'reviewer', name: 'Reviewer', job: 'Reviews returns from review', instructions: 'You look at returns.', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, stages: ['review'] });
+const draft = (): AgentDraft => ({ id: 'reviewer', name: 'Reviewer', job: 'Reviews returns from review', instructions: 'You look at returns.', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, screen: false, allowedHosts: [], browserProfile: false, stages: ['review'] });
 
 /** The state the section holds after applying one request, the way its effect does. */
 function afterRequest(request: { tab: 'team'; draft: { draft: AgentDraft; suggestionId: string } }): ReturnType<typeof viewOfRequest> {

@@ -3,7 +3,7 @@ import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
 import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 20). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 22). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -125,6 +125,7 @@ const stage = object(
     waitsFor: waitFor,
     comment: { type: ['string', 'null'], description: 'The key of this stage\'s comment template in devCycle.comments; left out: the stage id; null or empty: no comment.', maxLength: 48 },
     trackerStatus: string('A label the issue gets on the tracker when the run enters the stage.', { maxLength: 200 }),
+    testEnv: boolean('This stage receives the workspace\'s test environment (plain variables and secret references from testEnvironment). Left out: a QA stage of the current editor reads as yes, an already-saved template reads as no.'),
   },
   ['id', 'kind'],
 );
@@ -237,6 +238,9 @@ const agentDef = object(
     turnsTo: { type: ['string', 'null'], description: 'Who the agent turns to when it cannot decide: another agent of the team, or null for the person.', pattern: ID },
     squad: { type: ['string', 'null'], description: 'The squad the agent belongs to (a squads id); absent or null: a shared agent, which works for every squad.', pattern: ID },
     draft: boolean('An agent the AI assistant saved to be tested in a direct conversation: it works no stage, is not asked and is not called by another agent. Absent: an agent of the team.'),
+    screen: boolean('A virtual screen for the agent and the app\'s browser tools, which the person can watch. Absent: off. A paired browser may turn it off, never on; a template or an import never brings it.'),
+    allowedHosts: list('The hosts the agent may reach through the app\'s filtering proxy: exact lowercase names, HTTPS port 443, no wildcard or port. Not used by an agent on shell: host. Absent: none.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+    browserProfile: boolean('The agent\'s browser keeps its logins between uses, in a profile folder of its own in the workspace\'s data. Absent: off, a fresh profile every time.'),
     instructions: string('Appended to the agent system prompt (a catalog key or a literal).', { maxLength: 20_000 }),
     system: boolean('One of the five built-in agents: it can be edited and never removed.'),
   },
@@ -522,6 +526,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         }),
         identity: object('Who the app\'s commits are made as (a run\'s, and the merge that resolves a conflict); both empty: the one in the repository\'s own .git/config, never the global one, and with neither the app does not commit.', { name: string('Author and committer name.', { maxLength: 200 }), email: string('Author and committer email.', { maxLength: 200 }) }),
         evidence: enumOf('Where a stage\'s evidence is kept: app (only with the run, in the workspace\'s data, never in a commit; the default) or cycle (also copied into the cycle folder and committed with the stage). Only the computer changes it. Optional: absent reads as app.', EVIDENCE_PLACEMENTS),
+        procedures: boolean('Agents keep what they learned as procedures in the workspace and read them the next time. Only the computer changes it. Off: no tool and no prompt section; the Procedures view still lists, edits and deletes. Optional: absent reads as off.'),
         commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         prTitle: string('The title of the pull request a run opens; {title} (the agent\'s title, or the issue\'s) and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         linkDependencies: boolean('A run\'s worktree gets a link to the dependency folders (node_modules, .venv) of the repository\'s clone, so the commands the app runs there find their tools. Optional: absent reads as true.'),
@@ -534,6 +539,25 @@ export const CONFIG_SCHEMA: JsonSchema = {
         }),
       }),
       plugins,
+      testEnvironment: {
+        type: 'object',
+        description: 'What an allowed stage gets to exercise the app under development with: plain variables with their values, kept only here, and secret references into the secrets store under the test. prefix, whose values exist only on this computer, at launch.',
+        properties: {
+          variables: list('Plain variables (a URL, a feature flag, a model name). Never a credential: that is what the secrets are for.', object('One variable.', {
+            name: string('The name it becomes as an environment variable of the stage.', { pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$', minLength: 1, maxLength: 64 }),
+            value: string('The value, kept in this file only.', { maxLength: 4000 }),
+            hosts: list('Exact host names the stage network opens to because of this entry (443, through the app proxy). Empty: it opens nothing.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+            privateHosts: list('Hosts of hosts that are private addresses, reached only when marked so here.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+          }, ['name', 'value']), { maxItems: 50 }),
+          secrets: list('Secret references into the secrets store, every one under the "test." prefix. Never a value.', object('One secret.', {
+            ref: string('The secrets-store reference.', { pattern: SECRET_REF }),
+            testOnly: boolean('A secret for testing only (a dedicated project, a low-budget key). One not marked so needs the person confirmation, once, before a stage launches with it.'),
+            hosts: list('Exact host names the stage network opens to because of this entry.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+            privateHosts: list('Hosts of hosts that are private addresses, reached only when marked so here.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+          }, ['ref', 'testOnly']), { maxItems: 50 }),
+        },
+        required: ['variables', 'secrets'],
+      },
     },
     ['schemaVersion'],
   ),

@@ -85,6 +85,22 @@ describe('the registry proxy', () => {
     expect(decisions.map((d) => (d.allowed ? 'ok' : d.why))).toEqual(['address', 'address']);
   });
 
+  it('lets through a private host the environment marked private (the person opted in), still on 443 and still in the list', async () => {
+    proxy = await start({ hosts: ['internal.example.com'], privateHosts: ['internal.example.com'] });
+    const got = await ask('CONNECT internal.example.com:443 HTTP/1.1\r\nHost: internal.example.com\r\n\r\n', 'echo:hi', 'hi');
+    expect(got).toContain('200 Connection Established');
+    expect(got).toContain('echo:hi');
+    expect(decisions).toEqual([{ host: 'internal.example.com', port: 443, allowed: true }]);
+    // A private host that was not marked stays refused even when listed.
+    proxy = await start({ hosts: ['internal.example.com'], privateHosts: [] });
+    expect(await ask('CONNECT internal.example.com:443 HTTP/1.1\r\n\r\n')).toContain('403');
+    expect(decisions.at(-1)).toMatchObject({ allowed: false, why: 'address' });
+    // Not listed at all: refused whatever the private mark says.
+    proxy = await start({ hosts: [], privateHosts: ['internal.example.com'] });
+    expect(await ask('CONNECT internal.example.com:443 HTTP/1.1\r\n\r\n')).toContain('403');
+    expect(decisions.at(-1)).toMatchObject({ allowed: false, why: 'host' });
+  });
+
   it('answers 502 when the name does not resolve', async () => {
     proxy = await start({ resolve: async () => Promise.reject(new Error('nxdomain')) });
     expect(await ask('CONNECT registry.example.com:443 HTTP/1.1\r\n\r\n')).toContain('502');

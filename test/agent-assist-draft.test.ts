@@ -6,6 +6,7 @@ import { ASSIST_LIMITS } from '../src/shared/agentAssist';
 import { neutralConfig } from '../src/shared/config';
 import { newProvider } from '../src/shared/config/defaults';
 import { newAgent } from '../src/shared/config/team';
+import { settingsOf } from '../src/main/agentAssist-core';
 import { LLM_ROLES, type AgentDef, type WorkspaceConfig } from '../src/shared/config/types';
 import { agentFlowEngineering, applyTemplate } from '../src/shared/cycles';
 import { agentThreadId } from '../src/shared/forum';
@@ -215,6 +216,25 @@ describe('saving the draft', () => {
       expect(agent(id)?.squad ?? null).toBeNull();
       expect(JSON.stringify(agent('writer'))).toBe(before);
       expect(threadOf(id)?.kind).toBe('agent');
+    });
+
+    it('never carries the screen, the hosts or the logged-in browser: not from the original, not from what the screen sends', async () => {
+      useConfig((c) => {
+        Object.assign(c.agents.team.find((a) => a.id === 'writer')!, { screen: true, allowedHosts: ['example.com'], browserProfile: true });
+      });
+      expect(settingsOf(agent('writer')!)).not.toHaveProperty('screen');
+      const hostile = { screen: true, allowedHosts: ['example.net'], browserProfile: true };
+      const { id } = await assist.saveAssistDraft(body({ from: 'writer', ...hostile, draft: { name: 'Copy', job: '', instructions: '' }, settings: { permission: 'worktree', tracker: 'read', shell: 'none', ...hostile } }));
+      const copy = agent(id)!;
+      expect(copy.screen).toBeUndefined();
+      expect(copy.allowedHosts).toBeUndefined();
+      expect(copy.browserProfile).toBeUndefined();
+      const fresh = await assist.saveAssistDraft(body({ ...hostile, settings: { ...body().settings, ...hostile } }));
+      expect(agent(fresh.id)).not.toHaveProperty('screen');
+      // Saving over the same draft does not bring them either, and the original keeps what the person gave it.
+      const again = await assist.saveAssistDraft(body({ id, ...hostile }));
+      expect(agent(again.id)?.screen).toBeUndefined();
+      expect(agent('writer')).toMatchObject({ screen: true, allowedHosts: ['example.com'], browserProfile: true });
     });
 
     it('keeps the host the original has when the copy still says it, and never gives it otherwise', async () => {

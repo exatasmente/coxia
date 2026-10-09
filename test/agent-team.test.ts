@@ -128,7 +128,7 @@ describe('validating the team', () => {
 
   it('describes every agent field in the schema', () => {
     const team = CONFIG_SCHEMA.properties?.agents.properties?.team;
-    expect(Object.keys(team?.items?.properties ?? {})).toEqual(['id', 'name', 'job', 'model', 'stages', 'permission', 'tracker', 'shell', 'allowedCommands', 'tools', 'autonomous', 'turnsTo', 'squad', 'draft', 'instructions', 'system']);
+    expect(Object.keys(team?.items?.properties ?? {})).toEqual(['id', 'name', 'job', 'model', 'stages', 'permission', 'tracker', 'shell', 'allowedCommands', 'tools', 'autonomous', 'turnsTo', 'squad', 'draft', 'screen', 'allowedHosts', 'browserProfile', 'instructions', 'system']);
     expect(team?.items?.required).toEqual(['id', 'name']);
   });
 });

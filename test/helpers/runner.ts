@@ -14,7 +14,7 @@ import { type IssueSource, type Runner, type RunnerDeps, createRunner } from '..
 import type { RemoteRelease } from '../../src/main/runner/release';
 import type { CommandResult, CommandRunner } from '../../src/main/runner/commands';
 import { SandboxError, type ExecResult, type HostOpenOptions, type OpenOptions, type SandboxService, type SandboxSession } from '../../src/main/sandbox';
-import type { ImageRead, SandboxGui } from '../../src/main/sandbox/session';
+import type { ImageRead, SandboxGui, ScreenSocket } from '../../src/main/sandbox/session';
 import type { SandboxStatus } from '../../src/shared/sandbox';
 import { createRunStore } from '../../src/main/runs-core';
 import type { VcsComment, VcsIssue } from '../../src/main/vcs/types';
@@ -211,7 +211,7 @@ export interface FakeSession extends SandboxSession {
  * A sandbox that runs nothing: it answers every command from a table (exit 0 and "ok" otherwise), reports each one the way the real session does, and records when it was
  * closed. `available: false` makes it refuse like a machine without one. `onClose` runs when a session closes (to look at what the world was like then).
  */
-export function fakeSandbox(o: { gui?: SandboxGui; images?: Record<string, ImageRead>; onOpen?: (options: OpenOptions) => void; repoFolders?: string[]; depsOutside?: string[]; available?: boolean; table?: Record<string, Partial<ExecResult>>; onClose?: () => void | Promise<void> } = {}): FakeSandbox {
+export function fakeSandbox(o: { gui?: SandboxGui; screen?: ScreenSocket; images?: Record<string, ImageRead>; onOpen?: (options: OpenOptions) => void; repoFolders?: string[]; depsOutside?: string[]; available?: boolean; table?: Record<string, Partial<ExecResult>>; onClose?: () => void | Promise<void> } = {}): FakeSandbox {
   const opened: FakeSandbox['opened'] = [];
   const status: SandboxStatus = o.available === false ? { available: false, backend: null, version: null, reason: 'no-bwrap', detail: '' } : { available: true, backend: 'bwrap', version: '0.9.0', reason: null, detail: '' };
   return {
@@ -250,6 +250,7 @@ export function fakeSandbox(o: { gui?: SandboxGui; images?: Record<string, Image
       // What the stage offers to test an interface, and the reading of images from its output folder: a sandbox always reads one, a host session when it was given the settings
       // (and then its folder is a real one, named in `gui.out`).
       ...(o.gui ? { gui: host ? { ...o.gui, out: outDir as string } : o.gui } : {}),
+      ...(o.screen ? { screen: o.screen } : {}),
       ...(outDir
         ? {
             readImage: (path: string): ImageRead => {
@@ -327,6 +328,13 @@ export interface BootOptions {
   commandRunner?: CommandRunner;
   /** The sandbox of the agents set to `shell: sandbox`; none by default (such an agent's stage then fails). */
   sandbox?: SandboxService;
+  /** The live screens of the stages that have a virtual display (a real hub over a fake connection, or a fake hub); none by default. */
+  screens?: RunnerDeps['screens'];
+  /** The screens of the agents that have one (the app's browser) and the questions they ask; none by default. */
+  sessions?: RunnerDeps['sessions'];
+  asks?: RunnerDeps['asks'];
+  /** The hand-off of a stage's screen to the person; none by default. */
+  handoff?: RunnerDeps['handoff'];
   timeoutMs?: number;
   /** Replaces the idle limit and the cap of a stage one by one. */
   limits?: { idleMs?: number; maxMs?: number };
@@ -343,6 +351,12 @@ export interface BootOptions {
   pluginHold?: RunnerDeps['pluginHold'];
   pluginRelease?: RunnerDeps['pluginRelease'];
   pluginNotes?: RunnerDeps['pluginNotes'];
+  /** The workspace's learned procedures (a port over a folder of the test's); none by default. */
+  procedures?: RunnerDeps['procedures'];
+  /** Where the offers to keep a procedure are held (#187); none by default, and then no stage is given a last turn. */
+  offers?: RunnerDeps['offers'];
+  /** The limit of a stage's last turn, in ms. */
+  procedureTurnMs?: number;
 }
 
 /** The workspace config of the tests: the agent cycle on a workspace with one repository, a project of issues and the identity the app commits as. */
@@ -378,6 +392,10 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     notify: (n) => notices.push({ title: n.title, body: n.body, onClick: n.onClick }),
     commandRunner: options.commandRunner ?? fakeCommands(),
     sandbox: options.sandbox,
+    screens: options.screens,
+    sessions: options.sessions,
+    asks: options.asks,
+    handoff: options.handoff,
     timeoutMs: options.timeoutMs,
     limits: options.limits,
     probeBudget: options.probeBudget,
@@ -386,6 +404,9 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     pluginHold: options.pluginHold,
     pluginRelease: options.pluginRelease,
     pluginNotes: options.pluginNotes,
+    procedures: options.procedures,
+    offers: options.offers,
+    procedureTurnMs: options.procedureTurnMs,
   };
   if (options.publish) {
     const { createPublisher } = await import('../../src/main/runner/publish');

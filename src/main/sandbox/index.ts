@@ -2,7 +2,8 @@ import { accessSync, constants, existsSync, lstatSync, mkdirSync, readdirSync, r
 import { homedir } from 'node:os';
 import { delimiter, isAbsolute, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { RunnerSandbox } from '../../shared/config/types';
+import type { AgentDef, RunnerSandbox } from '../../shared/config/types';
+import { effectiveNetwork } from '../../shared/network';
 import { readOnlyPathProblem } from '../../shared/sandboxPaths';
 import type { SandboxGuiStatus, SandboxStatus } from '../../shared/sandbox';
 import { t } from '../../shared/i18n';
@@ -13,12 +14,13 @@ import { SandboxError } from './errors';
 import { gitMounts } from './gitView';
 import { bwrapArgs } from './policy';
 import { invalidateSandboxStatus, sandboxStatus } from './probe';
-import { type ProxyDecision, createRegistryProxy } from './proxy';
+import { type ProxyDecision, type ProxyOptions, createRegistryProxy } from './proxy';
 import { type ExecResult, type SandboxSession, type SessionDeps, openSession } from './session';
 import { type HostSessionDeps, type HostSessionOptions, openHostSession } from './host';
 import { type HostDisplay, startHostDisplay } from './display';
 import { loginEnv } from '../loginPath';
 import { nameResolverBinds, systemLayout } from './system';
+import { findChromium } from '../browser/chromium';
 
 export type { ExecResult, SandboxSession } from './session';
 export { SandboxError } from './errors';
@@ -56,10 +58,24 @@ export interface OpenOptions {
    * worktree's. Ignored when the tree is a worktree, whose clone git names.
    */
   clone?: string;
+  /** The stage's test environment: the variables delivered to every command, and the hosts the proxy may reach even on a private address. */
+  testEnv?: { vars: Record<string, string>; privateHosts?: string[] };
+  /**
+   * The agent the sandbox is for: its own list of hosts (`allowedHosts`) meets the workspace's network setting (see `effectiveNetwork`). Absent, or without a list: the
+   * workspace's setting alone, as before. Not used by `openHost`: an agent on the computer has the computer's own network.
+   */
+  agent?: Pick<AgentDef, 'allowedHosts'>;
+  /** The person has the screen for a hand-off (#178): a command is refused, unlogged, while this answers true. */
+  held?: () => boolean;
+  /** Takes what the person typed during a hand-off out of a command's output. */
+  mask?: (text: string) => string;
 }
 
+/** The data-folder variables a host stage testing the app under development gets as fresh empty folders (spec rule 9). */
+export const TEST_ENV_DATA_VARS = ['CERIMONIAS_DATA_DIR', 'CERIMONIAS_SPECS_DIR'];
+
 /** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders; to test an interface it asks, like a sandbox, for the browsers folder and (a QA stage) a display. */
-export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display'> & Pick<HostSessionOptions, 'approve'>;
+export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display' | 'held' | 'mask' | 'testEnv'> & Pick<HostSessionOptions, 'approve'>;
 
 export interface SandboxService {
   /** The cached answer to "can this machine make a sandbox"; `force` asks again. */
@@ -88,6 +104,8 @@ export interface SandboxServiceOptions {
   startDisplay?: (program: string) => Promise<HostDisplay | null>;
   /** The environment a host command starts from (default: the app's, with the login PATH). */
   hostEnv?: () => Promise<NodeJS.ProcessEnv>;
+  /** How the proxy resolves a name and opens a connection (default: the real ones); for a test. */
+  proxyDeps?: Pick<ProxyOptions, 'resolve' | 'open'>;
 }
 
 /** Why a machine cannot make a sandbox, in words (the detail is what the backend itself said). */
@@ -239,10 +257,12 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         const clone = git.clone ?? opts.clone ?? null;
         const deps = clone ? dependencyBinds(tree ?? worktree, worktree, clone) : { binds: [], outside: [] };
         for (const name of deps.outside) opts.onNote?.({ code: 'runner.sandbox.depsOutside', params: { name } });
-        const registry = opts.config.network === 'registry';
-        const openNet = opts.config.network === 'open';
+        // The workspace's setting, met by the agent's own list: the proxy carries the hosts of both, or only the agent's when the workspace is open.
+        const net = effectiveNetwork(opts.config, opts.agent);
+        const registry = net.mode === 'proxy';
+        const openNet = net.mode === 'open';
         if (registry) {
-          const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: opts.config.registryHosts, onDecision: opts.onProxy });
+          const proxy = await createRegistryProxy({ socketPath: join(stageDir, 'ctl', 'proxy.sock'), hosts: net.hosts, privateHosts: opts.testEnv?.privateHosts, onDecision: opts.onProxy, ...o.proxyDeps });
           cleanup.push(() => proxy.close());
         }
         const { browsers, browsersGone } = browsersOf(opts.config);
@@ -260,13 +280,14 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           system: systemLayout(),
           roBinds,
           pathDirs,
-          network: registry ? 'proxy' : openNet ? 'open' : 'off',
+          network: net.mode,
           limits: opts.config.limits,
           tmpMb: 512,
           ...(browsers || xvfb ? { gui: { browsers, xvfb } } : {}),
+          ...(opts.testEnv ? { testEnv: opts.testEnv.vars } : {}),
         });
         const gui = browsers || browsersGone || askedDisplay ? { browsers, ...(browsersGone ? { browsersGone } : {}), display: askedDisplay ? (xvfb ? ('start' as const) : ('missing' as const)) : null } : undefined;
-        return await openSession({ stageDir, args, limits: opts.config.limits, proxy: registry, onExec: opts.onExec, cleanup, ...(gui ? { gui } : {}) }, o.deps);
+        return await openSession({ stageDir, args, limits: opts.config.limits, proxy: registry, onExec: opts.onExec, cleanup, ...(gui ? { gui } : {}), ...(opts.held ? { held: opts.held } : {}), ...(opts.mask ? { mask: opts.mask } : {}) }, o.deps);
       } catch (e) {
         for (const c of cleanup) await Promise.resolve(c()).catch(() => undefined);
         removeTree(stageDir);
@@ -309,7 +330,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
       }
       try {
         return openHostSession(
-          { cwd, limits: opts.config.limits, env, onExec: opts.onExec, approve: opts.approve, ...(cleanup ? { cleanup } : {}), ...(wantsGui ? { gui: { browsers, ...(browsersGone ? { browsersGone } : {}), display, ...(displayName ? { displayName } : {}) } } : {}) },
+          { cwd, limits: opts.config.limits, env, onExec: opts.onExec, approve: opts.approve, ...(opts.testEnv ? { testEnv: { vars: opts.testEnv.vars, emptyDataDirs: TEST_ENV_DATA_VARS } } : {}), ...(opts.held ? { held: opts.held } : {}), ...(opts.mask ? { mask: opts.mask } : {}), ...(cleanup ? { cleanup } : {}), ...(wantsGui ? { gui: { browsers, ...(browsersGone ? { browsersGone } : {}), display, ...(displayName ? { displayName } : {}) } } : {}) },
           o.hostDeps,
         );
       } catch (e) {
@@ -319,9 +340,11 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
     },
     guiStatus(config) {
       let browsers: SandboxGuiStatus['browsers'] = 'unset';
+      let chromium: NonNullable<SandboxGuiStatus['chromium']> = config.browsersPath ? 'none' : 'unset';
       if (config.browsersPath) {
         try {
           const dir = readOnlyFolders([config.browsersPath], home, protect)[0];
+          if (findChromium(dir).ok) chromium = 'ready';
           // Playwright keeps one folder per build (chromium-1234, chromium_headless_shell-1234, firefox-…): an empty folder offers nothing.
           browsers = readdirSync(dir).some((n) => /^(chromium|chrome|firefox|webkit)/.test(n)) ? 'ready' : 'empty';
         } catch (e) {
@@ -330,7 +353,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
       }
       // A listed folder that is gone or refused already fails a sandbox stage on its own; the display is looked for on the system's path then.
       const display: SandboxGuiStatus['display'] = !config.display ? 'off' : displayProgram(listedBins(config)) ? 'ready' : 'missing';
-      return { browsers, display };
+      return { browsers, display, chromium };
     },
     purge() {
       try {
@@ -342,4 +365,3 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
   };
 }
 
-export { invalidateSandboxStatus };

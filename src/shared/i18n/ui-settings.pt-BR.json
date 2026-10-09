@@ -101,6 +101,7 @@
   "ui.retention.kind.historico.own-ceremony": "Histórico de {ceremony}",
   "ui.retention.kind.qa": "Passagens para o QA",
   "ui.retention.kind.retros": "Retros",
+  "ui.retention.kind.screens": "Gravações de tela das etapas",
   "ui.retention.kind.sessoes": "Sessões dos agentes (Claude)",
   "ui.retention.look": "Ver o que seria apagado",
   "ui.retention.nothingExpired": "Nada passou do prazo de {days} dias. Sessões fora do app, que o filtro ignora: {untouched}.",
