@@ -1,9 +1,10 @@
 import { existsSync, writeFileSync } from 'node:fs';
 import { app, BrowserWindow, dialog } from 'electron';
 import { CONFIG_SCHEMA } from '../shared/config/schema';
-import { TEST_ENV_REF_PREFIX, type WorkspaceConfig } from '../shared/config/types';
+import { TEST_ENV_REF_PREFIX, type Language, type WorkspaceConfig } from '../shared/config/types';
 import { collectSecretRequirements, validateConfig } from '../shared/config/validate';
 import { CONFIG_EVENT, type ConfigView } from '../shared/configView';
+import { promptEntries, withPromptOverride, type PromptEntry } from '../shared/cycles/prompts';
 import type { ExportResult, ImportApply, ImportPreview, ImportResult, ImportSource, ImportTarget } from '../shared/configTransfer';
 import type { SecretInput, SecretInfo, SecretsStorageStatus } from '../shared/secrets';
 import { syncProfiles } from './browser/module';
@@ -15,7 +16,7 @@ import { recordWrite } from './auditoria';
 import { secrets, testEnvLedger } from './secrets';
 import { readRegistry } from './workspaces-core';
 import { refusedPaths } from './configScope';
-import { checkConfig, getConfig, reloadConfig, saveConfig } from './workspaceConfig';
+import { checkConfig, getConfig, reloadConfig, saveConfig, updateConfig } from './workspaceConfig';
 import { t } from '../shared/i18n';
 
 // The channels of the configuration: read it, save it, the secrets store, and export/import. Everything that writes, touches files or
@@ -70,6 +71,16 @@ export const configModule: Module = (ctx) => {
     if (refused.length) throw new Error(t('main.config.webScope', { paths: refused.slice(0, 4).join(', ') }));
     saveConfig(config);
     return announce();
+  });
+
+  // The prompt editor (Ctrl+Shift+I, the desktop window only): every prompt id the catalogs have, read from them on each call so a text added later shows up
+  // without a list to keep, and the change of one text in one language, kept in devCycle.promptOverrides. Both are desktop-only (webPolicy.ts): a prompt
+  // is what every agent is told, so a paired browser neither reads the editor's list nor writes it.
+  ctx.handle('config:prompts', (): PromptEntry[] => promptEntries(getConfig().devCycle));
+  ctx.handle('config:prompt-set', (id: string, language: Language, text: string | null): PromptEntry[] => {
+    updateConfig((c) => ({ ...c, devCycle: { ...c.devCycle, promptOverrides: withPromptOverride(c.devCycle.promptOverrides, id, language, text) } }));
+    announce();
+    return promptEntries(getConfig().devCycle);
   });
 
   ctx.handle('config:secret-set', (input: SecretInput): SecretInfo => {

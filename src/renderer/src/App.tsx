@@ -24,6 +24,7 @@ import { ForumScreen } from './screens/cycle/ForumScreen';
 import { RunScreen } from './screens/cycle/RunScreen';
 import { RunsScreen } from './screens/cycle/RunsScreen';
 import { ProceduresScreen } from './screens/procedures/ProceduresScreen';
+import { PromptsScreen, usePromptsShortcut } from './screens/prompts/PromptsScreen';
 import { QaHandoff } from './screens/QaHandoff';
 import { QuickActions } from './screens/QuickActions';
 import { Reentry } from './screens/Reentry';
@@ -70,6 +71,7 @@ export type Screen =
   | { name: 'board' }
   | { name: 'forum'; thread?: string }
   | { name: 'procedures' }
+  | { name: 'prompts' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -106,6 +108,7 @@ export function App() {
   }, [away]);
 
   useHelpShortcut(screen.name, go);
+  usePromptsShortcut(screen.name, go);
 
   useEffect(() => {
     startCycle();
@@ -212,6 +215,8 @@ export function App() {
       return <BoardScreen go={go} />;
     case 'procedures':
       return <ProceduresScreen go={go} />;
+    case 'prompts':
+      return <PromptsScreen go={go} />;
     case 'run':
       return <RunScreen id={screen.id} go={go} ceremony={ceremony} actions={actions} tab={screen.tab} back={screen.from === 'runs' ? { name: 'runs' } : undefined} />;
     case 'auditoria':
