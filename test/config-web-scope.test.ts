@@ -132,6 +132,13 @@ describe('what a browser may change', () => {
 });
 
 describe('the channel', () => {
+  // A confirmed test secret is handed to the next stage that takes the test environment: confirming or revoking one is the computer's, like the secrets.
+  it('keeps confirming and revoking a test secret on the computer, and leaves the list of confirmations open', () => {
+    expect(webAccess('config:testenv-confirm')).toBe('deny');
+    expect(webAccess('config:testenv-revoke')).toBe('deny');
+    expect(webAccess('config:testenv-confirmations')).toBe('allow');
+  });
+
   it('is open to a paired browser while config:save stays refused by name', () => {
     expect(webAccess('config:cycle-save')).toBe('allow');
     expect(webAccess('config:save')).toBe('deny');

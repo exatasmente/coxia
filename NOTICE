@@ -10,8 +10,10 @@ Third-party software
 --------------------
 
 Coxia's packages bundle open-source components (the Electron runtime, React,
-Mermaid, electron-updater, the IBM Plex fonts and their dependencies), each
-under its own license. THIRD_PARTY_NOTICES.md lists the production
+Mermaid, electron-updater, the Playwright MCP server and Playwright that drive
+the agents' browser, the IBM Plex fonts and their dependencies), each under its
+own license. The browser itself (Chromium) is not bundled: the app uses one
+already in the person's Playwright browsers folder. THIRD_PARTY_NOTICES.md lists the production
 dependencies with their versions and licenses, and flags the ones that are not
 under a permissive license. Regenerate it with:
 
