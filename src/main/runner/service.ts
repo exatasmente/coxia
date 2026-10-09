@@ -1439,13 +1439,14 @@ export function createRunner(deps: RunnerDeps): Runner {
       engine: deps.engine,
       sandbox: exec.sandbox,
       env: deps.env,
-      openSession: async (p, def, cwd, stage, signal, watch) => {
+      screens: () => (deps.sessions && deps.asks ? { sessions: deps.sessions, asks: deps.asks } : null),
+      openSession: async (p, def, cwd, stage, signal, watch, wants) => {
         const r = p.run;
         if (!r || !stage) return null;
         const flowStage = flowFor(r).find((s) => s.id === stage);
         if (!flowStage || !existsSync(r.worktree)) return null;
         const clock: StageClock = { pause: watch.pause, beat: watch.beat, allowed: new Set() };
-        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock);
+        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock, false, wants?.display === true);
       },
       // The line each agent got when the message was accepted goes on in the answer, and the next call of the run may begin when this one ends.
       callOf: (id) => calls.get(callKey(runId, message.seq, id)) ?? null,
