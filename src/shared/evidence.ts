@@ -24,6 +24,19 @@ export const EVIDENCE_EXT: Record<EvidenceKind, string> = { png: 'png', jpeg: 'j
 /** Whether the kind is an image, the only ones the marking tool draws on and the code host may embed. */
 export const isEvidenceImage = (kind: EvidenceKind): boolean => kind === 'png' || kind === 'jpeg' || kind === 'gif' || kind === 'webp';
 
+/** The bytes as a `data:` address. The desktop's content policy lets an image come from `data:` but not from `blob:` (the paired browser allows both), so an image of
+ *  evidence is shown this way. */
+export function evidenceDataUrl(bytes: ArrayBuffer | Uint8Array, media: string): string {
+  const all = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  // The native encoder takes a few milliseconds for 8 MiB where the string path takes a third of a second; an older paired browser has only the string path.
+  const native = (all as Uint8Array & { toBase64?: () => string }).toBase64;
+  if (typeof native === 'function') return `data:${media};base64,${native.call(all)}`;
+  let binary = '';
+  // In slices: spreading millions of bytes as arguments overflows the call stack.
+  for (let i = 0; i < all.length; i += 0x8000) binary += String.fromCharCode(...all.subarray(i, i + 0x8000));
+  return `data:${media};base64,${btoa(binary)}`;
+}
+
 /** The largest file the app keeps as evidence. A constant of the code, not a setting: above it the tool refuses and says the ceiling. */
 export const EVIDENCE_MAX_BYTES = 8 * 1024 * 1024;
 

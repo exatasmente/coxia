@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **Images of evidence now show on the computer.** Opening an image a run kept as evidence (in the stage's evidence list, in a message of the conversation or from a QA scenario) showed nothing on the desktop: the app's content policy refuses an image from a `blob:` address, and the screen built one; only the paired browser showed the image. The image is now shown from a `data:` address, which both allow. Downloading a piece of evidence was not affected.
+
 ## [0.9.0-beta.2] - 2026-10-08
 
 ### Added
