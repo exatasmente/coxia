@@ -644,6 +644,21 @@ describe('the recording of a live screen', () => {
     expect(r.notes.filter((n) => n.code === 'runner.screen.cappedSize')).toHaveLength(1);
   });
 
+  it('stops when the display is resized: the conversation is told once, and what came before is kept', async () => {
+    const r = await recording();
+    r.conn.grab = async () => {
+      r.conn.grabs++;
+      return { width: W * 2, height: H, data: Buffer.alloc(W * 2 * H * 4, 9) };
+    };
+    await r.second();
+    expect(r.hub.state('r-1')).toMatchObject({ recording: 'stopped' });
+    expect(r.notes.filter((n) => n.code === 'runner.screen.resized')).toEqual([{ run: 'r-1', stage: 'qa', code: 'runner.screen.resized', params: { agent: 'qa' } }]);
+    expect(r.notes.map((n) => n.code)).not.toContain('runner.screen.encoderStopped');
+    const out = await r.hub.finish('r-1');
+    expect(out?.ok && out.meta).toMatchObject({ width: W, height: H });
+    expect(r.notes.filter((n) => n.code === 'runner.screen.resized')).toHaveLength(1);
+  });
+
   it('keeps the recording of a display that died, for the end of the stage to keep', async () => {
     const r = await recording();
     r.conn.pixels.fill(5);

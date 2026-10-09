@@ -60,12 +60,17 @@ describe('what is fed', () => {
     expect(sink.fed[1].key).toBe(false);
   });
 
-  it('does not feed a picture of another size than the one the encoder was started with', async () => {
+  it('ends at a picture of another size than the one the encoder was started with, and keeps what came before', async () => {
     const { sink, rec } = setup();
     await rec.add(frameOf(1), 'a', T0);
-    expect(await rec.add(frameOf(2, 6, 3), 'b', T0 + 1000)).toBe('dropped');
+    expect(await rec.add(frameOf(2, 6, 3), 'b', T0 + 1000)).toBe('stopped');
     expect(sink.fed).toHaveLength(1);
-    expect(rec.state).toBe('on');
+    expect(rec.state).toBe('stopped');
+    expect(rec.stoppedBy).toBe('resized');
+    // Nothing more is taken, even a picture of the first size.
+    expect(await rec.add(frameOf(3), 'c', T0 + 2000)).toBe('stopped');
+    const out = await rec.finish(T0 + 5000);
+    expect(out.ok && out.meta.durationMs).toBe(1000);
   });
 });
 

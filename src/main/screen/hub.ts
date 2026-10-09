@@ -205,6 +205,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     live.stopSaid = true;
     if (rec.stoppedBy === 'size') say(live, 'runner.screen.cappedSize', { max: String(RECORDING_MAX_BYTES / (1024 * 1024)) });
     else if (rec.stoppedBy === 'time') say(live, 'runner.screen.cappedTime', { max: String(RECORDING_MAX_MS / 60_000) });
+    else if (rec.stoppedBy === 'resized') say(live, 'runner.screen.resized');
     else say(live, 'runner.screen.encoderStopped');
     changed(live.run);
   };

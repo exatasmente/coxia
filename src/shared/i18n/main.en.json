@@ -1530,6 +1530,7 @@
   "main.forum.code.runner.screen.cappedSize": "The screen recording of {agent}'s stage stopped: it reached its size limit of {max} MiB. What came before is kept with the stage, and the stage goes on.",
   "main.forum.code.runner.screen.cappedTime": "The screen recording of {agent}'s stage stopped: it reached its time limit of {max} minutes. What came before is kept with the stage, and the stage goes on.",
   "main.forum.code.runner.screen.encoderStopped": "The screen recording of {agent}'s stage stopped: the video encoder stopped working. What came before is kept with the stage, and the stage goes on.",
+  "main.forum.code.runner.screen.resized": "The screen recording of {agent}'s stage stopped: the virtual display changed size, and the video cannot follow it. What came before is kept with the stage, and the stage goes on.",
   "main.forum.code.run.stage.wait.release-approved": "Stage {stage}: waiting for every {crLong} of the release to be merged into its branch.",
   "main.forum.code.run.stage.wait.beta-age": "Stage {stage}: waiting for the beta to be out for {minutes} minutes with no issue labelled \"{label}\" open.",
   "main.forum.code.wait.done.release-approved": "{stage}: every {crLong} of the release is merged.",

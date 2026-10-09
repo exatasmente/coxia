@@ -1530,6 +1530,7 @@
   "main.forum.code.runner.screen.cappedSize": "A gravação da tela da etapa de {agent} parou: chegou ao limite de tamanho de {max} MiB. O que veio antes fica guardado com a etapa, e a etapa segue.",
   "main.forum.code.runner.screen.cappedTime": "A gravação da tela da etapa de {agent} parou: chegou ao limite de tempo de {max} minutos. O que veio antes fica guardado com a etapa, e a etapa segue.",
   "main.forum.code.runner.screen.encoderStopped": "A gravação da tela da etapa de {agent} parou: o codificador de vídeo deixou de funcionar. O que veio antes fica guardado com a etapa, e a etapa segue.",
+  "main.forum.code.runner.screen.resized": "A gravação da tela da etapa de {agent} parou: a tela virtual mudou de tamanho, e o vídeo não consegue acompanhar. O que veio antes fica guardado com a etapa, e a etapa segue.",
   "main.forum.code.run.stage.wait.release-approved": "Etapa {stage}: esperando todos os {crLong} da release entrarem na branch dela.",
   "main.forum.code.run.stage.wait.beta-age": "Etapa {stage}: esperando a beta ficar {minutes} minutos no ar, sem issue aberta com a label \"{label}\".",
   "main.forum.code.wait.done.release-approved": "{stage}: todos os {crLong} da release estão integrados.",

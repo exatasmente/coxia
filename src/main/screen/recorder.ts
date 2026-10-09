@@ -35,7 +35,7 @@ export interface RecorderSink {
 export type RecordingOutcome = { ok: true; bytes: Uint8Array; meta: RecordingMeta } | { ok: false; reason: 'no-frame' | 'encoder' };
 
 /** Why the recording stopped before the stage did. */
-export type RecorderStop = 'size' | 'time' | 'encoder';
+export type RecorderStop = 'size' | 'time' | 'encoder' | 'resized';
 
 /** What became of a frame offered: fed; the same picture as the last fed; too soon after the last; the encoder was behind; or the recording is over. */
 export type AddResult = 'fed' | 'same' | 'wait' | 'dropped' | 'stopped';
@@ -103,8 +103,11 @@ export function createRecorder(deps: { sink: RecorderSink; limits?: Partial<Reco
       stop('time', at);
       return 'stopped';
     }
-    // The encoder is configured for one size; a picture of another (the display was resized) is not fed.
-    if (size && (frame.width !== size.width || frame.height !== size.height)) return 'dropped';
+    // The encoder is configured for one size; a picture of another (the display was resized) cannot be fed, so the recording ends there, with what came before.
+    if (size && (frame.width !== size.width || frame.height !== size.height)) {
+      stop('resized', at);
+      return 'stopped';
+    }
     if (hash === lastHash) return 'same';
     if (lastTs >= 0 && t - lastTs < RECORDING_MIN_GAP_MS) return 'wait';
     if (sink.bytes() >= limits.bytes - limits.reserve) {
