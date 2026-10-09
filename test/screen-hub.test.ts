@@ -646,6 +646,23 @@ describe('the recording of a live screen', () => {
     expect(await r.hub.finish('r-1')).toBeNull();
   });
 
+  it('still builds the recording of a display that dies while the stage is giving control back', async () => {
+    const r = await recording();
+    await r.hub.control('r-1', true);
+    await r.hub.input('r-1', [key('A', true)]);
+    // Putting up the held key is the last thing the dying display is asked.
+    r.conn.fakeInput = async () => {
+      r.conn.close();
+      return { ok: false, delivered: 0 };
+    };
+    r.clock.t += 4000;
+    const out = await r.hub.finish('r-1');
+    expect(out?.ok).toBe(true);
+    expect(r.sink.aborted).toBe(0);
+    expect(r.sink.closed).toBe(1);
+    expect(await r.hub.finish('r-1')).toBeNull();
+  });
+
   it('says there was nothing to keep when the encoder could not start', async () => {
     const sink = fakeSink();
     sink.refuseOpen = true;

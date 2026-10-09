@@ -341,6 +341,8 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       const live = lives.get(run);
       let rec: Recorder | null;
       if (live) {
+        // Taken before anything is awaited: a display that dies meanwhile sets the recording aside as lost, and it is this call's to build.
+        rec = live.rec;
         // Control is given back with the stage: what the person held down is put up, and the conversation says both.
         await releaseHeld(live).catch(() => undefined);
         closeBurst(live);
@@ -348,9 +350,9 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
           live.control = false;
           say(live, 'runner.screen.controlOff');
         }
-        rec = live.rec;
         // The recording leaves the screen here, so ending the screen does not throw it away.
         live.rec = null;
+        if (rec && lost.get(run) === rec) lost.delete(run);
         end(run);
       } else {
         rec = lost.get(run) ?? null;
