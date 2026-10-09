@@ -212,6 +212,16 @@ describe('a session', () => {
     await s.close();
   });
 
+  it('finds a typed value that a terminal escape or a carriage return would hide from the exact match', async () => {
+    const typed = createTypedValues();
+    typed.add(['marker-value-4821']);
+    const f = fakeSpawn((_c, _n, out) => (out('a marker-\x1b[0mvalue-4821 b marker\r-value-4821 c \x1b[31mmarker-value-4821\x1b[0m d\n'), 0));
+    const s = await openSession(options({ mask: typed.mask }), { spawn: f.spawn });
+    const r = await s.exec('print');
+    expect(r.output).toBe('a [secret] b [secret] c [secret] d');
+    await s.close();
+  });
+
   it('does not show an output the mask could not check', async () => {
     const f = fakeSpawn((_c, _n, out) => (out('something\n'), 0));
     const s = await openSession(options({ mask: () => { throw new Error('boom'); } }), { spawn: f.spawn });
