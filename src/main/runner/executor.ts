@@ -44,6 +44,7 @@ import { type RunnerTools, runnerTools } from './tools';
 import type { ProcedureUse } from '../../shared/procedures';
 import type { ProceduresPort } from '../procedures/port';
 import { procedureScreen } from '../procedures/screen';
+import { runWrapUp, type WrapUpDeps } from '../procedures/wrapup';
 import { callRefusal, countOpen, openedIn, runConversation, resetOpened } from './conversation';
 import { releaseSection, releaseStateOf } from './release';
 import { prepareDocsFolder } from './docs';
@@ -122,6 +123,10 @@ export interface ExecutorDeps {
   screens?: ScreenHub;
   /** The workspace's learned procedures: a stage and the agents it calls get their list and tools from here. Absent, or the workspace's switch off: none. */
   procedures?: ProceduresPort;
+  /** Where the offers to keep a procedure are held (#187): a stage whose work earned the last turn raises them here. Absent: the turn is not given. */
+  offers?: WrapUpDeps['offers'];
+  /** For a test: the limit of the stage's last turn, in ms. */
+  procedureTurnMs?: number;
   /** The stage's attempt ended and its agent used these procedures: the run's record of the stage keeps them. */
   procedureUses?: (runId: string, stage: string, uses: ProcedureUse[]) => void;
   /** The screens of the agents that have one (the app's browser), and the questions they ask the person; absent: no stage gets a browser. */
@@ -733,6 +738,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // A documentation run's agent runs no commands: it reads with Read, Glob and Grep and writes only AGENTS.md.
   const commands = writes && !run.docs && (agent.shell ?? 'allowlist') === 'allowlist' ? (config.runner.commands ?? (await declaredCommands(wt, run.base))) : [];
   const threadId = runThreadId(run.id);
+  const about = `${run.issue.ref} ${clipText(run.issue.title, 120)}`.trim();
   const thread = d.forum.read(threadId, 0, 2000)?.messages ?? [];
   const attempt = run.stages.find((s) => s.stage === stage.id)?.attempts ?? 1;
   const looked = await headSha(wt);
@@ -782,7 +788,15 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
 
   const documented = !!(await scanHarness(wt)).document && !run.docs;
 
-  // The procedures the workspace learned: the list this stage is told and the tools it uses. A line of the session (a save, a report, a use) goes to the run's thread.
+  // A line of the procedures (a save, a report, a use, the last turn) goes to the run's thread.
+  const noteInThread = (code: string, params: Record<string, string | number>): void => {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code, params, stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
+    }
+  };
+  // The procedures the workspace learned: the list this stage is told and the tools it uses.
   const procedures = d.procedures?.open({
     surface: 'stage',
     agent,
@@ -795,13 +809,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     screen: screen?.toolset ? procedureScreen({ key: runKey(run.id), sessions: d.sessions, typed: screen.toolset.typed, handoff: d.handoff, active: () => screen?.toolset?.handoff?.active() === true, browser: !!screen.toolset.browser }) : undefined,
     // What the agent ran in its shell: not the commands the app ran before QA (they come first in the log), and the stage's exact-value mask for the test environment.
     commands: session ? { entries: () => session.log.filter((e) => e.n > (ran?.length ?? 0)), ...(mask ? { mask } : {}) } : undefined,
-    note: (code, params) => {
-      try {
-        d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code, params, stage: stage.id });
-      } catch (e) {
-        console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
-      }
-    },
+    note: noteInThread,
   });
 
   // A sandbox and a host session that tests an interface both declare where the stage's evidence lives; a host session without one keeps what it has today.
@@ -1128,6 +1136,20 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     }
     // What the stage looked at and did not keep is kept as evidence of the stage here, before the sandbox takes the folder away; what cannot be kept is said.
     if (session) keepLooked();
+    // A concluding answer whose work had trial and error and kept no procedure gets one last turn, awaited here so a record it creates gets its baseline and the stage's
+    // usage counts it; the shell and the screen are still open for the drafts. An answer that ends in a question resumes and is not the end of the work. Never fails the stage.
+    const closing = readOutput(data, kind);
+    if (procedures && d.offers && !closing.question && !closing.reporterQuestion) {
+      const plan = procedures.plan({ words: closing.summary });
+      if (plan) {
+        await runWrapUp(
+          { engine: d.engine, offers: d.offers, note: noteInThread },
+          { agent, session: procedures, plan, ref: about, thread: threadId, stage: stage.id, cwd: wt, abort: abort.signal, onUsage: usage, ...(d.procedureTurnMs !== undefined ? { ms: d.procedureTurnMs } : {}) },
+        );
+        // The turn ends quietly when the stage is cancelled; the stage does too.
+        if (abort.signal.aborted) throw new StageError('cancelled');
+      }
+    }
     called = true;
   } catch (e) {
     if (e instanceof MaxTurnsError) throw new StageError('turns');

@@ -20,7 +20,7 @@ import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, onConfigChange, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
 import { sandbox } from '../sandbox/workspace';
-import { proceduresPort } from '../procedures';
+import { procedureOffers, proceduresPort } from '../procedures';
 import { firePluginEvent, liveContext, pluginHold, pluginNotes, pluginRunHooks, releasePluginAsks } from '../plugins/module';
 import { readArtifact } from './cycleFolder';
 import { uploadsOf } from '../evidence/store';
@@ -284,6 +284,7 @@ export const runsModule: Module = (ctx) => {
     pluginRelease: (runId) => releasePluginAsks(runId),
     pluginNotes: () => pluginNotes(),
     procedures: proceduresPort(),
+    offers: procedureOffers(),
   });
   current = r;
   pluginRunHooks.settled = (id, note) => {

@@ -136,9 +136,15 @@ async function give(deps: WrapUpDeps, run: WrapUpRun): Promise<void> {
         reject(new Error('the last turn ran past its limit'));
       }, run.ms ?? WRAPUP_MS);
     });
+    // The work's Cancel ends the wait at once, as the stage's own guard does: an engine that does not notice the abort is not waited for.
+    const stopped = new Promise<never>((_, reject) => {
+      if (child.signal.aborted) reject(new Error('the last turn was stopped'));
+      else child.signal.addEventListener('abort', () => reject(new Error('the last turn was stopped')), { once: true });
+    });
+    stopped.catch(() => undefined);
     // A turn that is abandoned at its limit may still reject later: that rejection is not an error of anyone.
     work.catch(() => undefined);
-    await Promise.race([work, late]);
+    await Promise.race([work, late, stopped]);
   } catch (e) {
     console.error('[procedures] the last turn ended without an answer', redact(e instanceof Error ? e.message : String(e)).slice(0, 300));
   } finally {

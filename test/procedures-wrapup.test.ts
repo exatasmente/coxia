@@ -266,6 +266,16 @@ describe('what it never does', () => {
     expect(raised).toEqual([]);
   });
 
+  it('a Cancel does not wait for an engine that does not notice it', async () => {
+    const { session } = make({ commands: shellOf(FOUGHT) });
+    const stage = new AbortController();
+    const done = runWrapUp(deps(() => new Promise(() => undefined)), run(session, { abort: stage.signal }));
+    setTimeout(() => stage.abort(), 5);
+    await done;
+    expect(raised).toEqual([]);
+    expect(lines).toHaveLength(1);
+  });
+
   it('does not begin when the work was cancelled already', async () => {
     const { session } = make({ commands: shellOf(FOUGHT) });
     const stage = new AbortController();
