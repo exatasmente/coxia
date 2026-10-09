@@ -135,6 +135,8 @@ interface Session {
   inter: Intermediary | null;
   masks: MaskSet;
   log: StepLog;
+  /** The highest step number the procedure memory has drafted past (#187): a draft starts after it. Starts at 0 with the screen and dies with it. */
+  mark: number;
   /** Answers that hold the screen now. */
   answers: number;
   /** The clocks of the calls that hold it, stopped together with the screen's own while a question waits. */
@@ -173,6 +175,10 @@ export interface ScreenSessions {
   keysOfAgent(agent: string): string[];
   /** The steps the app's browser took on an open screen, for the procedure memory; empty when there is none. */
   stepsOf(key: string): readonly StepEntry[];
+  /** The step number the next screen draft starts after; 0 for a screen with no mark yet and for one that is not open. */
+  markOf(key: string): number;
+  /** Moves an open screen's draft mark to a step number (#187); nothing when there is no such screen. The caller keeps it from going back. */
+  mark(key: string, n: number): void;
   /** Adds a step that is not a call of the app's browser (the hand-off, #178) to an open screen's log; nothing when there is no such screen. */
   recordStep(key: string, step: StepInput): void;
   /** The masks of an open screen: the place where what the page shows is filtered before the agent reads it. */
@@ -472,6 +478,7 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
       inter: null,
       masks: createMaskSet(),
       log: createStepLog(undefined, now),
+      mark: 0,
       answers: 1,
       pauses: new Set(),
       steps: 0,
@@ -661,6 +668,11 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
     },
     keysOfAgent: (agent) => where((s) => s.agent === agent).map((s) => s.key),
     stepsOf: (key) => sessions.get(key)?.log.entries() ?? [],
+    markOf: (key) => sessions.get(key)?.mark ?? 0,
+    mark(key, n) {
+      const s = sessions.get(key);
+      if (s) s.mark = n;
+    },
     masksOf: (key) => sessions.get(key)?.masks ?? null,
     recordStep(key, step) {
       sessions.get(key)?.log.add(step);
