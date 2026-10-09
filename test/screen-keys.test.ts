@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SCREEN_INPUT_MAX, SCREEN_SCROLL_NOTCHES_MAX, type ScreenInput } from '../src/shared/screen';
-import { FLUSH_MS, POLL_MS, POLL_SLOW_MS, batchesOf, buttonOf, createHeld, isSentKey, pointerToScreen, pollDelay, wheelNotches } from '../src/renderer/src/screens/cycle/screenKeys';
+import { FLUSH_MS, POLL_MS, POLL_SLOW_MS, batchesOf, buttonOf, createHeld, isSentKey, pointerToScreen, pollDelay, takeControl, wheelNotches } from '../src/renderer/src/screens/cycle/screenKeys';
 
 const screen = { width: 1280, height: 800 };
 
@@ -123,5 +123,37 @@ describe('the polling pace', () => {
     expect(pollDelay(800)).toBe(POLL_MS);
     expect(pollDelay(801)).toBe(POLL_SLOW_MS);
     expect(FLUSH_MS).toBeLessThanOrEqual(100);
+  });
+});
+
+describe('taking control', () => {
+  it('is held when the answer is ok and the viewer is still open, and nothing is given back', async () => {
+    const asked: boolean[] = [];
+    const held = await takeControl(async (on) => (asked.push(on), { ok: true }), () => true);
+    expect(held).toBe(true);
+    expect(asked).toEqual([true]);
+  });
+
+  it('is given back at once when the viewer closed while the answer was on its way', async () => {
+    const asked: boolean[] = [];
+    let open = true;
+    const held = await takeControl(
+      async (on) => {
+        asked.push(on);
+        // The person closes the viewer before the main process answers.
+        if (on) open = false;
+        return { ok: true };
+      },
+      () => open,
+    );
+    expect(held).toBe(false);
+    expect(asked).toEqual([true, false]);
+  });
+
+  it('is not held, and nothing is given back, when it was refused or the ask failed', async () => {
+    const asked: boolean[] = [];
+    expect(await takeControl(async (on) => (asked.push(on), { ok: false, reason: 'none' }), () => true)).toBe(false);
+    expect(await takeControl(async (on) => { asked.push(on); throw new Error('gone'); }, () => true)).toBe(false);
+    expect(asked).toEqual([true, true]);
   });
 });

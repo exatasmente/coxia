@@ -1,4 +1,4 @@
-import { SCREEN_INPUT_MAX, SCREEN_SCROLL_NOTCHES_MAX, type ScreenInput } from '../../../../shared/screen';
+import { SCREEN_INPUT_MAX, SCREEN_SCROLL_NOTCHES_MAX, type ScreenControlAnswer, type ScreenInput } from '../../../../shared/screen';
 
 // What the live screen's viewer does with the person's input, without a DOM: where a pointer lands on the agent's screen, how the wheel becomes notches, which keys
 // and buttons are held (so none is left down when control ends) and how events are batched for one call. The component only wires the browser's events to these.
@@ -118,3 +118,15 @@ export const pollDelay = (tookMs: number): number => (tookMs > SLOW_ANSWER_MS ? 
 
 /** The input is sent in batches this often while it is flowing. */
 export const FLUSH_MS = 50;
+
+/**
+ * Asks for control and reports whether the viewer holds it. The answer comes later than the click: a viewer that closed meanwhile never held it, and the main
+ * process, which already turned control on, is told to turn it off again.
+ */
+export async function takeControl(ask: (on: boolean) => Promise<ScreenControlAnswer>, stillOpen: () => boolean): Promise<boolean> {
+  const answer = await ask(true).catch(() => null);
+  if (!answer?.ok) return false;
+  if (stillOpen()) return true;
+  await ask(false).catch(() => undefined);
+  return false;
+}

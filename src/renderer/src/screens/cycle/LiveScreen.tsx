@@ -6,7 +6,7 @@ import { isWeb } from '../../platform';
 import { useIsPhone } from '../../useIsPhone';
 import { Sheet } from '../Sheet';
 import { jpegSrc, screenApi } from './screenApi';
-import { type Size, FLUSH_MS, batchesOf, buttonOf, createHeld, isSentKey, pointerToScreen, pollDelay, wheelNotches } from './screenKeys';
+import { type Size, FLUSH_MS, batchesOf, buttonOf, createHeld, isSentKey, pointerToScreen, pollDelay, takeControl, wheelNotches } from './screenKeys';
 
 // The live screen of a working stage: the agent's virtual screen, refreshed about twice a second while the viewer is open, in the desktop window and in the paired browser
 // alike. On the desktop alone, "Take control" sends the person's clicks, wheel and keys to that screen; the viewer then says plainly that it is on and that it is being
@@ -151,14 +151,20 @@ export function LiveScreen({ run, onClose }: { run: Run; onClose: () => void }) 
   }, [run.id, releaseHeld]);
 
   const startControl = async (): Promise<void> => {
-    const answer = await screenApi.control(run.id, true).catch(() => null);
-    if (!answer?.ok) return;
+    if (!(await takeControl((on) => screenApi.control(run.id, on), () => open.current))) return;
     controlRef.current = true;
     setControl(true);
     stageBox.current?.focus();
   };
 
-  // Closing the viewer, or the stage ending, gives control back.
+  // Closing the viewer, or the stage ending, gives control back; an ask for it that is still in flight is given back when its answer comes.
+  const open = useRef(true);
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+    };
+  }, []);
   useEffect(() => () => stopControl(), [stopControl]);
   useEffect(() => {
     if (ended) stopControl();
