@@ -336,6 +336,8 @@ describe('the conversations', () => {
       { fromCaller: async () => (calls.length ? null : 'is it covered?'), answered: () => undefined },
     );
     expect(calls[0].procedures).toBeDefined();
+    // An agent a stage called has no commands of its own to draft from, and no screen: no draft.
+    expect(calls[0].procedures?.draft).toBeUndefined();
     expect(calls[0].system).toContain(RULES());
     expect(calls[0].prompt).toContain(record.id);
     expect(onDisk().find((r) => r.title === SAVE.title)?.origin).toMatchObject({ by: 'qa', surface: 'called', ref: runThreadId('r1'), permission: 'read' });

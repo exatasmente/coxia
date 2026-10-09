@@ -238,6 +238,9 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       // Stopped before the engine began: the catch below says so, whatever the error is.
       if (abort.signal.aborted) throw new Error('stopped');
       const info = inputOf(place);
+      // A session kept for the screen holds the commands of the earlier answers too: this answer's are the ones numbered after the last one it found.
+      const shell = session;
+      const startN = shell ? shell.log.reduce((top, e) => Math.max(top, e.n), 0) : 0;
       if (place.kind !== 'ceremony') {
         procedures =
           deps.procedures?.open({
@@ -248,6 +251,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
             repos: info.repos,
             requests: true,
             screen: screen?.toolset ? procedureScreen({ key: callKey(place.thread, id), sessions: ports?.sessions, typed: screen.toolset.typed, handoff: ports?.handoff, active: () => screen?.toolset?.handoff?.active() === true, browser: !!screen.toolset.browser }) : undefined,
+            commands: shell ? { entries: () => shell.log.filter((e) => e.n > startN) } : undefined,
             note: (code, params) => {
               try {
                 deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code, params, stage });
@@ -280,7 +284,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         // What the app knows of the activities: the section is text only, so no tool of the call changes and no folder of it is opened.
         memory: deps.memory?.(place, message) || undefined,
         procedures: procedures?.list.text,
-        proceduresGui: procedures?.tools.draft !== undefined,
+        proceduresGui: procedures?.has.screen === true,
       });
       if (procedures) {
         call.procedures = procedures.tools;

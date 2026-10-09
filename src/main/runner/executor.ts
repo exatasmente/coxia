@@ -793,6 +793,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     agentsMd: documented ? new Set([run.repo]) : undefined,
     // The stage's screen as the procedures read it: the steps of its browser for a draft, and the hand-off's seams for the check of what the person typed.
     screen: screen?.toolset ? procedureScreen({ key: runKey(run.id), sessions: d.sessions, typed: screen.toolset.typed, handoff: d.handoff, active: () => screen?.toolset?.handoff?.active() === true, browser: !!screen.toolset.browser }) : undefined,
+    // What the agent ran in its shell: not the commands the app ran before QA (they come first in the log), and the stage's exact-value mask for the test environment.
+    commands: session ? { entries: () => session.log.filter((e) => e.n > (ran?.length ?? 0)), ...(mask ? { mask } : {}) } : undefined,
     note: (code, params) => {
       try {
         d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code, params, stage: stage.id });
@@ -818,7 +820,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     // What a stage is told of the record: its own activity whole, and the others in short. Nothing when the record has nothing to say.
     shared: d.sharedMemory?.(run) ?? '',
     procedures: procedures?.list.text,
-    proceduresGui: procedures?.tools.draft !== undefined,
+    proceduresGui: procedures?.has.screen === true,
     docsKeep: documented && writes,
     plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),
