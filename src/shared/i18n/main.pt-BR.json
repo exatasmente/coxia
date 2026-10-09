@@ -104,6 +104,7 @@
   "main.browser.reason.timeout": "Ninguém respondeu a tempo, então o passo não foi feito.",
   "main.browser.reason.closed": "A tela foi fechada, então nada foi feito.",
   "main.browser.reason.maskFailed": "[o texto da página foi retido: não deu para conferi-lo]",
+  "main.browser.reason.shownTyped": "A página mostra o que a pessoa digitou; leia-a como texto.",
   "main.browser.reason.stopped": "A chamada foi interrompida, então pode não ter sido feita.",
   "main.browser.reason.slow": "O navegador não respondeu a tempo. O passo pode ou não ter sido feito: tire um snapshot para ver.",
   "main.browser.reason.failed": "O navegador não conseguiu fazer isso.",

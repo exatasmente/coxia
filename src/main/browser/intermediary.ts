@@ -1,4 +1,5 @@
 import { RESULT_MAX, type HeldAnswer, type HoldWhy, type StepClass, type StepOutcome } from '../../shared/browser';
+import { HANDOFF_HELD_TEXT } from '../../shared/handoff';
 import { t } from '../../shared/i18n';
 import type { EffectiveNetwork } from '../../shared/network';
 import { fence } from '../runner/prompt';
@@ -65,6 +66,11 @@ export interface IntermediaryDeps {
 export interface CallOptions {
   /** Stops the call: a wait for the person ends as `closed`, a step in the browser is abandoned. */
   signal?: AbortSignal;
+  /**
+   * The person has the screen for a hand-off (#178) while this answers true: the call is refused with a fixed sentence before anything is read or done, and is not a step. It is
+   * asked when the call arrives and again when its turn comes, since a call queued behind a slow one may start after the person took the screen.
+   */
+  held?: () => boolean;
 }
 
 export interface Intermediary {
@@ -132,7 +138,15 @@ export function createIntermediary(d: IntermediaryDeps): Intermediary {
     return `<data>\n${fence(cut)}\n</data>`;
   }
 
-  async function run(tool: string, rawArgs: unknown, signal?: AbortSignal): Promise<BrowserResult> {
+  /** What of a step comes from the page goes through the masks too, so a typed value is in no step the procedure memory reads. */
+  const cleaned = (entry: { site: string; path: string; name?: string }): { site: string; path: string; name?: string } => {
+    const mask = (text: string): string => (text ? (d.masks.apply(text) ?? '') : text);
+    return { site: mask(entry.site), path: mask(entry.path), ...(entry.name ? { name: mask(entry.name) } : {}) };
+  };
+
+  async function run(tool: string, rawArgs: unknown, signal?: AbortSignal, held?: () => boolean): Promise<BrowserResult> {
+    // The first line of every call: while the person has the screen nothing is read, done or recorded, and the agent is not told what changed.
+    if (held?.()) return refusal(HANDOFF_HELD_TEXT);
     const started = now();
     const at = new Date(started).toISOString();
     const entry: { site: string; path: string; class: StepClass; role?: string; name?: string; key?: string; reason?: string; held?: { why: HoldWhy; answer: HeldAnswer }; passed?: true; outcome: StepOutcome } = {
@@ -154,7 +168,7 @@ export function createIntermediary(d: IntermediaryDeps): Intermediary {
         .map(safeHost)
         .filter((h): h is string => h !== null)
         .slice(0, SHOWN_HOSTS);
-      d.log.add({ tool, ...entry, at, ms: now() - started });
+      d.log.add({ tool, ...entry, ...cleaned(entry), at, ms: now() - started });
       d.onStep?.('end', tool);
       return refused.length ? { ...result, text: `${result.text}\n${t('main.browser.result.hosts', { hosts: refused.join(', ') })}` } : result;
     };
@@ -239,6 +253,14 @@ export function createIntermediary(d: IntermediaryDeps): Intermediary {
         }
       }
 
+      // A picture cannot be masked: when the page shows what the person typed, as text, the picture is refused and the text read is the way.
+      if (tool === 'browser_take_screenshot' && d.masks.size > 0) {
+        const shown = await readPage(d.client, signal);
+        const masked = shown ? d.masks.apply(shown.answer) : null;
+        if (!shown || masked === null) return finish(refusal(t('main.browser.reason.maskFailed')), 'not-run');
+        if (masked !== shown.answer) return finish(refusal(t('main.browser.reason.shownTyped')), 'not-run');
+      }
+
       // 5. The server.
       let answer: Awaited<ReturnType<McpClient['callTool']>>;
       try {
@@ -285,7 +307,8 @@ export function createIntermediary(d: IntermediaryDeps): Intermediary {
   return {
     tools: () => toolsFor(d.seesImages),
     call(tool, args, options) {
-      const next = queue.then(() => run(tool, args, options?.signal));
+      if (options?.held?.()) return Promise.resolve(refusal(HANDOFF_HELD_TEXT));
+      const next = queue.then(() => run(tool, args, options?.signal, options?.held));
       queue = next.catch(() => undefined);
       return next;
     },

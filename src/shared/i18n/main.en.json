@@ -104,6 +104,7 @@
   "main.browser.reason.timeout": "Nobody answered in time, so the step was not done.",
   "main.browser.reason.closed": "The screen was closed, so nothing was done.",
   "main.browser.reason.maskFailed": "[the page text was withheld: it could not be checked]",
+  "main.browser.reason.shownTyped": "The page shows what the person typed; read it as text instead.",
   "main.browser.reason.stopped": "The call was stopped, so it may not have been done.",
   "main.browser.reason.slow": "The browser did not answer in time. The step may or may not have been done: take a snapshot to see.",
   "main.browser.reason.failed": "The browser could not do that.",

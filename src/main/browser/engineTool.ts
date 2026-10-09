@@ -1,6 +1,6 @@
 // i18n-lint: allow-file what the app's screen tools tell a model: English by design, like the other tool texts of the engines
 import { CONFIRM_KINDS, type ConfirmKind } from '../../shared/browser';
-import { HANDOFF_TEXT_MAX, type HandoffResult } from '../../shared/handoff';
+import { HANDOFF_HELD_TEXT, HANDOFF_TEXT_MAX, type HandoffResult } from '../../shared/handoff';
 import { t } from '../../shared/i18n';
 import { loadClaudeSdkModule } from '../claudeSdk';
 import { type ToolImpl, ToolError, clip } from '../engine/open/tools/types';
@@ -31,7 +31,7 @@ export const screenMcpToolName = (server: string, name: string): string => `mcp_
 /** The app's browser, as an engine reaches it: the tools to offer and the way to run one. A lease's `browser` is exactly this. */
 export interface BrowserPort {
   tools(): ExposedTool[];
-  call(tool: string, args: unknown, options?: { signal?: AbortSignal }): Promise<BrowserResult>;
+  call(tool: string, args: unknown, options?: { signal?: AbortSignal; held?: () => boolean }): Promise<BrowserResult>;
 }
 
 /** Asks the person to confirm a step the agent is about to take. */
@@ -123,7 +123,8 @@ const merged = (...signals: (AbortSignal | undefined)[]): AbortSignal | undefine
 /** One call of a browser tool. A tool the call does not have is a plain refusal, never a crash. */
 export async function runBrowser(set: ScreenToolset, tool: string, args: unknown, signal?: AbortSignal): Promise<Outcome> {
   if (!set.browser) return { text: t('main.browser.reason.unknownTool'), images: [], isError: true };
-  return set.browser.call(tool, args, { signal: merged(signal, set.signal) });
+  // The browser asks again when the call's turn comes: a call queued behind a slow one may start after the person took the screen.
+  return set.browser.call(tool, args, { signal: merged(signal, set.signal), ...(set.handoff ? { held: set.handoff.active } : {}) });
 }
 
 /** The confirmation tool: the arguments are checked against its row, the person is asked, and the answer comes back in words for the model. */
@@ -151,8 +152,13 @@ export async function runHandoff(set: ScreenToolset, args: unknown): Promise<Out
   return { text: resultText(result ?? 'unavailable'), images: [], isError: false };
 }
 
-const run = (set: ScreenToolset, name: string, args: unknown, signal?: AbortSignal): Promise<Outcome> =>
-  name === CONFIRM_TOOL_NAME ? runConfirm(set, args, signal) : name === HANDOFF_TOOL_NAME ? runHandoff(set, args) : runBrowser(set, name, args, signal);
+/** While the person has the screen the agent's confirmation and a second hand-off are refused too: nothing it asks of the person is asked now. */
+const heldOutcome = (): Outcome => ({ text: HANDOFF_HELD_TEXT, images: [], isError: true });
+
+const run = (set: ScreenToolset, name: string, args: unknown, signal?: AbortSignal): Promise<Outcome> => {
+  if ((name === CONFIRM_TOOL_NAME || name === HANDOFF_TOOL_NAME) && set.handoff?.active()) return Promise.resolve(heldOutcome());
+  return name === CONFIRM_TOOL_NAME ? runConfirm(set, args, signal) : name === HANDOFF_TOOL_NAME ? runHandoff(set, args) : runBrowser(set, name, args, signal);
+};
 
 // ---- the open engine ----------------------------------------------------------------------------------------------------------------------------
 
