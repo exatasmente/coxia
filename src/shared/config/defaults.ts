@@ -87,6 +87,7 @@ export function neutralConfig(): WorkspaceConfig {
     },
     runner: neutralRunner(),
     plugins: neutralPlugins(),
+    testEnvironment: neutralTestEnvironment(),
   };
 }
 

@@ -22,10 +22,10 @@ const migrate = (doc: Record<string, unknown>) => migrateConfig(doc, { legacyIns
 describe('the migration to schema 21', () => {
   it('fills the empty section in and raises no stage field: a stored template keeps left-out = no', () => {
     const r = migrate(v20((c) => {
-      c.devCycle.stages = [{ id: 'qa', label: 'QA', kind: 'qa', match: [], artifacts: [], reads: null, agentId: null }];
+      c.devCycle.stages = [{ id: 'qa-stage', label: 'QA', kind: 'qa', rank: 0, match: [], artifacts: [], reads: null, agentId: null }];
     }));
     expect(r.config.testEnvironment).toEqual({ variables: [], secrets: [] });
-    expect((r.config as any).devCycle.stages[0].testEnv).toBeUndefined();
+    expect(r.config.devCycle.stages[0]?.testEnv).toBeUndefined();
     expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
   });
 
@@ -33,7 +33,7 @@ describe('the migration to schema 21', () => {
     const r = migrate(v20((c) => {
       c.testEnvironment = { variables: [{ name: 'INTEGRATION_URL', value: 'https://staging.example.com' }], secrets: [] };
     }));
-    expect(r.config.testEnvironment.variables).toEqual([{ name: 'INTEGRATION_URL', value: 'https://staging.example.com' }]);
+    expect(r.config.testEnvironment?.variables).toEqual([{ name: 'INTEGRATION_URL', value: 'https://staging.example.com' }]);
   });
 });
 
@@ -57,10 +57,10 @@ describe('the validation of the section', () => {
       over(c.testEnvironment);
       return validateConfig(c).errors.map((e) => e.path);
     };
-    expect(problems((e) => { e.variables[0].name = 'missing'; })).toBe(['testEnvironment.variables[0]']);
-    expect(problems((e) => { e.secrets[0].ref = 'api.key'; })).toBe(['testEnvironment.secrets[0]']);
-    expect(problems((e) => { e.secrets[0].ref = 'other.thing'; })).toBe(['testEnvironment.secrets[0]']);
-    expect(problems((e) => { delete e.secrets[0].testOnly; })).toBe(['testEnvironment.secrets[0]']);
+    expect(problems((e) => { e.variables[0].name = 'missing-name'; })).toStrictEqual(['testEnvironment.variables[0].name']);
+    expect(problems((e) => { e.secrets[0].ref = 'api.key'; })).toStrictEqual(['testEnvironment.secrets[0]']);
+    expect(problems((e) => { e.secrets[0].ref = 'other.thing'; })).toStrictEqual(['testEnvironment.secrets[0]']);
+    expect(problems((e) => { delete e.secrets[0].testOnly; })).toStrictEqual(['testEnvironment.secrets[0].testOnly']);
   });
 
   it('requires the private hosts to be a subset of the hosts, and refuses duplicates', () => {
@@ -69,9 +69,9 @@ describe('the validation of the section', () => {
       over(c.testEnvironment);
       return validateConfig(c).errors.map((e) => e.path);
     };
-    expect(paths((e) => { e.variables[0].privateHosts = ['internal.example.com']; })).toBe(['testEnvironment.variables[0].privateHosts[0]']);
-    expect(paths((e) => { e.variables.push(e.variables[0]); })).toBe(['testEnvironment.variables']);
-    expect(paths((e) => { e.secrets.push(e.secrets[0]); })).toBe(['testEnvironment.secrets']);
+    expect(paths((e) => { e.variables[0].privateHosts = ['internal.example.com']; })).toStrictEqual(['testEnvironment.variables[0].privateHosts[0]']);
+    expect(paths((e) => { e.variables.push(e.variables[0]); })).toStrictEqual(['testEnvironment.variables']);
+    expect(paths((e) => { e.secrets.push(e.secrets[0]); })).toStrictEqual(['testEnvironment.secrets']);
   });
 
   it('a duplicate host is a warning, not a refusal', () => {
@@ -88,7 +88,7 @@ describe('the export of the configuration', () => {
       variables: [{ name: 'INTEGRATION_URL', value: 'https://staging.example.com', hosts: [], privateHosts: [] }],
       secrets: [{ ref: 'test.integration', testOnly: true, hosts: [], privateHosts: [] }],
     };
-    const text = exportText(config, { workspaceName: 'Plano', appVersion: '0.0.0-test', now: new Date('2026-10-02T12:00:00Z'), workspaceId: 'id-123' });
+    const text = exportText(config, { workspaceName: 'Plano', appVersion: '0.0.0-test', now: new Date('2026-10-02T12:00:00Z') });
     expect(text).toContain('https://staging.example.com');
     expect(text).toContain('test.integration');
     expect(text).not.toContain('resolved-never-4242');

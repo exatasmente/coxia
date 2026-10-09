@@ -67,12 +67,12 @@ describe('when the stage receives the environment', () => {
   it('variables go straight into the delivery map', () => {
     const r = resolveStageTestEnv(qa, env(), store, theText())!;
     expect(r.vars).toEqual({ INTEGRATION_URL: 'https://staging.example.com' });
-    expect(r.values).toBe([]);
+    expect(r.values).toStrictEqual([]);
   });
 
   it('secrets are injected under the TEST_ name of their ref, and their values feed the masker', () => {
-    const r = resolveStageTestEnv(qa, env({ secrets: [{ ref: 'test.integration', testOnly: true, hosts: ['staging.example.com'], privateHosts: [] }] }), store, theText())!;
-    expect(r.vars).toBe({ TEST_INTEGRATION: 'stored-integration-9999' });
+    const r = resolveStageTestEnv(qa, { variables: [], secrets: [{ ref: 'test.integration', testOnly: true, hosts: ['staging.example.com'], privateHosts: [] }] }, store, theText())!;
+    expect(r.vars).toStrictEqual({ TEST_INTEGRATION: 'stored-integration-9999' });
     expect(r.values).toEqual(['stored-integration-9999']);
     expect(r.hosts).toEqual(['staging.example.com']);
   });
@@ -110,13 +110,6 @@ describe('the confirmation ledger', () => {
     expect(ledger.list()).toEqual([{ ref: 'test.integration', confirmedAt: expect.any(String), by: 'person' }]);
     ledger.revoke('test.integration');
     expect(ledger.approved('test.integration')).toBe(false);
-    expect(JSON.parse(readFileSync(file, 'utf8'))).toBe({});
-  });
-});
-  });
-});
- 'utf8'))).toBe({});
-  });
-});
+    expect(JSON.parse(readFileSync(file, 'utf8'))).toStrictEqual({});
   });
 });

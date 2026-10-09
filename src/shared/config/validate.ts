@@ -173,10 +173,12 @@ function testEnvRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: Confi
     });
     for (const h of duplicates(privateHosts ?? [])) warnings.push({ path: `${at}.privateHosts`, message: `"${h}" is listed twice` });
   };
+  const seenNames = new Set<string>();
   env.variables.forEach((v, i) => {
     const at = `testEnvironment.variables[${i}]`;
     if (!ENV_NAME.test(v.name)) errors.push({ path: at, message: `the name "${v.name}" cannot be an environment variable: use letters, digits and _ only, starting with a letter or _` });
-    for (const id of duplicates(env.variables.map((x) => x.name.toUpperCase()))) errors.push({ path: 'testEnvironment.variables', message: `the variable name "${id}" is used twice (environment names ignore case)` });
+    if (seenNames.has(v.name.toUpperCase())) errors.push({ path: 'testEnvironment.variables', message: `the variable name "${v.name.toUpperCase()}" is used twice (environment names ignore case, so the second entry would overwrite the first)` });
+    seenNames.add(v.name.toUpperCase());
     hostsRules(v.hosts, v.privateHosts, at);
   });
   env.secrets.forEach((s, i) => {

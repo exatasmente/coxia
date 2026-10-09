@@ -414,7 +414,7 @@ describe('migrateConfig', () => {
       const r = migrateConfig(v19(), { legacyInstall: false });
       expect(r.fromVersion).toBe(19);
       expect(r.changed).toBe(true);
-      expect(r.config.schemaVersion).toBe(20);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.runner.autonomy.board).toBe(false);
       expect(r.notes.join(' ')).toContain('runner.autonomy.board was added (off: board writes wait in Actions for a yes)');
       expect(validateConfig(r.config).ok).toBe(true);
@@ -447,9 +447,9 @@ describe('migrateConfig', () => {
       expect(r.config.devCycle.autonomy).toEqual(neutralConfig().devCycle.autonomy);
     });
 
-    it('is the newest step: 20 is current and 21 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(20);
-      expect(() => migrateConfig({ schemaVersion: 21 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is the newest step: the previous version is current and the next is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(20);
+      expect(() => migrateConfig({ schemaVersion: CONFIG_SCHEMA_VERSION + 1 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

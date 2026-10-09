@@ -62,7 +62,7 @@ export function openHostSession(o: HostSessionOptions, deps: HostSessionDeps = {
   // Fresh empty folders per name (the data and specs folders of the app under development, when the launcher named them): made here, inside the session's
   // throwaway folder, so the person's real data never shows up under them, and removed with the session.
   const emptyDirs = new Map<string, string>();
-  for (const [name] of o.testEnv?.emptyDataDirs ?? []) emptyDirs.set(name, join(outDir, name.replace(/[^A-Za-z0-9.-]/g, '')));
+  for (const name of o.testEnv?.emptyDataDirs ?? []) emptyDirs.set(name, join(outDir, name.replace(/[^A-Za-z0-9.-]/g, '')));
   for (const dir of emptyDirs.values()) mkdirSync(dir, { mode: 0o700 });
   // Every value here is the launcher's; merged over the scrub, it can never undo what the scrub did, and nothing real rides under a test name.
   const appliedVars = (): Record<string, string> => ({ ...(o.testEnv?.vars ?? {}), ...Object.fromEntries(emptyDirs) });

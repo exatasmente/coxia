@@ -14,6 +14,7 @@ export const TAB_LABEL: Record<TeamTab, string> = {
   comments: 'ui.team.tab.comments',
   attachments: 'ui.team.tab.attachments',
   runner: 'ui.team.tab.runner',
+  testenv: 'ui.team.tab.testenv',
 };
 
 export const PERMISSION_LABEL: Record<AgentPermission, string> = { read: 'ui.team.permission.read', worktree: 'ui.team.permission.worktree' };

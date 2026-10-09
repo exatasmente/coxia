@@ -14,7 +14,7 @@ import { assertNoTestEnvLeak } from '../src/main/actions';
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 
-const VALUE = 'a-real-token-value-7777';
+const VALUE = 'a real token value 7777';
 const command = (body: string) => ({ via: 'gh' as const, method: 'POST' as const, endpoint: '/projects/group/project/merge_requests', fields: { body } });
 
 it('nothing is under the scan when no stage is live', () => {
@@ -30,7 +30,10 @@ describe('while a stage carries the environment', () => {
     expect(() => assertNoTestEnvLeak(command(`harmless text`))).not.toThrow();
     expect(() => assertNoTestEnvLeak(command(`this one ${VALUE} leaks`))).toThrow(/raw form/);
     expect(testEnvTextProblem(`header ${encodeURIComponent(VALUE)}`)).toMatch(/URL-encoded/);
-    expect(testEnvTextProblem(JSON.stringify({ key: VALUE }))).toMatch(/JSON-escaped/);
+    const JSONY = 'tok"en\\7777';
+    const stopJson = registerTestEnvForms(formsOfValues([JSONY]));
+    expect(testEnvTextProblem(JSON.stringify({ key: JSONY }))).toMatch(/JSON-escaped/);
+    stopJson();
     stop();
     expect(testEnvScanActive()).toBe(false);
     expect(() => assertNoTestEnvLeak(command(`x ${VALUE}`))).not.toThrow();

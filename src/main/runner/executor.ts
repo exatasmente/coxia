@@ -25,7 +25,7 @@ import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
 import { resolveStageTestEnv, registerTestEnvForms, stageAllowsTestEnv, formsOfValues, type StageTestEnv } from '../testEnv';
 import { testEnvLedger, secrets } from '../secrets';
-import { maskerFromResolved } from '../maskExact';
+import { maskerFromResolved, type ExactMask } from '../maskExact';
 import { type ExecResult, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
 import { type EvidenceRecord, evidencePlacementOf } from '../../shared/evidence';
 import { evidenceToolsOf, evidenceProblemText, outputProblemText } from '../evidence/handlers';
@@ -303,6 +303,11 @@ export const sessionRunner = (session: SandboxSession): CommandRunner => async (
 
 const clipText = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
+// The exact mask of each open session, keyed by the session object the stage works with: per stage, never shared between concurrent runs.
+const sessionMask = new WeakMap<SandboxSession, ExactMask>();
+/** The stage's masker, when its shell was opened with test-environment entries; a stage without them masks exactly as before. */
+const maskOfSession = (session: SandboxSession | null): ExactMask | null => (session ? sessionMask.get(session) ?? null : null);
+
 /** What the thread says about a command of a sandbox: how it ended. */
 const endedAs = (r: ExecResult): string => (r.refused ? t(`main.runner.exec.refused.${r.refused}`) : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }));
 
@@ -390,9 +395,12 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
     if (gui?.display === 'missing' || gui?.display === 'failed') appendGui(gui.display === 'missing' ? 'runner.sandbox.noDisplay' : 'runner.sandbox.displayFailed', {});
     // The scan of the door lives with the session: when it closes (the stage ended), the stage's forms leave the scan.
-    if (!unscan) return session;
-    const close = session.close.bind(session);
-    return { ...session, close: () => close().finally(() => unscan()) };
+    const given = !unscan ? session : (() => {
+      const close = session.close.bind(session);
+      return { ...session, close: () => close().finally(() => unscan()) };
+    })();
+    if (mask) sessionMask.set(given, mask);
+    return given;
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
     throw e;
@@ -571,6 +579,9 @@ function missingDocuments(output: StageOutput, stage: FlowStage, folder: string)
 
 async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage: ((u: UsageReport) => void) | undefined, carried: readonly AttachmentRef[] | undefined, session: SandboxSession | null, clock?: StageClock & { watch?: Watchdog }): Promise<StageRun> {
   const config = d.config();
+  // The exact-value mask of this stage's shell, when it carries the workspace's test environment; everything the stage produces and keeps goes through it first.
+  const mask = maskOfSession(session);
+  const maskOf = (text: string): string => (mask ? mask(text) : text);
   const { agent, stage, kind } = pickAgent(config, run, flow);
   const wt = run.worktree;
   const writes = agent.permission === 'worktree';
@@ -871,7 +882,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         const r = await runConversation(conversation, { fromCaller: incoming, answered: (text) => inbox.post(text) });
         conversationOf.set(to, { thread: r.thread, say: entry.say });
         for (const e of r.log ?? []) {
-          conversationCommands.push({ command: clipText(redact(e.command.replace(/\s+/g, ' ')), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: 'agent' });
+          conversationCommands.push({ command: clipText(maskOf(redact(e.command.replace(/\s+/g, ' '))), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: maskOf(e.output), ms: e.ms, n: e.n, by: 'agent' });
         }
       } else {
         void runConversation(conversation, { fromCaller: incoming, answered: (text) => inbox.post(text) })
@@ -972,7 +983,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   if (scenariosWithoutEvidence.length) throw new StageError('qa-evidence-missing', { scenarios: scenariosWithoutEvidence.map((scenario) => scenario.name).join(', ') });
   // Everything that ran in the stage's sandbox, in order: the app's own commands before QA, then the agent's. A called agent that wrote ran in its own session over
   // the same worktree, and its commands join the list under its name.
-  const ranInSandbox: CommandResult[] | undefined = session ? [...session.log.filter((e) => !e.refused).map((e) => ({ command: clipText(redact(e.command.replace(/\s+/g, ' ')), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: e.output, ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), ...conversationCommands] : conversationCommands.length ? conversationCommands : undefined;
+  const ranInSandbox: CommandResult[] | undefined = session ? [...session.log.filter((e) => !e.refused).map((e) => ({ command: clipText(maskOf(redact(e.command.replace(/\s+/g, ' '))), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: maskOf(e.output), ms: e.ms, n: e.n, by: e.n <= (ran?.length ?? 0) ? ('app' as const) : ('agent' as const) })), ...conversationCommands] : conversationCommands.length ? conversationCommands : undefined;
   if (!output.summary && !output.question && !output.reporterQuestion) throw new StageError('empty-answer');
 
   const written: string[] = [];
@@ -989,7 +1000,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.artifactIgnored', params: { agent: agent.id, name: a.name }, stage: stage.id });
       continue;
     }
-    writeArtifact(wt, run.cycleFolder, a.name, tidyArtifact(planContent(a.name, a.content), run.issue));
+    writeArtifact(wt, run.cycleFolder, a.name, maskOf(tidyArtifact(planContent(a.name, a.content), run.issue)) );
     written.push(a.name);
   }
   if (output.question || output.reporterQuestion) return { kind, output, written, commit: null, head: looked, ...(keptRecords.length ? { keptEvidence: keptRecords } : {}), ...(ranInSandbox ? { commands: ranInSandbox } : ran ? { commands: ran } : {}) };

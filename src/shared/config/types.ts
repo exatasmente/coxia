@@ -216,6 +216,8 @@ export interface StageDef {
    * expressions); a cycle where one does is a flow a run follows, and a stage with no type in it is work.
    */
   type?: StageType;
+  /** Whether the stage receives the workspace's test environment. Left out: a QA stage of the current editor reads as yes; every stage carried by an already-saved template reads as no. */
+  testEnv?: boolean;
   /** The agent that works this stage in a run (an `agents.team` id). It wins over the `stages` list of the agents. Work stages only. */
   agentId?: string;
   /** Files, in the cycle folder, that this stage must produce. Plain names: no folder, nothing that starts with a dot. */

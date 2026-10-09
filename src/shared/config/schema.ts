@@ -542,14 +542,14 @@ export const CONFIG_SCHEMA: JsonSchema = {
           variables: list('Plain variables (a URL, a feature flag, a model name). Never a credential: that is what the secrets are for.', object('One variable.', {
             name: string('The name it becomes as an environment variable of the stage.', { pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$', minLength: 1, maxLength: 64 }),
             value: string('The value, kept in this file only.', { maxLength: 4000 }),
-            hosts: list('Exact host names the stage network opens to because of this entry (443, through the app proxy). Empty: it opens nothing.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20, uniqueItems: true }),
-            privateHosts: list('Hosts of hosts that are private addresses, reached only when marked so here.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20, uniqueItems: true }),
+            hosts: list('Exact host names the stage network opens to because of this entry (443, through the app proxy). Empty: it opens nothing.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+            privateHosts: list('Hosts of hosts that are private addresses, reached only when marked so here.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
           }, ['name', 'value']), { maxItems: 50 }),
           secrets: list('Secret references into the secrets store, every one under the "test." prefix. Never a value.', object('One secret.', {
             ref: string('The secrets-store reference.', { pattern: SECRET_REF }),
             testOnly: boolean('A secret for testing only (a dedicated project, a low-budget key). One not marked so needs the person confirmation, once, before a stage launches with it.'),
-            hosts: list('Exact host names the stage network opens to because of this entry.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20, uniqueItems: true }),
-            privateHosts: list('Hosts of hosts that are private addresses, reached only when marked so here.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20, uniqueItems: true }),
+            hosts: list('Exact host names the stage network opens to because of this entry.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+            privateHosts: list('Hosts of hosts that are private addresses, reached only when marked so here.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
           }, ['ref', 'testOnly']), { maxItems: 50 }),
         },
         required: ['variables', 'secrets'],
