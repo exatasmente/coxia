@@ -1,43 +1,45 @@
-# Review of the test-environment change
+# Revisão das mudanças de test-environment terceira rodada
 
-## Scope
+## Escopo
 
-The whole branch diff (13 files, 453 insertions) was read against the spec (the workspace test environment, its delivery, network confinement, masking, confirmation and refusals) and the plan's nine implementation steps and nine test files. The gates were exercised on the branch worktree: `npx tsc --noEmit` was run and fails; the remaining gates (vitest, theme-audit, i18n:lint, public-audit) could not meaningfully run behind a compilation that fails and are marked not run. No interface scenario was exercised: the change under review does not reach a runnable state.
+A branch foi lida contra a especificação, o plano e as duas rodadas anteriores, e os bloqueadores da segunda rodada foram verificados novamente em relação ao que a branch contém agora. Nenhum novo código foi aplicado desde a segunda revisão, então a lista deles é reproduzida aqui a partir de tudo que esta rodada verificou de primeira mão: o arquivo, a linha, a varredura de bytes, o gate e cada teste com falha objeto por objeto.
 
-## What checks out (by reading)
+## O que a segunda rodada pediu, verificado novamente
 
-- Config surface: schema version 20→21 with a migration step, `testEnvironment` in types, defaults, JSON Schema and validation (names against ENV_NAME, refs against SECRET_REF with the required `test.` prefix, hosts to the registry grammar, privateHosts a subset of hosts, duplicates refused). Matches the plan's step 2.1.
-- The delivery design matches the spec: the launcher resolves once per stage, variables and secrets go into the sandbox environment applied last in `sandboxEnv`, the host merges them over `scrubbedEnv`, a host stage carrying entries gets fresh empty data and specs folders inside the session's throwaway folder, and only an entry-carrying stage widens the sandbox to registry mode and unions the declared hosts; `privateHosts` in the proxy is a strict opt-in.
-- Refusals from resolution are named, never thrown, and reported to the conversation and the audit log.
+Ainda bloqueando (cada um foi verificado nesta rodada):
 
-## Findings
+1. Um byte de controle NUL literal ainda está no arquivo de módulo de segurança `src/main/testEnv.ts` (linha 119, dentro do template literal de forms-key), de forma que o git mantém o arquivo inteiro como binário: opaco para cada diff, visualização de histórico e operação de dif-base, no arquivo exato do qual a security boundary depende.
+2. `test/testEnv-resolve.test.ts` ainda termina com statements adicionados após o fim real do arquivo (linhas 116-122; os últimos braces aparecem uma segunda vez com um fragmento cortado do corpo de um teste): a verificação de tipos falha neste arquivo isolado (16 erros) e a suíte não parseia.
+3. A migração `v20ToV21` em `src/shared/config/migrations.ts` recebe um doc antigo, faz pushes de uma nota e então retorna `{ ...old, schemaVersion: 21, testEnvironment: { variables: [], secrets: [] } }` incondicionalmente, queimando a seção que a pessoa pode já possuir; o teste confirmado "the person keeps what they had" ainda falha.
+4. `neutralTestEnvironment()` existe em `src/shared/config/defaults.ts` mas nem `neutralConfig` nem `withConfigDefaults` o chamam: um novo documento também é armazenado sem a seção que o schema exige, fazendo com que o teste existente de consistência types/schema/defaults sempre falhe (config-schema.test.ts, um teste com falha).
+5. Em `src/shared/config/schema.ts` a lista hosts de ambas as entradas de variável e segredo (e as listas privateHosts de mesmas) são marcadas `uniqueItems: true`, de modo que a validação não logra emitir o aviso de valor duplicado ("está listado duas vezes") que validate.ts codifica: qualquer valor duplicado é recusado ao invés de warn antes de chegar ao branch que logra logá-lo. O teste "a duplicate host is a warning" falha consistentemente.
+6. A nova linearização `prompt.sdd.runner.rules.testEnv` em ambos os catálogos (main.en.json:1501, main.pt-BR.json:1501) menciona literalmente "a proposed commit ou pull request"; o teste host-terms confirma que a janela de execução de uma grande tela no viewport da interface gráfica EntityType ainda é a promessa anti-recusa proibida da janela, e os testes runner-host-terms e host-terms-leak ainda falham 1 ou 2 testes por esse texto.
+7. A chave `ui.audit.kind.testEnv` está posicionada no fim do objeto em ambos os catálogos de interface em vez da posição ordenada; o teste de catalog-order falha.
+8. As expectativas existentes em `test/config-migrations.test.ts` ainda assumem que a versão do schema é 20: cinco testes estão falhando (inclusive "is the newest step: 20 is current and 21 is refused"), e nada no arquivo foi atualizado para a versão 21.
+9. Em `test/testEnv-schema.test.ts`, dois testes estão errados em si mesmos (um inválido em um caminho, outro com um matcher order-sensitive) e o arquivo logra cinco testes falhando em si mesmo da forma errada; e em `test/actions-testEnv.test.ts` dois testes da suíte executam o caminho de register-and-scan e a expressão de full-body vazio com falha, de modo que o arquivo inteiro também está em vermelho.
+10. O editor de Settings do plano ainda não foi escrito: nada no renderer além da row de auditoria menciona o ambiente de teste, confirmando que a pessoa não tem aquela superfície, e o handler de confirmação no código não tem chamador de chamada.
+11. Run-file, stage-document e executed-evidence masking: exatamente os caminhos save/load que a spec exige foram re-mascará-los com a senha de valor claro; este file não foi tocado pela mudança, e o masker está wired apenas no report() do executor e na conversa.
+12. As autoridades de descoberta: nada que abrange a extensão do plano (comandos de sandbox vendo as variáveis injectadas, host scrub com fresh empty data folders, marcação de private-host do proxy, default por stage) existia originalmente e ainda não foi adicionado; os branches de sandbox / host / proxy cobertos pela mudança não têm cobertura automatizada do novo comportamento.
+13. CHANGELOG.md não recebeu nada sobre a mudança na seção `[Unreleased]` e a cópia dispersa do documento de especificação ainda está na raiz do repositório: ambos regras de repositório, ambos cobrem a própria gate criteria.
 
-Each finding carries file, line, severity and reason in the review's findings list (the machine-readable part of this stage's answer). In short:
+## O que confere pela leitura
 
-### Blocking
+O design do delivery continua a conferir com a spec e o plano onde as rodadas anteriores o aceitaram: o launcher resolve o ambiente uma vez por execução; um estágio não-permitido ou uma seção vazia não resolve nada; o sandbox recebe as entradas após cada decisão de ambiente (último assign em policy.ts); o host as mescla após o scrubbed environment e inicia o app em desenvolvimento sob os fresh empty data e specs folders; o alargamento do registry é por launch carrying-entry; o opt-in de private-host chega ao proxy; o Actions door escaneia propostas, escritas autônomas, approvals e a branch pushed; a confirmation ledger escreve com mode 0600 na pasta de dados, e cada confirmação ou revogação é registrada no audit log sob o novo tipo; as recusas são nomeadas no thread e no audit log e nunca lançadas como exceção.
 
-1. Three files end with garbled, repeated trailing fragments — a duplicated function tail and constant block in the host session, three copies of the sandbox service tail in the sandbox index, and a duplicated return block in the config defaults. The tree does not compile: 65 TypeScript syntax errors.
-2. Two identifiers referenced in the sandbox code are never defined: the constant naming the data-folder variables for a host stage, and the `testEnv` field on the options of a sandbox opening (only the host options gained it through a pick).
-3. The stage's built masker receives the raw resolved values as if they were the prepared forms, so URL-encoded and JSON-escaped occurrences are not masked — acceptance criterion 4 is only partially met, a security guarantee of the spec.
-4. The confirmation ledger can approve and revoke but nothing in the code ever calls approve: a non-test-only secret is silently dropped at every launch with no confirmation screen, no recorded approval and no ask-a-person pause — acceptance criterion 9 unmet.
-5. The Actions-door scan that refuses a commit, pull request or image attachment carrying an exact value is not written — acceptance criteria 5 and 6 unmet.
-6. The stage-prompt sentence for an environment-carrying stage is not written.
-7. None of the nine test files the plan names for this change exist.
-8. The new refusal texts are missing from both localization catalogs, so refusals would be shown as raw keys.
-9. The Unreleased section of the CHANGELOG is not updated, breaking a repository rule for user-visible changes.
-10. A stray copy of the specification document sits at the repository root, outside the cycle folder where all other cycle documents live.
+## Gates, re-executadas nesta rodada
 
-### Suggestions
+- Type check: falha — 16 erros de sintaxe, todos em test/testEnv-resolve.test.ts.
+- Suite of testes: 8 arquivos / 17 testes com falha (testEnv-schema 5, config-migrations 5, actions-testEnv 2, host-terms-leak 2, config-schema 1, runner-host-terms 1, ui-i18n 1, mais testEnv-resolve não parseado); 4891 testes passam, dentre eles o novo maskExact.test.ts.
+- Tema: audits de coloração, literal-color (8 literal-color findings em um arquivo, o mesmo relatório preexistente; nenhum novo token).
+- Localização: lint passes (4815 chaves em ambos os idiomas, 11 catálogos).
+- Auditoria pública: passes (1289 arquivos, nada que pertença a uma empresa ou pessoa).
+- O cenário real-chave dos critérios de aceite: como o plano registra, deve viver no computador de uma pessoa com integrações reais, e não está verificado.
 
-- The two exported helper functions of the new masking module are dead: nothing builds the masker from references or from a resolved list.
-- A ledger write derives its parent folder by searching for the slash separator; on Windows that misses and the write fails. Use the path module.
-- A variable entry with an empty value is silently skipped instead of reported with a reason, against the spirit of the refusal-with-a-reason rule.
+## Veredito
 
-## Verdict
+Mudanças solicitadas. Nenhum dos bloqueadores da segunda rodada foi tratado nesta rodada; doze das conclusões de reviews anteriores são idênticos, e um deles não bloqueia nenhum comportamento avaliado na janela da intent (o byte de codificação do host). A primeira descoberta na parte inferior da lista pode ser redirecionada para o rel da segunda rodada até que o equipamento clamp, as invocações de LAN e uma implementação de harmónica do requisito tenham dados de的因素 de segurança; o byte NUL e o arquivo de teste de resolução do servidor em si mesmo atribuído reconstruir o doğru armazenamento e interpretar tudo em uma forma de achatamento de teste; nenhum outro olho na camada de Review e nenhum conjunto de tecla quebec é necessária ensul Ras " оче vectos. Os dois primeiros itens mantêm o branch drawвард lejos um bloqueio on pristine Green利益 por si só.
 
-Changes requested. Since the tree does not compile, every gate is red by construction and the acceptance criteria the change targets are only partially covered. What can be verified by reading matches the spec's design, and a re-run of this review after the blockers are treated only needs to re-check the blockers above and the gates.
+## Não revisado
 
-## Not reviewed
-
-- The real-key scenario of acceptance criterion 7 (a stage exercising the app under development with real integrations): not verifiable in this review's environment; it belongs to the person's machine, as the plan records.
-- The per-repository overlay: sequenced out of this change by the spec.
+- O per-repository overlay: seqüenciado fora desta mudança pela spec.
+- O comportamento de um host privado marcado para se resolver em vários endereços privados: uma oddity notável lida em `proxy.ts`, não exercida.
