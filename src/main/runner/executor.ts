@@ -7,6 +7,7 @@ import { workingTeam } from '../../shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
+import { runKey } from '../../shared/browser';
 import { type ModelRole } from '../../shared/settings';
 import { t } from '../../shared/i18n';
 import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type Scenario, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushesAt, readOutput, testPlanWithResults } from '../../shared/runs';
@@ -46,6 +47,7 @@ import { AGENTS_FILE } from '../../shared/harness/agentsMd';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import type { ScreenHub } from '../screen/hub';
+import { grantsFor, withheldText } from '../browser/guard';
 
 // One attempt at one stage: build what the agent reads, run it, write the documents it returned into the cycle folder and commit what it did.
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
@@ -361,12 +363,15 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
       console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
     }
   };
+  // A test workspace never reaches real sites: the hosts the agent was allowed are withheld, and the thread says so (the agent keeps the workspace's own network).
+  const grants = grantsFor(agent);
+  if (!host && grants.withheld.includes('hosts')) appendGui('runner.screen.testWorkspace', { what: withheldText('hosts') });
   try {
     // Only the stage that produces the QA output asks for a display; the browsers folder, when the person set one, comes with every sandbox and every host session.
     const display = outputKindOf(stage.kind) === 'qa';
     const session = host
       ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal, display })
-      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display });
+      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display, agent: { allowedHosts: grants.allowedHosts } });
     const gui = session.gui;
     // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
@@ -374,7 +379,7 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     // The app's own connection to the stage's display is made now, before the agent has run a single command: what is at the socket's path is the agent's to change from
     // then on. A display that cannot be reached leaves the stage without a live screen and says so; nothing else changes. Only the stage's own session is registered
     // (`own`): an agent it calls, or one mentioned in the run's thread, gets its display but no live screen, since a run has one and it is the stage's.
-    if (own && d.screens && display && session.screen && gui?.display === 'on' && !(await d.screens.open({ run: run.id, stage: stage.id, agent: agent.id, socket: session.screen.socket, kind: session.screen.kind }))) appendGui('runner.screen.noConnect', {});
+    if (own && d.screens && display && session.screen && gui?.display === 'on' && !(await d.screens.open({ key: runKey(run.id), thread: runThreadId(run.id), stage: stage.id, agent: agent.id, socket: session.screen.socket, kind: session.screen.kind }))) appendGui('runner.screen.noConnect', {});
     return session;
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
@@ -510,8 +515,8 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   } finally {
     // The live screen goes first, whatever way the stage ended: nothing reads the display once its sandbox is closing. A stage that failed before it could build the
     // recording itself still keeps what was recorded (nothing then, when `runStage` ended the screen already).
-    keepScreenRecording(d, run, stage, agent, await d.screens?.finish(run.id).catch(() => null) ?? null);
-    d.screens?.end(run.id);
+    keepScreenRecording(d, run, stage, agent, await d.screens?.finish(runKey(run.id)).catch(() => null) ?? null);
+    d.screens?.end(runKey(run.id));
     // Whatever happened, nothing the stage started outlives it. Closing never throws, and a finished stage is not turned into a failed one by it.
     await session?.close().catch(() => undefined);
   }
@@ -959,7 +964,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     // The attempt is over: the cap of conversations starts again, so a stage returned and run again may talk once more.
     resetOpened(run.id, stage.id);
     // The live screen ends with the stage, before its sandbox does; its recording is kept whatever way the stage ended, a failed or cancelled one included.
-    keepRecording(await d.screens?.finish(run.id).catch(() => null) ?? null);
+    keepRecording(await d.screens?.finish(runKey(run.id)).catch(() => null) ?? null);
     // The sandbox ends after the app read the answer, ran the repair round and kept what the agent looked at: no process of the stage can race the commit.
     await session?.close();
   }

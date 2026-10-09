@@ -153,6 +153,10 @@ export function collectCommands(c: WorkspaceConfig): { field: string; command: s
     if (a.shell === 'host') add(`agents.team[${a.id}].shell`, 'host: any command the agent chooses, on this computer, once the person allows it');
     else if (a.shell === 'sandbox') add(`agents.team[${a.id}].shell`, 'sandbox: any command the agent chooses, inside a sandbox');
     else if (a.shell === 'allowlist') add(`agents.team[${a.id}].shell`, 'allowlist: the commands of runner.commands');
+    // Not commands, but what a file must not hand over unseen: an agent that drives a browser on a virtual screen, reaches the listed hosts and keeps its logins.
+    if (a.screen) add(`agents.team[${a.id}].screen`, 'screen: the agent drives a browser on a virtual screen the app starts, within its allowed hosts');
+    if (a.allowedHosts?.length) add(`agents.team[${a.id}].allowedHosts`, `allowedHosts: the agent may reach ${a.allowedHosts.join(', ')}`);
+    if (a.browserProfile) add(`agents.team[${a.id}].browserProfile`, 'browserProfile: the agent\'s browser keeps its logins between uses, in this workspace');
     // Rules the ceremonies run without asking: a file is a way to hand them over, so each one is said.
     (a.allowedCommands ?? []).forEach((rule, i) => add(`agents.team[${a.id}].allowedCommands[${i}]`, rule));
   }

@@ -505,6 +505,8 @@
   "ui.team.draft.inUse": "It is open in the assistant: close the assistant to discard it.",
   "ui.team.edit": "Edit",
   "ui.team.editAria": "Edit {name}",
+  "ui.team.err.allowedHost": "“{host}” is not a host name the proxy takes: lowercase letters, digits, dots and hyphens, with a dot, and no scheme, port, path or wildcard.",
+  "ui.team.err.allowedHostsMax": "At most {max} hosts for one agent.",
   "ui.team.err.allowlist": "Listed commands run in the real worktree, so they need the permission to change files. An agent that only reads runs commands in a sandbox.",
   "ui.team.err.idReserved": "\"{id}\" is the id of a built-in agent.",
   "ui.team.err.idShape": "The id uses lowercase letters, digits, \"-\" and \"_\", and starts with a letter or a digit.",

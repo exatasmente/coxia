@@ -115,6 +115,49 @@ describe('config schema', () => {
     expect(bad.errors.map((e) => e.path)).toEqual([`agents.team[${c.agents.team.length}].draft`]);
   });
 
+  describe('the screen, hosts and browser profile of an agent', () => {
+    const withAgent = (extra: Record<string, unknown>) => {
+      const c = neutralConfig();
+      return { ...c, agents: { ...c.agents, team: [...c.agents.team, { id: 'web', name: 'Web', ...extra }] } };
+    };
+    const at = (field: string) => `agents.team[${neutralConfig().agents.team.length}].${field}`;
+
+    it('accepts them, and the defaults hold none', () => {
+      const r = validateConfig(withAgent({ screen: true, allowedHosts: ['example.com', 'docs.example.com'], browserProfile: true }));
+      expect(r.errors).toEqual([]);
+      expect(r.config?.agents.team.find((a) => a.id === 'web')).toMatchObject({ screen: true, allowedHosts: ['example.com', 'docs.example.com'], browserProfile: true });
+      expect(neutralConfig().agents.team.some((a) => 'screen' in a || 'allowedHosts' in a || 'browserProfile' in a)).toBe(false);
+    });
+
+    it('refuses a switch that is not a boolean', () => {
+      expect(validateConfig(withAgent({ screen: 'sim' })).errors.map((e) => e.path)).toEqual([at('screen')]);
+      expect(validateConfig(withAgent({ browserProfile: 1 })).errors.map((e) => e.path)).toEqual([at('browserProfile')]);
+    });
+
+    it('holds the hosts to the rules of the registry hosts: exact lowercase names, no scheme, port, path or wildcard, at most 20', () => {
+      for (const bad of ['Example.com', 'https://example.com', 'example.com:443', 'example.com/path', '*.example.com', 'localhost', 'a b.example.com']) {
+        const r = validateConfig(withAgent({ allowedHosts: [bad] }));
+        expect(r.ok, bad).toBe(false);
+        expect(r.errors[0].path, bad).toMatch(/allowedHosts/);
+      }
+      expect(validateConfig(withAgent({ allowedHosts: Array.from({ length: 21 }, (_, i) => `h${i}.example.com`) })).errors.map((e) => e.path)).toContain(at('allowedHosts'));
+      expect(validateConfig(withAgent({ allowedHosts: Array.from({ length: 20 }, (_, i) => `h${i}.example.com`) })).errors).toEqual([]);
+    });
+
+    it('warns about a host listed twice', () => {
+      const r = validateConfig(withAgent({ allowedHosts: ['example.com', 'example.com'] }));
+      expect(r.errors).toEqual([]);
+      expect(r.warnings.map((w) => w.path)).toContain(at('allowedHosts'));
+    });
+
+    it('describes the three fields', () => {
+      const props = CONFIG_SCHEMA.properties?.agents.properties?.team.items?.properties ?? {};
+      expect(props.screen.type).toBe('boolean');
+      expect(props.browserProfile.type).toBe('boolean');
+      expect(props.allowedHosts.maxItems).toBe(20);
+    });
+  });
+
   it('checks references between sections', () => {
     const c = neutralConfig();
     c.llm.roles.turn.provider = 'nope';
