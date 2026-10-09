@@ -228,6 +228,7 @@ export const runsModule: Module = (ctx) => {
     screens: hub,
     sessions: openSessions,
     asks: askStore,
+    handoff: handoffs,
     // One small call to a provider whose key ran out of budget, by the sweep: it goes through the engines, so the same refusal mapping applies.
     probeBudget: async (providerId) => {
       const result = await probeProviderBudget(providerId);

@@ -11,7 +11,7 @@ import { type RunActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import type { ReadConfinement } from '../engine/contract';
 import { callKey } from '../../shared/browser';
-import { type CallScreen, type CallScreenRequest, type ScreenPorts, modelSeesImages, openCallScreen, promptFor } from '../browser/callScreen';
+import { type CallScreen, type CallScreenRequest, type ScreenPorts, beginHandoff, modelSeesImages, offerHandoff, openCallScreen, promptFor } from '../browser/callScreen';
 import { grantsFor, withheldText } from '../browser/guard';
 import { recordWrite } from '../auditoria';
 import { ATAS } from '../env';
@@ -45,7 +45,15 @@ export interface MentionDeps {
   /** Where an agent with no place to run commands gets a working folder. */
   env: () => { fallbackCwd: string };
   /** The session an agent's commands run in, for a caller that has its own (the runner, over the run's worktree and its flow stage, with the person's yes per host command). Absent: the mention opens the sandbox itself over the throwaway copy. */
-  openSession?: (place: MentionPlace, def: AgentDef, cwd: string, stage: string | null, signal: AbortSignal, clock: { beat: () => void; pause: () => () => void }, wants?: { display: boolean }) => Promise<SandboxSession | null>;
+  openSession?: (
+    place: MentionPlace,
+    def: AgentDef,
+    cwd: string,
+    stage: string | null,
+    signal: AbortSignal,
+    clock: { beat: () => void; pause: () => () => void },
+    wants?: { display: boolean; held?: () => boolean; mask?: (text: string) => string },
+  ) => Promise<SandboxSession | null>;
   /** The agents' screens (the app's browser) and the questions they ask the person; absent, or null before the app has them: no agent gets one here. */
   screens?: () => ScreenPorts | null;
   /** The shell sessions kept for the screens that are open (default: this process's). */
@@ -172,8 +180,14 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
     const stage = place.kind === 'run' ? (place.run?.stage ?? null) : null;
     const abort = new AbortController();
     const watch = watchdog(abort, limitsOf(config));
+    // The hand-off of the agent's screen for this answer (#178): made before any session, which reads its gate and its mask through the binding.
+    const ports = deps.screens?.() ?? null;
+    const ref = place.kind === 'run' && place.run ? place.run.issue.ref : place.ref;
+    const title = place.kind === 'run' && place.run ? place.run.issue.title : place.title;
+    const about = [ref, title?.slice(0, 120)].filter(Boolean).join(' ');
+    const offer = def.screen === true ? beginHandoff(ports?.handoff, def, { key: callKey(place.thread, id), thread: place.thread, place: 'conversation', stage: stage ?? '', ...(place.run ? { issue: place.run.issue.iid } : {}), about, pause: watch.pause, signal: abort.signal }) : null;
     // What the session reads of this answer while it is the one using it.
-    const mine: Binding = { signal: abort.signal, pause: watch.pause, beat: watch.beat };
+    const mine: Binding = { signal: abort.signal, pause: watch.pause, beat: watch.beat, handoff: offer?.call ?? null };
     let session: SandboxSession | null = null;
     let source: ShellSource | null = null;
     // The agent's screen for this answer, and the shell session kept for it between answers (when it is the screen's to keep).
@@ -202,8 +216,9 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         keptShell = opened.kept;
       }
       // The agent's screen when no shell session made it: the app's browser on a display of its own, and the confirmation tool where the call has the right to it.
-      const ports = deps.screens?.() ?? null;
       if (!screen && ports) screen = await openCallScreen(ports, screenRequest(deps, place, def, message, stage, watch, null));
+      // The hand-off tool, where the person can take the screen: the app's browser draws on a display that is registered with the live hub.
+      offerHandoff(screen, offer, { live: !!screen?.lease && !!ports?.sessions.watched(callKey(place.thread, id)), session: session !== null, host: def.shell === 'host' });
       // A screen that closes under a running answer takes the answer with it: nothing it was doing can go on.
       if (screen?.lease) {
         if (screen.lease.closed.aborted) screenClosed();
@@ -289,6 +304,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       else deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
     } finally {
       unregister();
+      // A hand-off still open ends first, with no result; the typed values are forgotten with the answer.
+      offer?.call.end();
       screen?.lease?.closed.removeEventListener('abort', screenClosed);
       screen?.release();
       if (keptShell) {
@@ -402,7 +419,7 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
   const onProxy = (p: { host: string; port: number; allowed: boolean; why?: string }): void =>
     say('runner.proxy', { agent: def.id, host: p.host || '—', port: p.port, result: p.allowed ? t('main.runner.proxy.allowed') : t(`main.runner.proxy.refused.${p.why}`) });
   const onExec = (r: { n: number; command: string; exitCode: number | null; timedOut: boolean; ms: number; output: string; refused?: string }, mode?: 'run' | 'refused'): void => {
-    say(host ? 'runner.exec.host' : 'runner.exec', { agent: def.id, n: r.n, command: redact(r.command.replace(/\s+/g, ' ')).slice(0, 300), result: r.refused ? t('main.runner.exec.refused.denied') : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }), ms: Math.round(r.ms / 100) / 10, tail: r.output.slice(0, 600) || '—' });
+    say(host ? 'runner.exec.host' : 'runner.exec', { agent: def.id, n: r.n, command: redact(r.command.replace(/\s+/g, ' ')).slice(0, 300), result: r.refused ? t(`main.runner.exec.refused.${r.refused}`) : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }), ms: Math.round(r.ms / 100) / 10, tail: r.output.slice(0, 600) || '—' });
     // A command of a conversation is audited as a stage's is: what ran, where, and how it ended; the log's own scrubbing applies on top.
     if (mode === 'run') {
       recordWrite({
@@ -437,8 +454,11 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
   // A test workspace never reaches real sites: the agent's own hosts are withheld, and the thread says so (an agent with a screen has it said by its screen).
   const grants = grantsFor(def);
   if (def.shell !== 'host' && grants.withheld.includes('hosts') && !def.screen) say('runner.screen.testWorkspace', { agent: def.id, what: withheldText('hosts') });
-  if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, approve, signal, ...(display ? { display } : {}) });
-  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, agent: { allowedHosts: grants.allowedHosts }, ...(display ? { display } : {}), ...(source.clone ? { clone: source.clone } : {}) });
+  // What the answer using the session has now: its gate and its mask follow whichever answer holds a kept session.
+  const held = (): boolean => bound()?.handoff?.active() ?? false;
+  const mask = (text: string): string => bound()?.handoff?.typed.mask(text) ?? text;
+  if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, approve, signal, held, mask, ...(display ? { display } : {}) });
+  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, held, mask, agent: { allowedHosts: grants.allowedHosts }, ...(display ? { display } : {}), ...(source.clone ? { clone: source.clone } : {}) });
 }
 
 /** What the sessions are asked to open the screen of an agent in this place for this answer. */
@@ -504,7 +524,9 @@ async function openShell(deps: MentionDeps, place: MentionPlace, def: AgentDef, 
   const cell: BindingCell = { bound: mine };
   const life = new AbortController();
   const clock = { beat: () => cell.bound?.beat(), pause: () => cell.bound?.pause() ?? (() => undefined) };
-  const session = await (deps.openSession ? deps.openSession(place, def, source.cwd, stage, makesKept ? life.signal : signal, clock, { display: makesKept }) : openMentionSession(deps, def, source, place, () => cell.bound, makesKept ? life.signal : signal, makesKept)).catch((e: unknown) => {
+  // A kept session refuses and masks through the answer that has it now, not the one that made it.
+  const gate = { held: () => cell.bound?.handoff?.active() ?? false, mask: (text: string) => cell.bound?.handoff?.typed.mask(text) ?? text };
+  const session = await (deps.openSession ? deps.openSession(place, def, source.cwd, stage, makesKept ? life.signal : signal, clock, { display: makesKept, ...gate }) : openMentionSession(deps, def, source, place, () => cell.bound, makesKept ? life.signal : signal, makesKept)).catch((e: unknown) => {
     say(redact(e instanceof Error ? e.message : String(e)).slice(0, 300));
     return null;
   });

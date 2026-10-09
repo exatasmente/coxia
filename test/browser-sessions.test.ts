@@ -202,6 +202,17 @@ describe('opening a screen', () => {
     await s.lease();
     expect(codes(s)).toEqual(['runner.screen.opened', 'runner.screen.noWatch']);
     expect(s.sessions.has(callKey('general', 'web'))).toBe(true);
+    // A screen the viewer could not connect to cannot be taken by the person.
+    expect(s.sessions.watched(callKey('general', 'web'))).toBe(false);
+  });
+
+  it('says whether a screen is registered with the viewer, so the person could take it: only an open one that the hub has', async () => {
+    const s = setup();
+    expect(s.sessions.watched(callKey('general', 'web'))).toBe(false);
+    await s.lease();
+    expect(s.sessions.watched(callKey('general', 'web'))).toBe(true);
+    await s.sessions.close(callKey('general', 'web'), 'person');
+    expect(s.sessions.watched(callKey('general', 'web'))).toBe(false);
   });
 
   it('lists the screens of a thread with their closing time, size and pending questions', async () => {

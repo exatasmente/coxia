@@ -63,10 +63,14 @@ export interface OpenOptions {
    * workspace's setting alone, as before. Not used by `openHost`: an agent on the computer has the computer's own network.
    */
   agent?: Pick<AgentDef, 'allowedHosts'>;
+  /** The person has the screen for a hand-off (#178): a command is refused, unlogged, while this answers true. */
+  held?: () => boolean;
+  /** Takes what the person typed during a hand-off out of a command's output. */
+  mask?: (text: string) => string;
 }
 
 /** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders; to test an interface it asks, like a sandbox, for the browsers folder and (a QA stage) a display. */
-export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display'> & Pick<HostSessionOptions, 'approve'>;
+export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display' | 'held' | 'mask'> & Pick<HostSessionOptions, 'approve'>;
 
 export interface SandboxService {
   /** The cached answer to "can this machine make a sandbox"; `force` asks again. */
@@ -277,7 +281,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
           ...(browsers || xvfb ? { gui: { browsers, xvfb } } : {}),
         });
         const gui = browsers || browsersGone || askedDisplay ? { browsers, ...(browsersGone ? { browsersGone } : {}), display: askedDisplay ? (xvfb ? ('start' as const) : ('missing' as const)) : null } : undefined;
-        return await openSession({ stageDir, args, limits: opts.config.limits, proxy: registry, onExec: opts.onExec, cleanup, ...(gui ? { gui } : {}) }, o.deps);
+        return await openSession({ stageDir, args, limits: opts.config.limits, proxy: registry, onExec: opts.onExec, cleanup, ...(gui ? { gui } : {}), ...(opts.held ? { held: opts.held } : {}), ...(opts.mask ? { mask: opts.mask } : {}) }, o.deps);
       } catch (e) {
         for (const c of cleanup) await Promise.resolve(c()).catch(() => undefined);
         removeTree(stageDir);
@@ -320,7 +324,7 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
       }
       try {
         return openHostSession(
-          { cwd, limits: opts.config.limits, env, onExec: opts.onExec, approve: opts.approve, ...(cleanup ? { cleanup } : {}), ...(wantsGui ? { gui: { browsers, ...(browsersGone ? { browsersGone } : {}), display, ...(displayName ? { displayName } : {}) } } : {}) },
+          { cwd, limits: opts.config.limits, env, onExec: opts.onExec, approve: opts.approve, ...(opts.held ? { held: opts.held } : {}), ...(opts.mask ? { mask: opts.mask } : {}), ...(cleanup ? { cleanup } : {}), ...(wantsGui ? { gui: { browsers, ...(browsersGone ? { browsersGone } : {}), display, ...(displayName ? { displayName } : {}) } } : {}) },
           o.hostDeps,
         );
       } catch (e) {

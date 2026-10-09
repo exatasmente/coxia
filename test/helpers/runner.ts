@@ -333,6 +333,8 @@ export interface BootOptions {
   /** The screens of the agents that have one (the app's browser) and the questions they ask; none by default. */
   sessions?: RunnerDeps['sessions'];
   asks?: RunnerDeps['asks'];
+  /** The hand-off of a stage's screen to the person; none by default. */
+  handoff?: RunnerDeps['handoff'];
   timeoutMs?: number;
   /** Replaces the idle limit and the cap of a stage one by one. */
   limits?: { idleMs?: number; maxMs?: number };
@@ -387,6 +389,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     screens: options.screens,
     sessions: options.sessions,
     asks: options.asks,
+    handoff: options.handoff,
     timeoutMs: options.timeoutMs,
     limits: options.limits,
     probeBudget: options.probeBudget,

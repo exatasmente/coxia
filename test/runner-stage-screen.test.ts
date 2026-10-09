@@ -7,6 +7,7 @@ import type { Run } from '../src/shared/runs';
 import type { AgentCall } from '../src/main/agents';
 import type { ScreenHub } from '../src/main/screen/hub';
 import { type Boot, type FakeSandbox, type FakeSession, boot, doc, fakeSandbox, keepQaEvidence, work } from './helpers/runner';
+import { type FakeHandoff, fakeHandoff } from './helpers/handoff';
 import { type FakeScreens, fakeScreens } from './helpers/screenSessions';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -44,13 +45,13 @@ async function reach(b: Boot, run: Run, id: string): Promise<Run> {
   return run;
 }
 
-const hubFake = () => {
+const hubFake = (live = false) => {
   const events: string[] = [];
   const hub = {
     open: vi.fn(async (s: { key: string; socket: string }) => (events.push(`open:${s.key}:${s.socket}`), true)),
     finish: vi.fn(async (key: string) => (events.push(`finish:${key}`), null)),
     end: vi.fn((key: string) => void events.push(`end:${key}`)),
-    state: vi.fn(() => null),
+    state: vi.fn(() => (live ? {} : null)),
     frame: vi.fn(),
   };
   return { hub: hub as unknown as ScreenHub, events };
@@ -245,5 +246,184 @@ describe('the recording of an agent called in the run\'s thread', () => {
     expect(b.thread(run).filter((m) => m.code === 'runner.screen.notKept')).toHaveLength(1);
     expect(b.runner.keepCallRecording(run.id, 'planner', null)).toBe('not');
     expect(b.runner.keepCallRecording('r-gone', 'planner', { ok: true, bytes: webmHead(300), meta })).toBe('not');
+  });
+});
+
+describe('the hand-off of a stage', () => {
+  const sandboxFor = (shell: 'sandbox' | 'host', atOpen?: (n: number) => void, handoff?: FakeHandoff) => {
+    const inner = displayOnRequest(fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/stage/x11/X99', kind: shell } }));
+    const wrap = Object.assign(Object.create(inner) as FakeSandbox, {
+      open: async (o: Parameters<FakeSandbox['open']>[0]) => (atOpen?.(handoff?.begun.length ?? 0), inner.open(o)),
+      openHost: async (o: Parameters<FakeSandbox['openHost']>[0]) => (atOpen?.(handoff?.begun.length ?? 0), inner.openHost(o)),
+    });
+    return { sandbox: wrap, inner };
+  };
+
+  it('begins the call before the sandbox opens, gives the sandbox its gate and its mask, and offers the tool with the call\'s typed values', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    let begunAtOpen = -1;
+    const { sandbox, inner } = sandboxFor('sandbox', (n) => void (begunAtOpen = n), handoff);
+    const seen: Record<string, AgentCall> = {};
+    const b = await boot({
+      sandbox,
+      screens: hubFake(true).hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      handoff: handoff.service,
+      configure: (c) => {
+        c.runner.sandbox.display = true;
+        Object.assign(agentOf(c, 'developer'), { screen: true, shell: 'sandbox' });
+      },
+    });
+    easy(b, seen);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    const at = handoff.begun.findIndex((x) => x.agent === 'developer');
+    expect(at).toBeGreaterThan(-1);
+    expect(begunAtOpen).toBeGreaterThan(at);
+    expect(handoff.begun[at]).toMatchObject({ key: `run:${run.id}`, thread: `run-${run.id}`, place: 'stage', issue: 101, agent: 'developer', paths: { browser: true, shell: 'sandbox' } });
+    expect(handoff.begun[at].about).toContain('app#101');
+    const options = inner.opened.find((o) => o.options.display)?.options;
+    expect(options?.held).toBe(handoff.calls[at].active);
+    expect(options?.mask).toBe(handoff.calls[at].typed.mask);
+    expect(seen.developer.screen?.handoff).toBeTruthy();
+    expect(seen.developer.screen?.typed).toBe(handoff.calls[at].typed);
+  });
+
+  it('gives a host session the same gate and mask, and words the warning for the computer\'s shell', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const { sandbox, inner } = sandboxFor('host');
+    const seen: Record<string, AgentCall> = {};
+    const b = await boot({
+      sandbox,
+      screens: hubFake(true).hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      handoff: handoff.service,
+      configure: (c) => {
+        c.runner.sandbox.display = true;
+        Object.assign(agentOf(c, 'developer'), { screen: true, shell: 'host' });
+      },
+    });
+    easy(b, seen);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    await b.settle();
+    const at = handoff.begun.findIndex((x) => x.agent === 'developer');
+    const host = inner.opened.find((o) => o.host);
+    expect(host?.options.held).toBe(handoff.calls[at].active);
+    expect(host?.options.mask).toBe(handoff.calls[at].typed.mask);
+    expect(handoff.begun[at].paths).toEqual({ browser: true, shell: 'host' });
+  });
+
+  it('offers the tool to a stage with no shell whose screen is the app\'s own display, and words the warning for no programs', async () => {
+    screens = fakeScreens({ ownDisplay: '/own/X77' });
+    const handoff = fakeHandoff();
+    const seen: Record<string, AgentCall> = {};
+    const b = await boot({
+      screens: hubFake(true).hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      handoff: handoff.service,
+      configure: (c) => {
+        c.runner.sandbox.display = true;
+        Object.assign(agentOf(c, 'planner'), { screen: true, shell: 'none' });
+      },
+    });
+    easy(b, seen);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    const at = handoff.begun.findIndex((x) => x.agent === 'planner');
+    expect(handoff.begun[at].paths).toEqual({ browser: true, shell: 'none' });
+    expect(seen.planner.screen?.handoff).toBeTruthy();
+  });
+
+  it('offers it to a QA stage with only the display it was given, and words the warning without the browser', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const { sandbox } = sandboxFor('sandbox');
+    const seen: Record<string, AgentCall> = {};
+    const b = await boot({
+      sandbox,
+      screens: hubFake(true).hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      handoff: handoff.service,
+      configure: (c) => {
+        c.runner.sandbox.display = true;
+        Object.assign(agentOf(c, 'qa'), { shell: 'sandbox' });
+      },
+    });
+    easy(b, seen);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const at = handoff.begun.findIndex((x) => x.agent === 'qa');
+    expect(handoff.begun[at].paths).toEqual({ browser: false, shell: 'sandbox' });
+    expect(seen.qa.screen?.browser).toBeUndefined();
+    expect(seen.qa.screen?.handoff).toBeTruthy();
+  });
+
+  it('does not offer it when the person cannot take the screen (the hub does not have it), nor to a stage that cannot have a screen', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const { sandbox } = sandboxFor('sandbox');
+    const seen: Record<string, AgentCall> = {};
+    const b = await boot({
+      sandbox,
+      screens: hubFake(false).hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      handoff: handoff.service,
+      configure: (c) => {
+        c.runner.sandbox.display = true;
+        Object.assign(agentOf(c, 'developer'), { screen: true, shell: 'sandbox' });
+      },
+    });
+    easy(b, seen);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    expect(seen.developer.screen?.handoff).toBeUndefined();
+    expect(seen.developer.screen?.typed).toBeUndefined();
+    // The reviewer has no screen and no display: no call object was made for it.
+    expect(handoff.begun.map((x) => x.agent)).not.toContain('reviewer');
+    expect(seen.reviewer.screen).toBeUndefined();
+  });
+
+  it('stops the stage\'s clocks while the person is asked, and ends the request with no result when the stage ends', async () => {
+    screens = fakeScreens({ ownDisplay: '/own/X77' });
+    const handoff = fakeHandoff();
+    const b = await boot({
+      screens: hubFake(true).hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      handoff: handoff.service,
+      configure: (c) => {
+        c.runner.sandbox.display = true;
+        Object.assign(agentOf(c, 'planner'), { screen: true, shell: 'none' });
+      },
+    });
+    easy(b);
+    let waiting: Promise<unknown> = Promise.resolve();
+    let during = -1;
+    let card = 0;
+    b.engine.script('planner', (call) => {
+      waiting = call.screen!.handoff!.request({ what: 'Log in to the site' });
+      during = handoff.paused;
+      card = handoff.asks.list().filter((a) => a.kind === 'handoff').length;
+      return work('Plan.', { artifacts: [doc('2_PLAN.md')] });
+    });
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    expect(during).toBe(1);
+    expect(card).toBe(1);
+    await expect(waiting).resolves.toBeNull();
+    expect(handoff.paused).toBe(0);
+    expect(handoff.asks.list()).toEqual([]);
   });
 });

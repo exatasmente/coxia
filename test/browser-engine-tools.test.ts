@@ -12,7 +12,9 @@ vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0' }, BrowserWindow: 
 
 import { EXPOSED_TOOLS, REFUSED_TOOLS, jsonSchemaOf, toolsFor } from '../src/main/browser/allowlist';
 import { createScreenAsks } from '../src/main/browser/asks';
-import { BROWSER_MCP_SERVER, CONFIRM_TOOL, CONFIRM_TOOL_NAME, SCREEN_MCP_SERVER, type ConfirmPort, type ScreenToolset, browserMcpServer, confirmPortFor, confirmToolImpl, rowsOf, screenMcpServer, screenMcpToolNames, screenToolImpls, screenToolNames, zodShapeOf } from '../src/main/browser/engineTool';
+import { BROWSER_MCP_SERVER, CONFIRM_TOOL, CONFIRM_TOOL_NAME, HANDOFF_TOOL, HANDOFF_TOOL_NAME, HANDOFF_TOOL_TIMEOUT_MS, SCREEN_MCP_SERVER, type ConfirmPort, type HandoffPort, type ScreenToolset, browserMcpServer, confirmPortFor, confirmToolImpl, handoffToolImpl, rowsOf, screenMcpServer, screenMcpServers, screenMcpToolNames, screenToolImpls, screenToolNames, zodShapeOf } from '../src/main/browser/engineTool';
+import type { HandoffResult } from '../src/shared/handoff';
+import { createTypedValues } from '../src/main/screen/typedValues';
 import { createHostsTally } from '../src/main/browser/hosts';
 import { type HoldGate, createIntermediary } from '../src/main/browser/intermediary';
 import { createMaskSet } from '../src/main/browser/mask';
@@ -310,6 +312,95 @@ describe('the confirmation tool over the app\'s asks', () => {
     expect(await pending).toEqual({ text: t('main.browser.confirm.yes'), images: 0, isError: false });
     expect(pauses).toEqual(['pause', 'resume']);
     expect(audit).toHaveLength(1);
+  });
+});
+
+describe('the hand-off tool', () => {
+  const port = (answer: HandoffResult | null, seen: { what: string; why?: string }[] = [], active = false): HandoffPort => ({
+    request: async (input) => (seen.push(input), answer),
+    active: () => active,
+  });
+
+  it('is a row of the same table, offered only to a call that has the port, and its names are the same in both engines', () => {
+    const typed = createTypedValues();
+    const set: ScreenToolset = { handoff: port('done'), typed };
+    expect(rowsOf(set).map((r) => r.name)).toEqual([HANDOFF_TOOL_NAME]);
+    expect(screenToolNames(set)).toEqual(['screen_handoff']);
+    expect(screenMcpToolNames(set)).toEqual([`mcp__${SCREEN_MCP_SERVER}__screen_handoff`]);
+    expect(handoffToolImpl(set)?.description).toBe(HANDOFF_TOOL.description);
+    // With the browser and the confirmation tool it is the last row.
+    const full = setup();
+    const both: ScreenToolset = { ...full.set, handoff: port('done') };
+    expect(rowsOf(both).map((r) => r.name).slice(-2)).toEqual([CONFIRM_TOOL_NAME, HANDOFF_TOOL_NAME]);
+    expect(screenMcpToolNames(both).slice(-2)).toEqual([`mcp__${SCREEN_MCP_SERVER}__${CONFIRM_TOOL_NAME}`, `mcp__${SCREEN_MCP_SERVER}__${HANDOFF_TOOL_NAME}`]);
+    // Without the port, nothing: a model with no screen to hand over does not learn that the tool exists.
+    expect(screenToolNames(full.set)).not.toContain(HANDOFF_TOOL_NAME);
+    expect(handoffToolImpl(full.set)).toBeNull();
+    expect(screenMcpToolNames(full.set).join()).not.toContain(HANDOFF_TOOL_NAME);
+  });
+
+  it('asks for `what` and takes `why`, and writes no size limit the app\'s clipping would contradict', () => {
+    expect(HANDOFF_TOOL.required).toEqual(['what']);
+    expect(Object.keys(HANDOFF_TOOL.properties)).toEqual(['what', 'why']);
+    expect(Object.values(HANDOFF_TOOL.properties).every((p) => p.maxLength === undefined)).toBe(true);
+    const shape = z.object(zodShapeOf(z, HANDOFF_TOOL));
+    expect(shape.safeParse({ what: 'x' }).success).toBe(true);
+    expect(shape.safeParse({}).success).toBe(false);
+  });
+
+  it('answers each result with its fixed sentence and nothing else, the same through both engines', async () => {
+    const sentences: Record<HandoffResult, string> = {
+      done: 'The person finished and gave the screen back.',
+      declined: 'The person did not want to hand the screen over.',
+      expired: 'The person did not respond in time.',
+      unavailable: 'The screen is not available.',
+    };
+    for (const [result, text] of Object.entries(sentences) as [HandoffResult, string][]) {
+      const seen: { what: string; why?: string }[] = [];
+      const set: ScreenToolset = { handoff: port(result, seen) };
+      const a = await throughOpen(set, HANDOFF_TOOL_NAME, { what: 'Log in to the site', why: 'The page needs a login.' });
+      const b = await throughSdk(set, HANDOFF_TOOL_NAME, { what: 'Log in to the site', why: 'The page needs a login.' });
+      expect(a, result).toEqual({ text, images: 0, isError: false });
+      expect(b, result).toEqual(a);
+      expect(seen[0]).toEqual({ what: 'Log in to the site', why: 'The page needs a login.' });
+    }
+  });
+
+  it('answers the plainest sentence when the call ended while it waited, and refuses a call that is not formed', async () => {
+    const set: ScreenToolset = { handoff: port(null) };
+    expect((await throughOpen(set, HANDOFF_TOOL_NAME, { what: 'Log in' })).text).toBe('The screen is not available.');
+    for (const run of [throughOpen, throughSdk]) {
+      expect((await run(set, HANDOFF_TOOL_NAME, { why: 'no what' })).isError, run.name).toBe(true);
+    }
+    expect((await throughOpen(set, HANDOFF_TOOL_NAME, { what: 'x', extra: 1 })).isError).toBe(true);
+    // Not offered: a call that names it anyway is refused as an unknown tool.
+    expect(await throughOpen({ handoff: port('done') }, 'browser_click', {}).catch((e: Error) => e.message)).toMatch(/no browser_click/);
+  });
+
+  it('does not clip what the model wrote: the service does, with the redaction', async () => {
+    const seen: { what: string; why?: string }[] = [];
+    const long = 'a'.repeat(450);
+    await throughOpen({ handoff: port('done', seen) }, HANDOFF_TOOL_NAME, { what: long });
+    expect(seen[0].what).toBe(long);
+  });
+
+  it('states its own tool-call bound on the Claude SDK server, so no default or environment variable cuts the wait', async () => {
+    const options: { name: string; timeout?: number; tools: unknown[] }[] = [];
+    const parts = { ...fakeParts(), server: (o: { name: string; tools: unknown[]; timeout?: number }) => (options.push(o), { type: 'sdk', name: o.name, tools: o.tools }) };
+    await screenMcpServer({ handoff: port('done') }, parts);
+    expect(options).toHaveLength(1);
+    expect(options[0].timeout).toBe(HANDOFF_TOOL_TIMEOUT_MS);
+    expect(HANDOFF_TOOL_TIMEOUT_MS).toBeGreaterThan(24 * 60 * 60_000);
+    // The confirmation tool alone keeps the SDK's own bound.
+    options.length = 0;
+    await screenMcpServer(setup().set, parts);
+    expect(options[0].timeout).toBeUndefined();
+    // And the real SDK takes the option.
+    const sdk = await import('@anthropic-ai/claude-agent-sdk');
+    const real = { z, sdk: sdk as unknown as ReturnType<typeof fakeParts>['sdk'], server: (o: { name: string; tools: unknown[]; timeout?: number }) => sdk.createSdkMcpServer(o as Parameters<typeof sdk.createSdkMcpServer>[0]) };
+    const made = (await screenMcpServer({ handoff: port('done') }, real)) as Record<string, { type: string; name: string }>;
+    expect(made[SCREEN_MCP_SERVER]).toMatchObject({ type: 'sdk', name: SCREEN_MCP_SERVER });
+    expect(await screenMcpServers({ handoff: port('done') })).toHaveProperty(SCREEN_MCP_SERVER);
   });
 });
 

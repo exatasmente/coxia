@@ -24,7 +24,7 @@ import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commi
 import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCommands } from './commands';
 import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
-import { type ExecResult, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
+import { type ExecResult, type OpenOptions, type SandboxService, type SandboxSession, SandboxError } from '../sandbox';
 import { type EvidenceRecord, evidencePlacementOf } from '../../shared/evidence';
 import { evidenceToolsOf, evidenceProblemText, outputProblemText } from '../evidence/handlers';
 import { resolveOutputPath } from '../evidence/paths';
@@ -48,7 +48,8 @@ import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import type { ScreenHub } from '../screen/hub';
 import { grantsFor, withheldText } from '../browser/guard';
-import { type CallScreen, modelSeesImages, openCallScreen, promptFor } from '../browser/callScreen';
+import { type CallHandoffOffer, type CallScreen, beginHandoff, modelSeesImages, offerHandoff, openCallScreen, promptFor } from '../browser/callScreen';
+import type { HandoffService } from '../screen/handoff';
 import type { ScreenAsks } from '../browser/asks';
 import type { ScreenSessions } from '../browser/sessions';
 
@@ -115,6 +116,8 @@ export interface ExecutorDeps {
   /** The screens of the agents that have one (the app's browser), and the questions they ask the person; absent: no stage gets a browser. */
   sessions?: ScreenSessions;
   asks?: ScreenAsks;
+  /** The hand-off of a stage's screen to the person (#178); absent: no stage is offered the tool. */
+  handoff?: HandoffService | null;
 }
 
 export interface StageRun {
@@ -322,10 +325,12 @@ const endedAs = (r: ExecResult): string => (r.refused ? t(`main.runner.exec.refu
  * the thread, the audit log and (through the session) the live activity about every command that runs in it. A machine that cannot make a sandbox fails the stage: an
  * agent set to run commands in one never runs them without.
  */
-export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean, signal: AbortSignal, clock: StageClock, own = false, wantsDisplay = false): Promise<SandboxSession> {
+export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, writes: boolean, signal: AbortSignal, clock: StageClock, own = false, wantsDisplay = false, handoff?: Pick<OpenOptions, 'held' | 'mask'>): Promise<SandboxSession> {
   const host = agent.shell === 'host';
   const config = d.config();
   const threadId = runThreadId(run.id);
+  // Only the gate and the mask of a hand-off: nothing else of the caller's options reaches the sandbox.
+  const gate = { ...(handoff?.held ? { held: handoff.held } : {}), ...(handoff?.mask ? { mask: handoff.mask } : {}) };
   if (!d.sandbox) throw new StageError('no-sandbox', { agent: agent.id, reason: t('main.sandbox.reason.platform') });
   const report = (r: ExecResult, mode: 'run' | 'refused'): void => {
     try {
@@ -378,8 +383,8 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     // when the person set one, comes with every sandbox and every host session.
     const display = outputKindOf(stage.kind) === 'qa' || (own && agent.screen === true && grants.browser && !!d.sessions) || wantsDisplay;
     const session = host
-      ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal, display })
-      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display, agent: { allowedHosts: grants.allowedHosts } });
+      ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal, display, ...gate })
+      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display, agent: { allowedHosts: grants.allowedHosts }, ...gate });
     const gui = session.gui;
     // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
@@ -521,12 +526,23 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   // The watchdog is made with the agent call, after the session: until then a pause has nothing to stop.
   const clock: StageClock & { watch?: Watchdog } = { pause: () => clock.watch?.pause() ?? (() => undefined), beat: () => clock.watch?.beat(), allowed: new Set() };
   // A documentation run's agent gets no command door at all, whatever its `shell` says.
-  const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host') ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock, true) : null;
+  // The hand-off of the stage's screen: the call object comes before the session, which reads its gate and its mask. Only a stage that can have a screen has one (the agent's
+  // switch, or the display a QA stage is given); a documentation run has none.
+  const about = `${run.issue.ref} ${clipText(run.issue.title, 120)}`.trim();
+  const offer = run.docs || !(agent.screen === true || outputKindOf(stage.kind) === 'qa') ? null : beginHandoff(d.handoff, agent, { key: runKey(run.id), thread: runThreadId(run.id), place: 'stage', stage: stage.id, issue: run.issue.iid, about, pause: () => clock.pause(), signal: abort.signal });
+  const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host')
+    ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock, true, false, offer ? { held: offer.call.active, mask: offer.call.typed.mask } : undefined).catch((e: unknown) => {
+        offer?.call.end();
+        throw e;
+      })
+    : null;
   let screen: CallScreen | null = null;
   try {
-    screen = await openStageScreen(d, run, stage, agent, session, clock);
+    screen = await openStageScreen(d, run, stage, agent, session, clock, offer);
     return await runStage(d, run, flow, abort, usage, carried, session, clock, screen);
   } finally {
+    // A hand-off still open ends first, with no result: the interval is closed before the recording is built.
+    offer?.call.end();
     screen?.release();
     // The live screen goes first, whatever way the stage ended: nothing reads the display once its sandbox is closing. A stage that failed before it could build the
     // recording itself still keeps what was recorded (nothing then, when `runStage` ended the screen already).
@@ -544,7 +560,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
  * and the confirmation tool where a stage has a display, a host list or the computer's shell. The stage keeps its run key; what could not be opened has been said in the thread
  * and the stage goes on without it.
  */
-async function openStageScreen(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, session: SandboxSession | null, clock: StageClock): Promise<CallScreen | null> {
+async function openStageScreen(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentDef, session: SandboxSession | null, clock: StageClock, offer: CallHandoffOffer | null): Promise<CallScreen | null> {
   if (run.docs || !d.sessions || !d.asks) return null;
   const lent = session?.screen && session.gui?.display === 'on' ? { socket: session.screen.socket, kind: session.screen.kind } : null;
   const screen = await openCallScreen(
@@ -560,6 +576,8 @@ async function openStageScreen(d: ExecutorDeps, run: Run, stage: FlowStage, agen
       console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
     }
   }
+  // The person can take the screen when it is registered with the live hub, whichever display it follows.
+  offerHandoff(screen, offer, { live: d.screens?.state(runKey(run.id)) != null, session: session !== null, host: agent.shell === 'host' });
   return screen;
 }
 

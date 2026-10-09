@@ -1,5 +1,6 @@
 // i18n-lint: allow-file what the app's screen tools tell a model: English by design, like the other tool texts of the engines
 import { CONFIRM_KINDS, type ConfirmKind } from '../../shared/browser';
+import { HANDOFF_TEXT_MAX, type HandoffResult } from '../../shared/handoff';
 import { t } from '../../shared/i18n';
 import { loadClaudeSdkModule } from '../claudeSdk';
 import { type ToolImpl, ToolError, clip } from '../engine/open/tools/types';
@@ -7,15 +8,23 @@ import type { Json } from '../engine/open/types';
 import { type ExposedTool, type Prop, checkToolArguments, jsonSchemaOf } from './allowlist';
 import type { AskContext, AskResult, ScreenAsks } from './asks';
 import { type BrowserResult, problemText } from './intermediary';
+import { resultText } from '../screen/handoff';
+import type { TypedValues } from '../screen/typedValues';
 
-// The app's screen tools in the shapes the two engines take them, built from one table: the tools of the app's browser (`allowlist.ts`, the app's own schemas) and the
-// confirmation tool (`screen_confirm`, below). The open engine gets a `ToolImpl` for each, with the JSON schema of the table; the Claude Agent SDK gets two in-process MCP servers,
+// The app's screen tools in the shapes the two engines take them, built from one table: the tools of the app's browser (`allowlist.ts`, the app's own schemas), the
+// confirmation tool (`screen_confirm`, below) and the hand-off tool (`screen_handoff`). The open engine gets a `ToolImpl` for each, with the JSON schema of the table; the Claude Agent SDK gets two in-process MCP servers,
 // `coxia_browser` and `coxia_screen`, with a zod shape made from the same rows. Every call, in either shape, ends in the same two functions (`runBrowser`, `runConfirm`), so the
 // two engines differ only in how the arguments arrive and how the answer is wrapped. Nothing here classifies, holds or masks: that is the intermediary's.
 
 export const BROWSER_MCP_SERVER = 'coxia_browser';
 export const SCREEN_MCP_SERVER = 'coxia_screen';
 export const CONFIRM_TOOL_NAME = 'screen_confirm';
+export const HANDOFF_TOOL_NAME = 'screen_handoff';
+/**
+ * How long the Claude SDK lets one of this server's tool calls run (ms): its largest value. The SDK's default is about 28 hours and an environment variable can lower it, but a
+ * hand-off waits up to 15 minutes for the person and then as long as they hold the screen, so the server says its own bound and nothing shorter can cut a wait.
+ */
+export const HANDOFF_TOOL_TIMEOUT_MS = 2_147_483_647;
 /** The name the Claude SDK knows a tool of a server by (`allowedTools`). */
 export const screenMcpToolName = (server: string, name: string): string => `mcp__${server}__${name}`;
 
@@ -28,12 +37,24 @@ export interface BrowserPort {
 /** Asks the person to confirm a step the agent is about to take. */
 export type ConfirmPort = (ask: { confirmKind: ConfirmKind; words: string; site?: string }, signal?: AbortSignal) => Promise<AskResult>;
 
-/** What a call carries of the agent's screen: either tool may be absent. */
+/** The hand-off as the tool reaches it: the request, and whether the person has the screen now. */
+export interface HandoffPort {
+  /** Asks the person for the screen and waits. Resolves with the result the agent is given, or null when the call ended and nobody is left to read one. */
+  request(input: { what: string; why?: string }): Promise<HandoffResult | null>;
+  /** The person holds the screen: the agent's other calls are refused. */
+  active(): boolean;
+}
+
+/** What a call carries of the agent's screen: any tool may be absent. */
 export interface ScreenToolset {
   /** The app's browser; absent when the agent has no app browser on this call. */
   browser?: BrowserPort;
   /** The confirmation tool; absent when the call is not one that is offered it. */
   confirm?: ConfirmPort;
+  /** The hand-off tool; absent when the call has no screen the person could take. */
+  handoff?: HandoffPort;
+  /** What the person typed in this call's hand-offs, in memory (the masker, and whether there was one): the seam the procedure memory reads. Present with `handoff`. */
+  typed?: TypedValues;
   /** Aborted when the screen closes: a call that waits for the person or the browser stops with it. */
   signal?: AbortSignal;
 }
@@ -53,14 +74,32 @@ export const CONFIRM_TOOL: ExposedTool = {
   required: ['kind', 'words'],
 };
 
-/** The rows an engine is offered for a call: the browser's, then the confirmation tool. */
-export const rowsOf = (set: ScreenToolset): ExposedTool[] => [...(set.browser?.tools() ?? []), ...(set.confirm ? [CONFIRM_TOOL] : [])];
+/** The hand-off tool's row. */
+export const HANDOFF_TOOL: ExposedTool = {
+  name: HANDOFF_TOOL_NAME,
+  kind: 'act',
+  description:
+    'Hands the screen to the person for something only they should do: a login, a code that reached their phone, a payment or any field whose value you must not see. It waits until the person gives the screen back, and answers with one sentence: done, declined, not responded in time, or not available. ' +
+    'What the person types never reaches you, and while they have the screen your other calls are refused. After "done", read the page again and go on. After the other answers, stop and say what you could not do. Say in `what` what you need from the person, in one sentence.',
+  properties: {
+    what: { type: 'string', description: `What you need the person to do on the screen, in one sentence (at most ${HANDOFF_TEXT_MAX} characters; longer is cut).` },
+    why: { type: 'string', description: `Optional: why, in one more sentence (at most ${HANDOFF_TEXT_MAX} characters).` },
+  },
+  required: ['what'],
+};
+
+/** The rows an engine is offered for a call: the browser's, then the confirmation tool, then the hand-off. */
+export const rowsOf = (set: ScreenToolset): ExposedTool[] => [...(set.browser?.tools() ?? []), ...(set.confirm ? [CONFIRM_TOOL] : []), ...(set.handoff ? [HANDOFF_TOOL] : [])];
 
 /** The names the open engine must have allowed for the tools to reach the model. */
 export const screenToolNames = (set: ScreenToolset): string[] => rowsOf(set).map((r) => r.name);
 
 /** The names the Claude SDK must have allowed. */
-export const screenMcpToolNames = (set: ScreenToolset): string[] => [...(set.browser?.tools() ?? []).map((r) => screenMcpToolName(BROWSER_MCP_SERVER, r.name)), ...(set.confirm ? [screenMcpToolName(SCREEN_MCP_SERVER, CONFIRM_TOOL_NAME)] : [])];
+export const screenMcpToolNames = (set: ScreenToolset): string[] => [
+  ...(set.browser?.tools() ?? []).map((r) => screenMcpToolName(BROWSER_MCP_SERVER, r.name)),
+  ...(set.confirm ? [screenMcpToolName(SCREEN_MCP_SERVER, CONFIRM_TOOL_NAME)] : []),
+  ...(set.handoff ? [screenMcpToolName(SCREEN_MCP_SERVER, HANDOFF_TOOL_NAME)] : []),
+];
 
 /** The confirmation tool over the app's asks, for a screen: it asks as the screen asks, with its clocks. */
 export const confirmPortFor =
@@ -99,7 +138,21 @@ export async function runConfirm(set: ScreenToolset, args: unknown, signal?: Abo
   return { text: why, images: [], isError: false };
 }
 
-const run = (set: ScreenToolset, name: string, args: unknown, signal?: AbortSignal): Promise<Outcome> => (name === CONFIRM_TOOL_NAME ? runConfirm(set, args, signal) : runBrowser(set, name, args, signal));
+/**
+ * The hand-off tool: the arguments are checked against its row, the person is asked, and the result comes back as one of four fixed sentences, nothing else. A call that ended while
+ * it waited has no one to read an answer; it still gets the plainest one.
+ */
+export async function runHandoff(set: ScreenToolset, args: unknown): Promise<Outcome> {
+  if (!set.handoff) return { text: t('main.browser.reason.unknownTool'), images: [], isError: true };
+  const checked = checkToolArguments(HANDOFF_TOOL, args);
+  if (!checked.ok) return { text: problemText(checked.problem), images: [], isError: true };
+  const a = checked.forward as { what: string; why?: string };
+  const result = await set.handoff.request({ what: a.what, ...(a.why ? { why: a.why } : {}) });
+  return { text: resultText(result ?? 'unavailable'), images: [], isError: false };
+}
+
+const run = (set: ScreenToolset, name: string, args: unknown, signal?: AbortSignal): Promise<Outcome> =>
+  name === CONFIRM_TOOL_NAME ? runConfirm(set, args, signal) : name === HANDOFF_TOOL_NAME ? runHandoff(set, args) : runBrowser(set, name, args, signal);
 
 // ---- the open engine ----------------------------------------------------------------------------------------------------------------------------
 
@@ -128,8 +181,11 @@ export const browserToolImpls = (set: ScreenToolset): ToolImpl[] => (set.browser
 /** The confirmation tool for the open engine; null when the call is not offered it. */
 export const confirmToolImpl = (set: ScreenToolset): ToolImpl | null => (set.confirm ? toolImpl(set, CONFIRM_TOOL) : null);
 
+/** The hand-off tool for the open engine; null when the call has no screen the person could take. */
+export const handoffToolImpl = (set: ScreenToolset): ToolImpl | null => (set.handoff ? toolImpl(set, HANDOFF_TOOL) : null);
+
 /** Everything a call of the open engine is offered of the screen. */
-export const screenToolImpls = (set: ScreenToolset): ToolImpl[] => [...browserToolImpls(set), ...(confirmToolImpl(set) ? [confirmToolImpl(set) as ToolImpl] : [])];
+export const screenToolImpls = (set: ScreenToolset): ToolImpl[] => [...browserToolImpls(set), ...[confirmToolImpl(set), handoffToolImpl(set)].filter((x): x is ToolImpl => x !== null)];
 
 // ---- the Claude Agent SDK -----------------------------------------------------------------------------------------------------------------------
 
@@ -192,21 +248,30 @@ export function sdkTools(set: ScreenToolset, rows: ExposedTool[], parts: SdkPart
 }
 
 /** The app's browser as an in-process MCP server; null when the call has none. */
-export async function browserMcpServer(set: ScreenToolset, parts?: SdkParts & { server(options: { name: string; tools: unknown[] }): unknown }): Promise<Record<string, unknown> | null> {
+export async function browserMcpServer(set: ScreenToolset, parts?: SdkParts & SdkServer): Promise<Record<string, unknown> | null> {
   const rows = set.browser?.tools() ?? [];
   if (!rows.length) return null;
   const p = parts ?? (await realParts());
   return { [BROWSER_MCP_SERVER]: p.server({ name: BROWSER_MCP_SERVER, tools: sdkTools(set, rows, p) }) };
 }
 
-/** The confirmation tool as an in-process MCP server; null when the call is not offered it. */
-export async function screenMcpServer(set: ScreenToolset, parts?: SdkParts & { server(options: { name: string; tools: unknown[] }): unknown }): Promise<Record<string, unknown> | null> {
-  if (!set.confirm) return null;
+/**
+ * The confirmation and hand-off tools as an in-process MCP server; null when the call is offered neither. With the hand-off the server states its own tool-call bound, so the
+ * wait for the person is not cut by the SDK's default or by an environment variable.
+ */
+export async function screenMcpServer(set: ScreenToolset, parts?: SdkParts & SdkServer): Promise<Record<string, unknown> | null> {
+  const rows = [...(set.confirm ? [CONFIRM_TOOL] : []), ...(set.handoff ? [HANDOFF_TOOL] : [])];
+  if (!rows.length) return null;
   const p = parts ?? (await realParts());
-  return { [SCREEN_MCP_SERVER]: p.server({ name: SCREEN_MCP_SERVER, tools: sdkTools(set, [CONFIRM_TOOL], p) }) };
+  return { [SCREEN_MCP_SERVER]: p.server({ name: SCREEN_MCP_SERVER, tools: sdkTools(set, rows, p), ...(set.handoff ? { timeout: HANDOFF_TOOL_TIMEOUT_MS } : {}) }) };
 }
 
-async function realParts(): Promise<SdkParts & { server(options: { name: string; tools: unknown[] }): unknown }> {
+/** What of the SDK builds a server. */
+interface SdkServer {
+  server(options: { name: string; tools: unknown[]; timeout?: number }): unknown;
+}
+
+async function realParts(): Promise<SdkParts & SdkServer> {
   const sdk = await loadClaudeSdkModule();
   const { z } = await import('zod');
   return { z, sdk: sdk as unknown as SdkParts['sdk'], server: (options) => sdk.createSdkMcpServer(options as Parameters<typeof sdk.createSdkMcpServer>[0]) };
@@ -217,7 +282,7 @@ async function realParts(): Promise<SdkParts & { server(options: { name: string;
  * the caller says so).
  */
 export async function screenMcpServers(set: ScreenToolset): Promise<Record<string, unknown> | null> {
-  if (!set.browser && !set.confirm) return null;
+  if (!set.browser && !set.confirm && !set.handoff) return null;
   try {
     const parts = await realParts();
     return { ...((await browserMcpServer(set, parts)) ?? {}), ...((await screenMcpServer(set, parts)) ?? {}) };

@@ -35,7 +35,10 @@ export interface BeginInput {
   agentName: string;
   /** What the notice says it is about: the issue and its title, or the conversation. Fixed words of the app, never the agent's. */
   about: string;
-  /** What this agent has: the warning is worded from it, and the audit says where its commands run. */
+  /**
+   * What this agent has: the warning is worded from it, and the audit says where its commands run. It is read when a request is made, so a caller that begins before it
+   * knows what the call got (the call object comes before the session and the screen) fills it in afterwards.
+   */
   paths: HandoffPaths;
   /** Stops the clocks of the call; returns the way to start them again. */
   pause(): () => void;

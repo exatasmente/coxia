@@ -1,4 +1,5 @@
 import { rmSync } from 'node:fs';
+import type { CallHandoff } from '../screen/handoff';
 import type { SandboxSession } from '../sandbox';
 
 // The shell session of an agent that has a screen, kept between its answers in a conversation (rule 13 of #177): the first answer makes the throwaway copy of the code and the
@@ -15,6 +16,8 @@ export interface Binding {
   pause: () => () => void;
   /** The answer shows a sign of life. */
   beat: () => void;
+  /** The answer's hand-off of the screen (#178): a kept session refuses commands and masks output through whichever answer has it now. */
+  handoff?: CallHandoff | null;
 }
 
 /** Where the answer using a session says what is its own; read by the session when it needs it, so it follows the answer that has the session now. */

@@ -13,6 +13,7 @@ import { createKeptSessions } from '../src/main/mentions/kept';
 import type { MentionPlace } from '../src/main/mentions/place';
 import { createCallStops } from '../src/main/mentions/stop';
 import { type FakeSandbox, fakeEngine, fakeSandbox } from './helpers/runner';
+import { type FakeHandoff, fakeHandoff } from './helpers/handoff';
 import { type FakeScreens, fakeScreens } from './helpers/screenSessions';
 
 let root: string;
@@ -43,11 +44,11 @@ const say = () => forum.append('squads', { kind: 'post', author: { type: 'person
 const noRepo = (): MentionPlace => ({ thread: 'squads', kind: 'channel', squad: null, repos: [], ref: 'app#7', title: 'The thing' });
 const withDisplay = (): FakeSandbox => fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/s/x11/X99', kind: 'sandbox' } });
 
-function deps(over: Partial<MentionDeps> = {}) {
+function deps(over: Partial<MentionDeps> = {}, handoff?: FakeHandoff) {
   const engine = fakeEngine();
   const stops = createCallStops();
   const kept = createKeptSessions();
-  const d: MentionDeps = { forum, config: () => config(), sandbox: withDisplay(), env: () => ({ fallbackCwd: root }), screens: () => ({ sessions: screens.sessions, asks: screens.asks }), kept, stops, ...over, engine };
+  const d: MentionDeps = { forum, config: () => config(), sandbox: withDisplay(), env: () => ({ fallbackCwd: root }), screens: () => ({ sessions: screens.sessions, asks: screens.asks, ...(handoff ? { handoff: handoff.service } : {}) }), kept, stops, ...over, engine };
   return { d, engine, stops, kept };
 }
 
@@ -240,5 +241,147 @@ describe('in a run\'s thread', () => {
     expect(sandbox.opened[0].session.closed).toBe(true);
     expect(existsSync(wt)).toBe(true);
     expect(kept.keys()).toEqual([]);
+  });
+});
+
+describe('the hand-off in a conversation', () => {
+  it('begins the call before the session, gives the session its gate and its mask, and offers the tool and the typed values', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const sandbox = withDisplay();
+    const { d, engine } = deps({ sandbox, config: () => config({ shell: 'sandbox' }) }, handoff);
+    let begunAtOpen = -1;
+    const open = sandbox.open.bind(sandbox);
+    sandbox.open = async (o) => ((begunAtOpen = handoff.begun.length), open(o));
+    engine.script('turn', () => ({ text: 'Opened.' }));
+    await answerMentions(noRepo(), say(), d);
+    expect(begunAtOpen).toBe(1);
+    expect(handoff.begun[0]).toMatchObject({ key: KEY, thread: 'squads', place: 'conversation', stage: '', agent: 'turn', about: 'app#7 The thing', paths: { browser: true, shell: 'sandbox' } });
+    const call = engine.calls[0];
+    expect(call.screen?.handoff).toBeTruthy();
+    expect(call.screen?.typed).toBe(handoff.calls[0].typed);
+    const options = sandbox.opened[0].options;
+    // The session reads the answer that has it now, so the gate is not the call object's own function but follows it.
+    expect(options.held?.()).toBe(false);
+    expect(options.mask?.('x')).toBe('x');
+  });
+
+  it('gives a host session the same gate, and words the warning for the computer\'s shell', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const sandbox = withDisplay();
+    const { d, engine } = deps({ sandbox, config: () => config({ shell: 'host' }), askCommand: async () => ({ ok: false }) }, handoff);
+    engine.script('turn', () => ({ text: 'Opened.' }));
+    await answerMentions(noRepo(), say(), d);
+    expect(handoff.begun[0].paths).toEqual({ browser: true, shell: 'host' });
+    expect(sandbox.opened[0].host).toBe(true);
+    expect(sandbox.opened[0].options.held).toBeTypeOf('function');
+    expect(sandbox.opened[0].options.mask).toBeTypeOf('function');
+  });
+
+  it('offers the tool to an agent with no shell and words the warning for no programs', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const { d, engine } = deps({}, handoff);
+    engine.script('turn', () => ({ text: 'Opened.' }));
+    await answerMentions(noRepo(), say(), d);
+    expect(handoff.begun[0].paths).toEqual({ browser: true, shell: 'none' });
+    expect(engine.calls[0].screen?.handoff).toBeTruthy();
+  });
+
+  it('does not offer it to an agent without the screen, nor when the person cannot take the screen', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const none = deps({ config: () => config({ screen: false, allowedHosts: ['app.example.com'] }) }, handoff);
+    none.engine.script('turn', () => ({ text: 'Read.' }));
+    await answerMentions(noRepo(), say(), none.d);
+    expect(handoff.begun).toEqual([]);
+    expect(none.engine.calls[0].screen?.handoff).toBeUndefined();
+    screens.dispose();
+    // The hub did not take the screen: the browser is there, the person cannot watch it, and the tool is not offered.
+    screens = fakeScreens({ watch: false });
+    const blind = deps({}, handoff);
+    blind.engine.script('turn', () => ({ text: 'Opened.' }));
+    await answerMentions(noRepo(), say(), blind.d);
+    expect(blind.engine.calls[0].screen?.browser).toBeTruthy();
+    expect(blind.engine.calls[0].screen?.handoff).toBeUndefined();
+    expect(blind.engine.calls[0].screen?.typed).toBeUndefined();
+  });
+
+  it('is not offered in a ceremony, whose agents have no screen', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const { d, engine } = deps({}, handoff);
+    engine.script('turn', () => ({ text: 'Said.' }));
+    await answerMentions({ thread: 'squads', kind: 'ceremony', repos: [], ref: 'app#7', title: 'Daily' }, say(), d);
+    expect(handoff.begun).toEqual([]);
+    expect(engine.calls[0].screen).toBeUndefined();
+  });
+
+  it('stops the answer\'s clocks while the person is asked, and ends the request with no result when the answer ends', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const { d, engine } = deps({}, handoff);
+    let waiting: Promise<unknown> = Promise.resolve();
+    let during = -1;
+    engine.script('turn', (call) => {
+      waiting = call.screen!.handoff!.request({ what: 'Log in to the site' });
+      during = handoff.paused;
+      return { text: 'Waiting for you.' };
+    });
+    await answerMentions(noRepo(), say(), d);
+    expect(during).toBe(1);
+    await expect(waiting).resolves.toBeNull();
+    expect(handoff.paused).toBe(0);
+    expect(handoff.asks.list()).toEqual([]);
+  });
+
+  it('ends the request when the person stops the answer', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const { d, engine, stops } = deps({}, handoff);
+    let waiting: Promise<unknown> = Promise.resolve();
+    engine.script('turn', (call) => {
+      waiting = call.screen!.handoff!.request({ what: 'Log in to the site' });
+      return new Promise((_, reject) => call.abort?.signal.addEventListener('abort', () => reject(new Error('aborted'))));
+    });
+    const answer = answerMentions(noRepo(), say(), d);
+    await began(engine);
+    expect(handoff.asks.list(KEY)).toHaveLength(1);
+    expect(stops.stop('squads', 'turn')).toBe(true);
+    await answer;
+    await expect(waiting).resolves.toBeNull();
+    expect(handoff.asks.list()).toEqual([]);
+    expect(handoff.paused).toBe(0);
+  });
+
+  it('lets a kept session refuse and mask through the answer that has it now, not the one that made it', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const sandbox = withDisplay();
+    const { d, engine } = deps({ sandbox, config: () => config({ shell: 'sandbox' }) }, handoff);
+    const held: boolean[] = [];
+    let masked = '';
+    engine.script('turn', async (call) => {
+      const options = sandbox.opened[0].options;
+      held.push(options.held?.() ?? false);
+      if (engine.calls.length === 1) return { text: 'First.' };
+      // The second answer asks, and the person takes the screen and types a value: this answer's gate and mask apply to the session made by the first.
+      void call.screen!.handoff!.request({ what: 'Log in to the site' });
+      handoff.typed = ['hunter2-secret'];
+      await handoff.take(KEY);
+      held.push(options.held?.() ?? false);
+      handoff.give(KEY);
+      held.push(options.held?.() ?? false);
+      masked = options.mask?.('the password is hunter2-secret') ?? '';
+      return { text: 'Second.' };
+    });
+    await answerMentions(noRepo(), say(), d);
+    // The first answer's call object is over: nothing of it holds the session.
+    expect(sandbox.opened).toHaveLength(1);
+    await answerMentions(noRepo(), say(), d);
+    expect(sandbox.opened).toHaveLength(1);
+    expect(held).toEqual([false, false, true, false]);
+    expect(masked).toBe('the password is [secret]');
   });
 });

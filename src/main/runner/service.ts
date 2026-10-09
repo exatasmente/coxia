@@ -114,6 +114,7 @@ import type { ScreenHub } from '../screen/hub';
 import type { ScreenAsks } from '../browser/asks';
 import type { RecordingOutcome } from '../screen/recorder';
 import type { ScreenSessions } from '../browser/sessions';
+import type { HandoffService } from '../screen/handoff';
 import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../shared/evidence';
 import { dropEvidence, readEvidence } from '../evidence/store';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, keepScreenRecording, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
@@ -224,6 +225,8 @@ export interface RunnerDeps {
   /** The screens of the agents that have one (the app's browser) and the questions they ask the person; without them no stage gets a browser. */
   sessions?: ScreenSessions;
   asks?: ScreenAsks;
+  /** The hand-off of an agent's screen to the person (#178); without it no agent is offered the tool. */
+  handoff?: HandoffService | null;
   /** Makes one small call to a provider to find out whether its key has budget again. Without it the runs that hit the refusal keep waiting. */
   probeBudget?: BudgetProbeFn;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
@@ -394,7 +397,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref) };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref) };
 
   /** The record of the activities as a call reads it: the front named whole, the others in short. Never a model call, never the file. */
   function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = []): string {
@@ -1449,14 +1452,14 @@ export function createRunner(deps: RunnerDeps): Runner {
       engine: deps.engine,
       sandbox: exec.sandbox,
       env: deps.env,
-      screens: () => (deps.sessions && deps.asks ? { sessions: deps.sessions, asks: deps.asks } : null),
+      screens: () => (deps.sessions && deps.asks ? { sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff } : null),
       openSession: async (p, def, cwd, stage, signal, watch, wants) => {
         const r = p.run;
         if (!r || !stage) return null;
         const flowStage = flowFor(r).find((s) => s.id === stage);
         if (!flowStage || !existsSync(r.worktree)) return null;
         const clock: StageClock = { pause: watch.pause, beat: watch.beat, allowed: new Set() };
-        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock, false, wants?.display === true);
+        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock, false, wants?.display === true, { held: wants?.held, mask: wants?.mask });
       },
       // The line each agent got when the message was accepted goes on in the answer, and the next call of the run may begin when this one ends.
       callOf: (id) => calls.get(callKey(runId, message.seq, id)) ?? null,

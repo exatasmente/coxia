@@ -16,7 +16,7 @@ import { answerMentions, type MentionDeps } from './answer';
 import { placeOfThread } from './place';
 import { proposeMention } from './propose';
 import { createSharedMemory } from '../runner/activities';
-import { screenAsks, screenSessions } from '../runner/module';
+import { handoffService, screenAsks, screenSessions } from '../runner/module';
 
 // Mentions answered outside a run's thread: a squad channel, the channel the squads talk in, a conversation a person opened, and the direct conversation of an agent
 // (where every message of the person calls its owner without an `@`). A run's thread stays with the runner (it has the worktree, the cycle folder and the publisher).
@@ -68,7 +68,7 @@ export const mentionsModule: Module = () => {
     screens: () => {
       const sessions = screenSessions();
       const asks = screenAsks();
-      return sessions && asks ? { sessions, asks } : null;
+      return sessions && asks ? { sessions, asks, handoff: handoffService() } : null;
     },
     env: () => ({ fallbackCwd: rc().projectsRoot ?? ATAS }),
     propose: proposeMention,

@@ -157,6 +157,8 @@ export interface ScreenSessions {
   list(thread?: string): OpenScreenInfo[];
   /** Whether a screen is open, or opening, for the key. */
   has(key: string): boolean;
+  /** Whether an open screen is registered with the live hub, so the person can watch it and take it. */
+  watched(key: string): boolean;
   /** The agent's screens that hold its profile or not: the keys of its open screens. */
   keysOfAgent(agent: string): string[];
   /** The steps the app's browser took on an open screen, for the procedure memory; empty when there is none. */
@@ -597,6 +599,10 @@ export function createScreenSessions(d: SessionDeps): ScreenSessions {
     acquire,
     list: (thread) => where((s) => s.state === 'open' && (thread === undefined || s.thread === thread)).map(infoOf),
     has: (key) => sessions.has(key),
+    watched: (key) => {
+      const s = sessions.get(key);
+      return !!s && s.state === 'open' && s.hubOwned;
+    },
     keysOfAgent: (agent) => where((s) => s.agent === agent).map((s) => s.key),
     stepsOf: (key) => sessions.get(key)?.log.entries() ?? [],
     masksOf: (key) => sessions.get(key)?.masks ?? null,

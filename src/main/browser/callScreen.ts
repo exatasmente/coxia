@@ -1,4 +1,7 @@
 import type { AgentDef, RunnerSandbox } from '../../shared/config/types';
+import type { HandoffPaths } from '../../shared/handoff';
+import { text as cycleWord } from '../cyclePrompts';
+import type { BeginInput, CallHandoff, HandoffService } from '../screen/handoff';
 import { type ScreenPrompt, refusalText, screenPromptOf } from '../runner/screenPrompt';
 import type { ScreenGrants } from './guard';
 import { rc } from '../workspaceConfig';
@@ -16,6 +19,8 @@ import type { AcquireRequest, ScreenLease, ScreenSessions } from './sessions';
 export interface ScreenPorts {
   sessions: ScreenSessions;
   asks: ScreenAsks;
+  /** The hand-off of the screen to the person (#178); absent, or null before the app has it: no call is offered the tool. */
+  handoff?: HandoffService | null;
 }
 
 export interface CallScreen {
@@ -88,4 +93,31 @@ export function promptFor(screen: CallScreen | null, agent: Pick<AgentDef, 'scre
     display,
     confirm: !!screen?.toolset?.confirm,
   });
+}
+
+/** What a call holds of the hand-off from its start: the call object, and the paths its warning is worded from (filled in once the call knows what it has). */
+export interface CallHandoffOffer {
+  call: CallHandoff;
+  paths: HandoffPaths;
+}
+
+/**
+ * Starts the hand-off of a call, before its shell session is opened (the session reads the call's gate and mask). Null when the app has no hand-off service. What the call has
+ * of the browser and the shell is not known yet; `offerHandoff` says it, and until then the warning would word it from the agent's switches.
+ */
+export function beginHandoff(service: HandoffService | null | undefined, agent: Pick<AgentDef, 'id' | 'name' | 'shell'>, input: Omit<BeginInput, 'agent' | 'agentName' | 'paths'>): CallHandoffOffer | null {
+  if (!service) return null;
+  const paths: HandoffPaths = { browser: false, shell: agent.shell === 'host' ? 'host' : agent.shell === 'sandbox' ? 'sandbox' : 'none' };
+  return { call: service.begin({ ...input, agent: agent.id, agentName: cycleWord(agent.name), paths }), paths };
+}
+
+/**
+ * Puts the hand-off tool on the call's toolset, with the call's typed values beside it, when the screen can be taken by the person (it is registered with the live hub). The
+ * paths of the warning are set from what the call really has: the app's browser, and the shell session it runs commands in. A call with nothing live is left as it was.
+ */
+export function offerHandoff(screen: CallScreen | null, offer: CallHandoffOffer | null, has: { live: boolean; session: boolean; host: boolean }): void {
+  if (!screen?.toolset || !offer || !has.live) return;
+  offer.paths.browser = screen.lease !== null;
+  offer.paths.shell = !has.session ? 'none' : has.host ? 'host' : 'sandbox';
+  screen.toolset = { ...screen.toolset, handoff: { request: offer.call.request, active: offer.call.active }, typed: offer.call.typed };
 }

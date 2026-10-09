@@ -33,7 +33,7 @@ export interface FakeScreens {
   dispose(): void;
 }
 
-export function fakeScreens(o: { configure?: (c: WorkspaceConfig) => void; test?: boolean; browsers?: boolean; keep?: 'kept' | 'not'; ownDisplay?: string; startGate?: Promise<void> } = {}): FakeScreens {
+export function fakeScreens(o: { configure?: (c: WorkspaceConfig) => void; test?: boolean; browsers?: boolean; keep?: 'kept' | 'not'; ownDisplay?: string; startGate?: Promise<void>; watch?: boolean } = {}): FakeScreens {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'coxia-fake-screens-')));
   const config = neutralConfig();
   config.runner.sandbox.display = true;
@@ -50,7 +50,7 @@ export function fakeScreens(o: { configure?: (c: WorkspaceConfig) => void; test?
     open: vi.fn(async (screen: unknown) => {
       hubOpened.push(screen);
       log.push('hub.open');
-      return true;
+      return o.watch !== false;
     }),
     finish: vi.fn(async (key: string) => {
       log.push(`hub.finish:${key}`);
