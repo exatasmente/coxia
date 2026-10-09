@@ -15,7 +15,7 @@ vi.hoisted(() => {
 vi.mock('../src/renderer/src/i18n', async (orig) => ({ ...(await orig<typeof import('../src/renderer/src/i18n')>()), useT: () => t }));
 const { EvidenceBlock, EvidenceAttachment } = await import('../src/renderer/src/screens/cycle/Evidence');
 const { RecordingPlayer } = await import('../src/renderer/src/screens/cycle/RecordingPlayer');
-const { evidenceKey, keepSame, markBox } = await import('../src/renderer/src/screens/cycle/recording');
+const { cutLeft, evidenceKey, keepSame, markBox } = await import('../src/renderer/src/screens/cycle/recording');
 
 afterEach(() => setLanguage('pt-BR'));
 
@@ -89,6 +89,84 @@ describe('the player', () => {
     expect(plain).not.toContain(t('ui.cycle.rec.marks'));
     expect(player(piece({ recording: { durationMs: 60_000, width: 1280, height: 800, marks: [], truncated: 'size' } }))).toContain(t('ui.cycle.rec.truncatedSize'));
     expect(player(piece({ recording: { durationMs: 60_000, width: 1280, height: 800, marks: [], truncated: 'time' } }))).toContain(t('ui.cycle.rec.truncatedTime'));
+  });
+});
+
+// #176: a video whose idle stretches were shortened says how long it is, how long the stage was, and where the cuts are.
+describe('the player of a video with cuts', () => {
+  const cut = (atMs: number, skippedMs: number) => ({ atMs, skippedMs });
+  const withCuts = (cuts: ReturnType<typeof cut>[], over: Partial<NonNullable<EvidenceView['recording']>> = {}) =>
+    piece({ recording: { durationMs: 60_000, realMs: 60_000 + cuts.reduce((n, c) => n + c.skippedMs, 0), width: 1280, height: 800, marks: [], cuts, ...over } });
+
+  it('draws a tick for each cut at its place, each a button that says what it left out and the stage\'s time then', () => {
+    const html = player(withCuts([cut(15_000, 300_000), cut(45_000, 240_000)]));
+    expect(html.match(/class="cy-rec-cut"/g)).toHaveLength(2);
+    expect(html).toContain('left:25%');
+    expect(html).toContain('left:75%');
+    expect(html).toContain(`aria-label="${t('ui.cycle.rec.cut', { at: '0:15', skipped: '5:00', real: '5:15' })}"`);
+    expect(html).toContain(`aria-label="${t('ui.cycle.rec.cut', { at: '0:45', skipped: '4:00', real: '9:45' })}"`);
+    expect(html).toContain(t('ui.cycle.rec.cuts'));
+  });
+
+  it('says the length of the video and the time the stage spent, and the stage\'s time at the start of it', () => {
+    const html = player(withCuts([cut(15_000, 300_000), cut(45_000, 240_000)]));
+    expect(html).toContain(t('ui.cycle.rec.durationReal', { time: '1:00', real: '10:00' }));
+    expect(html).toContain(t('ui.cycle.rec.realTime', { time: '0:00' }));
+  });
+
+  it('says the stage\'s time on the screen at the point being played, and how long after the screen opened the recording started', () => {
+    const html = player(withCuts([cut(15_000, 300_000)], { startedAfterMs: 754_000 }));
+    expect(html).toContain(t('ui.cycle.rec.realTime', { time: '0:00' }));
+    expect(CATALOGS.en['ui.cycle.rec.realTime']).toBe('On the screen at {time}');
+    expect(html).toContain(t('ui.cycle.rec.startedAfter', { time: '12:34' }));
+    // Without the field (a recording made before it was kept), or when it is under a second, the line is not there.
+    expect(player(withCuts([cut(15_000, 300_000)]))).not.toContain('cy-rec-started');
+    expect(player(withCuts([cut(15_000, 300_000)], { startedAfterMs: 400 }))).not.toContain('cy-rec-started');
+  });
+
+  it('says how long after the screen opened it started also for a video nothing was cut from', () => {
+    const html = player(piece({ recording: { durationMs: 60_000, startedAfterMs: 90_000, width: 1280, height: 800, marks: [] } }));
+    expect(html).toContain(t('ui.cycle.rec.startedAfter', { time: '1:30' }));
+    expect(html).not.toContain(t('ui.cycle.rec.realTime', { time: '0:00' }));
+  });
+
+  it('draws no tick for the cut at the end of the video, and no strip when that is the only cut', () => {
+    const html = player(withCuts([cut(60_000, 300_000)]));
+    expect(html).not.toContain('cy-rec-cut');
+    expect(html).not.toContain(t('ui.cycle.rec.cuts'));
+    // The length of the video and the stage\'s time are still said.
+    expect(html).toContain(t('ui.cycle.rec.durationReal', { time: '1:00', real: '6:00' }));
+  });
+
+  it('is as it was for a video nothing was cut from: no ticks, no stage time, the length alone', () => {
+    const html = player(piece());
+    expect(html).not.toContain('cy-rec-cut');
+    expect(html).not.toContain(t('ui.cycle.rec.cuts'));
+    expect(html).not.toContain(t('ui.cycle.rec.realTime', { time: '0:00' }));
+    expect(html).toContain(t('ui.cycle.rec.duration', { time: '1:00' }));
+  });
+
+  it('keeps the marks on the video\'s clock beside the cuts', () => {
+    const html = player(withCuts([cut(15_000, 300_000)], { marks: [{ fromMs: 30_000, toMs: 45_000 }] }));
+    expect(html.match(/class="cy-rec-mark"/g)).toHaveLength(1);
+    expect(html).toContain('left:50%;width:25%');
+  });
+
+  it.each(['en', 'pt-BR'] as const)('is worded in %s, with nothing left as a code or a hole', (language) => {
+    setLanguage(language);
+    for (const key of ['ui.cycle.rec.durationReal', 'ui.cycle.rec.realTime', 'ui.cycle.rec.cuts', 'ui.cycle.rec.cut', 'ui.cycle.rec.startedAfter'] as const) {
+      expect(CATALOGS[language][key], key).toBeTruthy();
+      expect(t(key, { time: 'T', real: 'R', at: 'A', skipped: 'S' }), key).not.toMatch(/\{\w+\}|ui\.cycle/);
+    }
+  });
+});
+
+describe('where a cut sits', () => {
+  it('is a share of the video\'s length, and nothing at or past its end or for a video with no length', () => {
+    expect(cutLeft(60_000, { atMs: 15_000, skippedMs: 1 })).toBe(25);
+    expect(cutLeft(60_000, { atMs: 0, skippedMs: 1 })).toBe(0);
+    expect(cutLeft(60_000, { atMs: 60_000, skippedMs: 1 })).toBeNull();
+    expect(cutLeft(0, { atMs: 0, skippedMs: 1 })).toBeNull();
   });
 });
 

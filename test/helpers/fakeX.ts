@@ -35,12 +35,24 @@ export interface FakeXOptions {
   image?: (width: number, height: number) => Buffer;
   /** The length field of the GetImage reply, in place of the right one. */
   imageLength?: number;
+  /** The root's children, bottom to top; read at each request, so a test can open and close windows under a connection. */
+  windows?: FakeXWindow[];
+  /** The child count the QueryTree reply claims, in place of the right one. */
+  treeCount?: number;
   /** Requests with these opcodes are never answered. */
   silent?: number[];
   /** Answers the request itself and returns true, or leaves it to the server. */
   override?: (req: FakeXRequest, send: (b: Buffer) => void, socket: Socket) => boolean;
   /** An XTEST request this returns true for gets an error packet. */
   failFake?: (req: FakeXRequest) => boolean;
+}
+
+export interface FakeXWindow {
+  id: number;
+  /** 0 Unmapped, 1 Unviewable, 2 Viewable. */
+  mapState: number;
+  /** 1 InputOutput, 2 InputOnly. */
+  klass?: number;
 }
 
 export const XTEST_MAJOR = 132;
@@ -184,6 +196,28 @@ export async function startFakeX(o: FakeXOptions = {}): Promise<FakeX> {
             }
             const data = o.image ? o.image(w, h) : gradient(w, h);
             send(reply(seq, o.depth ?? 24, data, undefined, o.imageLength));
+            break;
+          }
+          case 15: {
+            const list = o.windows ?? [];
+            const body = Buffer.alloc(list.length * 4);
+            list.forEach((w, i) => body.writeUInt32LE(w.id, 4 * i));
+            send(reply(seq, 0, body, (b) => {
+              b.writeUInt32LE(FAKE_ROOT, 8);
+              b.writeUInt16LE(o.treeCount ?? list.length, 16);
+            }));
+            break;
+          }
+          case 3: {
+            const w = (o.windows ?? []).find((x) => x.id === bytes.readUInt32LE(4));
+            if (!w) {
+              send(errorPacket(seq, 3, 3));
+              break;
+            }
+            send(reply(seq, 0, Buffer.alloc(12), (b) => {
+              b.writeUInt16LE(w.klass ?? 1, 12);
+              b[26] = w.mapState;
+            }));
             break;
           }
           case 98: {

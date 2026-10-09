@@ -13,6 +13,10 @@ export interface FakeConn extends X11Connection {
   sent: X11Input[][];
   /** The next batches of input are not delivered. */
   failInput: boolean;
+  /** A window is mapped on the screen (the default: the screen is in use, so a test of the recording starts as it did before the fix). */
+  windows: boolean;
+  /** `inUse` answers null (the display did not answer). */
+  silent: boolean;
   /** Holds the next read until released. */
   hold: (() => void) | null;
   release(): void;
@@ -35,6 +39,8 @@ export function fakeConn(): FakeConn {
     sent: [],
     failInput: false,
     hold: null,
+    windows: true,
+    silent: false,
     release: () => release(),
     async geometry() {
       return { width: W, height: H, depth: 24 };
@@ -50,6 +56,9 @@ export function fakeConn(): FakeConn {
       await new Promise<void>((r) => (release = r));
       conn.hold = null;
       return conn.closed ? null : { width: W, height: H, data: Buffer.from(conn.pixels) };
+    },
+    async inUse() {
+      return conn.closed || conn.silent ? null : conn.windows;
     },
     async keymap() {
       return { first: 8, width: 2, syms: Uint32Array.from(defaultSyms().flat()) };
