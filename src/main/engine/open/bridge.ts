@@ -9,7 +9,7 @@ import { type DocSources, discoverClaudeMd } from './context';
 import { EngineError } from './errors';
 import { type Capabilities, type OpenRunParams, OpenMaxTurnsError, type RunEvents, runOpen } from './loop';
 import { ProviderBudgetError } from '../contract';
-import type { Activity } from '../../../shared/config/types';
+import type { Activity, ScoreOverrides } from '../../../shared/config/types';
 import type { OpenPool, PoolMember } from './pool';
 import type { Json } from './types';
 import { existsSync } from 'node:fs';
@@ -32,6 +32,7 @@ export interface SelectionPool {
   primary: { key: string; label: string; provider?: string };
   fallbacks: PoolMemberSpec[];
   activities?: Partial<Record<Activity, PoolMemberSpec[]>>;
+  scoreOverrides?: ScoreOverrides;
 }
 
 export interface OpenEngineSelection {
@@ -82,14 +83,14 @@ export function defaultDocSources(cwd: string): DocSources {
 
 function memberOf(spec: PoolMemberSpec): PoolMember {
   const c = spec.capabilities;
-  return { key: spec.key, label: spec.label, provider: spec.provider, client: clientFor(spec.config), images: c?.images, tools: c?.tools, contextWindow: c?.contextWindow };
+  return { key: spec.key, label: spec.label, model: spec.config.model, provider: spec.provider, client: clientFor(spec.config), images: c?.images, tools: c?.tools, contextWindow: c?.contextWindow };
 }
 
 function poolOf(pool: SelectionPool | undefined): OpenPool | undefined {
   if (!pool) return undefined;
   const activities: OpenPool['activities'] = {};
   for (const [a, list] of Object.entries(pool.activities ?? {}) as [Activity, PoolMemberSpec[]][]) if (list.length) activities[a] = list.map(memberOf);
-  return { name: pool.name, primary: pool.primary, fallbacks: pool.fallbacks.map(memberOf), activities };
+  return { name: pool.name, primary: pool.primary, fallbacks: pool.fallbacks.map(memberOf), activities, ...(pool.scoreOverrides ? { scoreOverrides: pool.scoreOverrides } : {}) };
 }
 
 export interface BridgeArgs {

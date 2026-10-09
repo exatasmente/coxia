@@ -10,7 +10,7 @@ import { type PoolMember, type PoolSwitch } from '../src/main/engine/open/pool';
 import { MAX_REST_MS, restRegistry } from '../src/main/engine/open/rest';
 import { readSession } from '../src/main/engine/open/session';
 import type { ToolImpl } from '../src/main/engine/open/tools/types';
-import type { Activity } from '../src/shared/config/types';
+import type { Activity, ScoreOverrides } from '../src/shared/config/types';
 import { type Fake, type Step, errorStep, fakeOpenAI, textStep, toolStep } from './helpers/fakeOpenAI';
 
 let dir: string;
@@ -37,13 +37,14 @@ async function server(script: Step[]): Promise<Fake> {
 
 const BUSY = { ...errorStep(429, 'Rate limit reached'), headers: { 'retry-after': '120' } } as Step;
 const client = (f: Fake, model: string, extra = {}) => new ChatClient({ baseUrl: f.url, model, retryDelayMs: 0, maxRetries: 0, ...extra });
-const member = (f: Fake, name: string, extra: Partial<PoolMember> = {}, clientExtra = {}): PoolMember => ({ key: `key-${name}`, label: `model-${name}`, provider: `prov-${name}`, client: client(f, `model-${name}`, clientExtra), ...extra });
+const member = (f: Fake, name: string, extra: Partial<PoolMember> = {}, clientExtra = {}): PoolMember => ({ key: `key-${name}`, label: `model-${name}`, model: `model-${name}`, provider: `prov-${name}`, client: client(f, `model-${name}`, clientExtra), ...extra });
 
 interface Setup {
   primary: PoolMember;
   fallbacks?: PoolMember[];
   activities?: Partial<Record<Activity, PoolMember[]>>;
   tools?: ToolImpl[];
+  scoreOverrides?: ScoreOverrides;
   over?: Partial<OpenRunParams>;
 }
 
@@ -52,7 +53,7 @@ function run(s: Setup, events: PoolSwitch[] = []) {
     role: 'deep',
     prompt: 'do it',
     client: s.primary.client,
-    pool: { name: 'deep', primary: { key: s.primary.key, label: s.primary.label, provider: s.primary.provider }, fallbacks: s.fallbacks ?? [], activities: s.activities },
+    pool: { name: 'deep', primary: { key: s.primary.key, label: s.primary.label, provider: s.primary.provider }, fallbacks: s.fallbacks ?? [], activities: s.activities, ...(s.scoreOverrides ? { scoreOverrides: s.scoreOverrides } : {}) },
     capabilities: { images: s.primary.images },
     cwd: dir,
     allowedTools: (s.tools ?? []).map((t) => t.name),
@@ -228,6 +229,30 @@ describe('the activity of a turn', () => {
     ]);
     expect(a.chats()).toHaveLength(3);
     expect(b.chats()).toHaveLength(1);
+  });
+
+  it('moves to the stronger model of an activity\'s own list when the model in use is under its floor, and stays on it for a turn without a floor', async () => {
+    const a = await server([call('run')]);
+    const b = await server([call('look'), said('done')]);
+    const events: PoolSwitch[] = [];
+    const scoreOverrides = { floors: { shell: 90 }, models: { 'model-a': { shell: 87 }, 'model-b': { shell: 91 } } };
+    const r = await run({ primary: member(a, 'a'), fallbacks: [member(b, 'b')], activities: { shell: [member(b, 'b'), member(a, 'a')] }, scoreOverrides, tools: [tool('run', 'shell'), tool('look', 'explore')] }, events);
+    expect(r.data).toBe('done');
+    // a started (the start of a stage), b took the shell turn, and the explore turn after it stayed on b: explore has no floor.
+    expect(events.map((e) => [e.from.label, e.to.label, e.reason, e.activity])).toEqual([['model-a', 'model-b', 'activity', 'shell']]);
+    expect(a.chats()).toHaveLength(1);
+    expect(b.chats()).toHaveLength(2);
+  });
+
+  it('keeps the model in use for an activity\'s list when it reaches the floor, even if another is first', async () => {
+    const a = await server([call('run'), said('done')]);
+    const b = await server([said('unused')]);
+    const events: PoolSwitch[] = [];
+    const scoreOverrides = { floors: { shell: 90 }, models: { 'model-a': { shell: 90.5 }, 'model-b': { shell: 95 } } };
+    const r = await run({ primary: member(a, 'a'), activities: { shell: [member(b, 'b'), member(a, 'a')] }, scoreOverrides, tools: [tool('run', 'shell')] }, events);
+    expect(r.data).toBe('done');
+    expect(events).toEqual([]);
+    expect(b.chats()).toHaveLength(0);
   });
 
   it('a turn that answers a screenshot only runs on a model that takes images', async () => {

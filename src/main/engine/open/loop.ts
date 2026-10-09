@@ -274,6 +274,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   // The models of the pool, the one that answers each turn; a lone model is the pool of one.
   const primary: PoolMember = {
     key: p.pool?.primary.key ?? `${client.baseUrl}|${client.cfg.model}`,
+    model: client.cfg.model,
     label: p.pool?.primary.label ?? client.cfg.model,
     provider: p.pool?.primary.provider,
     client,

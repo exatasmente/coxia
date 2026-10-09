@@ -1,7 +1,8 @@
 // The pool of models a call may move between. The first half is pure: which list serves a turn, which members of it can take the turn, which one is picked; it
 // knows nothing of clients or of the clock. `PoolClient` below puts those choices in front of the clients of the members.
-import { ACTIVITIES, type Activity } from '../../../shared/config/types';
+import { ACTIVITIES, type Activity, type ScoreOverrides } from '../../../shared/config/types';
 import { t } from '../../../shared/i18n';
+import { floorFor, scoreFor } from '../../../shared/modelScores';
 import { ProviderBusyError } from '../contract';
 import type { CallOptions, ChatClient } from './client';
 import { EngineError, type ErrorKind, withoutImages } from './errors';
@@ -13,6 +14,8 @@ import type { ChatMessage, Completion } from './types';
 export interface MemberFacts {
   /** The key the rest registry knows it by. */
   key: string;
+  /** The model id, for its quality score; absent: no score. */
+  model?: string;
   images?: boolean;
   tools?: boolean;
   contextWindow?: number;
@@ -72,12 +75,24 @@ export function candidatesFor<M extends MemberFacts>(lists: PoolLists<M>, need: 
 }
 
 /**
- * Stays on the member in use while it is in the list and not resting, so a change of activity alone costs no cache; otherwise the first of the list that is not
- * resting. null: every one of them is resting.
+ * Whether a member is good enough to keep a turn of an activity: an activity without a quality floor (explore, write) takes any member; one with a floor takes a
+ * member whose score reaches it (the person's override first, then the table the app ships). No score is not enough.
  */
-export function pickMember<M extends MemberFacts>(list: readonly M[], current: string | null, skip: (key: string) => boolean): M | null {
+export function meetsFloor(m: MemberFacts, activity: Activity, overrides?: ScoreOverrides): boolean {
+  const floor = floorFor(activity, overrides);
+  if (floor === null) return true;
+  const found = m.model === undefined ? null : scoreFor(m.model, activity, overrides);
+  return found !== null && found.score >= floor;
+}
+
+/**
+ * Stays on the member in use while it is in the list, not resting and `fits` the turn, so a change of activity alone costs no cache when the model in use is good
+ * enough for it; otherwise the first of the list that is not resting (the list is in the order the person saved). null: every one of them is resting.
+ */
+export function pickMember<M extends MemberFacts>(list: readonly M[], current: string | null, skip: (key: string) => boolean, fits: (m: M) => boolean = () => true): M | null {
+  const first = list.find((m) => !skip(m.key)) ?? null;
   const stay = current === null ? undefined : list.find((m) => m.key === current && !skip(m.key));
-  return stay ?? list.find((m) => !skip(m.key)) ?? null;
+  return stay && (stay === first || fits(stay)) ? stay : first;
 }
 
 /** The members that appear in any list, once each, in the order they first appear. */
@@ -107,6 +122,8 @@ export interface OpenPool {
   primary: { key: string; label: string; provider?: string };
   fallbacks: PoolMember[];
   activities?: Partial<Record<Activity, PoolMember[]>>;
+  /** The person's floors and scores (`llm.scoreOverrides`), over the table the app ships. */
+  scoreOverrides?: ScoreOverrides;
 }
 
 /** Why a call moved to another model. `resting`: the one in use was already resting from a refusal elsewhere; `activity`: the new list does not hold it. */
@@ -130,8 +147,9 @@ export interface PoolClientOptions {
 }
 
 /**
- * Calls the model that should answer the turn, and moves to the next one when it is busy. It stays on the model in use until that one refuses, so the prompt cache is
- * lost only on a switch. The reasoning one model wrote never goes to another. A pool of one model is a pass-through: nothing rests and every error is the client's own.
+ * Calls the model that should answer the turn, and moves to the next one when it is busy. It stays on the model in use until that one refuses, or until a turn of an
+ * activity that has a list of its own needs a model that reaches the activity's quality floor and the one in use does not, so the prompt cache is lost only on a
+ * switch. The reasoning one model wrote never goes to another. A pool of one model is a pass-through: nothing rests and every error is the client's own.
  */
 export class PoolClient {
   private readonly lists: PoolLists<PoolMember>;
@@ -171,7 +189,7 @@ export class PoolClient {
   /** Who would answer a turn now, without calling anyone. */
   peek(need: Need): PoolMember {
     if (!this.pooled) return this.primary;
-    return pickMember(this.candidates(need), this.current.key, (k) => this.skipped(k)) ?? this.current;
+    return pickMember(this.candidates(need), this.current.key, (k) => this.skipped(k), this.fits(need)) ?? this.current;
   }
 
   /** Marks an assistant message as written by the member that answered. */
@@ -186,7 +204,7 @@ export class PoolClient {
     let left: { member: PoolMember; reason: SwitchReason; until: number | null } | null = null;
     for (;;) {
       const list = this.candidates(need);
-      const pick = pickMember(list, this.current.key, (k) => this.skipped(k) || refused.has(k));
+      const pick = pickMember(list, this.current.key, (k) => this.skipped(k) || refused.has(k), this.fits(need));
       if (!pick) throw this.busy(list, [...refused.values()].at(-1));
       if (pick.key !== this.current.key) {
         const from = left?.member ?? this.current;
@@ -215,6 +233,15 @@ export class PoolClient {
         throw e;
       }
     }
+  }
+
+  /**
+   * What keeps the model in use on a turn: only an activity with a list of its own asks for the floor. On the role's list the model in use stays until it refuses,
+   * so a spare that took over is not dropped for the first one when its rest ends.
+   */
+  private fits(need: Need): (m: PoolMember) => boolean {
+    if (!this.lists.activities[need.activity]?.length) return () => true;
+    return (m) => meetsFloor(m, need.activity, this.pool?.scoreOverrides);
   }
 
   private skipped(key: string): boolean {

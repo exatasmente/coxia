@@ -131,3 +131,11 @@ A tela do assistente, aberta no app compilado com um servidor falso que serve um
 - **Nota no formato do idioma** (`84,3` em pt-BR): `PoolFacts` usa `toLocaleString(intlLocale())`.
 
 Testes: `model-pools` (ordem com os pisos novos sobre os três modelos da tabela, `lead` e o modelo de hoje no seu lugar ou por último) e `pool-editor` (o papel passa ao mais barato, o painel mostra o piso 90).
+
+## Ajuste: o modelo em uso só fica numa atividade com piso se o alcança
+
+Com a sugestão, as listas de `shell` e `edit` trazem os mesmos modelos da lista do papel em outra ordem. A regra de "ficar onde está" (`pickMember`) mantinha o modelo em uso sempre que ele estava na lista, então a etapa começava no mais barato e nunca passava ao mais forte em `shell` e `edit`. Decisão do mantenedor: numa atividade **com lista própria** e piso, o modelo em uso só fica se `meetsFloor` (nota da pessoa ou da tabela ≥ piso; sem nota não basta); senão vai ao primeiro da lista que não descansa. Na lista do papel (sem lista própria da atividade) a regra antiga segue, para um reserva que assumiu não ser trocado de volta quando o descanso do primeiro acaba.
+
+- `pool.ts`: `MemberFacts.model`, `meetsFloor`, `pickMember(…, fits)` e `PoolClient.fits`; `OpenPool.scoreOverrides`.
+- `bridge.ts`/`agents.ts`/`loop.ts`: o id do modelo em cada membro e o `llm.scoreOverrides` no conjunto.
+- Testes: `engine-open-pool-pure` (`meetsFloor` com a tabela e com sobrescrita; `pickMember` com `fits`) e `engine-open-pool` (troca para o mais forte no turno de `shell` e fica nele no de `explore`; fica no modelo em uso quando ele alcança o piso).

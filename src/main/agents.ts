@@ -515,9 +515,10 @@ export function openSelection(t: ResolvedRole, cwd: string, isolated = false, ba
   ) as NonNullable<SelectionPool['activities']>;
   const fallbacks = open(t.pool?.fallbacks);
   const pooled = fallbacks.length > 0 || Object.keys(activities).length > 0;
+  const overrides = getConfig().llm.scoreOverrides;
   return {
     provider: first.config,
-    ...(pooled ? { pool: { name: t.role, primary: { key: first.key, label: first.label, provider: first.provider }, fallbacks, activities } } : {}),
+    ...(pooled ? { pool: { name: t.role, primary: { key: first.key, label: first.label, provider: first.provider }, fallbacks, activities, ...(overrides ? { scoreOverrides: overrides } : {}) } } : {}),
     ...(first.capabilities ? { capabilities: first.capabilities } : {}),
     structured: t.structured,
     docs: openDocs(cwd, t.role, isolated, bare),

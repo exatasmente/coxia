@@ -150,7 +150,10 @@ que o cliente da API pare de repetir o mesmo modelo sem limite quando o servidor
    passavam e o mais barato ia primeiro em shell e edit, o contrário do pretendido).
 7. **"Usar a sugestão" reordena o papel** (depois da implementação): o primeiro da lista sugerida
    passa a ser o modelo do papel, e o modelo de hoje fica no conjunto, no seu lugar pelo custo.
-2. **Fica no modelo em uso** até ele recusar; a próxima etapa recomeça do topo.
+2. **Fica no modelo em uso** até ele recusar; a próxima etapa recomeça do topo. Revisto depois da
+   implementação: numa atividade com lista própria e piso (`shell`, `edit`, `screen`), o modelo em uso
+   só fica se a nota dele alcança o piso; senão o turno vai ao primeiro da lista da atividade (sem
+   isso, com listas que se sobrepõem, a troca por atividade nunca acontecia).
 3. **Trocam de modelo:** taxa (429), sobrecarga (503/529) e os outros 5xx, depois das
    repetições do cliente. Tempo esgotado não troca.
 4. **Descanso padrão de 5 minutos**, teto de 15 minutos para o `Retry-After`.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityOf, allMembers, candidatesFor, eligible, listFor, pickMember, type MemberFacts, type PoolLists } from '../src/main/engine/open/pool';
+import { activityOf, allMembers, candidatesFor, eligible, listFor, meetsFloor, pickMember, type MemberFacts, type PoolLists } from '../src/main/engine/open/pool';
 
 const m = (key: string, extra: Partial<MemberFacts> = {}): MemberFacts => ({ key, ...extra });
 const A = m('a');
@@ -92,8 +92,37 @@ describe('who is picked', () => {
     expect(pickMember([B, C], 'a', never)?.key).toBe('b');
   });
 
+  it('leaves the member in use for the first of the list when it does not fit the turn, and keeps it when it is that first one', () => {
+    const fitsNot = (x: MemberFacts) => x.key !== 'b';
+    expect(pickMember([A, B, C], 'b', never, fitsNot)?.key).toBe('a');
+    expect(pickMember([A, B, C], 'c', never, fitsNot)?.key).toBe('c');
+    expect(pickMember([B, A], 'b', never, fitsNot)?.key).toBe('b');
+    // The first rests: the next that is not resting, even if the one in use does not fit.
+    expect(pickMember([A, B, C], 'b', (k) => k === 'a', fitsNot)?.key).toBe('b');
+  });
+
   it('is null when every member rests', () => {
     expect(pickMember([A, B], 'a', () => true)).toBeNull();
     expect(pickMember([], null, never)).toBeNull();
+  });
+});
+
+describe('the quality floor of a turn', () => {
+  const overrides = { floors: { shell: 90 }, models: { 'model-strong': { shell: 92 }, 'model-weak': { shell: 85 } } };
+
+  it('lets any member keep a turn of an activity without a floor', () => {
+    expect(meetsFloor(m('x', { model: 'model-weak' }), 'explore', overrides)).toBe(true);
+    expect(meetsFloor(m('x'), 'write')).toBe(true);
+  });
+
+  it('asks a score that reaches the floor, from the person or the shipped table; no score is not enough', () => {
+    expect(meetsFloor(m('x', { model: 'model-strong' }), 'shell', overrides)).toBe(true);
+    expect(meetsFloor(m('x', { model: 'model-weak' }), 'shell', overrides)).toBe(false);
+    expect(meetsFloor(m('x', { model: 'model-unknown' }), 'shell', overrides)).toBe(false);
+    expect(meetsFloor(m('x'), 'edit')).toBe(false);
+    // The shipped table: 90.6 reaches the shipped shell floor of 90, 87.6 does not.
+    expect(meetsFloor(m('x', { model: 'deepseek-ai/DeepSeek-V4.1-Flash' }), 'shell')).toBe(true);
+    expect(meetsFloor(m('x', { model: 'XiaomiMiMo/MiMo-V2.6-Flash' }), 'shell')).toBe(false);
+    expect(meetsFloor(m('x', { model: 'XiaomiMiMo/MiMo-V2.6-Flash' }), 'screen')).toBe(true);
   });
 });
