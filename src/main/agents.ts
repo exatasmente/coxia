@@ -27,8 +27,8 @@ import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchang
 import { claudeSdkEnv, providerSecret } from './llm';
 import { loginPath, mergedPath } from './loginPath';
 import { noteSession } from './sessions';
-import { isInsideProfiles, profileDenyGlobs } from './browser/profile';
-import { ATAS } from './env';
+import { anyProfileDenyGlobs, isInsideAnyProfiles } from './browser/profile';
+import { ATAS, DATA_ROOT } from './env';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
@@ -190,8 +190,8 @@ export const SECRET_GLOBS = [
   '~/.claude/*.json',
   '~/.claude/projects/**',
   // The logged-in browsers of the agents (cookies, local storage) live in the workspace's data, and an agent with no shell reads from that folder: its profile files
-  // match none of the names above, so the folder itself is refused, by the absolute path the SDK's rules take.
-  ...profileDenyGlobs(ATAS),
+  // match none of the names above, so the folder itself is refused, by the absolute path the SDK's rules take, for every workspace of the data folder.
+  ...anyProfileDenyGlobs(DATA_ROOT),
 ];
 export const SECRET_READ_DENY = SECRET_GLOBS.map((g) => `Read(${g})`);
 
@@ -203,9 +203,9 @@ function inClaudeState(p: string): boolean {
   return rel.startsWith('projects/') || (!rel.includes('/') && rel.endsWith('.json'));
 }
 
-// The profiles of the agents' browsers: nothing under them is read by an agent, whichever way the path is written.
+// The profiles of the agents' browsers, of any workspace: nothing under them is read by an agent, whichever way the path is written.
 function inBrowserProfiles(p: string): boolean {
-  return isAbsolute(p) && isInsideProfiles(ATAS, p);
+  return isAbsolute(p) && isInsideAnyProfiles(DATA_ROOT, p);
 }
 
 // The path as written, with ~ expanded, absolute against the cwd and with symlinks resolved:

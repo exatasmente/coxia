@@ -66,6 +66,36 @@ export function isInsideProfiles(workspaceDir: string, path: string): boolean {
 /** The deny rules (`Read(//absolute/path/**)` in the SDK's syntax) that keep a search with no path out of the profiles, one per name the folder has. */
 export const profileDenyGlobs = (workspaceDir: string): string[] => rootsOf(workspaceDir).map((r) => `/${r}/**`);
 
+// ---- every workspace's profiles ---------------------------------------------------------------------------------------------------------------
+
+// An agent reads from its own workspace folder, but a path is a path: the profiles of the other workspaces (`<data>/workspaces/<id>/browser/`) hold cookies as well, so the
+// read guard refuses the folder of every workspace, not only the running one.
+const WORKSPACES_DIR = 'workspaces';
+
+function dataRootsOf(dataRoot: string): string[] {
+  const forms = [dataRoot];
+  const r = real(dataRoot);
+  if (r) forms.push(r);
+  return [...new Set(forms)];
+}
+
+/** Whether `path` is the folder of the profiles of any workspace of the data folder, or anything under it, by the name it is given or by where it really leads. */
+export function isInsideAnyProfiles(dataRoot: string, path: string): boolean {
+  const roots = dataRootsOf(dataRoot).map((r) => join(r, WORKSPACES_DIR) + sep);
+  const inside = (p: string): boolean =>
+    roots.some((r) => {
+      if (!p.startsWith(r)) return false;
+      const [id, folder] = p.slice(r.length).split(sep);
+      return id !== undefined && id !== '' && folder === BROWSER_DIR;
+    });
+  if (inside(path)) return true;
+  const resolved = real(path);
+  return resolved !== null && inside(resolved);
+}
+
+/** The deny rules (`Read(//absolute/path/**)`) for the profiles of every workspace, one per name the data folder has. */
+export const anyProfileDenyGlobs = (dataRoot: string): string[] => dataRootsOf(dataRoot).map((r) => `/${join(r, WORKSPACES_DIR)}/*/${BROWSER_DIR}/**`);
+
 function ensureFolder(path: string): void {
   let st;
   try {
