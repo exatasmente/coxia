@@ -414,7 +414,7 @@ describe('migrateConfig', () => {
       const r = migrateConfig(v19(), { legacyInstall: false });
       expect(r.fromVersion).toBe(19);
       expect(r.changed).toBe(true);
-      expect(r.config.schemaVersion).toBe(20);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.runner.autonomy.board).toBe(false);
       expect(r.notes.join(' ')).toContain('runner.autonomy.board was added (off: board writes wait in Actions for a yes)');
       expect(validateConfig(r.config).ok).toBe(true);
@@ -447,9 +447,50 @@ describe('migrateConfig', () => {
       expect(r.config.devCycle.autonomy).toEqual(neutralConfig().devCycle.autonomy);
     });
 
-    it('is the newest step: 20 is current and 21 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(20);
-      expect(() => migrateConfig({ schemaVersion: 21 }, { legacyInstall: false })).toThrow(/newer app/);
+  });
+
+  describe('schema 20 to 21: the virtual screen of an agent', () => {
+    const v20 = (): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 20;
+      c.agents.team.push({ id: 'writer', name: 'Writer', job: '', model: { role: 'deep', provider: '', model: '' }, stages: [], permission: 'read', tracker: 'none', shell: 'sandbox', autonomous: false, turnsTo: null, instructions: 'x', system: false });
+      return c;
+    };
+
+    it('bumps the version, leaves a note, yields a valid file and gives no agent a screen, a host or a profile', () => {
+      const r = migrateConfig(v20(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(20);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(21);
+      expect(r.notes.join(' ')).toContain('a virtual screen');
+      expect(validateConfig(r.config).ok).toBe(true);
+      for (const a of r.config.agents.team) {
+        expect(a.screen).toBeUndefined();
+        expect(a.allowedHosts).toBeUndefined();
+        expect(a.browserProfile).toBeUndefined();
+      }
+    });
+
+    it('keeps every field of every agent and the rest of the file exactly as it was', () => {
+      const before = v20();
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect(r.config.agents.team).toEqual(before.agents.team);
+      expect({ ...r.config, schemaVersion: 20 }).toEqual(before);
+    });
+
+    it('keeps a screen, hosts and a profile a file already carries, and is idempotent', () => {
+      const c = v20();
+      Object.assign(c.agents.team.find((a: any) => a.id === 'writer'), { screen: true, allowedHosts: ['example.com'], browserProfile: true });
+      const once = migrateConfig(c, { legacyInstall: false });
+      expect(once.config.agents.team.find((a) => a.id === 'writer')).toMatchObject({ screen: true, allowedHosts: ['example.com'], browserProfile: true });
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+    it('is the newest step: the current version is 21 and one more is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(21);
+      expect(() => migrateConfig({ schemaVersion: 22 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });
