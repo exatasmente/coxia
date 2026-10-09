@@ -46,6 +46,7 @@ import { AGENTS_FILE } from '../../shared/harness/agentsMd';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import type { ScreenHub } from '../screen/hub';
+import { grantsFor, withheldText } from '../browser/guard';
 
 // One attempt at one stage: build what the agent reads, run it, write the documents it returned into the cycle folder and commit what it did.
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
@@ -361,12 +362,15 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
       console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
     }
   };
+  // A test workspace never reaches real sites: the hosts the agent was allowed are withheld, and the thread says so (the agent keeps the workspace's own network).
+  const grants = grantsFor(agent);
+  if (!host && grants.withheld.includes('hosts')) appendGui('runner.screen.testWorkspace', { what: withheldText('hosts') });
   try {
     // Only the stage that produces the QA output asks for a display; the browsers folder, when the person set one, comes with every sandbox and every host session.
     const display = outputKindOf(stage.kind) === 'qa';
     const session = host
       ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, approve: hostApproval(d, run, stage, agent, signal, clock), signal, display })
-      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display, agent });
+      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: config.runner.sandbox, onExec: report, onProxy, onNote, signal, display, agent: { allowedHosts: grants.allowedHosts } });
     const gui = session.gui;
     // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });

@@ -20,6 +20,11 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   release: { key: 'ui.audit.kind.release' },
   'plugin-write': { key: 'ui.audit.kind.pluginWrite' },
   'plugin-request': { key: 'ui.audit.kind.pluginRequest' },
+  'screen-open': { key: 'ui.audit.kind.screenOpen' },
+  'screen-close': { key: 'ui.audit.kind.screenClose' },
+  'screen-hold': { key: 'ui.audit.kind.screenHold' },
+  'screen-confirm': { key: 'ui.audit.kind.screenConfirm' },
+  'screen-use': { key: 'ui.audit.kind.screenUse' },
 };
 
 function Row({ e }: { e: AuditEntry }) {

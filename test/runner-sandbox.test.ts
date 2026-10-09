@@ -8,6 +8,8 @@ import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { Run } from '../src/shared/runs';
 import { RunnerError } from '../src/main/runner/service';
 import { listAudit } from '../src/main/auditoria';
+import { DATA_ROOT, WORKSPACE_ID } from '../src/main/env';
+import { setTestFlag } from '../src/main/workspaces-core';
 import { type Boot, boot, doc, fakeCommands, fakeSandbox, keepQaEvidence, makeRepo, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -56,14 +58,31 @@ describe('a stage with a sandbox', () => {
     expect(b.engine.calls.filter((c) => !['developer', 'qa'].includes(c.agent.id)).every((c) => c.exec === undefined)).toBe(true);
   });
 
-  it('opens the sandbox for the agent that works the stage, with the hosts that agent was given and for a host agent none', async () => {
+  it('opens the sandbox for the agent that works the stage, with the hosts that agent was given and none for one that was given none', async () => {
     const sandbox = fakeSandbox();
     const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'developer', 'sandbox'); shellOf(c, 'qa', 'sandbox'); c.agents.team.find((a) => a.id === 'developer')!.allowedHosts = ['app.example.com']; } });
     easy(b);
     let run = await b.runner.start('app#101');
     run = await reach(b, run, 'ready');
     expect(run.status).toBe('done');
-    expect(sandbox.opened.map((o) => [o.options.agent?.allowedHosts ?? null])).toEqual([[['app.example.com']], [null]]);
+    expect(sandbox.opened.map((o) => [o.options.agent?.allowedHosts ?? null])).toEqual([[['app.example.com']], [[]]]);
+  });
+
+  it('keeps the workspace\'s own network from an agent with hosts in a test workspace, and the thread says why', async () => {
+    const sandbox = fakeSandbox();
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'developer', 'sandbox'); c.agents.team.find((a) => a.id === 'developer')!.allowedHosts = ['app.example.com']; } });
+    easy(b);
+    setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
+    try {
+      let run = await b.runner.start('app#101');
+      run = await reach(b, run, 'ready');
+      expect(sandbox.opened[0].options.agent?.allowedHosts).toEqual([]);
+      const lines = b.thread(run).filter((m) => m.code === 'runner.screen.testWorkspace');
+      expect(lines).toHaveLength(1);
+      expect(lines[0].params).toMatchObject({ agent: 'developer' });
+    } finally {
+      setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
+    }
   });
 
   it('does not make one for an agent with no commands or with the list, which runs as it always did', async () => {

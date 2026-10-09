@@ -10,6 +10,7 @@ import { mentionJob } from '../../shared/activity';
 import { type RunActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import type { ReadConfinement } from '../engine/contract';
+import { grantsFor, withheldText } from '../browser/guard';
 import { ATAS } from '../env';
 import { redact } from '../errorlog-core';
 import type { ForumStore } from '../forum-core';
@@ -356,7 +357,10 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
       resume();
     }
   };
+  // A test workspace never reaches real sites: the agent's own hosts are withheld, and the thread says so.
+  const grants = grantsFor(def);
+  if (def.shell !== 'host' && grants.withheld.includes('hosts')) say('runner.screen.testWorkspace', { agent: def.id, what: withheldText('hosts') });
   if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, approve, signal });
-  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, agent: def, ...(source.clone ? { clone: source.clone } : {}) });
+  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, agent: { allowedHosts: grants.allowedHosts }, ...(source.clone ? { clone: source.clone } : {}) });
 }
 
