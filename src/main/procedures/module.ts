@@ -3,6 +3,7 @@ import { logError } from '../errorlog';
 import { ATAS } from '../env';
 import type { Module } from '../module';
 import { getConfig } from '../workspaceConfig';
+import { OFFERS_EVENT } from '../../shared/proceduresView';
 import { screenSessions } from '../runner/module';
 import { createProcedureChannels } from './channels';
 import { offerScreens, procedureOffers } from './index';
@@ -12,9 +13,6 @@ import { createProcedureStore } from './store';
 // window's. webPolicy.ts (PROCEDURES_WRITE) denies the whole `procedures:` prefix except those three reads, so a channel added here later is closed from the day it
 // exists. test/procedures-policy.test.ts reads this file and fails when a channel it registers is not classified. There is no channel for the agents' tools: they are in
 // process (coxia_procedures). The three channels of the offers to keep a procedure (#187) are under the same denial: a paired browser neither sees nor answers the card.
-
-/** Sent to the window when an offer is raised, kept or declined, so a card in a thread is read again. */
-export const OFFERS_EVENT = 'procedures-offers';
 
 export const proceduresModule: Module = (ctx) => {
   offerScreens(screenSessions);

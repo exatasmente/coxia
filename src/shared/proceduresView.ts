@@ -61,6 +61,9 @@ export type ProcedureWrite =
 
 export type ProcedureDelete = { ok: true } | { ok: false; code: 'not-found' | 'newer' | 'io' };
 
+/** The module event the app sends when an offer is raised, kept or declined, so a card in a thread reads the offers again. */
+export const OFFERS_EVENT = 'procedures-offers';
+
 /**
  * An offer to keep a procedure, as the card in a thread shows it (#187): the text the app drafted and would save, and what the person needs to judge it. The work's usage and
  * the reference of the run stay on the main side.

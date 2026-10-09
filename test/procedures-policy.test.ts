@@ -3,12 +3,13 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { OFFERS_EVENT } from '../src/shared/proceduresView';
 import { DESKTOP_ONLY, EXTERNAL_EFFECT, webAccess, webRefusal } from '../src/main/webPolicy';
 
 // The module list pulls in every feature module, and the app's build info reads Electron at load.
 vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0', whenReady: () => Promise.resolve() }, BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] } }));
 const { moduleList } = await import('../src/main/modules');
-const { proceduresModule, OFFERS_EVENT } = await import('../src/main/procedures/module');
+const { proceduresModule } = await import('../src/main/procedures/module');
 const { procedureOffers } = await import('../src/main/procedures/index');
 
 const SRC = join(import.meta.dirname, '../src/main');
