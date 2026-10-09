@@ -14,6 +14,7 @@ const KIND_KEY: Record<AttachmentRef['kind'], string> = {
   pdf: 'ui.forum.file.kind.pdf',
   json: 'ui.forum.file.kind.json',
   csv: 'ui.forum.file.kind.csv',
+  video: 'ui.forum.file.kind.video',
 };
 
 /** The blob URL of a data URL, revoked when the component goes; a plain <img src> would keep the whole base64 in the accessibility tree. */
@@ -28,6 +29,7 @@ export function kindMime(kind: AttachmentRef['kind']): string {
   if (kind === 'pdf') return 'application/pdf';
   if (kind === 'json') return 'application/json';
   if (kind === 'csv') return 'text/csv';
+  if (kind === 'video') return 'video/webm';
   return 'text/plain';
 }
 

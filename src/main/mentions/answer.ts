@@ -10,7 +10,10 @@ import { mentionJob } from '../../shared/activity';
 import { type RunActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import type { ReadConfinement } from '../engine/contract';
+import { callKey } from '../../shared/browser';
+import { type CallScreen, type CallScreenRequest, type ScreenPorts, modelSeesImages, openCallScreen, promptFor } from '../browser/callScreen';
 import { grantsFor, withheldText } from '../browser/guard';
+import { recordWrite } from '../auditoria';
 import { ATAS } from '../env';
 import { redact } from '../errorlog-core';
 import type { ForumStore } from '../forum-core';
@@ -22,6 +25,8 @@ import { limitsOf, watchdog, type StageEngine } from '../runner/executor';
 import { mentionCall, readProposedWrites, type ProposedWrite } from './call';
 import { conversationCallTool } from './converse';
 import { type ProposalOutcome } from './propose';
+import { type Binding, type BindingCell, type KeptSessions, type KeptShell, type ShellSource, keptSessions } from './kept';
+import { type CallStops, callStops } from './stop';
 import { reposOnDisk, runRepo, type MentionPlace } from './place';
 import { type DocsAsk, runDocsAsk, stageOfRun } from '../harness/deliver';
 
@@ -40,7 +45,13 @@ export interface MentionDeps {
   /** Where an agent with no place to run commands gets a working folder. */
   env: () => { fallbackCwd: string };
   /** The session an agent's commands run in, for a caller that has its own (the runner, over the run's worktree and its flow stage, with the person's yes per host command). Absent: the mention opens the sandbox itself over the throwaway copy. */
-  openSession?: (place: MentionPlace, def: AgentDef, cwd: string, stage: string | null, signal: AbortSignal, clock: { beat: () => void; pause: () => () => void }) => Promise<SandboxSession | null>;
+  openSession?: (place: MentionPlace, def: AgentDef, cwd: string, stage: string | null, signal: AbortSignal, clock: { beat: () => void; pause: () => () => void }, wants?: { display: boolean }) => Promise<SandboxSession | null>;
+  /** The agents' screens (the app's browser) and the questions they ask the person; absent, or null before the app has them: no agent gets one here. */
+  screens?: () => ScreenPorts | null;
+  /** The shell sessions kept for the screens that are open (default: this process's). */
+  kept?: KeptSessions;
+  /** Where a running answer can be stopped by the person (default: this process's). */
+  stops?: CallStops;
   /**
    * The line a caller opened for an agent's call when the message was accepted (a run's thread), and whether it waited its turn there: the answer goes on in it,
    * so the engine reports only how it ends. Absent, or null for an agent: the engine opens its own line when it starts.
@@ -86,7 +97,7 @@ export interface MentionAnswer {
 }
 
 /** A folder of the workspace's own data where the throwaway copy of an answer's commands is made; the sandbox's own folders live beside it. */
-const draftDir = (thread: string, seq: number, agent: string): string => join(ATAS, 'sandbox', 'mention', thread.replace(/[^\w-]/g, '_').slice(0, 60), `${seq}-${agent}`);
+const draftDir = (thread: string, tag: string, agent: string): string => join(ATAS, 'sandbox', 'mention', thread.replace(/[^\w-]/g, '_').slice(0, 60), `${tag}-${agent}`);
 
 /** The repository titles of a place on disk, in the config's order. */
 const repoTitles = (place: MentionPlace): string[] => reposOnDisk(place).map((r) => r.id);
@@ -135,7 +146,9 @@ function mayPropose(def: AgentDef, deps: MentionDeps, place: MentionPlace): bool
  * a throwaway copy of the code. A failure of one agent is said in the thread and does not stop the others. Returns what each agent said, for a caller (a ceremony)
  * that records the answers somewhere other than a thread.
  */
-export async function answerMentions(place: MentionPlace, message: ForumMessage, deps: MentionDeps): Promise<MentionAnswer[]> {
+export async function answerMentions(place: MentionPlace, message: ForumMessage, given: MentionDeps): Promise<MentionAnswer[]> {
+  // A ceremony has no screen, whatever its agents are set to.
+  const deps: MentionDeps = place.kind === 'ceremony' ? { ...given, screens: undefined } : given;
   const config = deps.config();
   const out: MentionAnswer[] = [];
   const calls = (deps.calls ?? message.mentions).slice(0, MAX_MENTIONS);
@@ -159,22 +172,45 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
     const stage = place.kind === 'run' ? (place.run?.stage ?? null) : null;
     const abort = new AbortController();
     const watch = watchdog(abort, limitsOf(config));
+    // What the session reads of this answer while it is the one using it.
+    const mine: Binding = { signal: abort.signal, pause: watch.pause, beat: watch.beat };
     let session: SandboxSession | null = null;
-    let source: { cwd: string; made: boolean; reader: boolean; clone?: string } | null = null;
+    let source: ShellSource | null = null;
+    // The agent's screen for this answer, and the shell session kept for it between answers (when it is the screen's to keep).
+    let screen: CallScreen | null = null;
+    let keptShell: KeptShell | null = null;
     // Whether the engine got to run: what failed before it is the call's own failure, and its line must not wait forever.
     let ran = false;
+    // The person's Stop (or the screen closing under the answer) ends this answer only: what the thread says then is not a failure.
+    let stoppedBy: 'person' | 'screen' | null = null;
+    const stopper = new AbortController();
+    stopper.signal.addEventListener('abort', () => {
+      stoppedBy ??= 'person';
+      abort.abort();
+    });
+    const unregister = (deps.stops ?? callStops).register(place.thread, id, stopper);
+    const screenClosed = (): void => {
+      stoppedBy ??= 'screen';
+      abort.abort();
+    };
     try {
       if (wantsCommands) {
-        source = await shellSourceOf(place, def, message.seq, abort.signal, config.runner.sandbox.limits.copyMb * 1024 * 1024);
-        if (!source) {
-          deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mention.noShell', params: { agent: id, reason: t('main.mentions.noRepo') }, stage });
-        } else {
-          session = await (deps.openSession ? deps.openSession(place, def, source.cwd, stage, abort.signal, { beat: watch.beat, pause: watch.pause }) : openMentionSession(deps, def, source, place.thread, abort.signal, watch.pause)).catch((e: unknown) => {
-            deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mention.noShell', params: { agent: id, reason: redact(e instanceof Error ? e.message : String(e)).slice(0, 300) }, stage });
-            return null;
-          });
-        }
+        const opened = await openShell(deps, place, def, message, stage, mine, abort.signal, watch, config);
+        session = opened.session;
+        source = opened.source;
+        screen = opened.screen;
+        keptShell = opened.kept;
       }
+      // The agent's screen when no shell session made it: the app's browser on a display of its own, and the confirmation tool where the call has the right to it.
+      const ports = deps.screens?.() ?? null;
+      if (!screen && ports) screen = await openCallScreen(ports, screenRequest(deps, place, def, message, stage, watch, null));
+      // A screen that closes under a running answer takes the answer with it: nothing it was doing can go on.
+      if (screen?.lease) {
+        if (screen.lease.closed.aborted) screenClosed();
+        else screen.lease.closed.addEventListener('abort', screenClosed, { once: true });
+      }
+      // Stopped before the engine began: the catch below says so, whatever the error is.
+      if (abort.signal.aborted) throw new Error('stopped');
       const info = inputOf(place);
       // The files the message carries go to the agent only when the workspace gives them: the person still attaches and opens them, the agent is told why not.
       const attachments = deps.config().attachments?.agents === false ? null : attachmentsFor(deps, place.thread, message);
@@ -191,6 +227,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         repos: info.repos,
         place: place.kind === 'run' ? 'run' : place.kind,
         shell: session ? { host: def.shell === 'host', network: config.runner.sandbox.network } : undefined,
+        // What the agent is told of its screen and its hosts: nothing for an agent with neither, so its prompt is what it was.
+        screen: promptFor(screen, def, config.runner.sandbox, grantsFor(def), session?.gui?.display === 'on'),
         proposals: mayPropose(def, deps, place),
         autonomous: autonomyOf(config, def),
         attachments: attachments ?? undefined,
@@ -202,8 +240,11 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'main.attachment.agentsOff', stage });
       }
       call.docs = await docsAskOf(place, config, info.files);
+      // The engine hears the abort too, so Stop ends the model's work and not only the wait for it.
+      call.abort = abort;
       if (made) call.activity = made.activity;
       if (session) call.exec = session;
+      if (screen?.toolset) call.screen = screen.toolset;
       // An agent named in a run's thread reads only inside that run's worktree, like a reading stage of it; elsewhere the caller gives none.
       // Its working folder is the same folder as the guard's root, so a relative path is judged and read against one folder, never two.
       call.readRoot = deps.readRoot?.(place, def, call.cwd);
@@ -244,10 +285,19 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       const reason = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
       // Nothing ran, so the engine reported no end: the call fails here, or its line would stay on screen.
       if (!ran) made?.activity.status('failed', reason);
-      deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
+      if (stoppedBy) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: stoppedBy === 'person' ? 'runner.mention.stopped' : 'runner.mention.stoppedScreen', params: { agent: id }, stage });
+      else deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
     } finally {
-      await session?.close().catch(() => undefined);
-      if (source?.made) rmSync(source.cwd, { recursive: true, force: true });
+      unregister();
+      screen?.lease?.closed.removeEventListener('abort', screenClosed);
+      screen?.release();
+      if (keptShell) {
+        // The session belongs to the screen now: it stays, with the copy, until the screen ends.
+        keptShell.cell.bound = null;
+      } else {
+        await session?.close().catch(() => undefined);
+        if (source?.made) rmSync(source.cwd, { recursive: true, force: true });
+      }
       deps.release?.(id);
     }
   }
@@ -300,15 +350,20 @@ async function raiseWrites(deps: MentionDeps, place: MentionPlace, def: AgentDef
 
 /**
  * Where an agent's commands run. A run's thread: its worktree, and the session reads from it. Anywhere else: a throwaway copy of the place's repositories, made
- * under the workspace's data (the one repository itself in a folder, or one subfolder per repository), which the caller removes when the answer ends. `null`
- * when the place has no repository on disk (a ceremony, or a place with none): the agent answers without commands and the thread says why.
+ * under the workspace's data (the one repository itself in a folder, or one subfolder per repository), which the caller removes when the answer ends, or, for a copy kept
+ * with a screen (`tag` `screen`), when the screen does. `null` when the place has no repository on disk (a ceremony, or a place with none): the agent answers without
+ * commands and the thread says why.
  */
-async function shellSourceOf(place: MentionPlace, def: AgentDef, seq: number, signal: AbortSignal, maxBytes: number): Promise<{ cwd: string; made: boolean; reader: boolean; clone?: string } | null> {
+async function shellSourceOf(place: MentionPlace, def: AgentDef, tag: string, signal: AbortSignal, maxBytes: number): Promise<ShellSource | null> {
   if (place.kind === 'run' && place.run && existsSync(place.run.worktree)) return { cwd: place.run.worktree, made: false, reader: true };
   const repos = reposOnDisk(place);
-  if (!repos.length) return null;
-  const dir = draftDir(place.thread, seq, def.id);
+  // An agent with a screen works on sites and needs no code: with none in the place, its commands run in an empty throwaway folder instead.
+  if (!repos.length && def.screen !== true) return null;
+  const dir = draftDir(place.thread, tag, def.id);
+  // A copy kept with a screen has a name of its own, not the message's: what an earlier screen of the agent left there is not this one's.
+  if (tag === SCREEN_TAG) rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
+  if (!repos.length) return { cwd: dir, made: true, reader: false };
   // One repository: its copy is the working folder itself; several: one subfolder per repository, and the folder holds them all. Only what git knows is copied, as a
   // run's worktree holds it: what a person built or installed (dist, node_modules) is not code, and can weigh gigabytes.
   for (const repo of repos) await copyTracked(repo.path, repos.length === 1 ? dir : join(dir, repo.id), maxBytes, signal);
@@ -322,13 +377,18 @@ async function shellSourceOf(place: MentionPlace, def: AgentDef, seq: number, si
   return { cwd: dir, made: true, reader: false, clone: repos[0].path };
 }
 
+/** The name a copy kept with a screen goes by, instead of the number of the message that made it. */
+const SCREEN_TAG = 'screen';
+
 /**
  * Opens the session an agent's commands run in, over the throwaway folder `cwd` (already a copy), read only: a sandbox of this computer, or a host session. A host
- * session keeps the same limit as a run's thread: every command waits for the person, and without the app to ask it is refused, never run unattended.
+ * session keeps the same limit as a run's thread: every command waits for the person, and without the app to ask it is refused, never run unattended. What belongs to
+ * the answer that uses the session (its clocks, its signal) is read through `bound`, so a session kept for a screen follows the answer that has it now.
  */
-function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: string; reader: boolean; clone?: string }, thread: string, signal: AbortSignal, pause: () => () => void): Promise<SandboxSession> {
+function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: string; reader: boolean; clone?: string }, place: MentionPlace, bound: () => Binding | null, signal: AbortSignal, display: boolean): Promise<SandboxSession> {
   const sandbox = deps.sandbox;
   if (!sandbox) return Promise.reject(new Error(t('main.mentions.noRepo')));
+  const thread = place.thread;
   const config = deps.config();
   const host = def.shell === 'host';
   const say = (code: string, params: Record<string, string | number>): void => {
@@ -341,26 +401,124 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
   // The proxy of a sandbox says what it decided, as a stage's does: a conversation's agent with hosts of its own shows the person which names it asked for.
   const onProxy = (p: { host: string; port: number; allowed: boolean; why?: string }): void =>
     say('runner.proxy', { agent: def.id, host: p.host || '—', port: p.port, result: p.allowed ? t('main.runner.proxy.allowed') : t(`main.runner.proxy.refused.${p.why}`) });
-  const onExec = (r: { n: number; command: string; exitCode: number | null; timedOut: boolean; ms: number; output: string; refused?: string }): void =>
+  const onExec = (r: { n: number; command: string; exitCode: number | null; timedOut: boolean; ms: number; output: string; refused?: string }, mode?: 'run' | 'refused'): void => {
     say(host ? 'runner.exec.host' : 'runner.exec', { agent: def.id, n: r.n, command: redact(r.command.replace(/\s+/g, ' ')).slice(0, 300), result: r.refused ? t('main.runner.exec.refused.denied') : r.timedOut ? t('main.runner.exec.timeout') : r.exitCode === null ? t('main.runner.exec.notRun') : t('main.runner.exec.exit', { code: r.exitCode }), ms: Math.round(r.ms / 100) / 10, tail: r.output.slice(0, 600) || '—' });
+    // A command of a conversation is audited as a stage's is: what ran, where, and how it ended; the log's own scrubbing applies on top.
+    if (mode === 'run') {
+      recordWrite({
+        kind: 'exec',
+        issue: place.run?.issue.iid ?? 0,
+        target: redact(r.command.replace(/\s+/g, ' ')).slice(0, 300),
+        via: host ? 'host' : 'sandbox',
+        fields: { agent: def.id, thread, n: String(r.n), ms: String(r.ms), timedOut: String(r.timedOut) },
+        ok: r.exitCode === 0,
+        code: r.exitCode,
+        result: r.output.slice(-300),
+        origin: { actionId: '', kind: 'conversation-exec', key: `${thread}:${def.id}`, summary: null },
+        by: def.id,
+      });
+    }
+  };
   // A host command runs on the person's computer: like a run's thread, each one waits for their yes, here through the command notice every screen shows. The
   // agent's clock stops while the person decides, and the thread keeps the ask and the answer next to the command.
   const approve = async (command: string): Promise<{ ok: boolean; note?: string }> => {
-    if (!deps.askCommand || signal.aborted) return { ok: false };
+    const now = bound();
+    if (!deps.askCommand || !now || now.signal.aborted) return { ok: false };
     say('runner.command.ask', { agent: def.id, command: redact(command.replace(/\s+/g, ' ')).slice(0, 300) });
-    const resume = pause();
+    const resume = now.pause();
     try {
-      const answer = await deps.askCommand(def, command, signal);
+      const answer = await deps.askCommand(def, command, now.signal);
       say(answer.ok ? 'runner.command.once' : 'runner.command.deny', { agent: def.id, note: answer.note?.trim() || '—' });
       return answer;
     } finally {
       resume();
     }
   };
-  // A test workspace never reaches real sites: the agent's own hosts are withheld, and the thread says so.
+  // A test workspace never reaches real sites: the agent's own hosts are withheld, and the thread says so (an agent with a screen has it said by its screen).
   const grants = grantsFor(def);
-  if (def.shell !== 'host' && grants.withheld.includes('hosts')) say('runner.screen.testWorkspace', { agent: def.id, what: withheldText('hosts') });
-  if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, approve, signal });
-  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, agent: { allowedHosts: grants.allowedHosts }, ...(source.clone ? { clone: source.clone } : {}) });
+  if (def.shell !== 'host' && grants.withheld.includes('hosts') && !def.screen) say('runner.screen.testWorkspace', { agent: def.id, what: withheldText('hosts') });
+  if (def.shell === 'host') return sandbox.openHost({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, approve, signal, ...(display ? { display } : {}) });
+  return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, agent: { allowedHosts: grants.allowedHosts }, ...(display ? { display } : {}), ...(source.clone ? { clone: source.clone } : {}) });
 }
 
+/** What the sessions are asked to open the screen of an agent in this place for this answer. */
+function screenRequest(deps: MentionDeps, place: MentionPlace, def: AgentDef, message: ForumMessage, stage: string | null, watch: { pause: () => () => void }, display: { socket: string; kind: 'sandbox' | 'host' } | null, onClose?: () => Promise<void>): CallScreenRequest {
+  return {
+    key: callKey(place.thread, def.id),
+    agent: def,
+    thread: place.thread,
+    place: 'conversation',
+    ...(stage ? { stage } : {}),
+    ...(place.run ? { issue: place.run.issue.iid } : {}),
+    message: message.seq,
+    display,
+    seesImages: modelSeesImages(def),
+    pause: watch.pause,
+    hasDisplay: display !== null,
+    ...(onClose ? { onClose } : {}),
+  };
+}
+
+interface OpenedShell {
+  session: SandboxSession | null;
+  source: ShellSource | null;
+  screen: CallScreen | null;
+  /** The session is the screen's, kept for the next answer. */
+  kept: KeptShell | null;
+}
+
+/**
+ * The shell session of an answer. An agent whose screen the app can open keeps one session, with its throwaway copy and a display, for as long as the screen lives: the
+ * first answer makes it and the next ones find it as it was. Anyone else gets a session for this answer only, which the caller closes. The screen is asked for after the session,
+ * since the app's browser draws on the session's display; when it cannot be had, the session is this answer's.
+ */
+async function openShell(deps: MentionDeps, place: MentionPlace, def: AgentDef, message: ForumMessage, stage: string | null, mine: Binding, signal: AbortSignal, watch: { beat: () => void; pause: () => () => void }, config: WorkspaceConfig): Promise<OpenedShell> {
+  const store = deps.kept ?? keptSessions;
+  const ports = deps.screens?.() ?? null;
+  const key = callKey(place.thread, def.id);
+  const keeps = ports !== null && def.screen === true && grantsFor(def).browser;
+  const request = (display: { socket: string; kind: 'sandbox' | 'host' } | null) => screenRequest(deps, place, def, message, stage, watch, display, () => store.release(key).then(() => undefined));
+  let screen: CallScreen | null = null;
+
+  if (keeps) {
+    const existing = store.get(key);
+    if (existing) {
+      screen = await openCallScreen(ports, request(existing.display));
+      if (screen.lease) {
+        existing.cell.bound = mine;
+        return { session: existing.session, source: existing.source, screen, kept: existing };
+      }
+    }
+  }
+
+  // A session for this answer, or the first of a screen's.
+  const makesKept = keeps && screen === null;
+  const say = (reason: string): void => {
+    deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mention.noShell', params: { agent: def.id, reason }, stage });
+  };
+  const source = await shellSourceOf(place, def, makesKept ? SCREEN_TAG : String(message.seq), signal, config.runner.sandbox.limits.copyMb * 1024 * 1024);
+  if (!source) {
+    say(t('main.mentions.noRepo'));
+    return { session: null, source: null, screen, kept: null };
+  }
+  const cell: BindingCell = { bound: mine };
+  const life = new AbortController();
+  const clock = { beat: () => cell.bound?.beat(), pause: () => cell.bound?.pause() ?? (() => undefined) };
+  const session = await (deps.openSession ? deps.openSession(place, def, source.cwd, stage, makesKept ? life.signal : signal, clock, { display: makesKept }) : openMentionSession(deps, def, source, place, () => cell.bound, makesKept ? life.signal : signal, makesKept)).catch((e: unknown) => {
+    say(redact(e instanceof Error ? e.message : String(e)).slice(0, 300));
+    return null;
+  });
+  if (!session || !makesKept) return { session, source, screen, kept: null };
+
+  const lent = session.screen && session.gui?.display === 'on' ? { socket: session.screen.socket, kind: session.screen.kind } : null;
+  screen = await openCallScreen(ports, request(lent));
+  if (!screen.lease) return { session, source, screen, kept: null };
+  const shell: KeptShell = { session, source, display: lent, cell, life };
+  await store.keep(key, shell);
+  // The screen may have ended between its opening and now: nothing would release the session, so it goes with it.
+  if (!ports?.sessions.has(key)) {
+    await store.release(key);
+    return { session, source, screen, kept: null };
+  }
+  return { session, source, screen, kept: shell };
+}

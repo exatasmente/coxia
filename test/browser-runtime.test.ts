@@ -90,6 +90,8 @@ describe('the browser\'s sandbox', () => {
     expect(a).toContain('--unshare-net');
     expect(pairs(a, '--bind')).toEqual([['/data/sandbox/abc123/x11', '/tmp/.X11-unix']]);
     expect(a).toContain('--clearenv');
+    // The display is started detached and the app does not wait for it at quit: it ends with the app because of this.
+    expect(a).toContain('--die-with-parent');
   });
 });
 

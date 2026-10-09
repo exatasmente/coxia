@@ -377,6 +377,7 @@
   "ui.forum.file.kind.json": "JSON",
   "ui.forum.file.kind.pdf": "PDF",
   "ui.forum.file.kind.text": "text",
+  "ui.forum.file.kind.video": "video",
   "ui.forum.file.list": "Files of the message",
   "ui.forum.file.open": "Open",
   "ui.forum.file.openImage": "Open {name} full size",

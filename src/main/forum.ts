@@ -61,6 +61,8 @@ export function attachmentPost(forum: ForumStore, agentIds: readonly string[], t
   const total = refs.reduce((n, r) => n + r.bytes, 0);
   if (total > limits.messageBytes) throw new Error(t('main.attachment.messageLimit', { max: Math.round(limits.messageBytes / 1024 / 1024) }));
   if (refs.length > limits.perMessage) throw new Error(t('main.attachment.tooMany', { max: limits.perMessage }));
+  // A recording is the app's own: the id of one that exists cannot be posted again as a person's attachment.
+  if (refs.some((r) => r.kind === 'video')) throw new Error(t('main.attachment.gone'));
   // Every ref must hold a file of this conversation, and be the size it says: a ref that points nowhere is refused, nothing is written.
   for (const r of refs) if (!storeApi.holds(thread, r.id, r.bytes)) throw new Error(t('main.attachment.gone'));
   const draft = { kind: 'post' as const, author: { type: 'person' as const }, text: body, mentions: parseMentions(body, agentIds), attachments: refs, anchor: threadAnchor(thread) };

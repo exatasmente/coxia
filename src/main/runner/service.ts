@@ -111,9 +111,12 @@ import { prompt } from '../cyclePrompts';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
 import type { ScreenHub } from '../screen/hub';
+import type { ScreenAsks } from '../browser/asks';
+import type { RecordingOutcome } from '../screen/recorder';
+import type { ScreenSessions } from '../browser/sessions';
 import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../shared/evidence';
 import { dropEvidence, readEvidence } from '../evidence/store';
-import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
+import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, keepScreenRecording, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
 import { type ActivityFront, createSharedMemory, sortedFronts } from './activities';
 import { inboxOf } from './inbox';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree, workBase } from './git';
@@ -181,7 +184,7 @@ function takeCarried(runId: string, stage: string): AttachmentRef[] | undefined 
 /** The files a person attached, as the runner takes them from a caller: only what holds its own shape, so a hand-made call cannot smuggle anything in. */
 function cleanAttachments(list: readonly AttachmentRef[] | undefined): AttachmentRef[] {
   return (list ?? [])
-    .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && (ATTACHMENT_KINDS as readonly string[]).includes(a.kind) && typeof a.name === 'string')
+    .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && (ATTACHMENT_KINDS as readonly string[]).includes(a.kind) && a.kind !== 'video' && typeof a.name === 'string')
     .map((a) => ({ id: a.id, name: a.name.slice(0, 200), kind: a.kind, bytes: Number(a.bytes) || 0 }))
     .slice(0, 50);
 }
@@ -218,6 +221,9 @@ export interface RunnerDeps {
   sandbox?: SandboxService;
   /** The live screens of the stages that have a virtual display; without it no stage opens one and no run carries `screen`. */
   screens?: ScreenHub;
+  /** The screens of the agents that have one (the app's browser) and the questions they ask the person; without them no stage gets a browser. */
+  sessions?: ScreenSessions;
+  asks?: ScreenAsks;
   /** Makes one small call to a provider to find out whether its key has budget again. Without it the runs that hit the refusal keep waiting. */
   probeBudget?: BudgetProbeFn;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
@@ -252,6 +258,11 @@ export interface Runner {
   evidenceBytes(runId: string, id: string): { bytes: Uint8Array; record: EvidenceRecord } | null;
   /** The person removes one piece of evidence (never an agent): the file goes and the run's record with it. */
   removeEvidence(runId: string, id: string): boolean;
+  /**
+   * Keeps the recording of the screen of an agent called in the run's thread as a piece of the run's evidence, as a stage's recording is. `not` when the run is gone or the
+   * recording could not be kept (the thread then says why).
+   */
+  keepCallRecording(runId: string, agent: string, outcome: RecordingOutcome | null): 'kept' | 'not';
   start(ref: string, repoId?: string): Promise<Run>;
   /**
    * Starts the run of a release: its subject is a version, not an issue. The worktree is the run's own (the cycle documents live there); the release steps run in the
@@ -383,7 +394,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref) };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref) };
 
   /** The record of the activities as a call reads it: the front named whole, the others in short. Never a model call, never the file. */
   function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = []): string {
@@ -1118,6 +1129,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       const bytes = readEvidence(deps.env().dataDir, run.id, record);
       return bytes ? { bytes, record } : null;
     },
+    keepCallRecording: (runId, agent, outcome) => {
+      const run = deps.runs.get(runId);
+      return run ? keepScreenRecording(exec, run, { id: run.stage ?? '' }, { id: agent }, outcome) : 'not';
+    },
     removeEvidence: (runId, id) => {
       const run = deps.runs.get(runId);
       const record = run?.evidence?.[id];
@@ -1434,13 +1449,14 @@ export function createRunner(deps: RunnerDeps): Runner {
       engine: deps.engine,
       sandbox: exec.sandbox,
       env: deps.env,
-      openSession: async (p, def, cwd, stage, signal, watch) => {
+      screens: () => (deps.sessions && deps.asks ? { sessions: deps.sessions, asks: deps.asks } : null),
+      openSession: async (p, def, cwd, stage, signal, watch, wants) => {
         const r = p.run;
         if (!r || !stage) return null;
         const flowStage = flowFor(r).find((s) => s.id === stage);
         if (!flowStage || !existsSync(r.worktree)) return null;
         const clock: StageClock = { pause: watch.pause, beat: watch.beat, allowed: new Set() };
-        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock);
+        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock, false, wants?.display === true);
       },
       // The line each agent got when the message was accepted goes on in the answer, and the next call of the run may begin when this one ends.
       callOf: (id) => calls.get(callKey(runId, message.seq, id)) ?? null,

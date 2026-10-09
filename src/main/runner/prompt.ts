@@ -10,6 +10,7 @@ import { prompt as cp, text as cycleWord } from '../cyclePrompts';
 import type { CommandResult } from './commands';
 import { type FolderFile, ISSUE_FILE, MEMORY_FILE } from './cycleFolder';
 import { MEMORY_MAX } from './memory';
+import { type ScreenPrompt, screenRules, shellRules } from './screenPrompt';
 
 // The text a stage's agent is given. The ids are `runner.*` prompts of the catalogs (the base family): the app's own wording, in the workspace's
 // language. Everything that came from outside (the issue, comments, the thread, files, the diff) goes between <data> tags and the system text says
@@ -43,6 +44,8 @@ export interface StageInput {
   commandResults?: CommandResult[];
   /** The stage's agent runs commands in a sandbox: what it is told about it (and that a reader works in a copy). */
   sandbox?: { network: 'off' | 'registry' | 'open'; reader: boolean; host?: boolean; gui?: SandboxGui; look?: boolean };
+  /** What the agent is told of its screen, its own hosts and the app's browser; absent for an agent with neither the switch nor a host list. */
+  screen?: ScreenPrompt;
   /** The commands are numbered in the prompt (a stage with a sandbox: the agent cites them as the evidence of a scenario). */
   numberedCommands?: boolean;
   /** The agent has the evidence tools: what it is told about keeping a file and citing its id. */
@@ -122,10 +125,11 @@ export const DIFF_LIMIT = DIFF_MAX;
  * How to test an interface in this stage: the general way (the sandbox's, or the computer's for an agent that runs commands there), then one line for each piece the
  * person switched on, saying whether the stage has it. Absent when the person switched neither on, so such a stage's prompt is what it was.
  */
-function guiRules(gui: SandboxGui, look: boolean, host: boolean): string {
+function guiRules(gui: SandboxGui, look: boolean, host: boolean, screen?: ScreenPrompt): string {
   const out = gui.out ?? '';
+  // An agent that has the app's browser is told that its own Playwright is for the app under test: the text that says "no network" or "never an external address" reads it.
   return [
-    host ? cp('runner.rules.gui.host', { out }) : cp('runner.rules.gui'),
+    host ? (screen?.screen ? cp('runner.rules.gui.host.screen', { out }) : cp('runner.rules.gui.host', { out })) : screen?.screen ? cp('runner.rules.gui.screen') : cp('runner.rules.gui'),
     gui.browsers ? cp('runner.rules.gui.browsers', { path: gui.browsers }) : gui.browsersGone ? cp('runner.rules.gui.noBrowsers') : '',
     gui.display === 'on' ? cp('runner.rules.gui.display') : gui.display === 'missing' || gui.display === 'failed' ? cp('runner.rules.gui.noDisplay') : '',
     look ? (host ? cp('runner.rules.gui.look.host', { out }) : cp('runner.rules.gui.look')) : cp('runner.rules.gui.noLook'),
@@ -144,9 +148,10 @@ export function systemText(i: StageInput): string {
     cp('runner.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title, stage: cycleWord(i.stage.label) }),
     i.squad ? cp('runner.squad.system', { squad: cycleWord(i.squad.name), mission: i.squad.mission.trim() ? cycleWord(i.squad.mission) : '—' }) : '',
     rules,
-    i.sandbox ? (i.sandbox.host ? cp('runner.rules.shell.host') : i.sandbox.network === 'open' ? cp('runner.rules.shell.open') : i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
+    i.sandbox ? shellRules(i.sandbox, i.screen) : '',
     i.sandbox?.reader ? (i.sandbox.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
-    i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true, i.sandbox.host === true) : '',
+    i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true, i.sandbox.host === true, i.screen) : '',
+    screenRules(i.screen),
     cp('runner.rules.data'),
     cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),
