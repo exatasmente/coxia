@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createRecorder } from '../src/main/screen/recorder';
-import { RECORDING_KEY_MS, RECORDING_MARKS_MAX, RECORDING_MAX_BYTES, RECORDING_MAX_MS } from '../src/shared/screen';
+import { RECORDING_CUTS_MAX, RECORDING_KEY_MS, RECORDING_MARKS_MAX, RECORDING_MAX_BYTES, RECORDING_MAX_MS, mediaAtReal, realAtMedia } from '../src/shared/screen';
 import { all, child, floatOf, readEbml, uintOf, type EbmlNode } from './helpers/ebml';
 import { frameOf, fakeSink } from './helpers/recorderSink';
 
@@ -75,17 +75,24 @@ describe('what is fed', () => {
 });
 
 describe('the end of the recording', () => {
-  it('is a WebM whose duration is the stage\'s time, also after a still stretch past the last frame', async () => {
+  it('is a WebM whose duration is the video\'s, a second after the last frame when the stage went on for long without a change', async () => {
     const { rec } = setup();
     await rec.add(frameOf(1), 'a', T0);
     await rec.add(frameOf(2), 'b', T0 + 3000);
     const out = await rec.finish(T0 + 600_000);
     expect(out.ok).toBe(true);
     if (!out.ok) return;
-    expect(out.meta).toEqual({ durationMs: 600_000, width: 8, height: 4, marks: [] });
-    expect(durationOf(out.bytes)).toBe(600_000);
+    expect(out.meta).toEqual({ durationMs: 4000, width: 8, height: 4, marks: [], realMs: 600_000, cuts: [{ atMs: 4000, skippedMs: 596_000 }] });
+    expect(durationOf(out.bytes)).toBe(4000);
     const clusters = all(readEbml(out.bytes)[1], '1f43b675');
     expect(clusters.map((c) => uintOf(child(c, 'e7') as EbmlNode))).toEqual([0]);
+  });
+
+  it('keeps a short still stretch past the last frame as it was, and says nothing was cut', async () => {
+    const { rec } = setup();
+    await rec.add(frameOf(1), 'a', T0);
+    const out = await rec.finish(T0 + 3000);
+    expect(out.ok && out.meta).toEqual({ durationMs: 3000, width: 8, height: 4, marks: [] });
   });
 
   it('is finished once: a second call gives the same answer and the encoder is closed once', async () => {
@@ -102,11 +109,11 @@ describe('the end of the recording', () => {
     let release: () => void = () => undefined;
     sink.gate = new Promise((r) => (release = r));
     const first = rec.add(frameOf(1), 'a', T0);
-    const ended = rec.finish(T0 + 5000);
+    const ended = rec.finish(T0 + 2500);
     release();
     expect(await first).toBe('fed');
     const out = await ended;
-    expect(out.ok && out.meta.durationMs).toBe(5000);
+    expect(out.ok && out.meta.durationMs).toBe(2500);
   });
 
   it('has no file when no frame was ever offered, and says so instead of making an empty video', async () => {
@@ -148,10 +155,15 @@ describe('the end of the recording', () => {
   });
 });
 
+/** A frame of a new picture every second from the start, `seconds` of them: a screen that is changing the whole time. */
+async function busy(rec: ReturnType<typeof setup>['rec'], seconds: number): Promise<void> {
+  for (let i = 0; i <= seconds; i++) await rec.add(frameOf(i % 200), `b${i}`, T0 + i * 1000);
+}
+
 describe('the intervals the person used the screen', () => {
   it('are marked in ms from the start of the recording, in order, at least a second wide', async () => {
     const { rec } = setup();
-    await rec.add(frameOf(1), 'a', T0);
+    await busy(rec, 60);
     rec.mark(T0 + 20_000, T0 + 25_000);
     rec.mark(T0 + 2_000, T0 + 2_000);
     const out = await rec.finish(T0 + 60_000);
@@ -163,14 +175,39 @@ describe('the intervals the person used the screen', () => {
 
   it('are kept inside the video: one that began before the first frame starts at 0, and one after the end is dropped', async () => {
     const { rec } = setup();
-    await rec.add(frameOf(1), 'a', T0);
+    await busy(rec, 10);
     rec.mark(T0 - 5000, T0 + 4000);
     rec.mark(T0 + 90_000, T0 + 95_000);
     rec.mark(T0 + 9_500, T0 + 30_000);
-    const out = await rec.finish(T0 + 10_000);
+    // Wholly before the first frame there is no video to point to.
+    rec.mark(T0 - 9000, T0 - 8000);
+    const out = await rec.finish(T0 + 10_500);
     expect(out.ok && out.meta.marks).toEqual([
       { fromMs: 0, toMs: 4000 },
-      { fromMs: 9500, toMs: 10_000 },
+      { fromMs: 9500, toMs: 10_500 },
+    ]);
+  });
+
+  it('are converted to the video\'s clock when idle stretches were cut, and a mark that fell into one stays at its cut', async () => {
+    const { rec } = setup();
+    await rec.add(frameOf(1), 'a', T0);
+    await rec.add(frameOf(2), 'b', T0 + 10_000);
+    await rec.add(frameOf(3), 'c', T0 + 11_000);
+    await rec.add(frameOf(4), 'd', T0 + 30_000);
+    // The stage\'s 10.5 s is 1.5 s into the video; its 20 to 25 s are all in the second stretch that was cut; 40 s is after the end.
+    rec.mark(T0 + 10_500, T0 + 10_900);
+    rec.mark(T0 + 20_000, T0 + 25_000);
+    rec.mark(T0 + 40_000, T0 + 41_000);
+    const out = await rec.finish(T0 + 31_000);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.meta.cuts).toEqual([
+      { atMs: 1000, skippedMs: 9000 },
+      { atMs: 3000, skippedMs: 18_000 },
+    ]);
+    expect(out.meta.marks).toEqual([
+      { fromMs: 1500, toMs: 2500 },
+      { fromMs: 3000, toMs: 4000 },
     ]);
   });
 
@@ -200,17 +237,27 @@ describe('the limits', () => {
     expect(out.ok && out.bytes.length).toBeLessThanOrEqual(3000);
   });
 
-  it('stops at the time limit, also on a screen that never changes, and ends at the limit', async () => {
+  it('stops at the time limit of the video\'s length, and ends at the limit', async () => {
+    const { sink, rec } = setup(100, { ms: 5000 });
+    for (let i = 0; i <= 5; i++) expect(await rec.add(frameOf(i), `h${i}`, T0 + i * 1000)).toBe('fed');
+    expect(rec.state).toBe('on');
+    expect(await rec.add(frameOf(6), 'h6', T0 + 6000)).toBe('stopped');
+    expect(rec.stoppedBy).toBe('time');
+    expect(sink.fed).toHaveLength(6);
+    const out = await rec.finish(T0 + 600_000);
+    expect(out.ok && out.meta).toMatchObject({ truncated: 'time', durationMs: 5000 });
+  });
+
+  it('does not stop at the time limit for a screen that stays the same, or changes after a long still stretch: the video does not grow', async () => {
     const { sink, rec } = setup();
     await rec.add(frameOf(1), 'a', T0);
     await rec.add(frameOf(2), 'b', T0 + 5000);
-    expect(await rec.add(frameOf(2), 'b', T0 + RECORDING_MAX_MS)).toBe('same');
+    expect(await rec.add(frameOf(2), 'b', T0 + RECORDING_MAX_MS + 1000)).toBe('same');
     expect(rec.state).toBe('on');
-    expect(await rec.add(frameOf(2), 'b', T0 + RECORDING_MAX_MS + 1000)).toBe('stopped');
-    expect(rec.stoppedBy).toBe('time');
-    expect(sink.fed).toHaveLength(2);
-    const out = await rec.finish(T0 + RECORDING_MAX_MS + 600_000);
-    expect(out.ok && out.meta).toMatchObject({ truncated: 'time', durationMs: RECORDING_MAX_MS });
+    // A change after a gap is one second of video, however long the gap.
+    expect(await rec.add(frameOf(3), 'c', T0 + 2 * RECORDING_MAX_MS)).toBe('fed');
+    expect(rec.state).toBe('on');
+    expect(sink.fed.map((f) => f.ts)).toEqual([0, 1000, 2000]);
   });
 
   it('never makes a file over the ceiling: what the reserve did not cover is cut from the end', async () => {
@@ -228,5 +275,81 @@ describe('the limits', () => {
   it('keeps the ceiling of its own, over the 8 MiB of the other pieces of evidence', () => {
     expect(RECORDING_MAX_BYTES).toBe(24 * 1024 * 1024);
     expect(RECORDING_MAX_MS).toBe(60 * 60 * 1000);
+  });
+});
+
+// #176: a gap between two fed frames longer than 3 s plays as 1 s, and the cuts say what was left out.
+describe('idle stretches', () => {
+  it('shorten a gap over 3 s to a second of video and write it down, and keep a gap of 3 s or less as it was', async () => {
+    const { sink, rec } = setup();
+    await rec.add(frameOf(1), 'a', T0);
+    await rec.add(frameOf(2), 'b', T0 + 3000);
+    await rec.add(frameOf(3), 'c', T0 + 6001);
+    expect(sink.fed.map((f) => f.ts)).toEqual([0, 3000, 4000]);
+    const out = await rec.finish(T0 + 7001);
+    expect(out.ok && out.meta).toEqual({ durationMs: 5000, width: 8, height: 4, marks: [], realMs: 7001, cuts: [{ atMs: 4000, skippedMs: 2001 }] });
+    expect(out.ok && durationOf(out.bytes)).toBe(5000);
+  });
+
+  it('are measured from the last frame that was fed: pictures that did not change or were not taken move nothing', async () => {
+    const { sink, rec } = setup();
+    await rec.add(frameOf(1), 'a', T0);
+    for (let i = 1; i < 20; i++) expect(await rec.add(frameOf(1), 'a', T0 + i * 1000)).toBe('same');
+    sink.behind = 1;
+    expect(await rec.add(frameOf(2), 'b', T0 + 20_000)).toBe('dropped');
+    expect(await rec.add(frameOf(2), 'b', T0 + 21_000)).toBe('fed');
+    expect(sink.fed.map((f) => f.ts)).toEqual([0, 1000]);
+    const out = await rec.finish(T0 + 21_500);
+    expect(out.ok && out.meta.cuts).toEqual([{ atMs: 1000, skippedMs: 20_000 }]);
+  });
+
+  it('are at most as many as the record holds; past that a gap stays as it was and the two clocks still agree', async () => {
+    const { sink, rec } = setup();
+    for (let i = 0; i < RECORDING_CUTS_MAX + 2; i++) await rec.add(frameOf(i % 200), `g${i}`, T0 + i * 10_000);
+    const lastReal = (RECORDING_CUTS_MAX + 1) * 10_000;
+    // 500 gaps of 10 s are 1 s each; the 501st is kept whole.
+    expect(sink.fed[RECORDING_CUTS_MAX].ts).toBe(RECORDING_CUTS_MAX * 1000);
+    expect(sink.fed[RECORDING_CUTS_MAX + 1].ts).toBe(RECORDING_CUTS_MAX * 1000 + 10_000);
+    const out = await rec.finish(T0 + lastReal + 20_000);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.meta.cuts).toHaveLength(RECORDING_CUTS_MAX);
+    // The tail is not cut either: the video ends where the stage did.
+    expect(out.meta.durationMs).toBe(sink.fed[RECORDING_CUTS_MAX + 1].ts + 20_000);
+    expect(out.meta.realMs).toBe(lastReal + 20_000);
+    expect(realAtMedia(out.meta.cuts, sink.fed[RECORDING_CUTS_MAX + 1].ts)).toBe(lastReal);
+  });
+
+  it('are not left past the end of a video whose end the size ceiling took', async () => {
+    const { rec } = setup(200, { bytes: 1500, reserve: 0 });
+    for (let i = 0; i < 10; i++) await rec.add(frameOf(i), `h${i}`, T0 + i * 10_000);
+    const out = await rec.finish(T0 + 200_000);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.meta.truncated).toBe('size');
+    const cuts = out.meta.cuts ?? [];
+    expect(cuts.length).toBeGreaterThan(0);
+    for (const c of cuts) expect(c.atMs).toBeLessThanOrEqual(out.meta.durationMs);
+    expect(out.meta.realMs).toBe(out.meta.durationMs + cuts.reduce((n, c) => n + c.skippedMs, 0));
+  });
+
+  it('map between the stage\'s time and the video\'s both ways', () => {
+    const cuts = [
+      { atMs: 1000, skippedMs: 9000 },
+      { atMs: 3000, skippedMs: 18_000 },
+    ];
+    expect(realAtMedia(cuts, 500)).toBe(500);
+    expect(realAtMedia(cuts, 1000)).toBe(10_000);
+    expect(realAtMedia(cuts, 2500)).toBe(11_500);
+    expect(realAtMedia(cuts, 4000)).toBe(31_000);
+    expect(mediaAtReal(cuts, 500)).toBe(500);
+    expect(mediaAtReal(cuts, 5000)).toBe(1000);
+    expect(mediaAtReal(cuts, 10_500)).toBe(1500);
+    expect(mediaAtReal(cuts, 20_000)).toBe(3000);
+    expect(mediaAtReal(cuts, 31_000)).toBe(4000);
+    // Outside the cuts the two are inverses.
+    for (const media of [0, 400, 1000, 1700, 2999, 3000, 3600, 9000]) expect(mediaAtReal(cuts, realAtMedia(cuts, media))).toBe(media);
+    expect(realAtMedia(undefined, 700)).toBe(700);
+    expect(mediaAtReal([], 700)).toBe(700);
   });
 });

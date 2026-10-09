@@ -10,14 +10,56 @@ export const SCREEN_ENCODER_EVENT = 'screen-encoder:event';
 
 /** What the app's own recording of a screen says about itself: kept on the evidence record, so the player knows the length and where the person took over. */
 export interface RecordingMeta {
-  /** Recorded time: the stage's time on the screen, including the still stretches in which no frame was fed. */
+  /**
+   * The length of the video: its media time, which is what the player's timeline and the file's own duration say. Idle stretches are shortened (see `cuts`), so it is
+   * shorter than the time the stage spent on the screen; a recording made before the cuts existed has none and the two are the same.
+   */
   durationMs: number;
   width: number;
   height: number;
   /** The recording stopped at a limit and holds only what came before it. */
   truncated?: 'size' | 'time';
-  /** The intervals in which the person used the screen, in ms from the start of the recording. */
+  /** The intervals in which the person used the screen, in ms of the video from its start (media time), so they sit right on the player's strip. */
   marks: { fromMs: number; toMs: number }[];
+  /** The stage's own time between the first frame and the end of the video: `durationMs` plus every `skippedMs`. Only with `cuts`; without them it is `durationMs`. */
+  realMs?: number;
+  /** Where an idle stretch was shortened, by media time, in order; at most `RECORDING_CUTS_MAX`. Absent when nothing was cut. */
+  cuts?: RecordingCut[];
+}
+
+/** One idle stretch that plays as a short pause: the media time at which the pause ends, and the real time that was left out of the video. */
+export interface RecordingCut {
+  atMs: number;
+  skippedMs: number;
+}
+
+/** A gap between two fed frames longer than this is shortened to a pause of `RECORDING_IDLE_PAUSE_MS`; a gap of this length or less is kept as it was. */
+export const RECORDING_IDLE_GAP_MS = 3000;
+export const RECORDING_IDLE_PAUSE_MS = 1000;
+/** The most cuts a recording keeps: past it a gap stays as it is, so the mapping between the two clocks is never wrong. */
+export const RECORDING_CUTS_MAX = 500;
+
+/** The stage's time at a time of the video: the video's time plus what was cut out before it. `cuts` are in order. */
+export function realAtMedia(cuts: readonly RecordingCut[] | undefined, mediaMs: number): number {
+  let real = mediaMs;
+  for (const c of cuts ?? []) {
+    if (c.atMs > mediaMs) break;
+    real += c.skippedMs;
+  }
+  return real;
+}
+
+/** The time of the video at a time of the stage; a time inside a stretch that was cut out is the end of its pause. `cuts` are in order. */
+export function mediaAtReal(cuts: readonly RecordingCut[] | undefined, realMs: number): number {
+  let skipped = 0;
+  for (const c of cuts ?? []) {
+    // The stage's time at which the pause ends, before the jump over the stretch that was left out.
+    const from = c.atMs + skipped;
+    if (realMs < from) break;
+    if (realMs <= from + c.skippedMs) return c.atMs;
+    skipped += c.skippedMs;
+  }
+  return realMs - skipped;
 }
 
 /** The most marks a recording keeps: a stage the person controls many times over keeps the first ones. */

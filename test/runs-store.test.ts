@@ -156,6 +156,27 @@ describe('the record of a screen recording', () => {
     expect(withPiece((p) => (p.kind = 'mp4')).ok).toBe(false);
   });
 
+  it('holds the real time and the cuts of a recording whose idle stretches were shortened, bounded like the marks (#176)', () => {
+    const base = JSON.parse(JSON.stringify(fresh()));
+    const withPiece = (edit: (p: Record<string, any>) => void) => {
+      const p = JSON.parse(JSON.stringify(piece));
+      edit(p);
+      return parseRun({ ...base, evidence: { 'ev-1': p } });
+    };
+    const cuts = (n: number) => Array.from({ length: n }, (_, i) => ({ atMs: 1000 * (i + 1), skippedMs: 5000 }));
+    expect(withPiece((p) => Object.assign(p.recording, { realMs: 34_000, cuts: cuts(5) })).ok).toBe(true);
+    expect(withPiece((p) => (p.recording.cuts = cuts(500))).ok).toBe(true);
+    expect(withPiece((p) => (p.recording.cuts = cuts(501))).ok).toBe(false);
+    expect(withPiece((p) => (p.recording.cuts = [{ atMs: 1000 }])).ok).toBe(false);
+    expect(withPiece((p) => (p.recording.cuts = [{ atMs: 1000, skippedMs: 0 }])).ok).toBe(false);
+    expect(withPiece((p) => (p.recording.realMs = -1)).ok).toBe(false);
+    const stored = createRunStore(dir);
+    const run = stored.create(fresh());
+    const kept = { ...piece, recording: { ...piece.recording!, realMs: 34_000, cuts: cuts(5) } };
+    stored.update(run.id, (r) => recordEvidence(r, kept, at(2)));
+    expect(stored.get(run.id)?.evidence?.['ev-1']).toEqual(kept);
+  });
+
   it('is not required: a piece with neither field reads as it always did', () => {
     const plain = { id: 'ev-1', stage: 'qa', by: 'qa', title: 'A shot', description: '', name: 'a.png', kind: 'png', bytes: 10, at: at(2), from: null, message: null };
     const parsed = parseRun({ ...JSON.parse(JSON.stringify(fresh())), evidence: { 'ev-1': plain } });

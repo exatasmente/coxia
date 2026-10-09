@@ -603,7 +603,8 @@ describe('the recording of a live screen', () => {
     const out = await r.hub.finish('r-1');
     expect(out?.ok).toBe(true);
     if (!out?.ok) return;
-    expect(out.meta).toMatchObject({ width: W, height: H, durationMs: 9500, marks: [{ fromMs: 1000, toMs: 2000 }] });
+    // The last change was at 2000; the 7500 ms after it are one second of video (#176), and the mark is before the cut.
+    expect(out.meta).toMatchObject({ width: W, height: H, durationMs: 3000, realMs: 9500, cuts: [{ atMs: 3000, skippedMs: 6500 }], marks: [{ fromMs: 1000, toMs: 2000 }] });
     expect(readEbml(out.bytes)[0].id).toBe('1a45dfa3');
     expect(r.sink.closed).toBe(1);
     expect(r.notes.map((n) => n.code)).toEqual(['runner.screen.controlOn', 'runner.screen.used', 'runner.screen.controlOff']);
@@ -669,7 +670,7 @@ describe('the recording of a live screen', () => {
     expect(r.sink.aborted).toBe(0);
     r.clock.t += 4000;
     const out = await r.hub.finish('r-1');
-    expect(out?.ok && out.meta.durationMs).toBe(5000);
+    expect(out?.ok && out.meta).toMatchObject({ durationMs: 2000, realMs: 5000 });
     expect(await r.hub.finish('r-1')).toBeNull();
   });
 
