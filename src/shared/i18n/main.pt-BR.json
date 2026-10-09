@@ -1052,6 +1052,7 @@
   "main.forum.code.runner.procedures.used": "Usado: {title} ({id}, revisão {revision}). Nenhuma falha foi relatada.",
   "main.forum.code.runner.procedures.usedFailed": "Usado: {title} ({id}, revisão {revision}). Um passo falhou e foi relatado.",
   "main.forum.code.runner.procedures.usedReplaced": "Usado: {title} ({id}). Foi substituído por uma versão corrigida.",
+  "main.forum.code.runner.procedures.unavailable": "As ferramentas de procedimentos não estão disponíveis para {agent}: o Claude Agent SDK não pôde ser carregado aqui. A lista de procedimentos continua no prompt, mas {agent} não pode ler, salvar nem relatar um procedimento nesta chamada.",
   "main.plugins.unknown": "Não existe plugin com a identidade \"{id}\" nesta pasta de plugins.",
   "main.plugins.document.plugin": "Plugin que produziu",
   "main.plugins.document.event": "Acontecimento",

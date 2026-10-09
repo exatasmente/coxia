@@ -25,6 +25,8 @@ export interface ProcedureTools {
   get(input: unknown): Promise<ProcedureAnswer>;
   save(input: unknown): Promise<ProcedureAnswer>;
   stale(input: unknown): Promise<ProcedureAnswer>;
+  /** The engine could not offer the tools (the Claude Agent SDK or zod did not load): the place the call works in is told, once. The list stays in the prompt. */
+  unavailable?(): void;
 }
 
 export interface ProcedureToolSpec {

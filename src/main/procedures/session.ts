@@ -71,6 +71,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
   const created = new Set<string>();
   let used = emptyUsage();
   let finished = false;
+  let unavailable = false;
 
   const say = (code: string, params: Record<string, string | number>): void => {
     try {
@@ -211,7 +212,17 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
 
   return {
     list,
-    tools: { list: guarded('list', listTool), get: guarded('get', getTool), save: guarded('save', saveTool), stale: guarded('stale', staleTool) },
+    tools: {
+      list: guarded('list', listTool),
+      get: guarded('get', getTool),
+      save: guarded('save', saveTool),
+      stale: guarded('stale', staleTool),
+      unavailable() {
+        if (unavailable) return;
+        unavailable = true;
+        say('runner.procedures.unavailable', {});
+      },
+    },
     wrapUsage(next) {
       return (u) => {
         try {

@@ -1052,6 +1052,7 @@
   "main.forum.code.runner.procedures.used": "Used: {title} ({id}, revision {revision}). No failure was reported.",
   "main.forum.code.runner.procedures.usedFailed": "Used: {title} ({id}, revision {revision}). A step failed and was reported.",
   "main.forum.code.runner.procedures.usedReplaced": "Used: {title} ({id}). It was replaced with a corrected version.",
+  "main.forum.code.runner.procedures.unavailable": "The procedure tools are not available for {agent}: the Claude Agent SDK could not be loaded here. The list of procedures is still in its prompt, but {agent} cannot read, save or report one in this call.",
   "main.plugins.unknown": "There is no plugin with the identity \"{id}\" in this plugins folder.",
   "main.plugins.document.plugin": "Plugin that produced it",
   "main.plugins.document.event": "Event",

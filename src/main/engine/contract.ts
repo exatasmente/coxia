@@ -177,6 +177,8 @@ export interface EngineRequest {
    * tools (runner/tools.ts). The engine offers each one when its name is in `allowedTools`; absent: the call gets none of them.
    */
   runnerTools?: import('./open/tools/types').ToolImpl[];
+  /** The workspace's procedure tools (list, get, save, stale) of a call that has a session of work: the engines offer them under their own server, `coxia_procedures`. */
+  procedures?: import('../procedures/tools').ProcedureTools;
 }
 
 export type EngineRunner = <T>(request: EngineRequest) => Promise<Run<T>>;
