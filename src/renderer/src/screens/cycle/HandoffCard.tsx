@@ -25,7 +25,7 @@ export function HandoffBody({ ask, team }: { ask: PendingAsk; team: readonly Age
   );
 }
 
-const REFUSAL_KEY: Record<'gone' | 'taken' | 'none', string> = {
+export const REFUSAL_KEY: Record<'gone' | 'taken' | 'none', string> = {
   gone: 'ui.screen.handoff.gone',
   taken: 'ui.screen.handoff.alreadyTaken',
   none: 'ui.screen.ended',

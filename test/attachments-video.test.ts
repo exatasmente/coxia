@@ -18,7 +18,7 @@ const { ATAS } = await import('../src/main/env');
 const { detectAttachmentKind, attachmentExt, ATTACHMENT_LIMITS } = await import('../src/shared/attachments');
 const { RECORDING_MAX_BYTES } = await import('../src/shared/screen');
 const { threadText } = await import('../src/main/runner/prompt');
-const { setLanguage } = await import('../src/shared/i18n');
+const { CATALOGS, setLanguage } = await import('../src/shared/i18n');
 const { webmHead } = await import('./helpers/webm');
 import type { RecordingOutcome } from '../src/main/screen/recorder';
 
@@ -90,6 +90,13 @@ describe('keeping the recording of a conversation\'s screen', () => {
     expect(m).toMatchObject({ kind: 'system', author: { type: 'app' }, code: 'runner.screen.recording', params: { agent: 'web', from: '15:28', to: '15:30' }, anchor: `thread:${THREAD}` });
     expect(m.attachments).toEqual([expect.objectContaining({ kind: 'video', bytes: 512 })]);
     expect(existsSync(join(ATAS, 'anexos', THREAD, `${m.attachments[0].id}.webm`))).toBe(true);
+  });
+
+  it('says the video keeps a hand-off when it does, with a code of its own, and the usual one otherwise', () => {
+    expect(keepConversationRecording(deps(), { thread: THREAD, agent: 'web' }, { ok: true, bytes: webmHead(500), meta: { ...META, handoff: true, marks: [{ fromMs: 1000, toMs: 5000, kind: 'handoff' }] } })).toBe('kept');
+    expect(post().at(-1)).toMatchObject({ code: 'runner.screen.recordingHandoff', params: { agent: 'web' } });
+    expect(CATALOGS.en['main.forum.code.runner.screen.recordingHandoff']).toMatch(/hand-off/);
+    expect(CATALOGS['pt-BR']['main.forum.code.runner.screen.recordingHandoff']).toBeTruthy();
   });
 
   it('is in no prompt: a system post is left out of the thread an agent reads, and its file is not a file of any message', () => {

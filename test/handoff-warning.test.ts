@@ -1,6 +1,7 @@
 // The warning the person reads before they type (#178), composed from what the agent has: the app's browser, a shell in the sandbox or on the computer, or no shell.
 import { describe, expect, it } from 'vitest';
 import { type HandoffPaths, composeWarning } from '../src/shared/handoff';
+import { CATALOGS } from '../src/shared/i18n';
 
 const ids = (paths: HandoffPaths): string[] => composeWarning(paths).map((k) => k.replace('ui.screen.handoff.warning.', ''));
 
@@ -40,3 +41,31 @@ describe('the warning', () => {
     ]);
   });
 });
+
+describe('the words of the warning and the viewer', () => {
+  const all: HandoffPaths[] = [];
+  for (const browser of [true, false]) for (const shell of ['sandbox', 'host', 'none'] as const) all.push({ browser, shell });
+
+  it('has every line the composer can give, in both catalogs, written out', () => {
+    for (const paths of all) {
+      for (const key of composeWarning(paths)) {
+        for (const language of ['en', 'pt-BR'] as const) expect(CATALOGS[language][key], `${key} in ${language}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('has the rest of the hand-off words in both catalogs, and none of the keys under it is in only one', () => {
+    const under = (language: 'en' | 'pt-BR'): string[] => Object.keys(CATALOGS[language]).filter((k) => k.startsWith('ui.screen.handoff.')).sort();
+    expect(under('en')).toEqual(under('pt-BR'));
+    for (const key of ['ui.screen.handoff.understand', 'ui.screen.handoff.banner', 'ui.screen.handoff.giveBack', 'ui.screen.handoff.take', 'ui.screen.handoff.decline', 'ui.cycle.live.held']) {
+      for (const language of ['en', 'pt-BR'] as const) expect(CATALOGS[language][key], `${key} in ${language}`).toBeTruthy();
+    }
+  });
+
+  it('says the interval is recorded and kept with the evidence, and that the weaker guarantee is weaker', () => {
+    expect(CATALOGS.en['ui.screen.handoff.warning.recorded']).toMatch(/recorded/i);
+    expect(CATALOGS.en['ui.screen.handoff.warning.recorded']).toMatch(/evidence/i);
+    expect(CATALOGS.en['ui.screen.handoff.warning.programs']).toMatch(/weaker/i);
+  });
+});
+

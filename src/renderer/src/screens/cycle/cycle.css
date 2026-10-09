@@ -299,6 +299,10 @@
 .cy-live-stage.controlled { border-color: var(--red-solid); cursor: crosshair; touch-action: none; }
 .cy-live-image { display: block; width: 100%; height: auto; max-height: 62vh; max-height: 62dvh; object-fit: contain; user-select: none; -webkit-user-drag: none; }
 .cy-live-wait { margin: 0; }
+.cy-handoff-warning { display: grid; gap: 8px; margin: 0; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); }
+.cy-handoff-warning-title { margin: 0; font-size: 14px; }
+.cy-handoff-warning-what { margin: 0; overflow-wrap: anywhere; }
+.cy-handoff-warning-list { margin: 0; padding-left: 18px; display: grid; gap: 6px; line-height: 1.4; }
 .cy-live-held { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--amber-soft); color: var(--amber-ink); }
 .cy-live-ended { margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--chip-quiet-bg); color: var(--muted); }
 
@@ -311,6 +315,7 @@
 .cy-rec-marks-box { display: flex; flex-direction: column; gap: 4px; }
 .cy-rec-marks { position: relative; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: var(--chip-quiet-bg); }
 .cy-rec-mark { position: absolute; top: 2px; bottom: 2px; min-width: 8px; padding: 0; border: 0; border-radius: 4px; background: var(--blue-solid); cursor: pointer; }
+.cy-rec-mark.handoff { background: var(--red-solid); }
 .cy-rec-mark:hover { background: var(--ink); }
 .cy-rec-mark:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 .cy-rec-cuts { position: relative; height: 18px; border-radius: 6px; border: 1px solid var(--line); background: var(--chip-quiet-bg); }

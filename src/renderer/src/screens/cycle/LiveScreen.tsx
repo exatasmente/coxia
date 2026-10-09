@@ -2,11 +2,15 @@ import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef,
 import { type PendingAsk, parseKey } from '../../../../shared/browser';
 import { type LiveScreen as LiveScreenState, SCREEN_WIDTH_DESKTOP, SCREEN_WIDTH_PHONE, type ScreenInput, clampFrameWidth, isExitChord } from '../../../../shared/screen';
 import type { AgentDef } from '../../../../shared/config/types';
+import { errorText } from '../../api';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { useIsPhone } from '../../useIsPhone';
 import { Sheet } from '../Sheet';
 import { AskCards } from './AskCard';
+import { REFUSAL_KEY } from './HandoffCard';
+import { HandoffWarning } from './HandoffWarning';
+import { isHandoff } from './askView';
 import { NO_FRAMES, type Frames, framesFrom } from './frames';
 import { screenApi } from './screenApi';
 import { type Size, FLUSH_MS, batchesOf, buttonOf, createHeld, isSentKey, pointerToScreen, pollDelay, takeControl, wheelNotches } from './screenKeys';
@@ -19,7 +23,7 @@ import { type Size, FLUSH_MS, batchesOf, buttonOf, createHeld, isSentKey, pointe
 const NOTE_MS = 3000;
 
 /** Asks for the latest frame of the screen over and over: not while the document is hidden, never overlapping, slower after a slow answer, and no more once the stage ended. */
-function useFrames(screenKey: string, width: number): Frames {
+function useFrames(screenKey: string, width: number, person: boolean): Frames {
   const [frames, setFrames] = useState<Frames>(NO_FRAMES);
   useEffect(() => {
     let live = true;
@@ -33,7 +37,8 @@ function useFrames(screenKey: string, width: number): Frames {
       let next: Partial<Frames> = {};
       let again = true;
       try {
-        const answer = await screenApi.frame(screenKey, since, width);
+        // The person who holds the screen for a hand-off reads it on the desktop's own channel: the one read let past the interval that every other reader is refused.
+        const answer = await (person ? screenApi.handoffFrame : screenApi.frame)(screenKey, since, width);
         if (!live) return;
         const got = framesFrom(answer);
         next = got.next;
@@ -61,7 +66,7 @@ function useFrames(screenKey: string, width: number): Frames {
       if (timer) clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [screenKey, width]);
+  }, [screenKey, width, person]);
   return frames;
 }
 
@@ -74,7 +79,12 @@ export function LiveScreen({ screenKey, state, canClose = false, asks = [], team
   const web = isWeb();
   const phone = useIsPhone();
   const width = clampFrameWidth(web || phone ? SCREEN_WIDTH_PHONE : SCREEN_WIDTH_DESKTOP);
-  const frames = useFrames(screenKey, width);
+  // A request to hand this screen over (#178): the warning stands in place of the control until the person takes it; once taken the viewer is the person's, and the pictures come
+  // from the channel only the desktop has.
+  const handoff = asks.find((a) => isHandoff(a) && a.key === screenKey) ?? null;
+  const [tookIt, setTookIt] = useState(false);
+  const taken = !web && !!handoff && (handoff.handoff?.taken === true || tookIt);
+  const frames = useFrames(screenKey, width, taken);
   const live = state;
   const ended = frames.ended || !live;
 
@@ -145,6 +155,72 @@ export function LiveScreen({ screenKey, state, canClose = false, asks = [], team
     setControl(true);
     stageBox.current?.focus();
   };
+
+  const [busyHandoff, setBusyHandoff] = useState(false);
+  const [handoffError, setHandoffError] = useState<string | null>(null);
+  const refusedText = (reason: 'gone' | 'taken' | 'none'): string => t(REFUSAL_KEY[reason]);
+
+  /** The person's click on the warning: only now is the screen taken, control is turned on by the main process, and the viewer follows. */
+  const takeScreen = async (): Promise<void> => {
+    if (!handoff) return;
+    setBusyHandoff(true);
+    setHandoffError(null);
+    try {
+      const r = await screenApi.handoffTake(screenKey, handoff.id);
+      if (!r.ok) setHandoffError(refusedText(r.reason));
+      else {
+        setTookIt(true);
+        if (open.current) {
+          controlRef.current = true;
+          setControl(true);
+          stageBox.current?.focus();
+        } else {
+          // The viewer was closed while the call was in flight: control goes back off, and the interval stays, as it does when it is closed later.
+          void screenApi.control(screenKey, false).then(() => undefined, () => undefined);
+        }
+      }
+    } catch (e) {
+      setHandoffError(errorText(e));
+    }
+    if (open.current) setBusyHandoff(false);
+  };
+
+  const declineHandoff = (): void => {
+    if (!handoff) return;
+    setBusyHandoff(true);
+    setHandoffError(null);
+    void screenApi.handoffDecline(handoff.id).then(
+      (r) => {
+        if (!r.ok) setHandoffError(refusedText(r.reason));
+      },
+      (e: unknown) => setHandoffError(errorText(e)),
+    ).finally(() => open.current && setBusyHandoff(false));
+  };
+
+  /** Give back: what the person still holds is put up and sent first, then the screen goes back to the agent. */
+  const giveBack = (): void => {
+    setBusyHandoff(true);
+    setHandoffError(null);
+    releaseHeld();
+    controlRef.current = false;
+    setControl(false);
+    chain.current = chain.current.then(async () => {
+      try {
+        const r = await screenApi.handoffGive(screenKey);
+        if (!r.ok) setHandoffError(refusedText(r.reason));
+      } catch (e) {
+        setHandoffError(errorText(e));
+      }
+      if (open.current) setBusyHandoff(false);
+    });
+  };
+
+  // The request is gone (given back, expired, ended with the stage): what this viewer held for it is let go, and control is off.
+  useEffect(() => {
+    if (!tookIt || handoff) return;
+    setTookIt(false);
+    stopControl();
+  }, [tookIt, handoff, stopControl]);
 
   // Closing the viewer, or the stage ending, gives control back; an ask for it that is still in flight is given back when its answer comes.
   const open = useRef(true);
@@ -251,7 +327,9 @@ export function LiveScreen({ screenKey, state, canClose = false, asks = [], team
           {recording && <span className={`badge ${recording === 'on' ? 'cy-tone-blocked' : 'cy-tone-quiet'}`}>{recording === 'on' ? t('ui.cycle.live.recordingOn') : recording === 'waiting' ? t('ui.cycle.live.recordingWaiting') : t('ui.cycle.live.recordingStopped')}</span>}
           {frames.remote && !control && <span className="badge cy-tone-person">{t('ui.cycle.live.remote')}</span>}
           {canClose && !ended && <button type="button" className="btn cy-mini" disabled={closing} onClick={closeScreen}>{t('ui.screen.closeScreen')}</button>}
-          {!web && !ended && (
+          {taken && !ended && <button type="button" className="btn btn-dark" disabled={busyHandoff} onClick={giveBack}>{t('ui.screen.handoff.giveBack')}</button>}
+          {/* While the warning is up the control is not offered; once the screen is taken it is on, and offered again only if the person turned it off (the hand-off goes on). */}
+          {!web && !ended && !(handoff && !taken) && !(taken && control) && (
             <div className="cy-switch-row cy-live-switch">
               <button type="button" role="switch" aria-checked={control} aria-label={t('ui.cycle.live.control')} className={`cy-switch ${control ? 'on' : ''}`} onClick={() => (control ? stopControl() : void startControl())}>
                 <span className="cy-switch-knob" aria-hidden="true" />
@@ -263,8 +341,14 @@ export function LiveScreen({ screenKey, state, canClose = false, asks = [], team
             </div>
           )}
         </div>
-        <AskCards asks={asks} team={team} />
-        {control && (
+        {/* A request to hand the screen over is answered by the warning below, not by a card. */}
+        <AskCards asks={asks.filter((a) => !isHandoff(a))} team={team} />
+        {!web && !ended && handoff && !taken && <HandoffWarning ask={handoff} busy={busyHandoff} onTake={() => void takeScreen()} onDecline={declineHandoff} />}
+        {taken && !ended && (
+          <p className="cy-live-banner" role="status">{control ? t('ui.screen.handoff.banner') : t('ui.screen.handoff.controlOff')}</p>
+        )}
+        {handoffError && <p className="small error" role="alert">{handoffError}</p>}
+        {control && !taken && (
           <p className="cy-live-banner" role="status">
             {recording === 'stopped' ? t('ui.cycle.live.controlStopped') : recording === 'waiting' ? t('ui.cycle.live.controlWaiting') : t('ui.cycle.live.controlOn')}
           </p>

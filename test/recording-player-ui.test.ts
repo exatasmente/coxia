@@ -92,6 +92,36 @@ describe('the player', () => {
   });
 });
 
+// #178: a hand-off's interval is one mark of its own kind, and a recording that holds one says so.
+describe('the player of a recording that holds a hand-off', () => {
+  const held = (over: Partial<NonNullable<EvidenceView['recording']>> = {}) =>
+    piece({ recording: { durationMs: 60_000, width: 1280, height: 800, handoff: true, marks: [{ fromMs: 15_000, toMs: 30_000, kind: 'handoff' }, { fromMs: 45_000, toMs: 46_000 }], ...over } });
+
+  it('labels the hand-off mark apart from the person\'s own use, and styles it apart', () => {
+    const html = player(held());
+    expect(html).toContain(`aria-label="${t('ui.cycle.rec.markHandoff', { from: '0:15', to: '0:30' })}"`);
+    expect(html).toContain(`aria-label="${t('ui.cycle.rec.mark', { from: '0:45', to: '0:46' })}"`);
+    expect(html.match(/class="cy-rec-mark handoff"/g)).toHaveLength(1);
+    expect(html.match(/class="cy-rec-mark"/g)).toHaveLength(1);
+  });
+
+  it('says on the recording that it keeps what the person typed or revealed', () => {
+    expect(player(held())).toContain(t('ui.cycle.rec.handoff'));
+    expect(player(piece())).not.toContain(t('ui.cycle.rec.handoff'));
+  });
+
+  it('marks the piece of evidence in the list before it is opened, and not a recording without a hand-off', () => {
+    expect(block([held()])).toContain(t('ui.cycle.rec.handoffBadge'));
+    expect(block([piece()])).not.toContain(t('ui.cycle.rec.handoffBadge'));
+  });
+
+  it('has the words in both languages', () => {
+    for (const language of ['en', 'pt-BR'] as const) {
+      for (const key of ['ui.cycle.rec.handoff', 'ui.cycle.rec.handoffBadge', 'ui.cycle.rec.markHandoff']) expect(CATALOGS[language][key]).toBeTruthy();
+    }
+  });
+});
+
 // #176: a video whose idle stretches were shortened says how long it is, how long the stage was, and where the cuts are.
 describe('the player of a video with cuts', () => {
   const cut = (atMs: number, skippedMs: number) => ({ atMs, skippedMs });

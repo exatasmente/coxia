@@ -1675,6 +1675,7 @@
   "main.forum.code.runner.evidence.kept": "Evidence {id} kept: \"{title}\" ({kind}).",
   "main.forum.code.runner.evidence.recorded": "The app recorded the screen of {agent}'s stage. The video shows what was on that screen, including what a person did on it; the marks on its timeline say when.",
   "main.forum.code.runner.screen.recording": "The app recorded the screen of {agent} from {from} to {to}. The video shows what was on that screen, including what a person did on it. It is kept with the conversation until the workspace's retention removes it.",
+  "main.forum.code.runner.screen.recordingHandoff": "The app recorded the screen of {agent} from {from} to {to}. The video keeps a hand-off: the person had the screen for a while, and what they typed or revealed there can be seen in it. It is kept with the conversation until the workspace's retention removes it.",
   "main.forum.code.runner.screen.notKept": "The screen recording of {agent} was not kept: {reason}",
   "main.forum.code.runner.screen.cappedSize": "The screen recording of {agent} stopped: it reached its size limit of {max} MiB. What came before is kept, and the work goes on.",
   "main.forum.code.runner.screen.cappedTime": "The screen recording of {agent} stopped: it reached its time limit of {max} minutes. What came before is kept, and the work goes on.",

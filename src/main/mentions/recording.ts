@@ -30,7 +30,7 @@ function notKept(d: ConversationRecordingDeps, thread: string, agent: string, wh
 
 /**
  * Keeps the recording of a conversation's screen. `kept` when the video is in the conversation and the post says so; `not` otherwise (no recording, a recording that failed, a
- * file the store refused). The post carries the agent and the stretch of the day the video covers.
+ * file the store refused). The post carries the agent and the stretch of the day the video covers, and says so when the video keeps a hand-off (#178).
  */
 export function keepConversationRecording(d: ConversationRecordingDeps, screen: { thread: string; agent: string }, outcome: RecordingOutcome | null): 'kept' | 'not' {
   // A screen that was never recorded (no viewer) has nothing to keep and nothing to say.
@@ -58,7 +58,7 @@ export function keepConversationRecording(d: ConversationRecordingDeps, screen: 
   const to = d.now?.() ?? new Date();
   const from = new Date(to.getTime() - (outcome.meta.realMs ?? outcome.meta.durationMs));
   try {
-    d.forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'runner.screen.recording', params: { agent, from: hhmm(from), to: hhmm(to) }, attachments: [ref], anchor: d.anchor(thread) });
+    d.forum.append(thread, { kind: 'system', author: { type: 'app' }, code: outcome.meta.handoff ? 'runner.screen.recordingHandoff' : 'runner.screen.recording', params: { agent, from: hhmm(from), to: hhmm(to) }, attachments: [ref], anchor: d.anchor(thread) });
     return 'kept';
   } catch (e) {
     console.error('[mentions] could not post a recording', e instanceof Error ? e.message : e);
