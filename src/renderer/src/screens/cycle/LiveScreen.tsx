@@ -215,6 +215,12 @@ export function LiveScreen({ screenKey, state, canClose = false, asks = [], team
     });
   };
 
+  // A request arrives while the person already has plain Take control on: the warning stands in place of the control, so nothing more is sent until the click.
+  const warned = !web && !!handoff && !taken;
+  useEffect(() => {
+    if (warned) stopControl();
+  }, [warned, stopControl]);
+
   // The request is gone (given back, expired, ended with the stage): what this viewer held for it is let go, and control is off.
   useEffect(() => {
     if (!tookIt || handoff) return;
