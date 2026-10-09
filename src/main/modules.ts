@@ -19,6 +19,7 @@ import { register as glossary } from './glossary';
 import { minutes } from './minutes';
 import { mentionsModule } from './mentions/module';
 import { pluginsModule } from './plugins/module';
+import { proceduresModule } from './procedures/module';
 import { register as radar } from './radar';
 import { register as watchers } from './watchers';
 import { retention } from './retention';
@@ -57,6 +58,7 @@ const ALL: Module[] = [
   mentionsModule,
   minutes,
   pluginsModule,
+  proceduresModule,
   radar,
   retention,
   runsModule,

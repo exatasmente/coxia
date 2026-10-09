@@ -71,8 +71,14 @@ const AGENT_ASSIST = /^agentAssist:/;
 // external-effects switch (nothing leaves the machine, but what a person types into the agent's screen is not for a phone to send).
 const SCREEN_INPUT = /^screen:/;
 
+// The learned procedures (#179): a paired browser may read the list, one record and the figures, and change nothing. A record is read by every agent of the workspace, so a
+// phone that could write one could plant text in every prompt; editing, reviewing, restoring and deleting are the desktop window's. A pattern over the whole prefix with
+// the three reads as named exceptions, so a channel added under `procedures:` later is closed from the day it exists, with or without the external-effects switch (nothing
+// leaves the machine). The agents' tools are in process and have no channel at all. test/procedures-policy.test.ts pins it.
+const PROCEDURES_WRITE = /^procedures:(?!(list|get|stats)$)/;
+
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel)) return 'deny';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

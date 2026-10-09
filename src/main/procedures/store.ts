@@ -107,6 +107,8 @@ export interface ProcedureStore {
   remove(id: string): { ok: true } | { ok: false; code: 'not-found' | 'newer' | 'io' };
   /** An agent said step `step` no longer works: the record is failing. The revision does not move (it is the text's). */
   stale(id: string, step: number, at: string): MarkResult;
+  /** The person looked at this record: it is marked reviewed. The text did not change, so the revision does not move. */
+  review(id: string): MarkResult;
   /** A call ended: its reads become uses, and what it created gets its baseline. Returns what to mark on the call's record. */
   finishUse(end: CallEnd): ProcedureUse[];
 }
@@ -294,6 +296,8 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
     return change(id, (r) => ({ ...r, state: 'failing', lastFailed: { at, step }, stats: { ...r.stats, failures: r.stats.failures + 1, failuresSinceSave: r.stats.failuresSinceSave + 1 } }));
   }
 
+  const review = (id: string): MarkResult => change(id, (r) => (r.reviewed ? r : { ...r, reviewed: true }));
+
   function finishUse(end: CallEnd): ProcedureUse[] {
     const out: ProcedureUse[] = [];
     for (const id of new Set(end.read)) {
@@ -312,5 +316,5 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
     return out;
   }
 
-  return { list, get: read, save, remove, stale, finishUse };
+  return { list, get: read, save, remove, stale, review, finishUse };
 }
