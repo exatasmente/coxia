@@ -1,5 +1,5 @@
 import { offersViewImage } from '../sandbox/tool';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
@@ -17,9 +17,9 @@ import { type AgentCall, extraReadRoots } from '../agents';
 import { MaxTurnsError, ProviderBudgetError, type ReadConfinement } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
-import { MEMORY_FILE, ensureMemory, readFolder, readMemory, tidyArtifact, writeArtifact, writeMemory } from './cycleFolder';
+import { ISSUE_FILE, MEMORY_FILE, ensureMemory, readFolder, readMemory, tidyArtifact, writeArtifact, writeMemory } from './cycleFolder';
 import { MEMORY_MAX, applyFacts, factsOfThread, memoryOver, normalizeMemory } from './memory';
-import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commitFallback, commitIdentity, commitMessage, commitSummary, declaredCommands, headSha } from './git';
+import { type Identity, branchDiff, branchStat, changedOutside, commitAll, commitFallback, commitIdentity, commitMessage, commitSummary, declaredCommands, headSha, strayDocuments } from './git';
 import { type CommandResult, type CommandRunner, notRunReport, runCommand, runCommands } from './commands';
 import { ensureDependencies } from './dependencies';
 import { recordWrite } from '../auditoria';
@@ -577,6 +577,12 @@ function repairRound(d: ExecutorDeps, call: AgentCall, commands: string[], watch
  * The documents a concluding answer leaves missing: the stage produces them, the answer does not carry them and the cycle folder does not have them. An answer
  * that pauses (a question) or says nothing is not asked for documents: it is not concluding.
  */
+/**
+ * The names of the documents the cycle folder holds for the app: the issue record and what each stage of the flow produces. The memory is left out: its name is
+ * common enough that a repository's own work may add one.
+ */
+const cycleDocuments = (flow: FlowStage[]): string[] => [...new Set([ISSUE_FILE, ...flow.flatMap((s) => s.artifacts)])];
+
 function missingDocuments(output: StageOutput, stage: FlowStage, folder: string): string[] {
   if (output.question || output.reporterQuestion || !output.summary) return [];
   return stage.artifacts.filter((n) => !output.artifacts.some((a) => a.name === n) && !existsSync(join(folder, n)));
@@ -771,6 +777,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // A documentation run may change the universal instructions file and nothing else.
   const writeRoot = writes && run.docs ? wt : undefined;
   const writeAllow = writeRoot ? [AGENTS_FILE] : undefined;
+  const documents = writes && !run.docs ? { folder: run.cycleFolder, names: cycleDocuments(flow) } : undefined;
 
   const call: AgentCall = {
     agent,
@@ -780,7 +787,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     cwd: wt,
     // The repository's root AGENTS.md, delivered as plain Markdown.
     docs: await runDocsAsk({ wt, base: run.base, cycleFolder: run.cycleFolder, stage: { id: stage.id, kind: stage.kind }, texts: input.files.map((f) => f.text) }),
-    confine: writes ? { root: wt, ...(writeRoot ? { writeRoot, writeAllow } : {}), hooks: confinedHooks({ root: wt, writeRoot, writeAllow, commands, onDenied: denied }) } : undefined,
+    confine: writes ? { root: wt, ...(writeRoot ? { writeRoot, writeAllow } : {}), hooks: confinedHooks({ root: wt, writeRoot, writeAllow, commands, documents, onDenied: denied }) } : undefined,
     readRoot: writes ? undefined : readConfinement(wt, agent.model.role ?? 'deep', denied),
     exec: session ?? undefined,
     evidence,
@@ -1034,6 +1041,13 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
 
   const identity = await commitIdentity(config.runner.identity, wt, d.identity);
   if (!identity) throw new StageError('no-identity');
+  // A document of the cycle the agent wrote itself outside the cycle folder (through the shell, which the write hook does not see) is not part of the work: the
+  // app wrote the one that counts from the answer. It is removed before the commit would carry it into the pull request, and said in the conversation.
+  if (documents) {
+    const stray = await strayDocuments(wt, documents.folder, documents.names);
+    for (const path of stray) rmSync(join(wt, path), { force: true });
+    if (stray.length) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.artifactStray', params: { agent: agent.id, files: stray.join(', '), folder: documents.folder }, stage: stage.id });
+  }
   // A pass of an agent that writes that changed no code is a pass of documents: what the agent said it fixed is not in the diff, and the commit does not claim it.
   const noCodeChange = writes && !(await changedOutside(wt, run.cycleFolder));
   if (noCodeChange) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.noCodeChange', params: { agent: agent.id }, stage: stage.id });

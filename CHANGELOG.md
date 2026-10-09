@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A pull request of a run no longer carries a stray copy of a stage's document.** An agent that may change the worktree could write its stage's document (`1_SPEC.md`, for instance) as a file of its own at the repository's root, beside the one the app writes into `docs/cycles/<n>-<slug>/` from its answer, and the stage's commit took both. The agent's write of a document of the cycle anywhere but the cycle folder is now refused with the reason, and a copy that gets there another way (through a command) is removed before the commit and said in the conversation.
+
 ## [0.9.0-beta.6] - 2026-10-09
 
 ### Fixed
