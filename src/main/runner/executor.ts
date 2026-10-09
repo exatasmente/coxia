@@ -39,6 +39,7 @@ import { type StageInbox, inboxOf, openInbox } from './inbox';
 import { type RunnerTools, runnerTools } from './tools';
 import type { ProcedureUse } from '../../shared/procedures';
 import type { ProceduresPort } from '../procedures/port';
+import { procedureScreen } from '../procedures/screen';
 import { callRefusal, countOpen, openedIn, runConversation, resetOpened } from './conversation';
 import { releaseSection, releaseStateOf } from './release';
 import { prepareDocsFolder } from './docs';
@@ -719,6 +720,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     stage: stage.kind,
     repos: [run.repo],
     agentsMd: documented ? new Set([run.repo]) : undefined,
+    // The stage's screen as the procedures read it: the steps of its browser for a draft, and the hand-off's seams for the check of what the person typed.
+    screen: screen?.toolset ? procedureScreen({ key: runKey(run.id), sessions: d.sessions, typed: screen.toolset.typed, handoff: d.handoff, browser: !!screen.toolset.browser }) : undefined,
     note: (code, params) => {
       try {
         d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code, params, stage: stage.id });

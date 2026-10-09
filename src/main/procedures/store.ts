@@ -49,6 +49,8 @@ export interface SaveRequest {
   repos: readonly string[];
   keyedBy?: 'app';
   stepsFrom?: StepsFrom;
+  /** The call that writes it had a hand-off: the record waits for the person's review. */
+  handoff?: boolean;
   home?: string;
 }
 
@@ -223,7 +225,7 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
 
     const at = iso(now());
     const person = req.writer.by === 'person';
-    const origin: ProcedureOrigin = { ...req.writer, createdBy: old ? old.origin.createdBy : req.writer.by, at };
+    const origin: ProcedureOrigin = { ...req.writer, createdBy: old ? old.origin.createdBy : req.writer.by, ...(req.handoff && !person ? { handoff: true as const } : {}), at };
     const keyedBy = req.keyedBy ?? (old && sameKey(old.key, content.key) ? old.keyedBy : undefined);
     const base = { v: PROCEDURE_VERSION, ...content };
     let record: ProcedureRecord;

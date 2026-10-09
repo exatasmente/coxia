@@ -24,6 +24,8 @@ export interface ProcedureAuditInput {
   /** A refusal: its code and the fields it named (never their values). */
   code?: string;
   fields?: readonly string[];
+  /** The record waits for the person's review (a hand-off took place in the call). */
+  held?: boolean;
 }
 
 const RESULT: Record<ProcedureOp, string> = { save: 'saved', replace: 'replaced', stale: 'marked failing', refused: 'refused', delete: 'deleted', review: 'marked reviewed', restore: 'restored the previous version' };
@@ -33,6 +35,7 @@ export function procedureAuditEntry(o: ProcedureAuditInput): Omit<AuditEntry, 'a
   if (o.record) Object.assign(fields, { id: o.record.id, revision: String(o.record.revision), kind: o.record.kind, key: o.record.key, title: o.record.title });
   if (o.step !== undefined) fields.step = String(o.step);
   if (o.code) fields.code = o.code;
+  if (o.held) fields.held = 'waits for review';
   if (o.fields?.length) fields.fields = [...new Set(o.fields)].join(', ');
   return {
     kind: 'procedure',

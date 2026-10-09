@@ -30,6 +30,7 @@ import { type CallStops, callStops } from './stop';
 import { reposOnDisk, runRepo, type MentionPlace } from './place';
 import { type DocsAsk, runDocsAsk, stageOfRun } from '../harness/deliver';
 import type { ProceduresPort } from '../procedures/port';
+import { procedureScreen } from '../procedures/screen';
 import type { ProcedureSession } from '../procedures/session';
 
 // The answer an agent named in a message gives, wherever the person wrote (a run's thread, a channel, a general conversation, the direct conversation of an agent).
@@ -243,6 +244,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
             issue: place.run?.issue.iid,
             repos: info.repos,
             requests: true,
+            screen: screen?.toolset ? procedureScreen({ key: callKey(place.thread, id), sessions: ports?.sessions, typed: screen.toolset.typed, handoff: ports?.handoff, browser: !!screen.toolset.browser }) : undefined,
             note: (code, params) => {
               try {
                 deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code, params, stage });

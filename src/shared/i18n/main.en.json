@@ -1166,6 +1166,7 @@
   "main.runner.procedures.list.agentsMd": "the repository has an AGENTS.md: read it first",
   "main.runner.procedures.list.more": "{count} more not listed; use procedures_list.",
   "main.forum.code.runner.procedures.saved": "{agent} saved the procedure \"{title}\" ({id}, revision {revision}) for the whole workspace. The person has not reviewed it yet.",
+  "main.forum.code.runner.procedures.heldForReview": "The procedure \"{title}\" ({id}) was written in a call in which you used the screen. No agent reads it until you review it in More › Procedures and mark it as reviewed.",
   "main.forum.code.runner.procedures.replaced": "{agent} replaced the procedure \"{title}\" ({id}) with revision {revision}; the one before it is kept once.",
   "main.forum.code.runner.procedures.stale": "{agent} reported that step {step} of the procedure \"{title}\" ({id}) no longer works. It is marked as failing until a new version is saved.",
   "main.forum.code.runner.procedures.staleNote": "{agent} added: {note}",

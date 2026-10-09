@@ -1,4 +1,5 @@
 {
+  "ui.procedures.badge.awaitsReview": "Waits for your review",
   "ui.procedures.badge.notReviewed": "Not reviewed",
   "ui.procedures.badge.old": "Old",
   "ui.procedures.badge.withheld": "Left out of the agents' list",
@@ -70,6 +71,7 @@
   "ui.procedures.nav": "Procedures",
   "ui.procedures.off": "Procedures are off in this workspace (Settings › Runner): agents neither read nor write them. What is kept stays here to read.",
   "ui.procedures.offDesktop": "Procedures are off in this workspace (Settings › Runner): agents neither read nor write them. What is kept stays here for you to read, edit or delete.",
+  "ui.procedures.panel.awaitsReview": "You used the agent's screen while it wrote this revision, so what you typed may have reached its text. No agent reads it until you check it and mark it as reviewed.",
   "ui.procedures.panel.created": "Created by {who}.",
   "ui.procedures.panel.invalid": "This file is not a readable procedure.",
   "ui.procedures.panel.keyedByApp": "The site was taken from the pages the agent's browser visited.",

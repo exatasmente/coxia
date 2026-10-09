@@ -1,4 +1,5 @@
 {
+  "ui.procedures.badge.awaitsReview": "Espera a sua revisão",
   "ui.procedures.badge.notReviewed": "Sem revisão",
   "ui.procedures.badge.old": "Antigo",
   "ui.procedures.badge.withheld": "Fora da lista dos agentes",
@@ -70,6 +71,7 @@
   "ui.procedures.nav": "Procedimentos",
   "ui.procedures.off": "Os procedimentos estão desligados neste espaço de trabalho (Configurações › Execuções): os agentes não leem nem escrevem. O que foi guardado continua aqui para leitura.",
   "ui.procedures.offDesktop": "Os procedimentos estão desligados neste espaço de trabalho (Configurações › Execuções): os agentes não leem nem escrevem. O que foi guardado continua aqui para você ler, editar ou excluir.",
+  "ui.procedures.panel.awaitsReview": "Você usou a tela do agente enquanto ele escrevia esta revisão, então o que você digitou pode ter chegado ao texto. Nenhum agente a lê até você conferir e marcar como revisada.",
   "ui.procedures.panel.created": "Criado por {who}.",
   "ui.procedures.panel.invalid": "Este arquivo não é um procedimento legível.",
   "ui.procedures.panel.keyedByApp": "O site foi tirado das páginas que o navegador do agente visitou.",

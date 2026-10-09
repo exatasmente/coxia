@@ -172,6 +172,32 @@ describe('the list', () => {
   });
 });
 
+describe('a record that waits for the review', () => {
+  const held = (over: Partial<ProcedureRecord> = {}): ProcedureRecord => {
+    const r = procedureRecord();
+    return { ...r, origin: { ...r.origin, handoff: true }, ...over };
+  };
+
+  it('says in both languages, in the list and in the record, that the person used the screen and no agent reads it until it is reviewed', () => {
+    for (const language of ['en', 'pt-BR'] as const) {
+      setLanguage(language);
+      const row = renderToStaticMarkup(createElement(Row, { p: summarize(held(), NOW), who: 'writer', open: false, onToggle: () => undefined }));
+      expect(row).toContain(CATALOGS[language]['ui.procedures.badge.awaitsReview']);
+      expect(esc(body(held()))).toContain(esc(CATALOGS[language]['ui.procedures.panel.awaitsReview']));
+      expect(body(held())).not.toContain(CATALOGS[language]['ui.procedures.panel.unreviewed']);
+    }
+  });
+
+  it('shows the ordinary notice once the person has reviewed it, and for a record no hand-off touched', () => {
+    setLanguage('en');
+    expect(summarize(held(), NOW).awaitsReview).toBe(true);
+    expect(summarize(held({ reviewed: true }), NOW).awaitsReview).toBe(false);
+    expect(summarize(procedureRecord(), NOW).awaitsReview).toBe(false);
+    expect(body(held({ reviewed: true }))).toContain(t('ui.procedures.panel.reviewed'));
+    expect(body(procedureRecord())).toContain(esc(t('ui.procedures.panel.unreviewed')));
+  });
+});
+
 describe('the summary', () => {
   const sum = (records: ProcedureRecord[]): string => renderToStaticMarkup(createElement(Summary, { stats: statsOf(records, true, NOW) }));
 

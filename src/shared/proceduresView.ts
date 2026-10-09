@@ -1,4 +1,4 @@
-import { PROCEDURE_KINDS, compareAll, isOld, type ProcedureKind, type ProcedureRecord, type ProcedureState, type ProcedureSurface, FAILING_OUT_OF_LIST } from './procedures';
+import { PROCEDURE_KINDS, awaitsReview, compareAll, isOld, type ProcedureKind, type ProcedureRecord, type ProcedureState, type ProcedureSurface, FAILING_OUT_OF_LIST } from './procedures';
 
 // What the Procedures view reads from the app: a line per record for the list, one record in full, and the workspace's figures. The same shapes serve the desktop window and
 // a paired browser (both read); the writes answer with `ProcedureWrite`. Pure: the main side builds them from the store, the renderer filters and sorts what it got.
@@ -27,6 +27,8 @@ export interface ProcedureSummary {
   /** Failed twice since it was last saved: the agents' prompt list leaves it out; the person still sees it. */
   withheld: boolean;
   hasPrevious: boolean;
+  /** Written while the person used the agent's screen: no agent reads it until the person reviews it. */
+  awaitsReview: boolean;
 }
 
 export interface ProcedureListView {
@@ -78,6 +80,7 @@ export function summarize(r: ProcedureRecord, now: number): ProcedureSummary {
     old: isOld(r, now),
     withheld: r.stats.failuresSinceSave >= FAILING_OUT_OF_LIST,
     hasPrevious: r.previous !== null,
+    awaitsReview: awaitsReview(r),
   };
 }
 

@@ -91,6 +91,7 @@ export function Row({ p, open, onToggle, who, children }: { p: ProcedureSummary;
           <span className="pr-badges">
             <span className={`badge cy-badge ${STATE_TONE[p.state]}`}>{t(STATE_LABEL[p.state])}</span>
             {!p.reviewed && <span className="badge badge-block">{t('ui.procedures.badge.notReviewed')}</span>}
+            {p.awaitsReview && <span className="badge badge-block">{t('ui.procedures.badge.awaitsReview')}</span>}
             {p.old && <span className="badge badge-quiet">{t('ui.procedures.badge.old')}</span>}
             {p.withheld && <span className="badge badge-quiet">{t('ui.procedures.badge.withheld')}</span>}
           </span>

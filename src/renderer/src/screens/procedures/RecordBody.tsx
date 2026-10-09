@@ -1,5 +1,5 @@
 import type { AgentDef } from '../../../../shared/config/types';
-import { COMPARE_MIN_USES, FAILING_OUT_OF_LIST, compare, isOld, type ProcedureRecord } from '../../../../shared/procedures';
+import { COMPARE_MIN_USES, FAILING_OUT_OF_LIST, awaitsReview, compare, isOld, type ProcedureRecord } from '../../../../shared/procedures';
 import { usageParams } from '../../../../shared/runs/view';
 import type { StageUsage } from '../../../../shared/runs/types';
 import { intlLocale, useT } from '../../i18n';
@@ -88,7 +88,7 @@ export function RecordBody({ record, team, now = Date.now() }: { record: Procedu
           {o.createdBy !== o.by && ` ${t('ui.procedures.panel.created', { who: who(o.createdBy) })}`}
         </p>
         {o.permission && o.shell && <p className="small muted">{t('ui.procedures.panel.power', { permission: t(PERMISSION_LABEL[o.permission]), shell: t(SHELL_LABEL[o.shell]) })}</p>}
-        <p className="small">{record.reviewed ? t('ui.procedures.panel.reviewed') : t('ui.procedures.panel.unreviewed')}</p>
+        <p className="small">{record.reviewed ? t('ui.procedures.panel.reviewed') : awaitsReview(record) ? t('ui.procedures.panel.awaitsReview') : t('ui.procedures.panel.unreviewed')}</p>
         {record.kind === 'gui' && record.keyedBy === 'app' && <p className="small muted">{t('ui.procedures.panel.keyedByApp')}</p>}
         <p className="small muted">{t(STEPS_FROM_LABEL[record.stepsFrom])}</p>
       </div>

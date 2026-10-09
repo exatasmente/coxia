@@ -1166,6 +1166,7 @@
   "main.runner.procedures.list.agentsMd": "o repositório tem um AGENTS.md: leia-o primeiro",
   "main.runner.procedures.list.more": "mais {count} não listados; use procedures_list.",
   "main.forum.code.runner.procedures.saved": "{agent} salvou o procedimento \"{title}\" ({id}, revisão {revision}) para todo o workspace. A pessoa ainda não o revisou.",
+  "main.forum.code.runner.procedures.heldForReview": "O procedimento \"{title}\" ({id}) foi escrito numa chamada em que você usou a tela. Nenhum agente o lê até você revisá-lo em Mais › Procedimentos e marcá-lo como revisado.",
   "main.forum.code.runner.procedures.replaced": "{agent} substituiu o procedimento \"{title}\" ({id}) pela revisão {revision}; a anterior fica guardada uma vez.",
   "main.forum.code.runner.procedures.stale": "{agent} avisou que o passo {step} do procedimento \"{title}\" ({id}) não funciona mais. Ele fica marcado como falhando até que uma nova versão seja salva.",
   "main.forum.code.runner.procedures.staleNote": "{agent} acrescentou: {note}",

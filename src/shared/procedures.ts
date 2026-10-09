@@ -79,6 +79,8 @@ export interface ProcedureOrigin {
   /** What the writing agent could do at that moment, so a reader knows what it is reading. */
   permission?: AgentPermission;
   shell?: AgentShell;
+  /** The person used the agent's screen in the call that wrote this revision (#178): what they typed may have found its way into the text, so no agent reads it until the person reviews it. */
+  handoff?: true;
   at: string;
 }
 
@@ -131,6 +133,12 @@ export const isProcedureId = (id: unknown): id is string => typeof id === 'strin
 export const contentOf = (r: ProcedureContent): ProcedureContent => ({ kind: r.kind, key: r.key, title: r.title, steps: r.steps, pitfalls: r.pitfalls, waits: r.waits });
 
 export const contentSize = (r: Pick<ProcedureContent, 'key' | 'title' | 'steps' | 'pitfalls' | 'waits'>): number => JSON.stringify({ key: r.key, title: r.title, steps: r.steps, pitfalls: r.pitfalls, waits: r.waits }).length;
+
+/**
+ * A record written by a call in which the person used the screen waits for their review: no prompt list, no `procedures_list` and no `procedures_get` offers it until it is
+ * marked as reviewed (or the person rewrites it). The person's view shows it, and says so.
+ */
+export const awaitsReview = (r: Pick<ProcedureRecord, 'reviewed' | 'origin'>): boolean => r.origin.handoff === true && !r.reviewed;
 
 /** A key is looked up without regard to case (a host is written either way). */
 export const sameKey = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();

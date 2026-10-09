@@ -136,10 +136,10 @@ describe('procedures_save', () => {
     expect((await session.tools.save({ ...input({ title: 'Fixed' }), id: 'p-ffffffff', revision: 1 })).text).toContain('not found');
   });
 
-  it('refuses a gui procedure written from memory, whatever it holds', async () => {
+  it('refuses a gui procedure in a call that has no browser of the app, whatever it holds: there is no draft to save from', async () => {
     const { session } = make();
     const a = await session.tools.save(input({ kind: 'gui', key: 'docs.example.com' }));
-    expect(a.text).toMatch(/^Not saved: a gui procedure is not written from memory/);
+    expect(a.text).toMatch(/^Not saved: a gui procedure is written from the app's draft of what its browser did, and this call has no browser of the app/);
     expect(files()).toEqual([]);
     expect(audits[0]).toMatchObject({ ok: false, fields: { code: 'gui-draft' } });
   });

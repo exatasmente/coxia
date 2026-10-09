@@ -1,7 +1,7 @@
 import type { Language } from '../../shared/config/types';
 import { cycleText } from '../../shared/cycles/text';
 import { budgetFor } from '../../shared/harness/select';
-import { FAILING_OUT_OF_LIST, isOld, sameKey, type ProcedureKind, type ProcedureRecord } from '../../shared/procedures';
+import { FAILING_OUT_OF_LIST, awaitsReview, isOld, sameKey, type ProcedureKind, type ProcedureRecord } from '../../shared/procedures';
 
 // What a call is told about the procedures that fit it: a short list of titles for the place it works in, built here and never by a model call. It is the only way a
 // record's text reaches a prompt without a tool call, so the text is plain: a title is cut down to letters, digits, spaces and a few marks again here, whatever the
@@ -85,6 +85,8 @@ export function selectProcedures(records: readonly ProcedureRecord[], ctx: Selec
   for (const r of records) {
     // A record that failed twice since it was last saved is not offered; the person still sees it and the agent can find it with procedures_list.
     if (r.stats.failuresSinceSave >= FAILING_OUT_OF_LIST && !opts.withFailing) continue;
+    // A record written while the person used the screen waits for their review, in the list and in `procedures_list` alike.
+    if (awaitsReview(r)) continue;
     const rank = matchRank(r, ctx, repos, tools, hosts);
     if (rank !== null) ranked.push({ r, rank });
   }

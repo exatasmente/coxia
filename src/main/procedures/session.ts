@@ -1,5 +1,5 @@
 import type { AuditEntry } from '../../shared/auditoria';
-import { LIMITS, PROCEDURE_KINDS, isProcedureId, sameKey, type ProcedureKind, type ProcedureRecord, type ProcedureUse } from '../../shared/procedures';
+import { LIMITS, PROCEDURE_KINDS, awaitsReview, isProcedureId, sameKey, type ProcedureKind, type ProcedureRecord, type ProcedureUse, type StepsFrom } from '../../shared/procedures';
 import type { StageUsage } from '../../shared/runs/types';
 import { addReport, emptyUsage, type UsageReport } from '../../shared/runs/usage';
 import { procedureAuditEntry, type ProcedureAuditInput } from './audit';
@@ -80,7 +80,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
   let finished = false;
   let unavailable = false;
   // The app's drafts of this call, by id: a `gui` procedure is saved from one of them, and they end with the call.
-  const drafts = new Map<string, { steps: DraftStep[]; replaces?: { id: string; revision: number } }>();
+  const drafts = new Map<string, { steps: DraftStep[]; waits: string[]; replaces?: { id: string; revision: number } }>();
   let draftCount = 0;
 
   const say = (code: string, params: Record<string, string | number>): void => {
@@ -98,7 +98,8 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     }
   };
 
-  const records = (): ProcedureRecord[] => deps.store.list().records;
+  // What waits for the person's review is not offered to any agent, in the prompt or in a tool.
+  const records = (): ProcedureRecord[] => deps.store.list().records.filter((r) => !awaitsReview(r));
   const list = listProcedures(records(), selectCtx());
 
   const lineOf = (r: ProcedureRecord): string => procedureLine(r, { language, now: now(), agentsMd: ctx.select.agentsMd });
@@ -138,6 +139,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     const got = deps.store.get(id);
     switch (got.status) {
       case 'ok':
+        if (awaitsReview(got.record)) return answer(`${id} was written in a call in which the person used the screen, and waits for their review. No agent can read it until they mark it as reviewed.`);
         read.add(id);
         return answer(renderRecord(got.record, lineOf(got.record)));
       case 'deleted':
@@ -151,22 +153,139 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     }
   }
 
+  // ---- what a save from a screen call is checked for ------------------------------------------------------------------------------------
+
+  /** The fields of a record's content that hold something the person typed in this call's hand-offs (names only: the value is never echoed or logged). */
+  function typedFields(content: unknown): string[] {
+    const screen = ctx.screen;
+    if (!screen || !isObject(content)) return [];
+    const out: string[] = [];
+    const check = (field: string, v: unknown): void => {
+      if (typeof v === 'string' && screen.typedIn(v)) out.push(field);
+    };
+    check('key', content.key);
+    check('title', content.title);
+    if (Array.isArray(content.steps)) {
+      content.steps.forEach((x, i) => {
+        if (isObject(x)) {
+          check(`steps[${i}].text`, x.text);
+          check(`steps[${i}].run`, x.run);
+        } else check(`steps[${i}]`, x);
+      });
+    }
+    for (const name of ['pitfalls', 'waits'] as const) {
+      const v = content[name];
+      if (Array.isArray(v)) v.forEach((x, i) => check(`${name}[${i}]`, x));
+    }
+    return out;
+  }
+
+  interface Refused {
+    ok: false;
+    code: string;
+    fields: string[];
+    text: string;
+  }
+  interface FromDraft {
+    ok: true;
+    content: Record<string, unknown>;
+    stepsFrom: StepsFrom;
+    id?: unknown;
+  }
+  const refused = (code: string, fields: string[], text: string): Refused => ({ ok: false, code, fields, text: `Not saved: ${text}` });
+
+  /**
+   * A `gui` procedure from the app's draft: the steps are the draft's, and the agent may keep some of them and reword one; it cannot add one. The key is a site the
+   * browser was on in this call. A draft that stands for a procedure the call followed replaces that procedure.
+   */
+  function fromDraft(input: Record<string, unknown>): FromDraft | Refused {
+    const screen = ctx.screen;
+    if (!screen?.browser) return refused('gui-draft', ['kind'], "a gui procedure is written from the app's draft of what its browser did, and this call has no browser of the app, so it has no draft. Save a repo, tool, cycle or request procedure instead, or none.");
+    if (typeof input.draft !== 'string') return refused('gui-draft', ['draft'], 'use the draft. Call procedures_draft when the task is done, then save with kind gui and the id of its draft.');
+    const d = drafts.get(input.draft);
+    if (!d) return refused('gui-draft', ['draft'], `there is no such draft in this call. Call procedures_draft${draftCount ? ` (the last one is d-${draftCount})` : ''} and save from the one it returns.`);
+
+    const raw = input.steps;
+    const keep: { n: number; text?: string }[] = [];
+    if (raw === undefined || raw === null) {
+      for (const x of d.steps) keep.push({ n: x.n });
+    } else if (!Array.isArray(raw)) {
+      return refused('gui-steps', ['steps'], 'steps must be a list of draft step numbers, each {n} or {n, text}; leave it out to keep every step of the draft.');
+    } else {
+      for (const [i, x] of raw.entries()) {
+        const at = `steps[${i}]`;
+        const item = typeof x === 'number' ? { n: x } : x;
+        if (!isObject(item)) return refused('gui-steps', [at], `${at} must name a draft step by its number: {n}, or {n, text} to reword it. You cannot write a step of your own.`);
+        const extra = Object.keys(item).find((k) => k !== 'n' && k !== 'text');
+        if (extra !== undefined) return refused('gui-steps', [`${at}.${extra.slice(0, 20).replace(/[^\w]/g, '_')}`], `${at} may hold only n and text: the steps are the app's recording, and you cannot add a command or a control of your own.`);
+        if (typeof item.n !== 'number' || !Number.isInteger(item.n)) return refused('gui-steps', [`${at}.n`], `${at}.n must be the number of a step of the draft.`);
+        if (!d.steps.some((y) => y.n === item.n)) return refused('gui-steps', [`${at}.n`], `the app did not record a step ${item.n}; the draft has steps 1 to ${d.steps.length}.`);
+        if (item.text !== undefined && typeof item.text !== 'string') return refused('gui-steps', [`${at}.text`], `${at}.text must be a string.`);
+        keep.push({ n: item.n, ...(item.text !== undefined ? { text: item.text } : {}) });
+      }
+      if (keep.some((k, i) => i > 0 && k.n <= keep[i - 1].n)) return refused('gui-steps', ['steps'], "steps must keep the draft's order: list the numbers in increasing order, each once.");
+    }
+    const steps = keep.map((k) => {
+      const base = (d.steps.find((y) => y.n === k.n) as DraftStep).text;
+      const text = k.text !== undefined ? k.text.trim() : base;
+      return text === base ? { text: base } : { text, edited: true as const };
+    });
+    const untouched = keep.length === d.steps.length && steps.every((x) => !('edited' in x));
+
+    // The key is where the browser was, not where the agent says it was.
+    const visited = screen.visited();
+    const asked = typeof input.key === 'string' ? input.key.trim() : '';
+    const key = visited.find((h) => sameKey(h, asked));
+    if (!asked || key === undefined) return refused('gui-key', ['key'], `key must be a site the app's browser was on in this call: ${visited.join(', ') || 'none'}.`);
+
+    let id = input.id;
+    if (d.replaces) {
+      if (id !== undefined && id !== d.replaces.id) return refused('gui-replace', ['id'], `this draft stands for ${d.replaces.id} (revision ${d.replaces.revision}), which you followed. Save it with that id and revision, or leave the id out.`);
+      id = d.replaces.id;
+    }
+    const content: Record<string, unknown> = { kind: 'gui', key, title: input.title, steps, pitfalls: input.pitfalls ?? [], waits: input.waits ?? d.waits };
+    return { ok: true, content, stepsFrom: untouched ? 'recording' : 'edited', id };
+  }
+
   function saveTool(input: unknown): ProcedureAnswer {
     if (!isObject(input)) return answer('Not saved: the input must be an object with kind, key, title and steps.');
-    // A gui procedure is the app's draft of what the screen did, never the agent's account of a page; until a draft exists in a call there is no way to save one.
+    let content: unknown;
+    let stepsFrom: StepsFrom = 'agent';
+    let keyedBy: 'app' | undefined;
+    let id: unknown = input.id;
     if (input.kind === 'gui') {
-      audit({ op: 'refused', code: 'gui-draft', fields: ['kind'] });
-      return answer('Not saved: a gui procedure is not written from memory. The app drafts it from what the screen did and it is saved from that draft, which this call does not have. Save a repo, tool, cycle or request procedure instead, or none.');
+      const g = fromDraft(input);
+      if (!g.ok) {
+        audit({ op: 'refused', code: g.code, fields: g.fields });
+        return answer(g.text);
+      }
+      content = g.content;
+      stepsFrom = g.stepsFrom;
+      keyedBy = 'app';
+      id = g.id;
+    } else {
+      if (input.draft !== undefined) return answer('Not saved: a draft is for kind gui only.');
+      content = contentFromInput(input);
     }
-    if (input.id !== undefined && typeof input.id !== 'string') return answer('Not saved: id must be the id of the procedure you replace, like p-3fa91c02.');
+    if (id !== undefined && typeof id !== 'string') return answer('Not saved: id must be the id of the procedure you replace, like p-3fa91c02.');
+    // What the person typed during a hand-off never enters a record, whatever its kind: the save is refused by field, nothing is written, and the log has the fields and no value.
+    const typed = typedFields(content);
+    if (typed.length) {
+      audit({ op: 'refused', code: 'typed', fields: typed });
+      return answer(`Not saved: ${typed.join(', ')} holds text the person typed while they had the screen in this call. Rewrite ${typed.length === 1 ? 'it' : 'them'} without it: name a control by its role and visible label, and write <value> or <your login> where a value goes.`);
+    }
     const revision = typeof input.revision === 'number' && Number.isInteger(input.revision) ? input.revision : undefined;
+    // The person used the screen in this call, or in an earlier one on the same screen: what they typed may be in the text in a form the app cannot see.
+    const handoff = ctx.screen?.handedOff() === true;
     const r = deps.store.save({
-      input: contentFromInput(input),
-      id: input.id as string | undefined,
+      input: content,
+      id: id as string | undefined,
       revision,
       writer: ctx.writer,
       repos: ctx.workspaceRepos,
-      stepsFrom: 'agent',
+      ...(keyedBy ? { keyedBy } : {}),
+      stepsFrom,
+      handoff,
       home: ctx.home,
     });
     if (!r.ok) {
@@ -176,12 +295,18 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     const rec = r.record;
     if (r.created) created.add(rec.id);
     else replaced.add(rec.id);
-    audit({ op: r.created ? 'save' : 'replace', record: rec });
+    audit({ op: r.created ? 'save' : 'replace', record: rec, ...(handoff ? { held: true } : {}) });
     say(r.created ? 'runner.procedures.saved' : 'runner.procedures.replaced', { id: rec.id, revision: rec.revision, title: rec.title });
+    if (handoff) say('runner.procedures.heldForReview', { id: rec.id, title: rec.title });
+    const base = r.created
+      ? `Saved ${rec.id} at revision ${rec.revision}: "${rec.title}". `
+      : `Replaced ${rec.id}: now revision ${rec.revision}, unverified until a later use confirms it. The version before it is kept once for the person. `;
     return answer(
-      r.created
-        ? `Saved ${rec.id} at revision ${rec.revision}: "${rec.title}". It is listed for the calls it fits, marked as not reviewed by the person. To change it later, read it and save with its id and revision.`
-        : `Replaced ${rec.id}: now revision ${rec.revision}, unverified until a later use confirms it. The version before it is kept once for the person.`,
+      handoff
+        ? `${base}The person used the screen in this call, so it waits for their review: no agent, you included, can list or read it until they mark it as reviewed.`
+        : r.created
+          ? `${base}It is listed for the calls it fits, marked as not reviewed by the person. To change it later, read it and save with its id and revision.`
+          : base.trim(),
     );
   }
 
@@ -230,7 +355,7 @@ export function createProcedureSession(deps: SessionDeps, ctx: SessionContext): 
     const same = compare !== null && compare.changed === 0 && compare.added === 0 && compare.gone === 0;
     const replaces = followed && !same ? { id: followed.id, revision: followed.revision } : undefined;
     const id = `d-${++draftCount}`;
-    drafts.set(id, { steps: body.steps, ...(replaces ? { replaces } : {}) });
+    drafts.set(id, { steps: body.steps, waits: body.waits, ...(replaces ? { replaces } : {}) });
     if (drafts.size > DRAFTS_KEPT) drafts.delete(drafts.keys().next().value as string);
 
     const data = [
