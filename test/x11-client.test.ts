@@ -248,6 +248,126 @@ describe('the frame', () => {
   });
 });
 
+describe('whether a window is mapped', () => {
+  const win = (id: number, mapState = 2, klass = 1) => ({ id, mapState, klass });
+
+  it('is false for a bare root, and true once a viewable window is on it', async () => {
+    const windows = [] as ReturnType<typeof win>[];
+    const { x, c } = await open({ windows });
+    expect(await c.inUse()).toBe(false);
+    windows.push(win(0x400001));
+    expect(await c.inUse()).toBe(true);
+    // The question is a QueryTree of the root and a GetWindowAttributes of the child, nothing else.
+    expect(x.requests.filter((r) => r.opcode === 15 || r.opcode === 3).map((r) => r.opcode)).toEqual([15, 15, 3]);
+    expect(x.requests.find((r) => r.opcode === 15)?.bytes.readUInt32LE(4)).toBe(FAKE_ROOT);
+    expect(x.requests.find((r) => r.opcode === 3)?.bytes.readUInt32LE(4)).toBe(0x400001);
+  });
+
+  it('is false for a window that is not drawn: unmapped, unviewable or input-only', async () => {
+    const { c } = await open({ windows: [win(1, 0), win(2, 1), win(3, 2, 2)] });
+    expect(await c.inUse()).toBe(false);
+  });
+
+  it('finds a mapped window under the ones that are not, asking from the top of the stack and stopping at the first', async () => {
+    const { x, c } = await open({ windows: [win(1, 2), win(2, 2), win(3, 0), win(4, 0)] });
+    expect(await c.inUse()).toBe(true);
+    const asked = x.requests.filter((r) => r.opcode === 3).map((r) => r.bytes.readUInt32LE(4));
+    expect(asked).toEqual([4, 3, 2]);
+  });
+
+  it('skips a window that is gone by the time it is asked about', async () => {
+    const { c } = await open({
+      windows: [win(1, 2), win(2, 2)],
+      override: (req, send) => {
+        // The top window was destroyed between the two requests: an error for it.
+        if (req.opcode !== 3 || req.bytes.readUInt32LE(4) !== 2) return false;
+        const e = Buffer.alloc(32);
+        e[1] = 3;
+        e.writeUInt16LE(req.seq, 2);
+        send(e);
+        return true;
+      },
+    });
+    expect(await c.inUse()).toBe(true);
+    expect(c.closed).toBe(false);
+  });
+
+  it('asks about at most the 64 windows at the top, however many the root has', async () => {
+    const many = Array.from({ length: 200 }, (_, i) => win(i + 1, 0));
+    const { x, c } = await open({ windows: many });
+    expect(await c.inUse()).toBe(false);
+    expect(x.requests.filter((r) => r.opcode === 3)).toHaveLength(64);
+  });
+
+  it('is null, and ends the connection, when the child count is not what the reply carries', async () => {
+    const { c } = await open({ windows: [win(1)], treeCount: 5 });
+    expect(await c.inUse()).toBeNull();
+    expect(c.closed).toBe(true);
+  });
+
+  it('is null, and ends the connection, when the tree claims more than the cap or an attribute reply is not 44 bytes', async () => {
+    const huge = await open({
+      override: (req, send) => {
+        if (req.opcode !== 15) return false;
+        const r = Buffer.alloc(32);
+        r[0] = 1;
+        r.writeUInt16LE(req.seq, 2);
+        r.writeUInt32LE(0x7fffffff, 4);
+        send(r);
+        return true;
+      },
+    });
+    expect(await huge.c.inUse()).toBeNull();
+    expect(huge.c.closed).toBe(true);
+
+    const odd = await open({
+      windows: [win(1)],
+      override: (req, send) => {
+        if (req.opcode !== 3) return false;
+        const r = Buffer.alloc(32 + 8);
+        r[0] = 1;
+        r.writeUInt16LE(req.seq, 2);
+        r.writeUInt32LE(2, 4);
+        send(r);
+        return true;
+      },
+    });
+    expect(await odd.c.inUse()).toBeNull();
+    expect(odd.c.closed).toBe(true);
+  });
+
+  it('is null, and keeps the connection, when the root cannot be asked about (an X error)', async () => {
+    const { c } = await open({
+      override: (req, send) => {
+        if (req.opcode !== 15) return false;
+        const e = Buffer.alloc(32);
+        e[1] = 3;
+        e.writeUInt16LE(req.seq, 2);
+        send(e);
+        return true;
+      },
+    });
+    expect(await c.inUse()).toBeNull();
+    expect(c.closed).toBe(false);
+  });
+
+  it('is null when the server does not answer in time, and when the connection is gone', async () => {
+    const silent = await open({ silent: [15] }, { requestMs: 60 });
+    expect(await silent.c.inUse()).toBeNull();
+    expect(silent.c.closed).toBe(true);
+    expect(await silent.c.inUse()).toBeNull();
+  });
+
+  it('goes through the same queue as a frame being read', async () => {
+    const { x, c } = await open({ width: 64, height: 32, windows: [win(1)] });
+    const [frame, used] = await Promise.all([c.grab(), c.inUse()]);
+    expect(frame).not.toBeNull();
+    expect(used).toBe(true);
+    // One request in flight: the tree and the attributes are not split by the image's request.
+    expect(x.requests.map((r) => r.opcode).filter((o) => [14, 15, 3, 73].includes(o))).toEqual([14, 15, 3, 73]);
+  });
+});
+
 describe('input', () => {
   it('sends a pointer move, a button press and release and a key press and release as XTestFakeInput of 36 bytes', async () => {
     const { x, c } = await open();

@@ -1,7 +1,8 @@
 import { lstatSync } from 'node:fs';
 import { type Socket, createConnection } from 'node:net';
 
-// A minimal X11 client for an agent's virtual display: the setup, `GetGeometry`, `GetImage` of the root window, `GetKeyboardMapping` and `XTestFakeInput`. Nothing
+// A minimal X11 client for an agent's virtual display: the setup, `GetGeometry`, `GetImage` of the root window, `QueryTree` and `GetWindowAttributes` (is a window
+// mapped), `GetKeyboardMapping` and `XTestFakeInput`. Nothing
 // is installed and nothing runs inside the sandbox: the app is a client of the display's own socket. The server may be drawn on by the agent's app, so everything
 // that comes back is parsed with its size bounded, and a reply that is not what was asked for closes the connection instead of being guessed at.
 
@@ -26,11 +27,16 @@ const GENERIC_EVENT_MAX = 64 * 1024;
 export const SCREEN_SIDE_MAX = 4096;
 export const FRAME_BYTES_MAX = REPLY_MAX;
 const FAKE_INPUT_MAX = 1024;
+/** The root's children a reply may list (4 bytes each), and how many of them, from the top of the stack, are asked about. */
+const TREE_MAX_BYTES = 64 * 1024;
+const TREE_LOOKED_AT = 64;
 
 const REQUEST_MS = 3000;
 const IMAGE_MS = 5000;
 
+const OP_GET_WINDOW_ATTRIBUTES = 3;
 const OP_GET_GEOMETRY = 14;
+const OP_QUERY_TREE = 15;
 const OP_QUERY_EXTENSION = 98;
 const OP_GET_KEYBOARD_MAPPING = 101;
 const OP_GET_IMAGE = 73;
@@ -75,6 +81,11 @@ export interface X11Connection {
   geometry(): Promise<{ width: number; height: number; depth: number } | null>;
   /** The whole root window as it is now, or null when there is no frame (a size or depth that is not expected, an X error, a connection that is gone). Never throws. */
   grab(): Promise<X11Frame | null>;
+  /**
+   * A window is mapped on the screen: true when a child of the root is drawable and viewable, false when the root is bare, null when the server did not answer. It
+   * is how the recording tells a screen in use from an empty one. Never throws.
+   */
+  inUse(): Promise<boolean | null>;
   /** The keyboard mapping, read once per connection; null when it cannot be read. */
   keymap(): Promise<X11Keymap | null>;
   /** Sends the events through XTEST in one batch. `ok` is true only when every one was accepted; a connection that failed delivers nothing. Never throws. */
@@ -359,6 +370,30 @@ export async function connectX11(path: string, deps: X11Deps = {}): Promise<X11C
 
   let keymapCached: X11Keymap | null = null;
 
+  // The root's children come in stacking order, the top one last. A window that was destroyed between the two requests answers with an error: it is not one.
+  const inUseNow = (): Promise<boolean | null> =>
+    serial(async (): Promise<boolean | null> => {
+      const rest = Buffer.alloc(4);
+      rest.writeUInt32LE(info.root, 0);
+      const tree = await exchange(simple(OP_QUERY_TREE, 0, 2, rest), 1, { maxExtra: TREE_MAX_BYTES, ms: requestMs });
+      if (tree.kind !== 'reply') return null;
+      const count = tree.reply.readUInt16LE(16);
+      // The count must be what the length field carries: anything else is a server that is not speaking the protocol.
+      if (tree.reply.length - 32 !== count * 4) {
+        fail('protocol', 'tree of an unexpected size');
+        return null;
+      }
+      for (let i = count - 1; i >= Math.max(0, count - TREE_LOOKED_AT); i--) {
+        const ask = Buffer.alloc(4);
+        ask.writeUInt32LE(tree.reply.readUInt32LE(32 + 4 * i), 0);
+        const got = await exchange(simple(OP_GET_WINDOW_ATTRIBUTES, 0, 2, ask), 1, { maxExtra: 12, exactExtra: 12, ms: requestMs });
+        if (got.kind === 'dead') return null;
+        // Class 1 is InputOutput (2 is InputOnly, which draws nothing); map state 2 is Viewable.
+        if (got.kind === 'reply' && got.reply.readUInt16LE(12) === 1 && got.reply[26] === 2) return true;
+      }
+      return false;
+    });
+
   const conn: X11Connection = {
     root: info.root,
     size,
@@ -387,6 +422,7 @@ export async function connectX11(path: string, deps: X11Deps = {}): Promise<X11C
         return { width, height, data: r.reply.subarray(32) };
       });
     },
+    inUse: inUseNow,
     async keymap() {
       if (keymapCached) return keymapCached;
       const count = info.maxKeycode - info.minKeycode + 1;
