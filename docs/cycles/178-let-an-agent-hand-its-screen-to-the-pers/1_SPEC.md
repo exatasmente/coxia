@@ -225,3 +225,11 @@ Each with the recommended answer, for the maintainer at gate 1.
 7. **The warning every time.** **Recommended: every hand-off, no "do not show again"** (rule 19), since D5 asks for it to be said plainly and the cost is one click. The alternative is to remember the acknowledgement per agent.
 8. **Where the tool lives.** `screen_handoff` in its own app MCP (`coxia_screen`, with the confirmation) or inside `coxia_browser` (D10: the plan decides). **Recommended: `coxia_screen`**, so an agent on the shell path alone (no `coxia_browser`) has the hand-off and the confirmation too, and the promise is the same tool everywhere (rule 1). Not a product question; listed so the plan does not drop it.
 9. **A hand-off started by the person** (typing a secret into the agent's page on their own initiative, with the same withholding). **Recommended: later**, not here: it needs a place in the viewer and a decision on who may start it.
+
+## Gate 1 decisions
+
+Gate 1 is still open: the maintainer is reading the spec. Answer taken so far (2026-10-09):
+
+1. **The recording keeps the hand-off interval and marks it** (open question 1, against the recommendation to skip it). What the person types while they hold the screen can therefore appear in the recording. Consequences the plan must carry: the warning before typing says the interval is recorded; the recording piece of an interval with a hand-off is marked as holding one; the frames of that interval stay out of everything given to the model (unchanged); and the retention of that recording follows the `screens` group as any other.
+
+The other open questions are pending.
