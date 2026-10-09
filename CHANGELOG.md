@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A paired browser can no longer confirm or revoke a test secret.** Confirming a secret of the test environment that is not marked test-only decides that the next stage that takes the environment receives it; `config:testenv-confirm` and `config:testenv-revoke` were open to a paired browser, though its screen showed no such control. They are now refused there, like the secrets themselves; the list of confirmations (references only) stays readable.
+
 ## [0.9.0-beta.8] - 2026-10-09
 
 ### Added
