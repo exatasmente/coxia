@@ -147,7 +147,7 @@ export function ProceduresScreen({ go }: { go: (s: Screen) => void }) {
           <ul className="cy-run-list" aria-label={t('ui.procedures.list.label')}>
             {shown.map((p) => (
               <Row key={p.id} p={p} who={who(p.by)} open={openId === p.id} onToggle={() => setOpenId(openId === p.id ? null : p.id)}>
-                <RecordPanel id={p.id} revision={p.revision} team={team} />
+                <RecordPanel id={p.id} revision={p.revision} team={team} onChanged={load} />
               </Row>
             ))}
           </ul>
