@@ -80,6 +80,7 @@
   "main.workspaces.registryUnreadable": "o registro de workspaces está ilegível",
   "main.workspaces.deleteCurrent": "não dá para excluir o workspace em uso: troque para outro antes",
   "main.workspaces.nameMismatch": "o nome digitado não confere com o do workspace",
+  "main.workspaces.profilesRemain": "não deu para excluir os perfis de navegador com login deste workspace, então ele não foi excluído: feche o que os mantém aberto e tente de novo",
   "main.workspaces.testRefusal": "Workspace de testes: {what} não é feito aqui. Troque para um workspace real em Configurações › Workspaces, ou desligue a marca de testes.",
   "main.actions.missing": "ação {id} não existe",
   "main.actions.noSyncTool": "A ferramenta de sincronização de release não está configurada neste workspace.",

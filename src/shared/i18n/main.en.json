@@ -80,6 +80,7 @@
   "main.workspaces.registryUnreadable": "the workspace registry is unreadable",
   "main.workspaces.deleteCurrent": "the workspace in use cannot be deleted: switch to another one first",
   "main.workspaces.nameMismatch": "the typed name does not match the workspace name",
+  "main.workspaces.profilesRemain": "the logged-in browser profiles of this workspace could not be deleted, so the workspace was not deleted: close what holds them and try again",
   "main.workspaces.testRefusal": "Test workspace: {what} is not done here. Switch to a real workspace in Settings › Workspaces, or turn off the test flag.",
   "main.actions.missing": "action {id} does not exist",
   "main.actions.noSyncTool": "The release sync tool is not configured in this workspace.",
