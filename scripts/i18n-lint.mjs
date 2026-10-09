@@ -6,7 +6,8 @@
 //   node scripts/i18n-lint.mjs --max <n>       exit 1 when the total is above n (a ratchet for CI)
 //   node scripts/i18n-lint.mjs --scope <s>     only one area: renderer, main, shared or all (the default)
 //   node scripts/i18n-lint.mjs --dir <path>    scan another folder (used by the tests)
-//   node scripts/i18n-lint.mjs --keys          also check that every <area>.pt-BR.json has the same keys as its <area>.en.json
+//   node scripts/i18n-lint.mjs --keys          also check that every <area>.pt-BR.json has the same keys as its <area>.en.json, and that no catalog repeats a key
+//   node scripts/i18n-lint.mjs --catalogs <path>  check the catalogs of another folder with --keys (used by the tests)
 // It parses every file (@babel/parser, already in the lockfile through the Vite React plugin) and reports the user-facing text that does
 // not go through t()/tv():
 //   - JSX text, and string attributes that people read (title, aria-label, placeholder, alt, label, ...);
@@ -193,10 +194,18 @@ for (const dir of SCAN) {
 }
 
 if (flag('--keys')) {
-  const dir = join(ROOT, 'src/shared/i18n');
+  const dir = value('--catalogs') ? resolve(value('--catalogs')) : join(ROOT, 'src/shared/i18n');
   const areas = readdirSync(dir).filter((n) => n.endsWith('.pt-BR.json')).map((n) => n.slice(0, -'.pt-BR.json'.length));
   const keysOf = (file) => Object.keys(JSON.parse(readFileSync(join(dir, file), 'utf8')));
   const problems = [];
+  // JSON.parse keeps the last of two equal keys without a word, so a repeated key is looked for in the text: the catalogs are flat, one key per line.
+  for (const n of readdirSync(dir).filter((f) => f.endsWith('.json'))) {
+    const seen = new Set();
+    for (const [, key] of readFileSync(join(dir, n), 'utf8').matchAll(/^\s*"((?:[^"\\]|\\.)*)"\s*:/gm)) {
+      if (seen.has(key)) problems.push(`${n}: "${key}" appears more than once`);
+      seen.add(key);
+    }
+  }
   let count = 0;
   for (const area of areas) {
     let en;
