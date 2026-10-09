@@ -108,6 +108,7 @@ import { DOCS_RUN_FOLDER, dayStamp, docsBranch, docsRecord, docsRef, docsTitle, 
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
+import type { ScreenHub } from '../screen/hub';
 import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../shared/evidence';
 import { dropEvidence, readEvidence } from '../evidence/store';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
@@ -212,6 +213,8 @@ export interface RunnerDeps {
   commandRunner?: CommandRunner;
   /** Makes the sandboxes of the agents set to `shell: sandbox`. Without it a run whose team has such an agent is refused. */
   sandbox?: SandboxService;
+  /** The live screens of the stages that have a virtual display; without it no stage opens one and no run carries `screen`. */
+  screens?: ScreenHub;
   /** Makes one small call to a provider to find out whether its key has budget again. Without it the runs that hit the refusal keep waiting. */
   probeBudget?: BudgetProbeFn;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
@@ -368,7 +371,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence };
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();
@@ -397,6 +400,11 @@ export function createRunner(deps: RunnerDeps): Runner {
   const withCommand = (run: Run | null): Run | null => {
     const c = run ? commands.get(run.id) : undefined;
     return run && c ? { ...run, command: c.pending } : run;
+  };
+  // The live screen of the working stage's display, handed out like the command: never written to the run's file.
+  const withScreen = (run: Run | null): Run | null => {
+    const live = run ? deps.screens?.state(run.id) : null;
+    return run && live ? { ...run, screen: live } : run;
   };
 
   // A stage and an agent named in the thread may both want a command at once: the person answers one at a time, in the order they asked.
@@ -1072,8 +1080,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   const api: Runner = {
-    list: () => deps.runs.list().map((r) => withCommand(r) as Run),
-    get: (id) => withCommand(deps.runs.get(id)),
+    list: () => deps.runs.list().map((r) => withScreen(withCommand(r)) as Run),
+    get: (id) => withScreen(withCommand(deps.runs.get(id))),
     evidence: (runId) => {
       const run = deps.runs.get(runId);
       if (!run) return null;

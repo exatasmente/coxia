@@ -1493,6 +1493,7 @@
   "main.forum.code.runner.sandbox.noBrowsers": "A pasta de navegadores para testar a interface ({path}) não existe: {agent} trabalha sem navegadores nesta etapa e foi avisado.",
   "main.forum.code.runner.sandbox.noDisplay": "A tela virtual está ligada, mas não há programa de tela (Xvfb) disponível: {agent} trabalha sem ela nesta etapa e foi avisado.",
   "main.forum.code.runner.sandbox.displayFailed": "A tela virtual não subiu: {agent} trabalha sem ela nesta etapa e foi avisado.",
+  "main.forum.code.runner.screen.noConnect": "A tela ao vivo não está disponível nesta etapa: o app não conseguiu se conectar à tela virtual, então ela não pode ser vista. {agent} trabalha como de costume.",
   "main.forum.code.run.stage.wait.release-approved": "Etapa {stage}: esperando todos os {crLong} da release entrarem na branch dela.",
   "main.forum.code.run.stage.wait.beta-age": "Etapa {stage}: esperando a beta ficar {minutes} minutos no ar, sem issue aberta com a label \"{label}\".",
   "main.forum.code.wait.done.release-approved": "{stage}: todos os {crLong} da release estão integrados.",

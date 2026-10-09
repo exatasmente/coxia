@@ -1,5 +1,43 @@
-// The live screen of an agent's virtual display (#157): what the person's input looks like on the wire and the limits both sides hold to. Pure, so the renderer
-// and the main process read the same constants.
+// The live screen of an agent's virtual display (#157): what a run carries while its working stage has one, what the viewer asks and is answered, what the person's
+// input looks like on the wire and the limits both sides hold to. Pure, so the renderer and the main process read the same constants.
+
+/** The event the main process sends when a live screen opens or ends, so the run list refreshes at once. It carries the run's id and no pixels. */
+export const SCREEN_EVENT = 'runs-screen';
+
+/** What a run handed out carries while its working stage has a live screen. Filled by the runner when it hands the run out and never saved. */
+export interface LiveScreen {
+  stage: string;
+  /** The screen's own size in pixels, for mapping the pointer. */
+  width: number;
+  height: number;
+  /** ISO time the screen opened. */
+  since: string;
+  /** Someone is controlling it from the desktop. */
+  control: boolean;
+}
+
+/**
+ * The answer to a viewer that asks for the latest frame: no live screen (the stage ended, or there never was one); the same picture as the sequence number it holds;
+ * or a newer one. `screen` is the display's own size, which the pointer is mapped to; `width` and `height` are the picture's.
+ */
+export type ScreenFrameAnswer =
+  | { state: 'none' }
+  | { state: 'same'; seq: number; control: boolean }
+  | { state: 'frame'; seq: number; width: number; height: number; screen: { width: number; height: number }; jpeg: Uint8Array; control: boolean };
+
+/** The widths a viewer may ask for: clamped to this range in steps, so the encoder holds a bounded number of pictures. */
+export const SCREEN_FRAME_MIN_WIDTH = 320;
+export const SCREEN_FRAME_MAX_WIDTH = 1280;
+export const SCREEN_FRAME_STEP = 80;
+/** The width the desktop asks for and the one the phone asks for. */
+export const SCREEN_WIDTH_DESKTOP = 1280;
+export const SCREEN_WIDTH_PHONE = 640;
+
+export function clampFrameWidth(width: unknown): number {
+  if (typeof width !== 'number' || !Number.isFinite(width)) return SCREEN_FRAME_MAX_WIDTH;
+  const stepped = Math.round(width / SCREEN_FRAME_STEP) * SCREEN_FRAME_STEP;
+  return Math.min(SCREEN_FRAME_MAX_WIDTH, Math.max(SCREEN_FRAME_MIN_WIDTH, stepped));
+}
 
 /** One input event from the viewer: pointer position in the screen's own pixels, buttons, wheel notches and keys. */
 export type ScreenInput =

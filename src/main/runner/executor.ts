@@ -43,6 +43,7 @@ import { finalizeHarness } from '../harness/finalize';
 import { AGENTS_FILE } from '../../shared/harness/agentsMd';
 import { crMarkOf } from '../../shared/i18n/terms';
 import { primaryIntegration } from '../../shared/cycles/terms';
+import type { ScreenHub } from '../screen/hub';
 
 // One attempt at one stage: build what the agent reads, run it, write the documents it returned into the cycle folder and commit what it did.
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
@@ -100,6 +101,8 @@ export interface ExecutorDeps {
   updateEvidence?: (runId: string, record: EvidenceRecord) => void;
   /** The workspace's data folder: where a run's evidence is stored. */
   dataDir: () => string;
+  /** The live screens of the stages that have a virtual display; absent: none is opened. */
+  screens?: ScreenHub;
 }
 
 export interface StageRun {
@@ -363,6 +366,9 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
     if (gui?.display === 'missing' || gui?.display === 'failed') appendGui(gui.display === 'missing' ? 'runner.sandbox.noDisplay' : 'runner.sandbox.displayFailed', {});
+    // The app's own connection to the stage's display is made now, before the agent has run a single command: what is at the socket's path is the agent's to change from
+    // then on. A display that cannot be reached leaves the stage without a live screen and says so; nothing else changes.
+    if (d.screens && display && session.screen && gui?.display === 'on' && !(await d.screens.open({ run: run.id, stage: stage.id, socket: session.screen.socket, kind: session.screen.kind }))) appendGui('runner.screen.noConnect', {});
     return session;
   } catch (e) {
     if (e instanceof SandboxError) throw new StageError('no-sandbox', { agent: agent.id, reason: e.message });
@@ -470,6 +476,8 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   try {
     return await runStage(d, run, flow, abort, usage, carried, session, clock);
   } finally {
+    // The live screen goes first, whatever way the stage ended: nothing reads the display once its sandbox is closing.
+    d.screens?.end(run.id);
     // Whatever happened, nothing the stage started outlives it. Closing never throws, and a finished stage is not turned into a failed one by it.
     await session?.close().catch(() => undefined);
   }
@@ -912,6 +920,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     inbox.close();
     // The attempt is over: the cap of conversations starts again, so a stage returned and run again may talk once more.
     resetOpened(run.id, stage.id);
+    // The live screen ends with the stage, before its sandbox does.
+    await d.screens?.finish(run.id);
     // The sandbox ends after the app read the answer, ran the repair round and kept what the agent looked at: no process of the stage can race the commit.
     await session?.close();
   }

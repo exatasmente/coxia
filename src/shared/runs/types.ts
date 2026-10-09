@@ -2,6 +2,7 @@ import type { AttachmentRef } from '../attachments';
 import type { StageKind, StageType, WaitFor, WaitKind } from '../config/types';
 import type { EvidenceRecord } from '../evidence';
 import type { ForumDraft } from '../forum';
+import type { LiveScreen } from '../screen';
 
 // A run: one issue going through the agent cycle. This file is the shape; the moves are in transitions.ts, the file format check in schema.ts.
 
@@ -382,6 +383,8 @@ export interface Run {
   question: PendingQuestion | null;
   /** The command the working stage waits for the person to allow (`shell: host`). Filled in by the runner when it hands a run out, never written to the file. */
   command?: PendingCommand | null;
+  /** The live screen of the working stage's virtual display, while it has one. Filled in by the runner when it hands a run out, never written to the file. */
+  screen?: LiveScreen | null;
   /** The result of a non-autonomous agent, waiting for the person (status `to-accept`). */
   pending: PendingResult | null;
   /** How many times each stage sent the work back (by the stage that sent it: review and QA have a budget each) since the person last answered the limit's question. */

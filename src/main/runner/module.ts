@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { nativeImage } from 'electron';
 import { join } from 'node:path';
 import { HOME, ATAS, DATA_ROOT } from '../env';
 import { runAgent, probeProviderBudget } from '../agents';
@@ -24,6 +25,9 @@ import { createPublisher } from './publish';
 import { applyDocsFlow, startDocsRun } from '../harness/docsRun';
 import { docsStatus } from '../harness/status';
 import { docsFlowOf } from '../../shared/config/squads';
+import { SCREEN_EVENT } from '../../shared/screen';
+import { type NativeImageLike, createFrameEncoder } from '../screen/frame';
+import { type ScreenHub, createScreenHub } from '../screen/hub';
 import { type GateAction, type IssueSource, type Runner, RunnerError, createRunner } from './service';
 
 // The runner of the running workspace, and its channels. What a paired browser may call is decided in webPolicy.ts: reading runs and answering a
@@ -60,6 +64,14 @@ let current: Runner | null = null;
 /** The runner of this process; undefined until the module registered. */
 export const runner = (): Runner | null => current;
 
+let screens: ScreenHub | null = null;
+
+/** The live screens of this process's runner; null until the module registered. */
+export const screenHub = (): ScreenHub | null => screens;
+
+/** The app is closing: no live screen is read or sent to after this. */
+export const endLiveScreens = (): void => screens?.endAll();
+
 const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 const id = (v: unknown): string => {
   if (typeof v !== 'string') throw new RunError('unknown-run', { id: '' });
@@ -86,8 +98,17 @@ export function retroIssueDone(action: ReleaseAction, responses: unknown[], star
 export { sandbox } from '../sandbox/workspace';
 export const runsModule: Module = (ctx) => {
   sandbox.purge();
+  // The agents' virtual screens (Linux only). A frame goes to the viewer that asked for it, never through `emit`, which reaches every paired browser: the one event is
+  // that a screen opened or ended, with no pixels, so the run list refreshes at once.
+  const hub = createScreenHub({
+    enabled: process.platform === 'linux',
+    encoder: createFrameEncoder({ nativeImage: nativeImage as unknown as NativeImageLike }),
+    changed: (run) => ctx.emit({ type: 'module', name: SCREEN_EVENT, payload: { run } }),
+  });
+  screens = hub;
   const r = createRunner({
     sandbox,
+    screens: hub,
     // One small call to a provider whose key ran out of budget, by the sweep: it goes through the engines, so the same refusal mapping applies.
     probeBudget: async (providerId) => {
       const result = await probeProviderBudget(providerId);
@@ -179,6 +200,9 @@ export const runsModule: Module = (ctx) => {
   // The evidence a run kept: read only, from the run's own store, and open to a paired browser like the thread beside it. The bytes come back as an ArrayBuffer.
   ctx.handle('runs:evidenceList', (run: unknown) => r.evidence(id(run)));
   ctx.handle('runs:evidence', (run: unknown, evidence: unknown) => r.evidenceBytes(id(run), text(evidence))?.bytes ?? null);
+  // The latest frame of a run's live screen, for a viewer that shows `since` and wants about `width`: a read like the ones beside it, open to a paired browser. It answers
+  // `none` when the run has no live screen (the stage ended): only a malformed call is an error.
+  ctx.handle('runs:screen', (run: unknown, since: unknown, width: unknown) => hub.frame(id(run), typeof since === 'number' && Number.isFinite(since) ? since : 0, typeof width === 'number' ? width : Number.NaN));
   // Removing a piece of evidence is the person's action, never an agent's; the file goes and the run drops the record.
   ctx.handle('runs:evidenceDelete', (run: unknown, evidence: unknown) => r.removeEvidence(id(run), text(evidence)));
   ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined));

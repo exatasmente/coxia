@@ -15,6 +15,7 @@ import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGat
 import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
 import { askRetro, latestRetro, prepareRetro } from './retro';
 import { MODULES } from './modules';
+import { endLiveScreens } from './runner/module';
 import { RESOURCES } from './paths';
 import { wantsQuitForUpdate } from './update-core';
 import { SHOWN_EVENT } from '../shared/update';
@@ -300,6 +301,7 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     updatesBeforeQuit();
     forgetRunning();
+    endLiveScreens();
     stopVoice();
     void stopWebAccess();
   });
