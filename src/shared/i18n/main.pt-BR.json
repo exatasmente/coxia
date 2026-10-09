@@ -1250,6 +1250,8 @@
   "main.mentions.noRepo": "não há repositório à mão neste lugar, então nenhum comando pode rodar aqui",
   "main.mentions.ceremony.failed": "{agent} não conseguiu responder: {reason}",
   "main.forum.code.runner.mention.noShell": "{agent} responde sem rodar comandos: {reason}",
+  "main.forum.code.runner.mention.stopped": "A resposta de {agent} foi interrompida pela pessoa. A tela dele, se houver, continua aberta.",
+  "main.forum.code.runner.mention.stoppedScreen": "A resposta de {agent} foi interrompida porque a tela dele foi fechada.",
   "main.forum.code.runner.mention.budget": "{agent} não respondeu: o orçamento da chave do {provider} acabou. A menção espera o provedor voltar a responder. {reason}",
   "main.runner.error.branch-exists": "A branch {detail} já existe no repositório: o runner não reaproveita o que não criou. Apague ou renomeie essa branch e tente de novo.",
   "main.runner.error.dest-exists": "A pasta {detail} já existe: o runner não escreve por cima do que não criou.",

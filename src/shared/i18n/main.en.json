@@ -1250,6 +1250,8 @@
   "main.mentions.noRepo": "no repository is at hand in this place, so no command can run here",
   "main.mentions.ceremony.failed": "{agent} could not answer: {reason}",
   "main.forum.code.runner.mention.noShell": "{agent} answers without running commands: {reason}",
+  "main.forum.code.runner.mention.stopped": "The answer of {agent} was stopped by the person. Its screen, if it has one, stays open.",
+  "main.forum.code.runner.mention.stoppedScreen": "The answer of {agent} was stopped because its screen was closed.",
   "main.forum.code.runner.mention.budget": "{agent} did not answer: the budget of the {provider} key is exhausted. The mention waits for the provider to answer again. {reason}",
   "main.runner.error.branch-exists": "The branch {detail} already exists in the repository: the runner does not reuse what it did not make. Delete or rename that branch and try again.",
   "main.runner.error.dest-exists": "The folder {detail} already exists: the runner does not write over what it did not make.",

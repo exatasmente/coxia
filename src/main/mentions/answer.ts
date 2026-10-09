@@ -11,7 +11,7 @@ import { type RunActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import type { ReadConfinement } from '../engine/contract';
 import { callKey } from '../../shared/browser';
-import { type CallScreen, type ScreenPorts, modelSeesImages, openCallScreen } from '../browser/callScreen';
+import { type CallScreen, type CallScreenRequest, type ScreenPorts, modelSeesImages, openCallScreen } from '../browser/callScreen';
 import { grantsFor, withheldText } from '../browser/guard';
 import { recordWrite } from '../auditoria';
 import { ATAS } from '../env';
@@ -26,6 +26,7 @@ import { mentionCall, readProposedWrites, type ProposedWrite } from './call';
 import { conversationCallTool } from './converse';
 import { type ProposalOutcome } from './propose';
 import { type Binding, type BindingCell, type KeptSessions, type KeptShell, type ShellSource, keptSessions } from './kept';
+import { type CallStops, callStops } from './stop';
 import { reposOnDisk, runRepo, type MentionPlace } from './place';
 import { type DocsAsk, runDocsAsk, stageOfRun } from '../harness/deliver';
 
@@ -49,6 +50,8 @@ export interface MentionDeps {
   screens?: () => ScreenPorts | null;
   /** The shell sessions kept for the screens that are open (default: this process's). */
   kept?: KeptSessions;
+  /** Where a running answer can be stopped by the person (default: this process's). */
+  stops?: CallStops;
   /**
    * The line a caller opened for an agent's call when the message was accepted (a run's thread), and whether it waited its turn there: the answer goes on in it,
    * so the engine reports only how it ends. Absent, or null for an agent: the engine opens its own line when it starts.
@@ -143,7 +146,9 @@ function mayPropose(def: AgentDef, deps: MentionDeps, place: MentionPlace): bool
  * a throwaway copy of the code. A failure of one agent is said in the thread and does not stop the others. Returns what each agent said, for a caller (a ceremony)
  * that records the answers somewhere other than a thread.
  */
-export async function answerMentions(place: MentionPlace, message: ForumMessage, deps: MentionDeps): Promise<MentionAnswer[]> {
+export async function answerMentions(place: MentionPlace, message: ForumMessage, given: MentionDeps): Promise<MentionAnswer[]> {
+  // A ceremony has no screen, whatever its agents are set to.
+  const deps: MentionDeps = place.kind === 'ceremony' ? { ...given, screens: undefined } : given;
   const config = deps.config();
   const out: MentionAnswer[] = [];
   const calls = (deps.calls ?? message.mentions).slice(0, MAX_MENTIONS);
@@ -176,6 +181,18 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
     let keptShell: KeptShell | null = null;
     // Whether the engine got to run: what failed before it is the call's own failure, and its line must not wait forever.
     let ran = false;
+    // The person's Stop (or the screen closing under the answer) ends this answer only: what the thread says then is not a failure.
+    let stoppedBy: 'person' | 'screen' | null = null;
+    const stopper = new AbortController();
+    stopper.signal.addEventListener('abort', () => {
+      stoppedBy ??= 'person';
+      abort.abort();
+    });
+    const unregister = (deps.stops ?? callStops).register(place.thread, id, stopper);
+    const screenClosed = (): void => {
+      stoppedBy ??= 'screen';
+      abort.abort();
+    };
     try {
       if (wantsCommands) {
         const opened = await openShell(deps, place, def, message, stage, mine, abort.signal, watch, config);
@@ -184,6 +201,16 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         screen = opened.screen;
         keptShell = opened.kept;
       }
+      // The agent's screen when no shell session made it: the app's browser on a display of its own, and the confirmation tool where the call has the right to it.
+      const ports = deps.screens?.() ?? null;
+      if (!screen && ports) screen = await openCallScreen(ports, screenRequest(deps, place, def, message, stage, watch, null));
+      // A screen that closes under a running answer takes the answer with it: nothing it was doing can go on.
+      if (screen?.lease) {
+        if (screen.lease.closed.aborted) screenClosed();
+        else screen.lease.closed.addEventListener('abort', screenClosed, { once: true });
+      }
+      // Stopped before the engine began: the catch below says so, whatever the error is.
+      if (abort.signal.aborted) throw new Error('stopped');
       const info = inputOf(place);
       // The files the message carries go to the agent only when the workspace gives them: the person still attaches and opens them, the agent is told why not.
       const attachments = deps.config().attachments?.agents === false ? null : attachmentsFor(deps, place.thread, message);
@@ -211,6 +238,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'main.attachment.agentsOff', stage });
       }
       call.docs = await docsAskOf(place, config, info.files);
+      // The engine hears the abort too, so Stop ends the model's work and not only the wait for it.
+      call.abort = abort;
       if (made) call.activity = made.activity;
       if (session) call.exec = session;
       if (screen?.toolset) call.screen = screen.toolset;
@@ -254,8 +283,11 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       const reason = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
       // Nothing ran, so the engine reported no end: the call fails here, or its line would stay on screen.
       if (!ran) made?.activity.status('failed', reason);
-      deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
+      if (stoppedBy) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: stoppedBy === 'person' ? 'runner.mention.stopped' : 'runner.mention.stoppedScreen', params: { agent: id }, stage });
+      else deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
     } finally {
+      unregister();
+      screen?.lease?.closed.removeEventListener('abort', screenClosed);
       screen?.release();
       if (keptShell) {
         // The session belongs to the screen now: it stays, with the copy, until the screen ends.
@@ -323,11 +355,13 @@ async function raiseWrites(deps: MentionDeps, place: MentionPlace, def: AgentDef
 async function shellSourceOf(place: MentionPlace, def: AgentDef, tag: string, signal: AbortSignal, maxBytes: number): Promise<ShellSource | null> {
   if (place.kind === 'run' && place.run && existsSync(place.run.worktree)) return { cwd: place.run.worktree, made: false, reader: true };
   const repos = reposOnDisk(place);
-  if (!repos.length) return null;
+  // An agent with a screen works on sites and needs no code: with none in the place, its commands run in an empty throwaway folder instead.
+  if (!repos.length && def.screen !== true) return null;
   const dir = draftDir(place.thread, tag, def.id);
   // A copy kept with a screen has a name of its own, not the message's: what an earlier screen of the agent left there is not this one's.
   if (tag === SCREEN_TAG) rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
+  if (!repos.length) return { cwd: dir, made: true, reader: false };
   // One repository: its copy is the working folder itself; several: one subfolder per repository, and the folder holds them all. Only what git knows is copied, as a
   // run's worktree holds it: what a person built or installed (dist, node_modules) is not code, and can weigh gigabytes.
   for (const repo of repos) await copyTracked(repo.path, repos.length === 1 ? dir : join(dir, repo.id), maxBytes, signal);
@@ -405,6 +439,24 @@ function openMentionSession(deps: MentionDeps, def: AgentDef, source: { cwd: str
   return sandbox.open({ worktree: source.cwd, reader: source.reader, config: config.runner.sandbox, onExec, onProxy, signal, agent: { allowedHosts: grants.allowedHosts }, ...(display ? { display } : {}), ...(source.clone ? { clone: source.clone } : {}) });
 }
 
+/** What the sessions are asked to open the screen of an agent in this place for this answer. */
+function screenRequest(deps: MentionDeps, place: MentionPlace, def: AgentDef, message: ForumMessage, stage: string | null, watch: { pause: () => () => void }, display: { socket: string; kind: 'sandbox' | 'host' } | null, onClose?: () => Promise<void>): CallScreenRequest {
+  return {
+    key: callKey(place.thread, def.id),
+    agent: def,
+    thread: place.thread,
+    place: 'conversation',
+    ...(stage ? { stage } : {}),
+    ...(place.run ? { issue: place.run.issue.iid } : {}),
+    message: message.seq,
+    display,
+    seesImages: modelSeesImages(def),
+    pause: watch.pause,
+    hasDisplay: display !== null,
+    ...(onClose ? { onClose } : {}),
+  };
+}
+
 interface OpenedShell {
   session: SandboxSession | null;
   source: ShellSource | null;
@@ -423,20 +475,7 @@ async function openShell(deps: MentionDeps, place: MentionPlace, def: AgentDef, 
   const ports = deps.screens?.() ?? null;
   const key = callKey(place.thread, def.id);
   const keeps = ports !== null && def.screen === true && grantsFor(def).browser;
-  const request = (display: { socket: string; kind: 'sandbox' | 'host' } | null) => ({
-    key,
-    agent: def,
-    thread: place.thread,
-    place: 'conversation' as const,
-    ...(stage ? { stage } : {}),
-    ...(place.run ? { issue: place.run.issue.iid } : {}),
-    message: message.seq,
-    display,
-    seesImages: modelSeesImages(def),
-    pause: watch.pause,
-    hasDisplay: display !== null,
-    onClose: async () => void (await store.release(key)),
-  });
+  const request = (display: { socket: string; kind: 'sandbox' | 'host' } | null) => screenRequest(deps, place, def, message, stage, watch, display, () => store.release(key).then(() => undefined));
   let screen: CallScreen | null = null;
 
   if (keeps) {
