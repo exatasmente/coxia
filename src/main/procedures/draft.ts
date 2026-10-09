@@ -28,6 +28,8 @@ export interface DraftBody {
   waits: string[];
   /** The person used the screen: one of the steps is the hand-off. */
   handoff: boolean;
+  /** The site each step was taken on (lowercase; empty when the log has none), one per step: what the key of an offered draft is chosen from. */
+  sites: string[];
 }
 
 type Kind = 'navigate' | 'back' | 'click' | 'type' | 'press' | 'fill' | 'select' | 'hover' | 'drag' | 'wait' | 'tabs' | 'dialog' | 'handoff';
@@ -170,8 +172,10 @@ export function buildDraft(entries: readonly StepEntry[]): DraftBody {
   }
 
   const steps: DraftStep[] = [];
+  const sites: string[] = [];
   const waits: string[] = [];
   for (const p of kept) {
+    sites.push((p.entry.site ?? '').toLowerCase());
     if (p.kind === 'wait') {
       const seconds = Math.max(1, Math.ceil(p.ms / 1000));
       const line = clip(`${where(p.entry) ? `On ${where(p.entry)}: w` : 'W'}ait about ${seconds} s for the page or an element`, LIMITS.wait);
@@ -181,7 +185,7 @@ export function buildDraft(entries: readonly StepEntry[]): DraftBody {
     }
     steps.push({ n: steps.length + 1, text: clip(p.text, LIMITS.stepText) });
   }
-  return { steps, pitfalls: pitfalls.slice(0, PITFALLS_MAX), failed, waits: waits.slice(0, WAITS_MAX), handoff };
+  return { steps, pitfalls: pitfalls.slice(0, PITFALLS_MAX), failed, waits: waits.slice(0, WAITS_MAX), handoff, sites };
 }
 
 export interface DraftComparison {
