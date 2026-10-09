@@ -248,6 +248,35 @@ describe('a QA stage', () => {
     expect(qa.system).toContain('PLAYWRIGHT_BROWSERS_PATH is set to /b/ms-playwright');
     expect(qa.system).toContain('virtual display the person switched on is not available');
     expect(b.thread(run).some((m) => m.code === 'runner.sandbox.noDisplay')).toBe(true);
+    // No display to draw on: the headed-browser text would send the agent after a screen that is not there.
+    expect(qa.system).not.toContain('Run the browser headed');
+  });
+
+  it.each([
+    ['en', 'Run the browser headed', 'headless: false'],
+    ['pt-BR', 'Rode o navegador com janela', 'headless: false'],
+  ] as const)('tells the agent to run its browser headed when the display is on, in %s', async (language, headed, option) => {
+    const sandbox = fakeSandbox({ gui: { browsers: '/b/ms-playwright', display: 'on' } });
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'qa', 'sandbox'); c.language = language; } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.system).toContain(headed);
+    expect(qa.system).toContain(option);
+    expect(qa.system).not.toMatch(/\{\w+\}/);
+  });
+
+  it.each(['missing', 'failed'] as const)('does not mention a headed browser when the display is %s', async (display) => {
+    const sandbox = fakeSandbox({ gui: { browsers: '/b/ms-playwright', display } });
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'qa', 'sandbox'); c.language = 'en'; } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.system).toContain('virtual display the person switched on is not available');
+    expect(qa.system).not.toContain('headed');
   });
 });
 

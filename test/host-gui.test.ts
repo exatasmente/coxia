@@ -352,6 +352,32 @@ describe('a QA stage of an agent that runs on this computer', () => {
     expect(b.thread(run).some((m) => m.code === 'runner.sandbox.noDisplay')).toBe(true);
   });
 
+  it.each([
+    ['en', 'Run the browser headed'],
+    ['pt-BR', 'Rode o navegador com janela'],
+  ] as const)('tells an agent that runs on this computer to run its browser headed when the display is on, in %s', async (language, headed) => {
+    const sandbox = fakeSandbox({ gui: { browsers: '/b/ms-playwright', display: 'on', out: '/tmp/host-stage/out' } });
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'qa', 'host'); c.language = language; } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.system).toContain(headed);
+    expect(qa.system).toContain('headless: false');
+    expect(qa.system).not.toMatch(/\{\w+\}/);
+  });
+
+  it.each(['missing', 'failed'] as const)('does not mention a headed browser on this computer when the display is %s', async (display) => {
+    const sandbox = fakeSandbox({ gui: { browsers: '/b/ms-playwright', display, out: '/tmp/host-stage/out' } });
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'qa', 'host'); c.language = 'en'; } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.system).toContain('virtual display the person switched on is not available');
+    expect(qa.system).not.toContain('headed');
+  });
+
   it('is told, in Portuguese too, to give the app under test an empty data folder', async () => {
     const sandbox = fakeSandbox({ gui: { browsers: '/b/ms-playwright', display: 'on', out: '/tmp/host-stage/out' } });
     const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'qa', 'host'); c.language = 'pt-BR'; } });
