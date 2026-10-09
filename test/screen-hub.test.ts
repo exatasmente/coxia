@@ -1179,11 +1179,11 @@ describe('a hand-off interval', () => {
     s.hub.beginInterval('r-1', s.on);
     expect(await s.hub.input('r-1', [key('a', true)])).toMatchObject({ ok: false, reason: 'off' });
     await s.hub.control('r-1', true);
-    const many = Array.from({ length: 100 }, () => key('b', true));
+    const many = Array.from({ length: 100 }, (_, i) => key(i % 2 ? 'c' : 'b', true));
     await s.hub.input('r-1', many);
     s.hub.endInterval('r-1', 'back');
     await vi.waitFor(() => expect(s.heard.ends).toHaveLength(1));
-    expect(s.heard.ends[0].typed).toEqual(['b'.repeat(SCREEN_INPUT_MAX)]);
+    expect(s.heard.ends[0].typed).toEqual(['bc'.repeat(SCREEN_INPUT_MAX / 2)]);
   });
 
   it('tells its listener of each delivered event, and not of one that was not delivered', async () => {
