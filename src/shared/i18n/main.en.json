@@ -668,6 +668,8 @@
   "main.engine.text.images": "The images the tools above read, in order: {paths}",
   "main.engine.text.oldImage": "[an image read earlier, removed to keep the conversation short]",
   "main.engine.text.noImage": "[an image was here; this model does not take images]",
+  "main.engine.text.subTurns": "[sub-agent of kind {kind}] stopped after {turns} turns without finishing. What it already did on disk stays; split the task into smaller ones or do it yourself.",
+  "main.engine.text.subKind": "No such kind of sub-agent here: {kind}. Available: {kinds}",
   "main.engine.text.search.noPattern": "Pattern missing.",
   "main.engine.text.search.noDir": "Directory does not exist: {path}",
   "main.engine.text.search.cut": "… (result cut at 100 files; refine the pattern)",

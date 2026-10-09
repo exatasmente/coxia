@@ -27,8 +27,9 @@ import { editTool, writeTool } from './tools/write';
 import { globTool, grepTool } from './tools/search';
 import { type ToolContext, type ToolImage, type ToolImpl, ToolError } from './tools/types';
 import type { ChatMessage, Completion, ContentPart, Json, ToolCall, ToolChoice, ToolDef } from './types';
-import type { Activity } from '../../../shared/config/types';
+import type { Activity, PoolMode } from '../../../shared/config/types';
 import { effectivePoolMode } from '../../../shared/config/poolMode';
+import { type SubKind, MUTATING_KINDS, KIND_TURNS, isSubKind, modelOfKind, offeredKinds, toolsOfKind } from './subagent';
 import { t } from '../../../shared/i18n';
 import { incomingActivity, incomingText } from '../incoming';
 
@@ -73,6 +74,8 @@ export interface OpenRunParams {
   poolClient?: PoolClient;
   // The activity of the first turn: a stage starts as `write`, a sub-agent as `explore`.
   startActivity?: Activity;
+  // A sub-agent handed a task in `delegate` mode: it has only the tools of this kind that its parent has.
+  kind?: SubKind;
   capabilities?: Capabilities;
   structured?: StructuredStrategy;
   cwd: string;
@@ -153,7 +156,19 @@ export function bashPrefixesOf(allowed: string[]): string[] {
   return out;
 }
 
-async function buildTools(p: OpenRunParams, skills: ReturnType<typeof loadSkills>, agents: AgentDef[], runAgent: (a: AgentDef | null, prompt: string) => Promise<string>): Promise<ToolImpl[]> {
+interface Delegation {
+  /** The kinds the `Agent` tool offers; empty: the tool is the plain read-only sub-agent. */
+  kinds: SubKind[];
+}
+
+async function buildTools(
+  p: OpenRunParams,
+  skills: ReturnType<typeof loadSkills>,
+  agents: AgentDef[],
+  runAgent: (a: AgentDef | null, prompt: string, kind?: SubKind) => Promise<string>,
+  mode: PoolMode,
+  delegation: Delegation,
+): Promise<ToolImpl[]> {
   if (p.noTools) return [];
   const allowed = new Set(p.allowedTools);
   const denied = bareNames(p.disallowedTools);
@@ -173,33 +188,69 @@ async function buildTools(p: OpenRunParams, skills: ReturnType<typeof loadSkills
     tools.push(...(await mcpTools(servers, mcpAllowed, (s, e) => console.error('[open-engine] mcp', s, e.message))));
   }
   if (on('Agent') && (p.depth ?? 0) === 0) {
+    // In `delegate` mode the tool hands work to a sub-agent of a kind; the kinds are fixed for the session, from the tools the principal has at this point.
+    if (mode === 'delegate') delegation.kinds = offeredKinds({ lists: p.pool?.activities, tools, writes: !!p.writeRoot });
+    const kinds = delegation.kinds;
     tools.push({
       name: 'Agent',
       activity: 'explore',
-      description:
-        // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
-        'Delegates a focused, read-only task to a sub-agent that has the same read tools and returns only its final answer. ' +
-        // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
-        `Use it for broad searches that would flood your context.${agents.length ? ` Known subagent_type values: ${agents.map((a) => a.name).join(', ')}.` : ''}`,
+      description: kinds.length
+        ? // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+          'Hands a task to a sub-agent of the given kind. The sub-agent starts with an empty history, has only the tools of that kind and returns only its final answer, so write the complete task: it sees nothing of this conversation. ' +
+          // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+          `Kinds: ${kinds.map((k) => `${k} (${KIND_HINT[k]})`).join('; ')}.${agents.length ? ` Known subagent_type values: ${agents.map((a) => a.name).join(', ')}.` : ''}`
+        : // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+          'Delegates a focused, read-only task to a sub-agent that has the same read tools and returns only its final answer. ' +
+          // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+          `Use it for broad searches that would flood your context.${agents.length ? ` Known subagent_type values: ${agents.map((a) => a.name).join(', ')}.` : ''}`,
       parameters: {
         type: 'object',
         properties: {
           // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
           description: { type: 'string', description: 'Three to five words' },
           prompt: { type: 'string', description: 'The complete task for the sub-agent' },
+          ...(kinds.length ? { kind: { type: 'string', enum: kinds, description: 'The kind of sub-agent: which tools it has' } } : {}),
           subagent_type: { type: 'string', description: 'Optional agent definition name' },
           // i18n-ignore-end
         },
-        required: ['prompt'],
+        required: kinds.length ? ['prompt', 'kind'] : ['prompt'],
       },
       async run(input, ctx) {
         const def = agents.find((a) => a.name === input.subagent_type) ?? null;
-        const text = await runAgent(def, String(input.prompt ?? ''));
+        let text: string;
+        if (kinds.length) {
+          if (!isSubKind(input.kind) || !kinds.includes(input.kind)) throw new ToolError(t('main.engine.text.subKind', { kind: String(input.kind ?? ''), kinds: kinds.join(', ') }));
+          text = await runAgent(def, String(input.prompt ?? ''), input.kind);
+        } else {
+          text = await runAgent(def, String(input.prompt ?? ''));
+        }
         return { response: text, render: (r) => String(r).slice(0, ctx.outputMax) };
       },
     });
   }
   return tools;
+}
+
+// What each kind of sub-agent is for, as the principal reads it in the tool and in the prompt.
+const KIND_HINT: Record<SubKind, string> = {
+  // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
+  explore: 'read and search',
+  edit: 'change files',
+  shell: 'run commands',
+  screen: 'drive the virtual screen',
+  // i18n-ignore-end
+};
+
+/** What a sub-agent of a kind is told: its job is the task, and its answer is all the principal reads. */
+function subagentNote(kind: SubKind): string {
+  // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+  return `You are a sub-agent of kind ${kind} (${KIND_HINT[kind]}), handed one task by another agent that sees only your final answer. Do the task completely with your tools, then answer with a short report: what you did, what you found, and anything the other agent must check. Do not ask questions; if something is missing, say what in the report.`;
+}
+
+/** The paragraph that tells the principal to delegate by kind: only the kinds on offer, and that the sub-agent sees none of the conversation. */
+function delegationNote(kinds: SubKind[]): string {
+  // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+  return `Sub-agents: the Agent tool hands a task to a sub-agent of a kind (${kinds.join(', ')}). A sub-agent starts with an empty history and has only the tools of its kind, so give it the complete task: the files, what to change or run and how to tell it worked. Hand it the work of its kind (${kinds.filter((k) => k !== 'explore').map((k) => `${k}: ${KIND_HINT[k]}`).join('; ') || 'nothing but reading'}) one task at a time, do not edit yourself the files a sub-agent is editing, and read its final answer instead of doing the work again.`;
 }
 
 /** The message that shows the model the images its tools read: one line naming them, then each picture. */
@@ -299,29 +350,52 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   let activity: Activity = p.startActivity ?? 'write';
 
   // --- tools
-  const runAgent = async (def: AgentDef | null, prompt: string): Promise<string> => {
-    const r = await runOpen<string>({
-      ...p,
-      role: `${p.role}:${def?.name ?? 'agent'}`,
-      prompt,
-      schema: undefined,
-      resume: undefined,
-      allowedTools: p.allowedTools.filter((t) => t !== 'Agent'),
-      systemAppend: def?.body || undefined,
-      maxTurns: 12,
-      sessionsDir: null,
-      sources,
-      depth: (p.depth ?? 0) + 1,
-      poolClient: pool,
-      startActivity: 'explore',
-    });
-    usage.promptTokens += r.usage.promptTokens;
-    usage.completionTokens += r.usage.completionTokens;
-    usage.cachedTokens += r.usage.cachedTokens;
-    return r.data;
+  // Sub-agents that change something (edit, shell, screen) run one at a time, in the order they were asked: a chain of promises per loop.
+  let mutating: Promise<unknown> = Promise.resolve();
+  const inOrder = <R,>(work: () => Promise<R>): Promise<R> => {
+    const result = mutating.then(work);
+    mutating = result.catch(() => undefined);
+    return result;
+  };
+  const runAgent = async (def: AgentDef | null, prompt: string, kind?: SubKind): Promise<string> => {
+    // A sub-agent of a kind runs on the list of its own activity when the pool has one; without it, and for a plain sub-agent, on the principal's pool.
+    const own = kind ? modelOfKind(kind, p.pool) : null;
+    let model = own?.pool.primary.label ?? pool.member.label;
+    const sub = async (): Promise<OpenRunResult<string>> =>
+      runOpen<string>({
+        ...p,
+        role: `${p.role}:${def?.name ?? kind ?? 'agent'}`,
+        prompt,
+        schema: undefined,
+        resume: undefined,
+        allowedTools: p.allowedTools.filter((t) => t !== 'Agent'),
+        systemAppend: [def?.body, kind ? subagentNote(kind) : undefined].filter(Boolean).join('\n\n') || undefined,
+        maxTurns: kind ? KIND_TURNS[kind] : 12,
+        sessionsDir: null,
+        sources,
+        depth: (p.depth ?? 0) + 1,
+        ...(own ? { client: own.client, capabilities: own.capabilities, pool: own.pool, poolClient: undefined } : { poolClient: pool }),
+        startActivity: 'explore',
+        ...(kind ? { kind, incoming: undefined, events: { ...events, onUsage: (u) => { model = u.model; events.onUsage?.(u); } } } : {}),
+      });
+    try {
+      const r = await (kind && MUTATING_KINDS.has(kind) ? inOrder(sub) : sub());
+      usage.promptTokens += r.usage.promptTokens;
+      usage.completionTokens += r.usage.completionTokens;
+      usage.cachedTokens += r.usage.cachedTokens;
+      if (kind && persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'sub', at: now().toISOString(), kind, model, turns: r.turns, promptTokens: r.usage.promptTokens, completionTokens: r.usage.completionTokens }]);
+      return r.data;
+    } catch (e) {
+      // Out of turns is the sub-agent's failure, not the principal's: the principal reads it and decides (what the sub-agent did on disk stays).
+      if (kind && e instanceof OpenMaxTurnsError) throw new ToolError(t('main.engine.text.subTurns', { kind, turns: KIND_TURNS[kind] }));
+      throw e;
+    }
   };
   const toolsAllowed = client.learned.noTools !== true && p.capabilities?.tools !== false;
-  const impls = toolsAllowed ? await buildTools(p, skills, agents, runAgent) : [];
+  const delegation: Delegation = { kinds: [] };
+  const built = toolsAllowed ? await buildTools(p, skills, agents, runAgent, mode, delegation) : [];
+  // A sub-agent of a kind has the tools of that kind among the ones its parent has, and no others.
+  const impls = p.kind ? toolsOfKind(p.kind, built) : built;
   const byApi = new Map(impls.map((t) => [toApiName(t.name), t]));
   const roots = [p.cwd, ...(p.additionalDirectories ?? []), ...(docs.docDirs ?? []), ...(docs.skillDirs ?? [])];
   const outputMax = p.toolOutputMax ?? (p.capabilities?.contextWindow ? Math.max(4000, Math.min(30_000, Math.floor(p.capabilities.contextWindow * 1.2))) : 30_000);
@@ -383,7 +457,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       skills: impls.some((t) => t.name === 'Skill') ? skills : [],
       agents: impls.some((t) => t.name === 'Agent') ? agents : [],
       docs: docFiles,
-      append: [p.systemAppend, structuredNote].filter(Boolean).join('\n\n'),
+      append: [p.systemAppend, delegation.kinds.length ? delegationNote(delegation.kinds) : '', structuredNote].filter(Boolean).join('\n\n'),
       toolNames: impls.map((t) => t.name),
       now: now(),
     });

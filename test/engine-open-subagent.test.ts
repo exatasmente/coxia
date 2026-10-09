@@ -1,0 +1,302 @@
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ChatClient } from '../src/main/engine/open/client';
+import { type OpenRunParams, runOpen } from '../src/main/engine/open/loop';
+import type { PoolMember, PoolSwitch } from '../src/main/engine/open/pool';
+import { restRegistry } from '../src/main/engine/open/rest';
+import { readSession, type UsageRecord } from '../src/main/engine/open/session';
+import { KIND_ACTIVITIES, KIND_TURNS, SUB_KINDS, modelOfKind, offeredKinds, toolsOfKind, type SubKind } from '../src/main/engine/open/subagent';
+import type { ToolImpl } from '../src/main/engine/open/tools/types';
+import type { Activity, PoolMode } from '../src/shared/config/types';
+import { type Fake, type FakeRequest, type Step, errorStep, fakeOpenAI, textStep, toolStep } from './helpers/fakeOpenAI';
+
+// `delegate` mode: the main model stays put and hands edit, command and screen work to sub-agents of a kind, each on the list of its activity. What a sub-agent may do
+// is a subset of what its parent may do, by construction: the kind only filters the parent's tools.
+
+let dir: string;
+let fakes: Fake[] = [];
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), 'open-sub-'));
+  mkdirSync(join(dir, 'sessions'));
+  restRegistry.clear();
+});
+
+afterEach(async () => {
+  await Promise.all(fakes.map((f) => f.close()));
+  fakes = [];
+  restRegistry.clear();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+async function server(script: Step[] | ((req: FakeRequest) => Step)): Promise<Fake> {
+  const f = await fakeOpenAI(script);
+  fakes.push(f);
+  return f;
+}
+
+const client = (f: Fake, model: string) => new ChatClient({ baseUrl: f.url, model, retryDelayMs: 0, maxRetries: 0 });
+const member = (f: Fake, name: string, extra: Partial<PoolMember> = {}): PoolMember => ({ key: `key-${name}`, label: `model-${name}`, model: `model-${name}`, provider: `prov-${name}`, client: client(f, `model-${name}`), ...extra });
+const BUSY = { ...errorStep(429, 'Rate limit reached'), headers: { 'retry-after': '120' } } as Step;
+
+const log: string[] = [];
+const tool = (name: string, activity: Activity | undefined, wait = 0): ToolImpl => ({
+  name,
+  ...(activity ? { activity } : {}),
+  description: name,
+  parameters: { type: 'object', properties: {} },
+  async run() {
+    log.push(`start ${name}`);
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    log.push(`end ${name}`);
+    return { response: 'ok', render: () => `${name} done` };
+  },
+});
+
+const usageOf = (r: FakeRequest) => (r.body?.messages ?? []) as { role: string; content: unknown }[];
+const names = (r: FakeRequest): string[] => ((r.body?.tools ?? []) as { function: { name: string } }[]).map((t) => t.function.name).sort();
+const agentTool = (r: FakeRequest) => ((r.body?.tools ?? []) as { function: { name: string; description: string; parameters: any } }[]).find((t) => t.function.name === 'Agent')?.function;
+const delegating = (kind: SubKind, prompt = 'do the task') => toolStep([{ id: `call_${kind}`, name: 'Agent', args: { description: 'go', prompt, kind } }], { usageTokens: [10, 2] });
+
+interface Setup {
+  primary: PoolMember;
+  fallbacks?: PoolMember[];
+  activities?: Partial<Record<Activity, PoolMember[]>>;
+  tools?: ToolImpl[];
+  mode?: PoolMode;
+  write?: boolean;
+  over?: Partial<OpenRunParams>;
+}
+
+function run(s: Setup, events: PoolSwitch[] = [], usage: (UsageRecord & { model: string })[] = []) {
+  const p: OpenRunParams = {
+    role: 'deep',
+    prompt: 'main task',
+    client: s.primary.client,
+    pool: { name: 'deep', primary: { key: s.primary.key, label: s.primary.label, provider: s.primary.provider }, fallbacks: s.fallbacks ?? [], activities: s.activities, mode: s.mode ?? 'delegate' },
+    cwd: dir,
+    allowedTools: ['Agent', ...(s.tools ?? []).map((t) => t.name)],
+    extraTools: s.tools,
+    ...(s.write ? { writeRoot: dir } : {}),
+    docs: {},
+    maxTurns: 8,
+    sessionsDir: join(dir, 'sessions'),
+    ripgrep: 'off',
+    events: { onSwitch: (e) => events.push(e), onUsage: (u) => usage.push(u) },
+    ...s.over,
+  };
+  return runOpen<string>(p);
+}
+
+describe('a sub-agent of a kind', () => {
+  const tools = () => [tool('Sh', 'shell'), tool('Ed', 'edit'), tool('Snap', 'screen'), tool('look', 'explore'), tool('Ext', undefined)];
+
+  it('runs on the list of its activity with the tools of its kind and the reading ones, and the principal gets only its final answer', async () => {
+    const a = await server([delegating('shell'), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server((req) => (req.body?.messages.at(-1).role === 'tool' ? textStep('ran it: all green', { usageTokens: [10, 2] }) : toolStep([{ id: 'c1', name: 'Sh', args: {} }], { usageTokens: [10, 2] })));
+    const events: PoolSwitch[] = [];
+    const r = await run({ primary: member(a, 'a'), activities: { shell: [member(b, 'b')] }, tools: tools(), write: true }, events);
+    expect(r.data).toBe('principal done');
+    // The principal's own model answered both of its turns; the work in between went to b.
+    expect(a.chats()).toHaveLength(2);
+    expect(b.chats()).toHaveLength(2);
+    expect(b.chats()[0].body?.model).toBe('model-b');
+    // Only the shell tool and the reading ones: no edit, no screen, no tool without a kind, and no Agent (it does not nest).
+    expect(names(b.chats()[0])).toEqual(['Sh', 'look']);
+    // It starts with an empty history: its own system prompt and the task the principal wrote, nothing of the conversation.
+    const sent = usageOf(b.chats()[0]);
+    expect(sent.map((m) => m.role)).toEqual(['system', 'user']);
+    expect(sent[1].content).toBe('do the task');
+    expect(String(sent[0].content)).toContain('sub-agent of kind shell');
+    expect(JSON.stringify(sent)).not.toContain('main task');
+    // The principal reads the final answer and nothing of the steps.
+    const back = usageOf(a.chats()[1]).filter((m) => m.role === 'tool');
+    expect(back).toHaveLength(1);
+    expect(back[0].content).toBe('ran it: all green');
+    // No switch of the principal's model.
+    expect(events).toEqual([]);
+  });
+
+  it('is a subset of its parent\'s tools whatever the kind: the parent offers what it has, the sub-agent a filter of it', async () => {
+    const all = tools();
+    for (const kind of SUB_KINDS) {
+      const got = toolsOfKind(kind, [...all, tool('Agent', 'explore')]);
+      expect(got.every((x) => all.includes(x)), kind).toBe(true);
+      expect(got.map((x) => x.name)).not.toContain('Agent');
+      expect(got.every((x) => x.activity !== undefined && KIND_ACTIVITIES[kind].includes(x.activity))).toBe(true);
+    }
+    expect(toolsOfKind('explore', all).map((x) => x.name)).toEqual(['look']);
+    expect(toolsOfKind('edit', all).map((x) => x.name)).toEqual(['Ed', 'look']);
+    expect(toolsOfKind('screen', all).map((x) => x.name)).toEqual(['Snap', 'look']);
+  });
+
+  it('offers a kind only when the activity has a list and the parent has a tool of it, and never edit or shell to a reader', async () => {
+    const t = tools();
+    const lists = { edit: [1], shell: [1], screen: [1] };
+    expect(offeredKinds({ lists, tools: t, writes: true })).toEqual(['explore', 'edit', 'shell', 'screen']);
+    // A reader: no edit and no shell, even with a shell tool of a sandbox and lists for both.
+    expect(offeredKinds({ lists, tools: t, writes: false })).toEqual(['explore', 'screen']);
+    // A kind without a list, or without a tool of its kind, is not offered.
+    expect(offeredKinds({ lists: { shell: [1] }, tools: t, writes: true })).toEqual(['explore', 'shell']);
+    expect(offeredKinds({ lists, tools: [tool('look', 'explore')], writes: true })).toEqual(['explore']);
+    expect(offeredKinds({ lists: undefined, tools: t, writes: true })).toEqual(['explore']);
+    expect(offeredKinds({ lists: { shell: [] }, tools: t, writes: true })).toEqual(['explore']);
+  });
+
+  it('gives the model a tool whose kinds are the ones on offer, required, and tells it to delegate by kind', async () => {
+    const a = await server([textStep('done', { usageTokens: [10, 2] })]);
+    const b = await server([]);
+    await run({ primary: member(a, 'a'), activities: { shell: [member(b, 'b')], edit: [member(b, 'b')] }, tools: [tool('Sh', 'shell'), tool('look', 'explore')], write: true });
+    const def = agentTool(a.chats()[0])!;
+    // edit has a list but the parent has no edit tool: not offered.
+    expect(def.parameters.properties.kind.enum).toEqual(['explore', 'shell']);
+    expect(def.parameters.required).toEqual(['prompt', 'kind']);
+    expect(def.description).toContain('complete task');
+    const system = String(usageOf(a.chats()[0])[0].content);
+    expect(system).toContain('Sub-agents:');
+    expect(system).toContain('shell: run commands');
+    expect(system).not.toContain('edit: change files');
+  });
+
+  it('leaves the tool and the prompt as they are in fallback and switch, and in delegate without a list for an activity', async () => {
+    for (const [mode, activities] of [['fallback', 'shell'], ['switch', 'shell'], ['delegate', 'none']] as const) {
+      restRegistry.clear();
+      const a = await server([textStep('done', { usageTokens: [10, 2] })]);
+      const b = await server([]);
+      await run({ primary: member(a, 'a'), fallbacks: [member(b, 'b')], activities: activities === 'shell' ? { shell: [member(b, 'b')] } : undefined, mode, tools: [tool('Sh', 'shell')], write: true });
+      const def = agentTool(a.chats()[0])!;
+      expect(def.parameters.properties.kind, mode).toBeUndefined();
+      expect(def.parameters.required).toEqual(['prompt']);
+      expect(def.description).toContain('read-only');
+      expect(String(usageOf(a.chats()[0])[0].content)).not.toContain('Sub-agents:');
+    }
+  });
+
+  it('refuses a kind that is not on offer, naming the ones that are, and the principal goes on', async () => {
+    const a = await server([delegating('edit'), textStep('did it myself', { usageTokens: [10, 2] })]);
+    const b = await server([]);
+    const r = await run({ primary: member(a, 'a'), activities: { shell: [member(b, 'b')] }, tools: [tool('Sh', 'shell')], write: true });
+    expect(r.data).toBe('did it myself');
+    expect(b.chats()).toHaveLength(0);
+    const answer = usageOf(a.chats()[1]).find((m) => m.role === 'tool')!.content as string;
+    expect(answer).toMatch(/kind/);
+    expect(answer).toMatch(/explore.*shell/);
+  });
+
+  it('an explore sub-agent with no list of its own works on the principal\'s model', async () => {
+    const a = await server((req) => {
+      const last = req.body?.messages.at(-1);
+      if (req.n === 1) return delegating('explore', 'search it');
+      return last.role === 'tool' && String(last.content).includes('found') ? textStep('principal done', { usageTokens: [10, 2] }) : textStep('found it', { usageTokens: [10, 2] });
+    });
+    const b = await server([]);
+    const r = await run({ primary: member(a, 'a'), activities: { shell: [member(b, 'b')] }, tools: [tool('Sh', 'shell'), tool('look', 'explore')], write: true });
+    expect(r.data).toBe('principal done');
+    expect(a.chats()).toHaveLength(3);
+    expect(b.chats()).toHaveLength(0);
+  });
+
+  it('a busy model of the list hands the sub-agent to the next of that list, and says so; the principal\'s model does not change', async () => {
+    const a = await server([delegating('shell'), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b1 = await server([BUSY]);
+    const b2 = await server([textStep('sub done', { usageTokens: [10, 2] })]);
+    const events: PoolSwitch[] = [];
+    const r = await run({ primary: member(a, 'a'), activities: { shell: [member(b1, 'b1'), member(b2, 'b2')] }, tools: [tool('Sh', 'shell')], write: true }, events);
+    expect(r.data).toBe('principal done');
+    expect(events.map((e) => [e.from.label, e.to.label, e.reason])).toEqual([['model-b1', 'model-b2', 'rate_limit']]);
+    expect(b2.chats()).toHaveLength(1);
+  });
+
+  it('skips a model of the list that is resting when it starts', async () => {
+    const a = await server([delegating('shell'), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b1 = await server([]);
+    const b2 = await server([textStep('sub done', { usageTokens: [10, 2] })]);
+    restRegistry.rest('key-b1', 60_000);
+    await run({ primary: member(a, 'a'), activities: { shell: [member(b1, 'b1'), member(b2, 'b2')] }, tools: [tool('Sh', 'shell')], write: true });
+    expect(b1.chats()).toHaveLength(0);
+    expect(b2.chats()).toHaveLength(1);
+  });
+
+  it('runs out of turns as an error the principal reads, not a failure of the stage, and what it did stays', async () => {
+    const a = await server([delegating('explore'), textStep('split it then', { usageTokens: [10, 2] })]);
+    const forever = await server(() => toolStep([{ id: 'c', name: 'look', args: {} }], { usageTokens: [10, 2] }));
+    const r = await run({ primary: member(a, 'a'), activities: { explore: [member(forever, 'f')] }, tools: [tool('look', 'explore')], write: true });
+    expect(r.data).toBe('split it then');
+    expect(forever.chats()).toHaveLength(KIND_TURNS.explore);
+    const answer = usageOf(a.chats()[1]).find((m) => m.role === 'tool')!.content as string;
+    expect(answer).toMatch(/sub-agent of kind explore|subagente do tipo explore/);
+    expect(answer).toContain(String(KIND_TURNS.explore));
+  });
+
+  it('runs edit and shell sub-agents one at a time and explore ones together', async () => {
+    const both = (kinds: SubKind[]) => toolStep(kinds.map((k) => ({ id: `call_${k}_${Math.random()}`, name: 'Agent', args: { description: 'go', prompt: `task ${k}`, kind: k } })), { usageTokens: [10, 2] });
+    const sub = (name: string) => (req: FakeRequest): Step => (req.body?.messages.at(-1).role === 'tool' ? textStep('sub done', { usageTokens: [10, 2] }) : toolStep([{ id: 'c', name, args: {} }], { usageTokens: [10, 2] }));
+    for (const [kinds, ordered] of [[['edit', 'shell'], true], [['explore', 'explore'], false]] as const) {
+      log.length = 0;
+      restRegistry.clear();
+      const a = await server([both([...kinds]), textStep('principal done', { usageTokens: [10, 2] })]);
+      const eb = await server(sub('Ed'));
+      const sb = await server(sub('Sh'));
+      const xb = await server(sub('look'));
+      await run({
+        primary: member(a, 'a'),
+        activities: { edit: [member(eb, 'e')], shell: [member(sb, 's')], explore: [member(xb, 'x')] },
+        tools: [tool('Ed', 'edit', 40), tool('Sh', 'shell', 40), tool('look', 'explore', 40)],
+        write: true,
+      });
+      if (ordered) expect(log).toEqual(['start Ed', 'end Ed', 'start Sh', 'end Sh']);
+      else expect(log).toEqual(['start look', 'start look', 'end look', 'end look']);
+    }
+  });
+
+  it('adds the sub-agent\'s use to the stage\'s, once, and writes a line for it in the principal\'s session', async () => {
+    const a = await server([delegating('shell'), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server((req) => (req.body?.messages.at(-1).role === 'tool' ? textStep('sub done', { usageTokens: [7, 3] }) : toolStep([{ id: 'c', name: 'Sh', args: {} }], { usageTokens: [7, 3] })));
+    const used: (UsageRecord & { model: string })[] = [];
+    const r = await run({ primary: member(a, 'a'), activities: { shell: [member(b, 'b')] }, tools: [tool('Sh', 'shell')], write: true }, [], used);
+    expect(used.map((u) => [u.model, u.promptTokens, u.completionTokens])).toEqual([['model-a', 10, 2], ['model-b', 7, 3], ['model-b', 7, 3], ['model-a', 10, 2]]);
+    const lines = readSession(join(dir, 'sessions'), r.sessionId)!;
+    expect(lines.filter((l) => l.t === 'sub')).toMatchObject([{ kind: 'shell', model: 'model-b', turns: 2, promptTokens: 14, completionTokens: 6 }]);
+    // The line is no message: the history of a resumed session has none of it.
+    expect(lines.filter((l) => l.t === 'msg' && l.message.role === 'assistant')).toHaveLength(2);
+  });
+
+  it('does not take the messages the stage\'s door holds: they are the principal\'s', async () => {
+    const a = await server([delegating('shell'), textStep('principal done', { usageTokens: [10, 2] }), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server((req) => (req.body?.messages.at(-1).role === 'tool' ? textStep('sub done', { usageTokens: [10, 2] }) : toolStep([{ id: 'c', name: 'Sh', args: {} }], { usageTokens: [10, 2] })));
+    let asked = 0;
+    await run({ primary: member(a, 'a'), activities: { shell: [member(b, 'b')] }, tools: [tool('Sh', 'shell')], write: true, over: { incoming: async () => (asked++ === 0 ? 'a word from the person' : null) } });
+    expect(JSON.stringify(b.chats().map((c) => c.body?.messages))).not.toContain('a word from the person');
+    expect(JSON.stringify(a.chats().map((c) => c.body?.messages))).toContain('a word from the person');
+  });
+
+  it('a screen sub-agent calls the very tools of the principal: no second session is opened', async () => {
+    let calls = 0;
+    const snap: ToolImpl = { ...tool('Snap', 'screen'), async run() { calls++; return { response: 'ok', render: () => 'shot' }; } };
+    const a = await server([delegating('screen'), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server((req) => (req.body?.messages.at(-1).role === 'tool' ? textStep('sub done', { usageTokens: [10, 2] }) : toolStep([{ id: 'c', name: 'Snap', args: {} }], { usageTokens: [10, 2] })));
+    await run({ primary: member(a, 'a'), activities: { screen: [member(b, 'b', { images: true })] }, tools: [snap] });
+    expect(calls).toBe(1);
+    expect(names(b.chats()[0])).toEqual(['Snap']);
+  });
+});
+
+describe('the model of a kind', () => {
+  const m = (key: string, extra: Partial<PoolMember> = {}): PoolMember => ({ key, label: key, client: {} as never, ...extra });
+
+  it('is the first model of the list that can use tools, with the rest of the list as its spares and no way to move by activity', () => {
+    const pool = { name: 'deep', primary: { key: 'a', label: 'a' }, fallbacks: [], activities: { shell: [m('x', { tools: false }), m('y', { contextWindow: 64_000, images: true }), m('z')] } };
+    const got = modelOfKind('shell', pool)!;
+    expect(got.pool.primary.key).toBe('y');
+    expect(got.pool.fallbacks.map((f) => f.key)).toEqual(['x', 'z']);
+    expect(got.pool.mode).toBe('fallback');
+    expect(got.capabilities).toEqual({ contextWindow: 64_000, images: true });
+  });
+
+  it('is none for a kind without a list', () => {
+    expect(modelOfKind('shell', { name: 'deep', primary: { key: 'a', label: 'a' }, fallbacks: [], activities: { edit: [m('x')] } })).toBeNull();
+    expect(modelOfKind('shell', undefined)).toBeNull();
+  });
+});

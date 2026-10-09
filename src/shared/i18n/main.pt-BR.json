@@ -668,6 +668,8 @@
   "main.engine.text.images": "As imagens que as ferramentas acima leram, em ordem: {paths}",
   "main.engine.text.oldImage": "[uma imagem lida antes, retirada para a conversa não crescer demais]",
   "main.engine.text.noImage": "[aqui havia uma imagem; este modelo não recebe imagens]",
+  "main.engine.text.subTurns": "[subagente do tipo {kind}] parou após {turns} voltas sem terminar. O que já fez em disco fica; divida a tarefa em partes menores ou faça você.",
+  "main.engine.text.subKind": "Não há esse tipo de subagente aqui: {kind}. Disponíveis: {kinds}",
   "main.engine.text.search.noPattern": "Padrão ausente.",
   "main.engine.text.search.noDir": "Diretório não existe: {path}",
   "main.engine.text.search.cut": "… (resultado cortado em 100 arquivos; refine o padrão)",

@@ -20,7 +20,9 @@ export type SessionLine =
   | { t: 'msg'; at: string; message: ChatMessage; usage?: UsageRecord; model?: string }
   | { t: 'resume'; at: string; role: string }
   // The call moved to another model of the pool: not a message, so it never reaches the history.
-  | { t: 'switch'; at: string; from: string; to: string; reason: string; until: number | null; activity: string };
+  | { t: 'switch'; at: string; from: string; to: string; reason: string; until: number | null; activity: string }
+  // A sub-agent of a kind handed a task in `delegate` mode: which kind, the model that answered, the turns and the tokens it spent. Not a message either.
+  | { t: 'sub'; at: string; kind: string; model: string; turns: number; promptTokens: number; completionTokens: number };
 
 export const SESSION_EXT = '.jsonl';
 

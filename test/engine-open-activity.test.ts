@@ -10,6 +10,7 @@ import { shellToolImpl, viewImageToolImpl } from '../src/main/sandbox/engineTool
 import type { SandboxSession } from '../src/main/sandbox/session';
 import { vcsReadToolImpl } from '../src/main/vcs/engineTool';
 import { ACTIVITIES } from '../src/shared/config/types';
+import { KIND_ACTIVITIES, SUB_KINDS, toolsOfKind } from '../src/main/engine/open/subagent';
 
 // A tool without an activity leaves its turn to the role's own list. That is right for an MCP tool, the evidence, release and attachment tools, and wrong by
 // accident for a tool someone forgot: this lists the tools the app ships with a kind of work and holds each to its tag.
@@ -43,5 +44,19 @@ describe('the activity of the tools', () => {
     const impls = screenToolImpls(set);
     expect(impls.map((t) => t.name)).toEqual(['browser_click', CONFIRM_TOOL.name, HANDOFF_TOOL.name]);
     for (const t of impls) expect(t.activity, t.name).toBe('screen');
+  });
+});
+
+describe('the tools of a sub-agent of a kind', () => {
+  it('every kind finds a tool of the app that carries its activity, and the kinds that change something find only theirs and the reading ones', () => {
+    const session = {} as SandboxSession;
+    const app = [...exported(read), ...exported(search), ...exported(write), ...exported(bash), shellToolImpl(session), viewImageToolImpl(session), vcsReadToolImpl(() => ({}) as never)];
+    for (const kind of SUB_KINDS) {
+      const got = toolsOfKind(kind, app);
+      expect(got.length, kind).toBeGreaterThan(0);
+      expect(got.every((x) => x.activity && KIND_ACTIVITIES[kind].includes(x.activity)), kind).toBe(true);
+    }
+    expect(toolsOfKind('shell', app).map((x) => x.name).sort()).toEqual(['Bash', 'Glob', 'Grep', 'Read', 'Shell', 'VcsRead']);
+    expect(toolsOfKind('edit', app).map((x) => x.name).sort()).toEqual(['Edit', 'Glob', 'Grep', 'Read', 'VcsRead', 'Write']);
   });
 });
