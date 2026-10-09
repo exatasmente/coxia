@@ -164,6 +164,7 @@
   "ui.cycle.evidenceBlock.empty": "No evidence in this stage.",
   "ui.cycle.evidenceBlock.failed": "The evidence could not be read.",
   "ui.cycle.evidenceBlock.from": "Marks over evidence {from}",
+  "ui.cycle.evidenceBlock.fullAria": "View {title} full screen",
   "ui.cycle.evidenceBlock.inCycle": "Also in the stage's commit",
   "ui.cycle.evidenceBlock.kb": "{n} KB",
   "ui.cycle.evidenceBlock.loading": "Reading the evidence…",
