@@ -449,6 +449,8 @@ export interface ReleaseAction {
   group?: string;
   /** A push of a release that sent nothing: the remote already had exactly what it would send. Done, but nothing moved on the host. */
   nothingSent?: boolean;
+  /** A release step stopped before anything ran because the branch it needs is checked out in another worktree: the branch held, and where. Cleared when the person frees the checkout. */
+  conflict?: { branch: string; path: string };
   /**
    * The uploads of evidence planned with a write that waits in Actions: `positions` index the group of `commands` (each an upload), `titles` name the images in
    * the same order, and `bodyAt` is the command of the comment or description whose body takes the addresses once the uploads have run. Absent when the write
@@ -499,6 +501,8 @@ export interface Api {
   detectRelease(): Promise<string>;
   previewAction(id: string): Promise<string>;
   approveAction(id: string): Promise<ReleaseAction>;
+  /** Frees the branch of a release step that stopped on a worktree conflict, with the person's "sim" behind it. */
+  freeReleaseCheckout(id: string): Promise<ReleaseAction>;
   skipAction(id: string): Promise<ReleaseAction>;
   conflictAsk(id: string, question: string): Promise<ReleaseAction>;
   conflictFromMr(card: Card, ref: string): Promise<ReleaseAction>;
