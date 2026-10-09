@@ -54,8 +54,8 @@ export interface BrowserSandboxSpec {
   executable: string;
   /** Folders to bind read-only besides the above (the executable's folder when it is not under a system folder). */
   extraReadOnly: string[];
-  /** The display socket on this computer, and its name (`X99`): it shows up at `/tmp/.X11-unix/<name>`. */
-  display: { socket: string; name: string };
+  /** The display socket on this computer, and its name (`X99`): it shows up at `/tmp/.X11-unix/<name>`. null: a browser with no window (it reads a profile and draws nothing). */
+  display: { socket: string; name: string } | null;
   network: EffectiveNetwork['mode'];
   /** Binds a shared network needs to resolve names. */
   resolver: [string, string][];
@@ -69,7 +69,7 @@ const BASE_PATH = '/usr/local/bin:/usr/bin:/bin';
 
 /** The environment of everything inside the browser's sandbox: built from nothing, never copied from the app's. */
 export function browserEnv(spec: BrowserSandboxSpec): Record<string, string> {
-  const display = displayNameOf(spec.display.name);
+  const display = spec.display ? displayNameOf(spec.display.name) : null;
   return {
     PATH: BASE_PATH,
     HOME: '/tmp',
@@ -95,7 +95,7 @@ export function browserBwrapArgs(spec: BrowserSandboxSpec): string[] {
   const tmp = String(spec.tmpMb * 1024 * 1024);
   a.push('--proc', '/proc', '--dev', '/dev', '--size', tmp, '--tmpfs', '/dev/shm', '--remount-ro', '/dev', '--size', tmp, '--tmpfs', '/tmp');
   // The display's socket alone, at its own name: the agent's shell session keeps the rest of its display folder.
-  a.push('--bind', spec.display.socket, `/tmp/.X11-unix/${spec.display.name}`);
+  if (spec.display) a.push('--bind', spec.display.socket, `/tmp/.X11-unix/${spec.display.name}`);
   a.push('--bind', spec.profile, spec.profile);
   a.push('--ro-bind', spec.browsers, spec.browsers);
   for (const folder of spec.extraReadOnly) a.push('--ro-bind', folder, folder);
@@ -168,6 +168,8 @@ export interface ServerSpec {
   images: boolean;
   /** The proxy the browser is handed; only in `proxy` mode. */
   proxy: boolean;
+  /** A browser with no window: for reading a profile, never for an agent. */
+  headless?: boolean;
 }
 
 /**
@@ -191,6 +193,7 @@ export function serverArgs(s: ServerSpec): string[] {
     '--no-sandbox',
     '--config', s.config,
     ...(s.proxy ? ['--proxy-server', BROWSER_PROXY_URL] : []),
+    ...(s.headless ? ['--headless'] : []),
   ];
 }
 
@@ -198,7 +201,7 @@ export function serverArgs(s: ServerSpec): string[] {
 export const serverConfig = (): { browser: { launchOptions: { args: string[] } } } => ({ browser: { launchOptions: { args: [...CHROMIUM_FLAGS] } } });
 
 /** The environment of the server (a child of the app, outside any sandbox): built from nothing, with the session's folders for everything it writes. */
-export function serverEnv(o: { home: string; tmp: string; display: string; browsers: string; sockets: string }): Record<string, string> {
+export function serverEnv(o: { home: string; tmp: string; display: string | null; browsers: string; sockets: string }): Record<string, string> {
   return {
     PATH: BASE_PATH,
     ELECTRON_RUN_AS_NODE: '1',
@@ -206,7 +209,7 @@ export function serverEnv(o: { home: string; tmp: string; display: string; brows
     TMPDIR: o.tmp,
     LANG: 'C.UTF-8',
     // Playwright refuses to launch a headed browser with no display set; the browser itself gets its display from its own sandbox.
-    DISPLAY: o.display,
+    ...(o.display ? { DISPLAY: o.display } : {}),
     PLAYWRIGHT_BROWSERS_PATH: o.browsers,
     PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS: '1',
     // The server opens a unix socket of its own, and a socket's path is short (about 100 bytes): the session folder under the app's data is too long for it.

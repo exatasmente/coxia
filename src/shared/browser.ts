@@ -90,3 +90,17 @@ export interface PendingAsk {
   /** ISO time it started waiting. */
   since: string;
 }
+
+/** A site that holds something in an agent's logged-in browser, as Settings lists it: counts only, never a name of a cookie or a value. */
+export interface ProfileSite {
+  /** The host, lowercase, without a leading dot. */
+  site: string;
+  cookies: number;
+  /** Entries of the site's local storage and databases. */
+  storage: number;
+}
+
+/** Why the sites of a profile could not be read or cleared. */
+export type SitesRefusal = 'agent' | 'site' | 'open' | 'busy' | 'browser' | 'failed';
+export type SitesResult = { ok: true; sites: ProfileSite[] } | { ok: false; why: SitesRefusal; detail?: string };
+export type RevokeResult = { ok: true; removed: boolean; sites: ProfileSite[] } | { ok: false; why: SitesRefusal; detail?: string };

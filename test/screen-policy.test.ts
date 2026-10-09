@@ -36,12 +36,18 @@ describe('web policy for the screen channels', () => {
     expect([...DESKTOP_ONLY].filter((c) => c.startsWith('screen:'))).toEqual([]);
   });
 
-  it('is every screen channel a module serves: each one is denied, and there are the two this feature has', () => {
+  it.each(['screen:sites', 'screen:revoke'])('denies %s, the sites of an agent\'s logged-in browser, to a paired browser with or without the external-effects switch', (channel) => {
+    expect(webAccess(channel)).toBe('deny');
+    expect(webRefusal(channel, true)).not.toBeNull();
+    expect(EXTERNAL_EFFECT.has(channel)).toBe(false);
+  });
+
+  it('is every screen channel a module serves: each one is denied, and there are the four this feature has', () => {
     const served: string[] = [];
     for (const file of readdirSync(SRC, { recursive: true }).map(String).filter((f) => f.endsWith('.ts'))) {
       for (const m of readFileSync(join(SRC, file), 'utf8').matchAll(/(?:ctx\.handle|handle)\(\s*'(screen:[\w-]+)'/g)) served.push(m[1]);
     }
-    expect(served.sort()).toEqual(['screen:control', 'screen:input']);
+    expect(served.sort()).toEqual(['screen:control', 'screen:input', 'screen:revoke', 'screen:sites']);
     for (const channel of served) expect(webAccess(channel), channel).toBe('deny');
   });
 

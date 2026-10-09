@@ -227,6 +227,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   const m = JSON.parse(line);
   ${extra}
   if (m.method === 'initialize') return send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'fake' } } });
+  if (m.method === 'tools/call') return send({ jsonrpc: '2.0', id: m.id, result: { content: [] } });
   if (m.method === 'tools/list') return send({ jsonrpc: '2.0', id: m.id, result: { tools: ${JSON.stringify(tools.map((name) => ({ name, inputSchema: { type: 'object' } })))} } });
 });
 `;
@@ -417,8 +418,8 @@ describe.skipIf(!real)('a real browser in its sandbox', () => {
   });
 
   it('loads a page of the listed host through the proxy, on a display of its own', async () => {
-    expect(runtime.display.own).toBe(true);
-    expect(statSync(runtime.display.socket).isSocket()).toBe(true);
+    expect(runtime.display?.own).toBe(true);
+    expect(statSync(runtime.display?.socket as string).isSocket()).toBe(true);
     const nav = await call('browser_navigate', { url: `https://${HOST}/` });
     expect(nav.isError, textOf(nav)).not.toBe(true);
     const snap = await call('browser_snapshot', {});
@@ -426,26 +427,6 @@ describe.skipIf(!real)('a real browser in its sandbox', () => {
     expect(siteHits).toBeGreaterThan(0);
     expect(runtime.hosts.summary().allowed[HOST]).toBeGreaterThan(0);
   }, 60_000);
-
-  it('cannot reach another host, plain http, a service on the computer\'s loopback, a local-network address or a file', async () => {
-    // (Chromium upgrades `http://` to `https://` before it falls back, so a listed host over plain http is just the listed host over https: the plain request that is
-    // left, to a host that is not listed, is what reaches the proxy as something other than CONNECT.)
-    const before = { site: siteHits, loopback: loopbackHits };
-    const attempts = [`https://other.example.com/`, 'http://plain.example.com/', `http://127.0.0.1:${(loopback.address() as AddressInfo).port}/`, `http://${[10, 0, 0, 1].join('.')}/`, 'file:///etc/hostname'];
-    for (const url of attempts) {
-      const r = await call('browser_navigate', { url });
-      const text = textOf(r);
-      expect(r.isError === true || /ERR_|Error|error|blocked|Access to file/i.test(text), `${url}: ${text.slice(0, 200)}`).toBe(true);
-      expect(text).not.toContain('Welcome to the allowed site');
-      expect(text).not.toContain('a service on the computer');
-    }
-    expect(loopbackHits).toBe(before.loopback);
-    expect(siteHits).toBe(before.site);
-    const summary = runtime.hosts.summary();
-    expect(summary.refused['other.example.com']).toBeGreaterThan(0);
-    // `http://` reaches the proxy as a request that is not CONNECT: refused, and counted under no host.
-    expect(refusedBy.some((d) => !d.allowed && d.why === 'method')).toBe(true);
-  }, 120_000);
 
   it('is driven through the intermediary: the app reads the page itself, holds a submit, and fences what comes back', async () => {
     const asked: string[] = [];
@@ -476,6 +457,26 @@ describe.skipIf(!real)('a real browser in its sandbox', () => {
     expect(log.entries().map((e) => `${e.tool} ${e.outcome} ${e.class}`)).toEqual(['browser_navigate ok free', 'browser_snapshot ok free', 'browser_click ok free', 'browser_click not-run unclassified', 'browser_navigate not-run unclassified']);
     expect(log.entries()[2]).toMatchObject({ role: 'button', name: 'Next', site: HOST });
   }, 90_000);
+
+  it('cannot reach another host, plain http, a service on the computer\'s loopback, a local-network address or a file', async () => {
+    // (Chromium upgrades `http://` to `https://` before it falls back, so a listed host over plain http is just the listed host over https: the plain request that is
+    // left, to a host that is not listed, is what reaches the proxy as something other than CONNECT.)
+    const before = { site: siteHits, loopback: loopbackHits };
+    const attempts = [`https://other.example.com/`, 'http://plain.example.com/', `http://127.0.0.1:${(loopback.address() as AddressInfo).port}/`, `http://${[10, 0, 0, 1].join('.')}/`, 'file:///etc/hostname'];
+    for (const url of attempts) {
+      const r = await call('browser_navigate', { url });
+      const text = textOf(r);
+      expect(r.isError === true || /ERR_|Error|error|blocked|Access to file/i.test(text), `${url}: ${text.slice(0, 200)}`).toBe(true);
+      expect(text).not.toContain('Welcome to the allowed site');
+      expect(text).not.toContain('a service on the computer');
+    }
+    expect(loopbackHits).toBe(before.loopback);
+    expect(siteHits).toBe(before.site);
+    const summary = runtime.hosts.summary();
+    expect(summary.refused['other.example.com']).toBeGreaterThan(0);
+    // `http://` reaches the proxy as a request that is not CONNECT: refused, and counted under no host.
+    expect(refusedBy.some((d) => !d.allowed && d.why === 'method')).toBe(true);
+  }, 120_000);
 
   it('has nothing but its own loopback to go out by', async () => {
     // The sandbox shows only `lo`: the executable of the browser's sandbox is the one the server launched, so look at it with a probe of the same arguments.

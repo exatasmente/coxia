@@ -43,8 +43,10 @@ export interface BrowserStartOptions {
   network: EffectiveNetwork;
   /** The profile folder the browser works on (already made and checked, `profile.ts`); null: a throwaway one inside the session. */
   profile: string | null;
-  /** The display to draw on: the socket of the agent's shell session; null: the app starts one of its own. */
+  /** The display to draw on: the socket of the agent's shell session; null: the app starts one of its own (unless `headless`). */
   display: { socket: string; name: string } | null;
+  /** No window and no display: for reading or clearing what a profile holds, with no agent in it. */
+  headless?: boolean;
   /** The browsers folder, as the sandbox's guards made it real, and the Chromium in it. */
   browsers: string;
   chromium: string;
@@ -72,8 +74,8 @@ export interface BrowserDeps {
 export interface BrowserRuntime {
   /** The control channel of the server. Only the app holds it. */
   client: McpClient;
-  /** The display the browser draws on: the socket, its name, and whether the app started it (and ends it). */
-  display: { socket: string; name: string; own: boolean };
+  /** The display the browser draws on: the socket, its name, and whether the app started it (and ends it). null: a headless browser. */
+  display: { socket: string; name: string; own: boolean } | null;
   network: EffectiveNetwork;
   hosts: HostsTally;
   profile: { dir: string; fresh: boolean };
@@ -126,8 +128,10 @@ export async function startBrowser(o: BrowserStartOptions, deps: BrowserDeps = {
     }
 
     // The display: lent by the agent's shell session, or one of the app's own.
-    let display: BrowserRuntime['display'];
-    if (o.display) {
+    let display: BrowserRuntime['display'] = null;
+    if (o.headless) {
+      display = null;
+    } else if (o.display) {
       display = { ...o.display, own: false };
     } else {
       const xvfb = displayProgram([]);
@@ -137,8 +141,8 @@ export async function startBrowser(o: BrowserStartOptions, deps: BrowserDeps = {
       cleanup.push(() => own.stop());
       display = { socket: own.socket, name: own.name, own: true };
     }
-    const displayName = displayNameOf(display.name);
-    if (!displayName) throw new BrowserStartError('display', 'a display with a name that is not one');
+    const displayName = display ? displayNameOf(display.name) : null;
+    if (display && !displayName) throw new BrowserStartError('display', 'a display with a name that is not one');
 
     // What the browser's sandbox binds besides the system: the app's executable (it runs the forwarder), unless it is already under a system folder.
     const system = systemLayout();
@@ -152,7 +156,7 @@ export async function startBrowser(o: BrowserStartOptions, deps: BrowserDeps = {
       chromium: o.chromium,
       executable,
       extraReadOnly: o.network.mode === 'proxy' && !underSystem ? [exeDir] : [],
-      display: { socket: display.socket, name: display.name },
+      display: display ? { socket: display.socket, name: display.name } : null,
       network: o.network.mode,
       resolver: o.network.mode === 'open' ? nameResolverBinds() : [],
       fileMb: FILE_MB,
@@ -168,7 +172,7 @@ export async function startBrowser(o: BrowserStartOptions, deps: BrowserDeps = {
     // A short folder of its own for the server's socket, taken away with the session.
     const sockets = folder(join(tmpdir(), `cxpw-${basename(sessionDir)}`));
     cleanup.push(() => void removeTree(sockets));
-    const args = [...serverArgs({ cli: deps.cli ?? PLAYWRIGHT_MCP_CLI, profile, outDir: join(sessionDir, 'out'), wrapper, config, images: o.seesImages, proxy: o.network.mode === 'proxy' }), ...(deps.serverExtra ?? [])];
+    const args = [...serverArgs({ cli: deps.cli ?? PLAYWRIGHT_MCP_CLI, profile, outDir: join(sessionDir, 'out'), wrapper, config, images: o.seesImages, proxy: o.network.mode === 'proxy', headless: o.headless }), ...(deps.serverExtra ?? [])];
     const { child, client } = spawnMcp(
       { command: executable, args, env: serverEnv({ home: join(sessionDir, 'home'), tmp: join(sessionDir, 'tmp'), display: displayName, browsers: o.browsers, sockets }), cwd: join(sessionDir, 'home'), detached: true },
       deps.spawn,
@@ -214,7 +218,12 @@ export async function startBrowser(o: BrowserStartOptions, deps: BrowserDeps = {
       hosts,
       profile: { dir: profile, fresh: o.profile === null },
       sessionDir,
-      close: () => (closing ??= undo()),
+      close: () =>
+        (closing ??= (async () => {
+          // The browser is asked to close itself first, so what a profile keeps (cookies, storage) is written out before the processes are ended.
+          await client.callTool('browser_close', {}, { timeoutMs: 4000 }).catch(() => undefined);
+          await undo();
+        })()),
     };
   } catch (e) {
     await undo();
