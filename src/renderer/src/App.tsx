@@ -23,6 +23,7 @@ import { BoardScreen } from './screens/cycle/BoardScreen';
 import { ForumScreen } from './screens/cycle/ForumScreen';
 import { RunScreen } from './screens/cycle/RunScreen';
 import { RunsScreen } from './screens/cycle/RunsScreen';
+import { ProceduresScreen } from './screens/procedures/ProceduresScreen';
 import { QaHandoff } from './screens/QaHandoff';
 import { QuickActions } from './screens/QuickActions';
 import { Reentry } from './screens/Reentry';
@@ -68,6 +69,7 @@ export type Screen =
   | { name: 'runs' }
   | { name: 'board' }
   | { name: 'forum'; thread?: string }
+  | { name: 'procedures' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -208,6 +210,8 @@ export function App() {
       return <RunsScreen go={go} />;
     case 'board':
       return <BoardScreen go={go} />;
+    case 'procedures':
+      return <ProceduresScreen go={go} />;
     case 'run':
       return <RunScreen id={screen.id} go={go} ceremony={ceremony} actions={actions} tab={screen.tab} back={screen.from === 'runs' ? { name: 'runs' } : undefined} />;
     case 'auditoria':
