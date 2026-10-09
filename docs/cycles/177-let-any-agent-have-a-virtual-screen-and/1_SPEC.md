@@ -1,6 +1,6 @@
 # Let any agent have a virtual screen, and watch it from the conversation it works in
 
-Gate 1: not approved yet. Written on 2026-10-09 for the maintainer to read, change and approve. Nothing here is built; the plan (`2_PLAN.md`) comes after the approval.
+Gate 1: **approved on 2026-10-09** (answers at the end). Gate 2 waived by the maintainer; the plan (`2_PLAN.md`) follows.
 
 Marks used below: **decided** is a maintainer decision taken in chat on 2026-10-09 (not reopened here); **proposed — confirm at gate 1** is a product choice this spec makes and the maintainer may change; **verified 2026-10-09** is a fact read in the code on `release/0.9.0` (`9c13311b`, schema 20), nothing was run; **requirement for the plan** is something the spec fixes as an outcome and leaves the mechanism to the plan; **not verified** is said in the last section. Names of fields, channels and tools are suggestions: the plan fixes them.
 
@@ -309,9 +309,10 @@ Each with the recommended answer, for the maintainer at gate 1.
 
 ## Gate 1 decisions
 
-Gate 1 is still open: the maintainer is reading the spec. Answers taken so far (2026-10-09):
+Gate 1 approved on 2026-10-09. Answers of the maintainer:
 
 1. **The "two doors" rule (rule 40) is approved** as written: Actions, and the app's browser with its structural hold; the shell path keeps only the recording, the host list and the voluntary `screen_confirm`.
 2. **Unclassifiable steps are held** (fail closed), with "Yes for the rest of this screen on this site", which never applies to an irreversible step (open question 5, as recommended).
 
-The other open questions are pending.
+3. **Every other open question takes its recommended answer** (open questions 1 to 4 and 6 to 22, as written above), by the maintainer's choice on 2026-10-09.
+4. **Gate 2 is waived** by the maintainer: the plan (`2_PLAN.md`) is written and the implementation follows it without a separate approval; push and pull request still wait for the maintainer's yes.
