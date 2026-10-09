@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CONFIG_SCHEMA, collectSecretRequirements, mergeDeep, neutralConfig, newProvider, stageRank, validateConfig, withConfigDefaults } from '../src/shared/config';
 import type { JsonSchema } from '../src/shared/config';
 import { CONFIG_SCHEMA_VERSION } from '../src/shared/config/types';
+import { newAgent } from '../src/shared/config/team';
 import { TEST_STAGES, exampleProfile } from './helpers/config';
 import { validateSchema } from '../src/shared/config/jsonSchema';
 
@@ -82,7 +83,9 @@ describe('config schema', () => {
     // promptOverrides is a map keyed by prompt id: its keys are data, not fields.
     expect([...holds].filter((k) => !declared.has(k) && !k.startsWith('devCycle.promptOverrides.'))).toEqual([]);
     // Fields that only appear when a list has items, or whose default is an empty list: the schema may know more than the defaults hold.
-    const optionalOnlyInItems = [...declared].filter((k) => !holds.has(k) && !k.includes('[]'));
+    // The pool of a role and the score overrides are absent from every default (absent = no fallbacks); a test below holds them to the schema.
+    const optionalPool = (k: string) => k.startsWith('llm.scoreOverrides') || /^llm\.roles\.[a-z]+\.(fallbacks|activities|images|contextWindow|echoReasoning)(\.|$)/.test(k);
+    const optionalOnlyInItems = [...declared].filter((k) => !holds.has(k) && !k.includes('[]') && !optionalPool(k));
     expect(optionalOnlyInItems).toEqual([]);
   });
 
@@ -112,6 +115,74 @@ describe('config schema', () => {
     expect(validateConfig({ ...neutralConfig(), schemaVersion: CONFIG_SCHEMA_VERSION + 1 }).errors[0].message).toMatch(/newer app/);
     expect(validateConfig(null).ok).toBe(false);
     expect(validateConfig([]).ok).toBe(false);
+  });
+
+  describe('model pools', () => {
+    const withProviders = () => {
+      const c = neutralConfig();
+      c.llm.providers.push(newProvider({ id: 'spare', kind: 'openai-compatible', baseUrl: 'http://example.com/v1' }));
+      return c;
+    };
+    const role = (c: ReturnType<typeof neutralConfig>, pool: Record<string, unknown>) => ({ ...c, llm: { ...c.llm, roles: { ...c.llm.roles, deep: { ...c.llm.roles.deep, ...pool } } } });
+
+    it('carry no pool by default: no fallbacks, no activities, no overrides, no facts', () => {
+      const c = neutralConfig();
+      for (const r of Object.values(c.llm.roles)) expect(Object.keys(r).sort()).toEqual(['model', 'provider']);
+      expect(c.llm.scoreOverrides).toBeUndefined();
+      expect(CONFIG_SCHEMA.properties?.llm.properties?.roles.properties?.deep.properties?.fallbacks.maxItems).toBe(8);
+    });
+
+    it('accepts fallbacks and a list per activity, and the facts of an entry', () => {
+      const c = withProviders();
+      const ok = role(c, { fallbacks: [{ provider: 'spare', model: 'model-a', images: true, contextWindow: 128_000, echoReasoning: true }], activities: { screen: [{ provider: 'spare', model: 'model-b', images: true }], shell: [{ provider: 'anthropic', model: 'haiku' }] } });
+      const r = validateConfig(ok);
+      expect(r.errors).toEqual([]);
+      expect(r.config?.llm.roles.deep.fallbacks?.[0]).toMatchObject({ model: 'model-a', contextWindow: 128_000 });
+      expect(validateConfig({ ...c, llm: { ...c.llm, scoreOverrides: { floors: { shell: 80 }, models: { 'model-a': { edit: 70.5 } } } } }).errors).toEqual([]);
+    });
+
+    it('refuses a wrong type, an unknown field, a list that is too long and a score out of range', () => {
+      const c = withProviders();
+      const entry = (n: number) => ({ provider: 'spare', model: `model-${n}` });
+      const paths = (x: unknown) => validateConfig(x).errors.map((e) => e.path);
+      expect(paths(role(c, { fallbacks: 'model-a' }))).toEqual(['llm.roles.deep.fallbacks']);
+      expect(paths(role(c, { fallbacks: [{ provider: 'spare', model: 'a b' }] }))).toEqual(['llm.roles.deep.fallbacks[0].model']);
+      expect(paths(role(c, { fallbacks: [{ provider: 'spare', model: 'model-a', extra: 1 }] }))).toEqual(['llm.roles.deep.fallbacks[0].extra']);
+      expect(paths(role(c, { fallbacks: [{ provider: 'spare', model: 'model-a', contextWindow: 10 }] }))).toEqual(['llm.roles.deep.fallbacks[0].contextWindow']);
+      expect(paths(role(c, { fallbacks: Array.from({ length: 9 }, (_, i) => entry(i)) }))).toEqual(['llm.roles.deep.fallbacks']);
+      expect(paths(role(c, { activities: { sleep: [entry(1)] } }))).toEqual(['llm.roles.deep.activities.sleep']);
+      expect(paths({ ...c, llm: { ...c.llm, scoreOverrides: { floors: { shell: 101 } } } })).toEqual(['llm.scoreOverrides.floors.shell']);
+    });
+
+    it('refuses an entry of a provider that does not exist and a model listed twice, and warns about a screen entry that takes no image', () => {
+      const c = withProviders();
+      expect(validateConfig(role(c, { fallbacks: [{ provider: 'gone', model: 'model-a' }] })).errors.map((e) => e.path)).toEqual(['llm.roles.deep.fallbacks[0].provider']);
+      const first = c.llm.roles.deep;
+      expect(validateConfig(role(c, { fallbacks: [{ provider: first.provider, model: first.model }] })).errors.map((e) => e.path)).toEqual(['llm.roles.deep.fallbacks[0]']);
+      expect(validateConfig(role(c, { activities: { edit: [{ provider: 'spare', model: 'm' }, { provider: 'spare', model: 'm' }] } })).errors.map((e) => e.path)).toEqual(['llm.roles.deep.activities.edit[1]']);
+      const warned = validateConfig(role(c, { activities: { screen: [{ provider: 'spare', model: 'm', images: false }] } }));
+      expect(warned.ok).toBe(true);
+      expect(warned.warnings.map((w) => w.path)).toEqual(['llm.roles.deep.activities.screen[0]']);
+    });
+
+    it('an agent with a model of its own carries a pool too; one on a role ignores it, with a warning', () => {
+      const c = withProviders();
+      const own = newAgent({ id: 'writer', name: 'Writer', model: { role: null, provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'anthropic', model: 'haiku' }] } });
+      const ok = validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, own] } });
+      expect(ok.errors).toEqual([]);
+      expect(ok.config?.agents.team.at(-1)?.model.fallbacks).toEqual([{ provider: 'anthropic', model: 'haiku' }]);
+      const bad = newAgent({ id: 'writer', name: 'Writer', model: { role: null, provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'gone', model: 'x' }] } });
+      expect(validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, bad] } }).errors.map((e) => e.path)).toEqual([`agents.team[${c.agents.team.length}].model.fallbacks[0].provider`]);
+      const borrowed = newAgent({ id: 'writer', name: 'Writer', model: { role: 'deep', provider: '', model: '', fallbacks: [{ provider: 'spare', model: 'x' }] } });
+      const warn = validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, borrowed] } });
+      expect(warn.ok).toBe(true);
+      expect(warn.warnings.map((w) => w.path)).toContain(`agents.team[${c.agents.team.length}].model`);
+    });
+
+    it('newAgent leaves an empty pool out, so an agent without one keeps the shape it had', () => {
+      const a = newAgent({ id: 'writer', name: 'Writer', model: { role: null, provider: 'spare', model: 'm', fallbacks: [], activities: { edit: [] } } });
+      expect(a.model).toEqual({ role: null, provider: 'spare', model: 'm' });
+    });
   });
 
   it('accepts the draft mark of an agent and refuses one that is not a boolean', () => {

@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 24): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 25): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 24;
+export const CONFIG_SCHEMA_VERSION = 25;
 
 /** The local read-only state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
@@ -87,15 +87,51 @@ export interface LlmProvider {
   legacyCustomEndpoint: boolean;
 }
 
-export interface RoleModel {
+/** What a model is used for in a turn: the pool of a role may carry a list of its own for each one. */
+export const ACTIVITIES = ['explore', 'edit', 'shell', 'screen', 'write'] as const;
+export type Activity = (typeof ACTIVITIES)[number];
+
+/** The activities that have a quality floor (the others are ordered by price alone). */
+export const SCORED_ACTIVITIES = ['shell', 'edit', 'screen'] as const;
+export type ScoredActivity = (typeof SCORED_ACTIVITIES)[number];
+
+/** Most models one pool list may hold. */
+export const MAX_POOL_ENTRIES = 8;
+
+/** One entry of a pool: a model of a provider the person already registered, and what is known about it. */
+export interface ModelRef {
   /** An LlmProvider id. */
   provider: string;
   model: string;
+  /** This model takes an image in a message (a provider may serve models with and without). Absent: the provider's capability decides. */
+  images?: boolean;
+  /** Context window in tokens, when known. Absent: the provider's capability, else unknown. */
+  contextWindow?: number;
+  /** Send this model's own reasoning back to it from the first call (some reasoning models need it). Absent: learned at run time. */
+  echoReasoning?: boolean;
+}
+
+/** The models a call may move to when the first one is busy. Absent: no fallbacks, nothing changes. */
+export interface ModelPool {
+  /** Spare models of the role, cheapest first. */
+  fallbacks?: ModelRef[];
+  /** A complete list for one activity; it replaces the role's list (the first model and `fallbacks`) for that activity. */
+  activities?: Partial<Record<Activity, ModelRef[]>>;
+}
+
+/** `provider` and `model` are the first entry of the role's pool. */
+export interface RoleModel extends ModelRef, ModelPool {}
+
+/** Override of the shipped quality scores: a floor per activity, or the score of one model (by normalized id). */
+export interface ScoreOverrides {
+  floors?: Partial<Record<ScoredActivity, number>>;
+  models?: Record<string, Partial<Record<ScoredActivity, number>>>;
 }
 
 export interface LlmConfig {
   providers: LlmProvider[];
   roles: Record<LlmRole, RoleModel>;
+  scoreOverrides?: ScoreOverrides;
 }
 
 export interface RepoConfig {
@@ -514,7 +550,8 @@ export type AgentTracker = (typeof AGENT_TRACKERS)[number];
 export const AGENT_SHELLS = ['none', 'allowlist', 'sandbox', 'host'] as const;
 export type AgentShell = (typeof AGENT_SHELLS)[number];
 
-export interface AgentModel {
+/** `fallbacks` and `activities` are ignored while `role` is set (the role's pool is used); the facts of ModelRef describe the agent's own model. */
+export interface AgentModel extends ModelPool, Pick<ModelRef, 'images' | 'contextWindow' | 'echoReasoning'> {
   /** Borrow the provider and model of an `llm.roles` entry. null: use `provider` and `model` below. */
   role: LlmRole | null;
   /** An LlmProvider id; empty while `role` is set. */

@@ -107,6 +107,55 @@ describe('getters for a fresh install: neutral, nothing from a company or a mach
     expect(x.role('turn').providerId).toBe('anthropic');
   });
 
+  describe('model pools', () => {
+    const pooled = () => {
+      const c = neutralConfig();
+      c.llm.providers.push(newProvider({ id: 'local', kind: 'openai-compatible', baseUrl: 'http://localhost:11434/v1', models: ['model-a', 'model-b'] }));
+      c.llm.roles.deep = { provider: 'local', model: 'model-a', images: false, fallbacks: [{ provider: 'local', model: 'model-b', images: true, contextWindow: 64_000, echoReasoning: true }, { provider: 'anthropic', model: 'haiku' }], activities: { screen: [{ provider: 'local', model: 'model-b', images: true }] } };
+      return c;
+    };
+
+    it('a role without a pool resolves as before: no pool field at all', () => {
+      const r = resolveConfig(neutralConfig(), ctx).role('deep');
+      expect('pool' in r || 'images' in r || 'contextWindow' in r || 'echoReasoning' in r).toBe(false);
+    });
+
+    it('resolves every entry like the role itself, with the facts of the entry', () => {
+      const r = resolveConfig(pooled(), ctx).role('deep');
+      expect(r).toMatchObject({ providerId: 'local', model: 'model-a', images: false });
+      expect(r.pool?.fallbacks.map((x) => [x.providerId, x.model, x.engine])).toEqual([['local', 'model-b', 'open'], ['anthropic', 'haiku', 'claude-sdk']]);
+      expect(r.pool?.fallbacks[0]).toMatchObject({ images: true, contextWindow: 64_000, echoReasoning: true, baseUrl: 'http://localhost:11434/v1' });
+      expect(r.pool?.fallbacks[0].pool).toBeUndefined();
+      expect(r.pool?.activities.screen?.map((x) => x.model)).toEqual(['model-b']);
+      expect(r.pool?.activities.edit).toBeUndefined();
+    });
+
+    it('an agent on a role uses the role\'s pool, and one with a model of its own uses its own', () => {
+      const c = pooled();
+      const x = resolveConfig(c, ctx);
+      expect(x.agentModel({ role: 'deep', provider: '', model: '' }, 'teams').pool?.fallbacks).toHaveLength(2);
+      const own = x.agentModel({ role: null, provider: 'local', model: 'model-b', fallbacks: [{ provider: 'local', model: 'model-a' }] }, 'fix');
+      expect(own).toMatchObject({ role: 'fix', model: 'model-b' });
+      expect(own.pool?.fallbacks.map((m) => m.model)).toEqual(['model-a']);
+      expect(x.agentModel({ role: null, provider: 'local', model: 'model-b' }).pool).toBeUndefined();
+    });
+
+    it('throws for an entry whose provider does not exist, like the role itself', () => {
+      const c = pooled();
+      c.llm.roles.deep.fallbacks = [{ provider: 'gone', model: 'x' }];
+      expect(() => resolveConfig(c, ctx).role('deep')).toThrow(/gone/);
+    });
+
+    it('applying Settings keeps the pool of a role, and drops what was known of the old model when the model changes', () => {
+      const c = pooled();
+      const s = settingsFromConfig(c, NEUTRAL_WEB);
+      const same = applySettings(c, s);
+      expect(same.llm.roles.deep).toEqual(c.llm.roles.deep);
+      const changed = applySettings(c, { ...s, models: { ...s.models, deep: 'model-c' } });
+      expect(changed.llm.roles.deep).toEqual({ provider: 'local', model: 'model-c', fallbacks: c.llm.roles.deep.fallbacks, activities: c.llm.roles.deep.activities });
+    });
+  });
+
   it('a configured root and repos resolve against the home folder', () => {
     const c = neutralConfig();
     c.projects.roots = ['~/work', '/srv/code'];

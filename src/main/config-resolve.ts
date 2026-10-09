@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { claudeProjectFolder, expandHome } from '../shared/config/paths';
-import type { AgentModel, CeremonyId, ClaudeCliConfig, DevCycleConfig, EngineId, IssueProjectConfig, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, SpecLayout, StageDef, StructuredMode, TerminalConfig, VcsKind, WorkspaceConfig } from '../shared/config/types';
+import { ACTIVITIES } from '../shared/config/types';
+import type { Activity, AgentModel, CeremonyId, ClaudeCliConfig, DevCycleConfig, EngineId, IssueProjectConfig, LlmProvider, LlmRole, ModelPool, ModelRef, ProviderCapabilities, ProviderKind, SpecLayout, StageDef, StructuredMode, TerminalConfig, VcsKind, WorkspaceConfig } from '../shared/config/types';
 import { configuredCli } from '../shared/cycles/terms';
 import { t } from '../shared/i18n';
 
@@ -68,6 +69,18 @@ export interface ResolvedRole {
   temperature: number | null;
   timeoutMs: number | null;
   legacyCustomEndpoint: boolean;
+  /** What the pool entry says of this model (absent: the provider's capabilities decide). */
+  images?: boolean;
+  contextWindow?: number;
+  echoReasoning?: boolean;
+  /** The other models this call may move to; absent when the role has none (nothing changes). Each entry is resolved like the role itself. */
+  pool?: ResolvedPool;
+}
+
+/** `fallbacks` follow the model itself; `activities[a]` is a complete list that replaces `[model, ...fallbacks]` for that activity. */
+export interface ResolvedPool {
+  fallbacks: ResolvedRole[];
+  activities: Partial<Record<Activity, ResolvedRole[]>>;
 }
 
 export interface ResolvedConfig {
@@ -121,7 +134,7 @@ export function resolveConfig(c: WorkspaceConfig, ctx: ResolveContext): Resolved
   const sync = c.externalTools.releaseSync;
   const time = c.externalTools.timeExport;
 
-  const target = (role: LlmRole, modelRole: LlmRole, providerId: string, model: string): ResolvedRole => {
+  const target = (role: LlmRole, modelRole: LlmRole, providerId: string, model: string, facts: Partial<ModelRef> = {}, pool?: ModelPool): ResolvedRole => {
     const p = c.llm.providers.find((q) => q.id === providerId);
     if (!p) throw new Error(t('main.config.noProvider', { provider: providerId, role }));
     return {
@@ -142,7 +155,19 @@ export function resolveConfig(c: WorkspaceConfig, ctx: ResolveContext): Resolved
       temperature: p.temperature,
       timeoutMs: p.timeoutMs,
       legacyCustomEndpoint: p.legacyCustomEndpoint,
+      ...(facts.images !== undefined ? { images: facts.images } : {}),
+      ...(facts.contextWindow !== undefined ? { contextWindow: facts.contextWindow } : {}),
+      ...(facts.echoReasoning !== undefined ? { echoReasoning: facts.echoReasoning } : {}),
+      ...poolOf(role, modelRole, pool),
     };
+  };
+  // Every entry of a pool goes through `target`, which refuses a provider that does not exist.
+  const poolOf = (role: LlmRole, modelRole: LlmRole, pool: ModelPool | undefined): { pool?: ResolvedPool } => {
+    const entry = (r: ModelRef) => target(role, modelRole, r.provider, r.model, r);
+    const fallbacks = (pool?.fallbacks ?? []).map(entry);
+    const activities: Partial<Record<Activity, ResolvedRole[]>> = {};
+    for (const a of ACTIVITIES) if (pool?.activities?.[a]?.length) activities[a] = pool.activities[a]!.map(entry);
+    return fallbacks.length || Object.keys(activities).length ? { pool: { fallbacks, activities } } : {};
   };
 
   return {
@@ -172,14 +197,14 @@ export function resolveConfig(c: WorkspaceConfig, ctx: ResolveContext): Resolved
     role(role) {
       const modelRole = c.agents.roles[role]?.modelRole ?? role;
       const rm = c.llm.roles[modelRole] ?? c.llm.roles[role];
-      return target(role, modelRole, rm.provider, rm.model);
+      return target(role, modelRole, rm.provider, rm.model, rm, rm);
     },
     agentModel(model, label = 'deep') {
       if (model.role) {
         const rm = c.llm.roles[model.role];
-        return target(label, model.role, rm.provider, rm.model);
+        return target(label, model.role, rm.provider, rm.model, rm, rm);
       }
-      return target(label, label, model.provider, model.model);
+      return target(label, label, model.provider, model.model, model, model);
     },
   };
 }

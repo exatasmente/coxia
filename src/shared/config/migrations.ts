@@ -376,7 +376,14 @@ function v23ToV24(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 24, mcpState: old.mcpState ?? { enabled: false } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24 };
+// A role and an agent's own model may now carry a pool (`fallbacks`, `activities`) and the workspace `llm.scoreOverrides`. A v24 file has none, and a model without a pool is
+// the only one its call uses: nothing is raised or switched on. The bump is what keeps an app that does not know the fields from reading a file that carries them as an llm block to repair.
+function v24ToV25(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  notes.push('model pools were added (fallbacks and activities per role and per agent; absent = no fallbacks)');
+  return { ...old, schemaVersion: 25 };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 
@@ -391,15 +398,51 @@ function set(root: Doc, path: (string | number)[], value: unknown): void {
 }
 
 // A stored value that fails validation is replaced by the default it would have had, so one bad field never locks a workspace out.
+// The optional model-pool fields are absent in every default, so a bad one is dropped (one entry of a list, or the field), never the role or the agent model around it.
+const POOL_KEYS = new Set(['fallbacks', 'activities', 'scoreOverrides', 'images', 'contextWindow', 'echoReasoning']);
+
+// Index of the pool field a path points into, or -1: `llm.roles.<role>.<key>`, `llm.scoreOverrides` or `agents.team[i].model.<key>`.
+function poolKeyAt(path: (string | number)[]): number {
+  const known = (k: string | number | undefined) => typeof k === 'string' && POOL_KEYS.has(k);
+  if (path[0] === 'llm' && path[1] === 'roles' && known(path[3])) return 3;
+  if (path[0] === 'llm' && path[1] === 'scoreOverrides') return 1;
+  if (path[0] === 'agents' && path[1] === 'team' && path[3] === 'model' && known(path[4])) return 4;
+  return -1;
+}
+
+function dropPoolField(out: Doc, path: (string | number)[], drops: { list: unknown[]; entry: unknown }[]): boolean {
+  const at = poolKeyAt(path);
+  if (at < 0) return false;
+  // Inside a list (`fallbacks[1]`, `activities.edit[0]`): drop that entry only.
+  const listAt = path.findIndex((k, i) => i > at && typeof k === 'number');
+  if (listAt > at) {
+    const list = get(out, path.slice(0, listAt));
+    if (Array.isArray(list)) drops.push({ list, entry: list[path[listAt] as number] });
+    return true;
+  }
+  const parent = get(out, path.slice(0, at));
+  if (parent !== null && typeof parent === 'object') delete (parent as Record<string, unknown>)[path[at] as string];
+  return true;
+}
+
 function repair(doc: Doc, base: WorkspaceConfig, issues: ConfigIssue[], notes: string[]): Doc {
   const out = structuredClone(doc);
+  const drops: { list: unknown[]; entry: unknown }[] = [];
   for (const issue of issues) {
+    if (dropPoolField(out, tokens(issue.path), drops)) {
+      notes.push(`dropped ${issue.path}: ${issue.message}`);
+      continue;
+    }
     let path = tokens(issue.path);
     while (path.length && typeof path[path.length - 1] === 'number') path = path.slice(0, -1);
     while (path.length > 1 && get(base, path) === undefined) path = path.slice(0, -1);
     if (!path.length || get(base, path) === undefined) continue;
     set(out, path, structuredClone(get(base, path)));
     notes.push(`reset ${path.join('.')}: ${issue.message}`);
+  }
+  for (const d of drops) {
+    const i = d.list.indexOf(d.entry);
+    if (i >= 0) d.list.splice(i, 1);
   }
   return out;
 }

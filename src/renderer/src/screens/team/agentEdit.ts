@@ -1,7 +1,7 @@
 import { ID } from '../../../../shared/config/schema';
 import { MAX_REGISTRY_HOSTS, isRegistryHost } from '../../../../shared/sandboxPaths';
 import { flowStagesOf, setAgentSquad } from '../../../../shared/config/squads';
-import { addAgent, isDraft, isSystemId, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
+import { addAgent, isDraft, isSystemId, modelPoolOf, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
 import { t } from '../../../../shared/i18n';
 import type { AgentDef, AgentModel, AgentPermission, AgentShell, AgentToolsConfig, AgentTracker, StageDef, WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
@@ -114,7 +114,7 @@ function fieldsOf(draft: AgentDraft) {
     name: draft.name.trim(),
     job: draft.job.trim(),
     instructions: draft.instructions,
-    model: draft.model.role ? { role: draft.model.role, provider: '', model: '' } : { role: null, provider: draft.model.provider, model: draft.model.model.trim() },
+    model: draft.model.role ? { role: draft.model.role, provider: '', model: '' } : { role: null, provider: draft.model.provider, model: draft.model.model.trim(), ...modelPoolOf(draft.model) },
     permission: draft.permission,
     tracker: draft.tracker,
     shell: draft.shell,

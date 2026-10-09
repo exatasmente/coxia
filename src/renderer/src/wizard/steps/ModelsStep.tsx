@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { LlmProvider, LlmRole, ProviderKind } from '../../../../shared/config/types';
+import { poolFieldsOf, poolWithoutProvider } from '../../../../shared/config/pool';
 import { LLM_ROLES } from '../../../../shared/config/types';
 import {
   DOC_LINKS,
@@ -187,8 +188,13 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
     setCfg((c) => {
       const fallback = rest[0];
       const roles = { ...c.llm.roles };
-      for (const r of LLM_ROLES) if (roles[r].provider === p.id) roles[r] = { provider: fallback.id, model: recommendModel(fallback, ROLE_TIERS[r]) ?? roles[r].model };
-      return { ...c, llm: { providers: rest, roles } };
+      for (const r of LLM_ROLES) {
+        // The entries of the provider going away leave every pool; a role that was on it starts over on the new provider, with the pool it had.
+        const pool = poolWithoutProvider(roles[r], p.id);
+        const { fallbacks: _f, activities: _a, ...bare } = roles[r];
+        roles[r] = roles[r].provider === p.id ? { provider: fallback.id, model: recommendModel(fallback, ROLE_TIERS[r]) ?? roles[r].model, ...pool } : { ...bare, ...pool };
+      }
+      return { ...c, llm: { ...c.llm, providers: rest, roles } };
     });
     if (p.secretRef === providerSecretRef(p.id)) void wizardApi.secretRemove(p.secretRef).then(refreshView, () => undefined);
     setTests((all) => {
@@ -203,7 +209,8 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
       const providerChanged = patch.provider !== undefined && patch.provider !== cur.provider;
       const prov = c.llm.providers.find((p) => p.id === (patch.provider ?? cur.provider));
       const model = patch.model ?? (providerChanged && prov ? (recommendModel(prov, ROLE_TIERS[role]) ?? '') : cur.model);
-      return { ...c, llm: { ...c.llm, roles: { ...c.llm.roles, [role]: { provider: patch.provider ?? cur.provider, model } } } };
+      // The pool stays with the role; what was known of the old model (images, window, reasoning echo) does not.
+      return { ...c, llm: { ...c.llm, roles: { ...c.llm.roles, [role]: { provider: patch.provider ?? cur.provider, model, ...poolFieldsOf(cur) } } } };
     });
 
   const applyRecommendations = (providerId: string) => {

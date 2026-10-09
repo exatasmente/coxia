@@ -22,12 +22,19 @@ export function settingsFromConfig(c: WorkspaceConfig, web: WebSettings): Settin
   };
 }
 
+// The pool stays with the role; what was known of the old model (images, window, reasoning echo) does not follow a new one.
+function roleWithModel(rm: WorkspaceConfig['llm']['roles'][LlmRole], model: string): WorkspaceConfig['llm']['roles'][LlmRole] {
+  if (rm.model === model) return rm;
+  const { images: _i, contextWindow: _c, echoReasoning: _e, ...rest } = rm;
+  return { ...rest, model };
+}
+
 /** Writes a saved Settings back onto the config; fields the view does not carry keep their value. The web block is not part of the config. */
 export function applySettings(c: WorkspaceConfig, s: Settings): WorkspaceConfig {
   return {
     ...c,
     language: s.language,
-    llm: { ...c.llm, roles: Object.fromEntries(LLM_ROLES.map((r) => [r, { ...c.llm.roles[r], model: s.models[r] }])) as WorkspaceConfig['llm']['roles'] },
+    llm: { ...c.llm, roles: Object.fromEntries(LLM_ROLES.map((r) => [r, roleWithModel(c.llm.roles[r], s.models[r])])) as WorkspaceConfig['llm']['roles'] },
     agents: { ...c.agents, tools: { ...c.agents.tools, files: s.tools.files, skills: s.tools.skills, trackerMcp: s.tools.gitlabMcp, vcsCli: s.tools.glab, subagents: s.tools.subagents } },
     schedule: { ...s.schedule },
     voice: { ...c.voice, autoStop: s.voice.autoStop, silenceMs: s.voice.silenceMs, speak: s.voice.speak, engine: s.voice.engine, prosody: s.voice.prosody, bargeIn: s.voice.bargeIn },

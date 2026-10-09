@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { migrateConfig } from '../src/shared/config/migrations';
 import { proceduresOn } from '../src/shared/procedures';
-import { neutralConfig, neutralRunner } from '../src/shared/config/defaults';
+import { neutralConfig, neutralRunner, newProvider } from '../src/shared/config/defaults';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
 import { MARKER_FILE, V1_BACKUP_FILE, bootstrapConfigs, detectExistingInstall, readConfigFile } from '../src/main/config-bootstrap';
@@ -579,9 +579,80 @@ describe('migrateConfig', () => {
       expect(twice.config).toEqual(once.config);
     });
 
-    it('is the newest step: 24 is current and 25 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(24);
-      expect(() => migrateConfig({ schemaVersion: 25 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is followed by later steps: the chain does not stop at 23', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(23);
+    });
+  });
+
+  describe('schema 24 to 25: model pools', () => {
+    const v24 = (): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 24;
+      c.llm.providers.push(newProvider({ id: 'spare', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://example.com/v1' }));
+      c.agents.team.push({ id: 'writer', name: 'Writer', job: '', model: { role: null, provider: 'spare', model: 'model-a' }, stages: [], permission: 'read', tracker: 'none', shell: 'none', autonomous: false, turnsTo: null, instructions: '', system: false });
+      return c;
+    };
+
+    it('only bumps the version, leaves a note and yields a valid file with no pool anywhere', () => {
+      const r = migrateConfig(v24(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(24);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.notes.join(' ')).toContain('model pools were added');
+      expect(validateConfig(r.config).ok).toBe(true);
+      for (const role of LLM_ROLES) {
+        expect(r.config.llm.roles[role].fallbacks).toBeUndefined();
+        expect(r.config.llm.roles[role].activities).toBeUndefined();
+      }
+      expect(r.config.llm.scoreOverrides).toBeUndefined();
+      expect(r.config.agents.team.every((a) => a.model.fallbacks === undefined && a.model.activities === undefined)).toBe(true);
+    });
+
+    it('changes nothing else: the rest of the file is exactly as it was', () => {
+      const before = v24();
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect({ ...r.config, schemaVersion: 24 }).toEqual(before);
+    });
+
+    it('keeps a pool a file already carries, and a second start changes nothing', () => {
+      const c = v24();
+      c.llm.roles.deep.fallbacks = [{ provider: 'spare', model: 'model-b', images: true }];
+      c.llm.roles.deep.activities = { shell: [{ provider: 'spare', model: 'model-b' }] };
+      const once = migrateConfig(c, { legacyInstall: false });
+      expect(once.config.llm.roles.deep.fallbacks).toEqual([{ provider: 'spare', model: 'model-b', images: true }]);
+      expect(once.config.llm.roles.deep.activities).toEqual({ shell: [{ provider: 'spare', model: 'model-b' }] });
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+    it('a bad pool entry is dropped alone: the role keeps its model, and so do the good entries', () => {
+      const c = v24();
+      c.llm.roles.deep = { provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'gone', model: 'model-b' }, { provider: 'spare', model: 'model-c' }], activities: { edit: [{ provider: 'spare', model: 'model-b' }, { provider: 'spare', model: 'model-b' }] } };
+      c.agents.team[c.agents.team.length - 1].model.fallbacks = [{ provider: 'gone', model: 'model-b' }];
+      c.schemaVersion = 25;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.changed).toBe(true);
+      expect(r.config.llm.roles.deep).toEqual({ provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'spare', model: 'model-c' }], activities: { edit: [{ provider: 'spare', model: 'model-b' }] } });
+      expect(r.config.agents.team.find((a) => a.id === 'writer')?.model).toEqual({ role: null, provider: 'spare', model: 'model-a' });
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('a pool field of the wrong type is dropped, not the role around it', () => {
+      const c = v24();
+      c.llm.roles.turn.fallbacks = 'model-b';
+      c.llm.roles.turn.images = 'yes';
+      c.llm.scoreOverrides = { floors: { shell: 120 } };
+      c.schemaVersion = 25;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.llm.roles.turn).toEqual(c.llm.roles.turn && { provider: c.llm.roles.turn.provider, model: c.llm.roles.turn.model });
+      expect(r.config.llm.scoreOverrides).toBeUndefined();
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('is the newest step: 25 is current and 26 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(25);
+      expect(() => migrateConfig({ schemaVersion: 26 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

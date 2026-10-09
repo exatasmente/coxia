@@ -6,13 +6,13 @@
 
 ## Português
 
-Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` (versão do esquema 23). Provedores e motores de agente: [`llm-providers.md`](llm-providers.md). Provedores de VCS (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
+Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` (versão do esquema 25). Provedores e motores de agente: [`llm-providers.md`](llm-providers.md). Provedores de VCS (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Onde as coisas moram
 
 | O quê | Onde | Escopo |
 |---|---|---|
-| Configuração | `<dados>/workspaces/<id>/config.json` (`schemaVersion: 22`) | por workspace |
+| Configuração | `<dados>/workspaces/<id>/config.json` (`schemaVersion: 25`) | por workspace |
 | Segredos (referências resolvidas) | `<dados>/secrets.json` (modo 0600), por `secretRef` | máquina; **nunca exportado** |
 | Acesso pelo navegador | `<dados>/web.json` | máquina (todos os workspaces) |
 | Marcador da migração | `<dados>/config-migration.json` | máquina |
@@ -30,7 +30,8 @@ Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava 
 | `appearance`, `notifications`, `closeToTray`, `retention`, `schedule` | as configurações que já existiam |
 | `attachments` | os arquivos que uma pessoa anexa às conversas: `enabled` (a caixa aceita arquivos), `limits` (`imageBytes`, `otherBytes`, `messageBytes`, `perMessage`) e `agents` (um agente chamado recebe os arquivos da mensagem; desligado, a pessoa continua anexando e abrindo, e o agente é avisado). Opcional: um arquivo sem ele lê os padrões (5 MB por imagem, 1 MB por outro arquivo, 10 MB e 10 arquivos por mensagem, agentes ligados), sem passo de migração. O tipo é decidido pelo conteúdo, nunca pelo nome. O texto do bloco está na tela Settings › Team e ciclo › Arquivos |
 | `llm.providers[]` | `{ id, kind, engine, baseUrl, models, secretRef, envFile, options, capabilities, structured, headers, ..., legacyCustomEndpoint }`. `kind`: `anthropic`, `bedrock`, `vertex`, `foundry`, `openai-compatible`. `engine`: `claude-sdk` (modelos Claude) ou `open` (loop próprio, OpenAI-compatível e local) |
-| `llm.roles` | por papel (`turn`, `reply`, `deep`, `teams`, `fix`): `{ provider, model }` |
+| `llm.roles` | por papel (`turn`, `reply`, `deep`, `teams`, `fix`): `{ provider, model }`, mais, opcionais, um **conjunto de modelos**: `fallbacks` (até 8 reservas, do mais barato ao mais caro, cada uma `{ provider, model, images?, contextWindow?, echoReasoning? }` de um provedor que existe em `llm.providers`) e `activities` (uma lista completa por atividade: `explore`, `edit`, `shell`, `screen`, `write`; uma atividade sem lista usa a do papel). `provider`/`model` são a primeira entrada. Ausentes, nada muda: o modelo é o único da chamada. |
+| `llm.scoreOverrides` | opcional: `{ floors, models }`, a pessoa sobrescreve os pisos de qualidade por atividade (`shell`, `edit`, `screen`, de 0 a 100) e a nota de um modelo (pelo id normalizado) da tabela que o app traz para sugerir um conjunto |
 | `projects` | `roots[]`, `repos[]` (`id`, `path`, `remoteUrl`, `vcsId`, `projectPath`), `autoDiscover`, `issues` (projeto de issues, prefixo dos cartões, `cardScope` e `cardLabels`: quais issues viram cartões) |
 | `vcs[]` | integrações `gitlab` / `github` / `bitbucket`: `host`, `apiUrl`, `user`, `secretRef`, `cliPreference`, `cliCommand` |
 | `docs` | **fontes extras** de contexto no estilo Claude Code, que a pessoa lista de propósito: `claudeMdRoots`, `skillsDirs`, `rulesDirs`, `agentsDirs`, `knowledgeDirs`, `mcpConfigFiles`, `specsDir`. `autoDetect` **mudou de significado, não de formato** (segue um `boolean`; a versão do esquema segue 13, sem migração): vale para as cerimônias, acrescentando `~/.claude`, `<projeto>/.claude` e `CLAUDE.md`, e para todo agente, acrescentando o `.mcp.json` de cada projeto. Os agentes de execuções, menções e conversas leem a pasta `.coxia/` de cada repositório (que não é configurada: é achada por convenção) e estas listas, e nada do Claude Code; veja [`harness.md`](harness.md). Edita-se no assistente e em Configurações › Documentação |
@@ -54,7 +55,7 @@ Histórico do esquema: **v1** (sem `schemaVersion`) eram as configurações solt
 
 #### O time de agentes (`agents.team`)
 
-Cada item é um agente: `{ id, name, job, model, stages, permission, tracker, shell, allowedCommands, screen, allowedHosts, browserProfile, autonomous, turnsTo, instructions, system }`. O `id` é também o nome que uma menção usa (`@developer`). `name`, `job` e `instructions` são chave de catálogo ou texto livre. `model` é `{ role, provider, model }`: com `role` preenchido o agente usa o provedor e o modelo daquele papel de `llm.roles`; com `role: null` precisa de um provedor que exista e de um modelo. `stages` lista as etapas do `devCycle` que ele trabalha e `permission` diz o que ele pode fazer nos arquivos da sua execução: `read` (só lê) ou `worktree` (também altera arquivos dentro do worktree da execução, e em nenhum outro lugar; quem aplica isso é o executor, veja [`runner.md`](runner.md)).
+Cada item é um agente: `{ id, name, job, model, stages, permission, tracker, shell, allowedCommands, screen, allowedHosts, browserProfile, autonomous, turnsTo, instructions, system }`. O `id` é também o nome que uma menção usa (`@developer`). `name`, `job` e `instructions` são chave de catálogo ou texto livre. `model` é `{ role, provider, model }` (mais `fallbacks`/`activities` quando o modelo é próprio, como em `llm.roles`; com `role` preenchido vale o conjunto do papel): com `role` preenchido o agente usa o provedor e o modelo daquele papel de `llm.roles`; com `role: null` precisa de um provedor que exista e de um modelo. `stages` lista as etapas do `devCycle` que ele trabalha e `permission` diz o que ele pode fazer nos arquivos da sua execução: `read` (só lê) ou `worktree` (também altera arquivos dentro do worktree da execução, e em nenhum outro lugar; quem aplica isso é o executor, veja [`runner.md`](runner.md)).
 
 `autonomous` diz se o agente anda sozinho: ligado, a etapa dele começa quando a execução chega nela, os comentários e revisões dele no tracker saem automaticamente (e ficam no registro de auditoria) e o resultado segue para a etapa seguinte sem esperar; desligado (o padrão), a etapa espera a pessoa iniciar, os comentários esperam um "sim" em Ações e o resultado espera a pessoa aceitar (ou devolver com uma nota). Empurrar a branch e abrir o pull request esperam a pessoa de qualquer jeito, e um workspace de teste continua recusando toda escrita externa. A mudança do campo vale na próxima partida de etapa ou publicação, nunca no meio de uma etapa. As cerimônias ignoram o campo. Um agente autônomo que não trabalha etapa nenhuma gera um aviso na validação. O time padrão do ciclo de agentes é autônomo; os cinco agentes nativos não.
 
@@ -158,13 +159,13 @@ Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só d
 
 ## English
 
-This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` (schema version 23). Providers and agent engines: [`llm-providers.md`](llm-providers.md). VCS providers (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
+This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` (schema version 25). Providers and agent engines: [`llm-providers.md`](llm-providers.md). VCS providers (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Where things live
 
 | What | Where | Scope |
 |---|---|---|
-| Configuration | `<data>/workspaces/<id>/config.json` (`schemaVersion: 22`) | per workspace |
+| Configuration | `<data>/workspaces/<id>/config.json` (`schemaVersion: 25`) | per workspace |
 | Secrets (resolved references) | `<data>/secrets.json` (mode 0600), by `secretRef` | machine; **never exported** |
 | Browser access | `<data>/web.json` | machine (every workspace) |
 | Migration marker | `<data>/config-migration.json` | machine |
@@ -181,7 +182,8 @@ This is the configuration foundation of Coxia (phase 0). What used to be hardcod
 | `schemaVersion`, `setupComplete`, `language` | version, whether the wizard finished (`false` on a fresh install), language (`pt-BR` or `en`) |
 | `appearance`, `notifications`, `closeToTray`, `retention`, `schedule` | the settings that already existed |
 | `llm.providers[]` | `{ id, kind, engine, baseUrl, models, secretRef, envFile, options, capabilities, structured, headers, ..., legacyCustomEndpoint }`. `kind`: `anthropic`, `bedrock`, `vertex`, `foundry`, `openai-compatible`. `engine`: `claude-sdk` (Claude models) or `open` (own loop, OpenAI-compatible and local) |
-| `llm.roles` | per role (`turn`, `reply`, `deep`, `teams`, `fix`): `{ provider, model }` |
+| `llm.roles` | per role (`turn`, `reply`, `deep`, `teams`, `fix`): `{ provider, model }`, plus, optional, a **pool of models**: `fallbacks` (up to 8 spares, cheapest first, each `{ provider, model, images?, contextWindow?, echoReasoning? }` of a provider that exists in `llm.providers`) and `activities` (one complete list per activity: `explore`, `edit`, `shell`, `screen`, `write`; an activity without a list uses the role's). `provider`/`model` are the first entry. Absent, nothing changes: the model is the only one of the call. |
+| `llm.scoreOverrides` | optional: `{ floors, models }`, the person overrides the quality floors per activity (`shell`, `edit`, `screen`, 0 to 100) and the score of a model (by normalized id) in the table the app ships to suggest a pool |
 | `projects` | `roots[]`, `repos[]` (`id`, `path`, `remoteUrl`, `vcsId`, `projectPath`), `autoDiscover`, `issues` (the issue project, card ref prefix, `cardScope` and `cardLabels`: which issues become cards) |
 | `vcs[]` | `gitlab` / `github` / `bitbucket` integrations: `host`, `apiUrl`, `user`, `secretRef`, `cliPreference`, `cliCommand` |
 | `docs` | **extra sources** of Claude Code style context, which the person lists on purpose: `claudeMdRoots`, `skillsDirs`, `rulesDirs`, `agentsDirs`, `knowledgeDirs`, `mcpConfigFiles`, `specsDir`. `autoDetect` **changed meaning, not format** (still a `boolean`; the schema version stays 13, no migration): it applies to the ceremonies, adding `~/.claude`, `<project>/.claude` and `CLAUDE.md`, and to every agent, adding the `.mcp.json` of each project. The agents of runs, mentions and conversations read the `.coxia/` folder of each repository (not configured: found by convention) and these lists, and nothing of Claude Code; see [`harness.md`](harness.md). Edited in the wizard and in Settings › Documentation |
@@ -205,7 +207,7 @@ Schema history: **v1** (no `schemaVersion`) was the app's loose settings before 
 
 #### The agent team (`agents.team`)
 
-Each item is an agent: `{ id, name, job, model, stages, permission, tracker, shell, allowedCommands, screen, allowedHosts, browserProfile, autonomous, turnsTo, instructions, system }`. The `id` is also the name a mention uses (`@developer`). `name`, `job` and `instructions` are a catalog key or free text. `model` is `{ role, provider, model }`: with `role` set the agent uses the provider and model of that `llm.roles` entry; with `role: null` it needs a provider that exists and a model. `stages` lists the `devCycle` stages it works, and `permission` says what it may do to the files of its run: `read` (only reads) or `worktree` (also changes files inside the run's worktree, nowhere else; the executor enforces this, see [`runner.md`](runner.md)).
+Each item is an agent: `{ id, name, job, model, stages, permission, tracker, shell, allowedCommands, screen, allowedHosts, browserProfile, autonomous, turnsTo, instructions, system }`. The `id` is also the name a mention uses (`@developer`). `name`, `job` and `instructions` are a catalog key or free text. `model` is `{ role, provider, model }` (plus `fallbacks`/`activities` when the model is its own, as in `llm.roles`; with `role` set the role's pool is used): with `role` set the agent uses the provider and model of that `llm.roles` entry; with `role: null` it needs a provider that exists and a model. `stages` lists the `devCycle` stages it works, and `permission` says what it may do to the files of its run: `read` (only reads) or `worktree` (also changes files inside the run's worktree, nowhere else; the executor enforces this, see [`runner.md`](runner.md)).
 
 `autonomous` says whether the agent runs by itself: on, its stage starts when the run reaches it, its tracker comments and reviews are posted automatically (and recorded in the audit log) and its result goes to the next stage without waiting; off (the default), the stage waits for the person to start it, its comments wait in Actions for a "yes" and its result waits for the person to accept it (or send it back with a note). Pushing the branch and opening the pull request are decided by the run's autonomy block (see `runner.autonomy`), not by this field; a release run keeps waiting either way, and a test workspace still refuses every external write. A change of the field takes effect at the next stage start or publication, never in the middle of a stage. The ceremonies ignore it. An autonomous agent that works no stage draws a validation warning. The default team of the agent cycle is autonomous; the five built-in agents are not.
 

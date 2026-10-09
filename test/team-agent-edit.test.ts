@@ -111,6 +111,21 @@ describe('applying a draft', () => {
     expect(agent(back, 'developer').model).toEqual({ role: 'fix', provider: '', model: '' });
   });
 
+  it('keeps the pool of an agent\'s own model when the form saves something else, and leaves none behind for an agent without one', () => {
+    const c = flow();
+    c.llm.providers.push({ ...c.llm.providers[0], id: 'local', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://localhost:11434/v1' });
+    const model = { role: null, provider: 'local', model: 'model-a', fallbacks: [{ provider: 'local', model: 'model-b' }], activities: { shell: [{ provider: 'local', model: 'model-b' }] }, contextWindow: 64_000 };
+    const own = applyAgent(c, { ...draftOf(agent(c, 'developer')), model }, false);
+    expect(agent(own, 'developer').model).toEqual(model);
+    const renamed = applyAgent(own, { ...draftOf(agent(own, 'developer')), name: 'Dev' }, false);
+    expect(agent(renamed, 'developer').model).toEqual(model);
+    expect(validateConfig(agentOnly(renamed)).errors).toEqual([]);
+    const plain = applyAgent(c, { ...draftOf(agent(c, 'developer')), model: { role: null, provider: 'local', model: 'model-a' } }, false);
+    expect(agent(plain, 'developer').model).toEqual({ role: null, provider: 'local', model: 'model-a' });
+    const back = applyAgent(own, { ...draftOf(agent(own, 'developer')), model: { ...model, role: 'fix' } }, false);
+    expect(agent(back, 'developer').model).toEqual({ role: 'fix', provider: '', model: '' });
+  });
+
   it('saving an agent with no allowed command leaves no empty field, and clearing the last one removes it', () => {
     const c = flow();
     const plain = applyAgent(c, draftOf(agent(c, 'developer')), false);

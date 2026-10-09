@@ -1,9 +1,9 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
-import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
+import { ACTIVITIES, MAX_POOL_ENTRIES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 22). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 25). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -30,6 +30,32 @@ function object(description: string, properties: Record<string, JsonSchema>, req
 function byRole(description: string, item: JsonSchema): JsonSchema {
   return object(description, Object.fromEntries(LLM_ROLES.map((r) => [r, item])), [...LLM_ROLES]);
 }
+
+/** One model of a pool: a provider the person registered, a model id, and what is known about it. */
+const modelRef = object(
+  'A model of a registered provider.',
+  {
+    provider: string('A provider id (llm.providers).', { pattern: ID }),
+    model: string('Model id as the provider spells it.', { minLength: 1, maxLength: 200, pattern: '^\\S+$' }),
+    images: boolean('The model takes an image in a message. Absent: the provider\'s capability decides.'),
+    contextWindow: integer('Context window in tokens, when known.', 1000, 10_000_000),
+    echoReasoning: boolean('Send the model\'s own reasoning back to it from the first call (some reasoning models need it). Absent: learned at run time.'),
+  },
+  ['provider', 'model'],
+);
+
+const modelList = (description: string): JsonSchema => list(description, modelRef, { maxItems: MAX_POOL_ENTRIES });
+
+const poolFields = {
+  fallbacks: modelList('Spare models, cheapest first: the call moves to the next one when the model in use is busy. Absent: none, nothing changes.'),
+  activities: object(
+    'A complete list per activity, replacing the role\'s list for it. An activity without a list uses the role\'s.',
+    Object.fromEntries(ACTIVITIES.map((a) => [a, modelList(`The models for the "${a}" activity, in order.`)])),
+  ),
+};
+
+const score = (description: string): JsonSchema => ({ type: 'number', description, minimum: 0, maximum: 100 });
+const scoresOf = (description: string): JsonSchema => object(description, Object.fromEntries(SCORED_ACTIVITIES.map((a) => [a, score(`Score for "${a}", 0 to 100.`)])));
 
 const provider = object(
   'A model provider.',
@@ -209,6 +235,10 @@ const agentModel = object('Which model an agent uses.', {
   role: { type: ['string', 'null'], description: 'Borrow the provider and model of this llm.roles entry; null: use provider and model.', enum: [...LLM_ROLES, null] },
   provider: string('A provider id; empty while role is set.', { pattern: PROVIDER_OR_EMPTY }),
   model: string('Model id as the provider spells it; empty while role is set.', { maxLength: 200, pattern: '^\\S*$' }),
+  ...poolFields,
+  images: boolean('The agent\'s own model takes an image in a message.'),
+  contextWindow: integer('Context window of the agent\'s own model, in tokens, when known.', 1000, 10_000_000),
+  echoReasoning: boolean('Send the agent\'s own model its reasoning back from the first call.'),
 });
 
 /** The tools pre-approved for agents, at the workspace and (overriding it field by field) per agent. */
@@ -402,7 +432,11 @@ export const CONFIG_SCHEMA: JsonSchema = {
       }),
       llm: object('Model providers and which one serves each role.', {
         providers: list('Providers.', provider, { maxItems: 20 }),
-        roles: byRole('Provider and model per role.', object('Provider and model.', { provider: string('A provider id.', { pattern: ID }), model: string('Model id as the provider spells it.', { minLength: 1, maxLength: 200, pattern: '^\\S+$' }) }, ['provider', 'model'])),
+        roles: byRole('Provider and model per role.', object('Provider and model.', { provider: string('A provider id.', { pattern: ID }), model: string('Model id as the provider spells it.', { minLength: 1, maxLength: 200, pattern: '^\\S+$' }), images: modelRef.properties!.images, contextWindow: modelRef.properties!.contextWindow, echoReasoning: modelRef.properties!.echoReasoning, ...poolFields }, ['provider', 'model'])),
+        scoreOverrides: object('Overrides of the quality scores the app ships for the suggested pools.', {
+          floors: scoresOf('The score a model must reach to go first, per activity.'),
+          models: { type: 'object', description: 'The scores of one model, by its normalized id (lowercase, without the organization prefix).', additionalProperties: scoresOf('Scores of the model.') },
+        }),
       }),
       projects: object('Where the code lives.', {
         roots: strings('Folders that contain the repos; the first is the working directory of the agents.'),

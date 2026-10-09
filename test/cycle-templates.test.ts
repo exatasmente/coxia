@@ -349,6 +349,22 @@ describe.each([['agent-flow'], ['agent-flow-engineering']])('the template %s', (
     expect(JSON.stringify(applyTemplate(neutralConfig(), exported).agents.team)).not.toMatch(/example\.com|browserProfile|"screen"/);
   });
 
+  it('never brings the fallback models of an agent: they point at providers of one workspace', () => {
+    const pool = { fallbacks: [{ provider: 'anthropic', model: 'haiku' }], activities: { edit: [{ provider: 'gone', model: 'model-a' }] }, images: true, contextWindow: 64_000, echoReasoning: true };
+    const withPool = [{ id: 'scout', name: 'Scout', job: '', model: { role: null, provider: 'anthropic', model: 'sonnet', ...pool }, stages: [], permission: 'read' as const, tracker: 'none' as const, shell: 'none' as const, autonomous: false, turnsTo: null, instructions: '', system: false }];
+    const merged = mergeTemplateTeam(neutralConfig().agents.team, withPool, cycleOf(flow));
+    expect(merged.find((a) => a.id === 'scout')!.model).toEqual({ role: null, provider: 'anthropic', model: 'sonnet' });
+    const checked = parseTemplate({ id: 'mine', name: 'Mine', devCycle: {}, team: withPool });
+    expect(checked.errors).toEqual([]);
+    expect(checked.warnings.map((w) => w.path)).toContain('template.team[scout].model');
+    expect(checked.template?.team?.find((a) => a.id === 'scout')?.model).toEqual({ role: null, provider: 'anthropic', model: 'sonnet' });
+    const source = applied();
+    source.agents.team.push(newAgent({ id: 'scout', name: 'Scout', model: { role: null, provider: 'anthropic', model: 'sonnet', ...pool } }));
+    const exported = templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' });
+    expect(exported.team!.find((a) => a.id === 'scout')!.model).toEqual({ role: null, provider: 'anthropic', model: 'sonnet' });
+    expect(JSON.stringify(applyTemplate(neutralConfig(), exported).agents.team)).not.toMatch(/fallbacks|activities|contextWindow/);
+  });
+
   it('lists in the setup wizard with its team', async () => {
     const { listCycleTemplates } = await import('../src/main/cycles');
     const entry = listCycleTemplates('en').find((t) => t.id === id)!;
