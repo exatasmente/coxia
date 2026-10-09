@@ -9,17 +9,19 @@ import { readEbml } from './helpers/ebml';
 import { type FakeSink, fakeSink } from './helpers/recorderSink';
 import { type FakeConn, H, W, fakeConn } from './helpers/screen';
 
-function setup(over: { enabled?: boolean; connectFails?: boolean; encode?: FrameEncoder['encode']; sink?: FakeSink; limits?: Partial<RecorderLimits> } = {}) {
+function setup(over: { enabled?: boolean; connectFails?: boolean; own?: boolean; encode?: FrameEncoder['encode']; sink?: FakeSink; limits?: Partial<RecorderLimits> } = {}) {
   const conn = fakeConn();
   const clock = { t: 1_000_000 };
   const encoded: number[] = [];
   const changed: string[] = [];
-  const notes: { run: string; stage: string; code: string; params: Record<string, string> }[] = [];
+  const notes: { thread: string; stage: string; code: string; params: Record<string, string> }[] = [];
+  const used: { key: string; agent: string; thread: string; from: number; to: number }[] = [];
   // The timers of the hub, by hand: the burst of input is closed when the clock says so.
   const timers: { ms: number; fn: () => void; live: boolean }[] = [];
   const connect = vi.fn(async () => {
     if (over.connectFails) throw new Error('refused');
-    return conn;
+    // Two screens are two displays: each has its own connection.
+    return over.own && connect.mock.calls.length > 1 ? fakeConn() : conn;
   });
   const hub: ScreenHub = createScreenHub({
     enabled: over.enabled ?? true,
@@ -34,20 +36,21 @@ function setup(over: { enabled?: boolean; connectFails?: boolean; encode?: Frame
     now: () => clock.t,
     ...(over.sink ? { sink: () => over.sink as FakeSink, recordingLimits: over.limits } : {}),
     connect,
-    changed: (run) => changed.push(run),
-    note: (run, stage, code, params) => notes.push({ run, stage, code, params }),
+    changed: (key) => changed.push(key),
+    note: (thread, stage, code, params) => notes.push({ thread, stage, code, params }),
+    used: (u) => used.push(u),
     schedule: (ms, fn) => {
       const timer = { ms, fn, live: true };
       timers.push(timer);
       return () => void (timer.live = false);
     },
   });
-  const open = () => hub.open({ run: 'r-1', stage: 'qa', agent: 'qa', socket: '/x/X99', kind: 'sandbox' });
+  const open = () => hub.open({ key: 'run:r-1', thread: 'run-r-1', stage: 'qa', agent: 'qa', socket: '/x/X99', kind: 'sandbox' });
   /** Lets the silence after the last input pass: the timers that are still wanted go off. */
   const quiet = () => {
     for (const timer of timers.splice(0)) if (timer.live) timer.fn();
   };
-  return { conn, clock, encoded, changed, notes, timers, quiet, connect, hub, open };
+  return { conn, clock, encoded, changed, notes, used, timers, quiet, connect, hub, open };
 }
 
 describe('a live screen', () => {
@@ -57,7 +60,7 @@ describe('a live screen', () => {
     expect(s.connect).toHaveBeenCalledWith('/x/X99');
     expect(s.hub.state('r-1')).toEqual({ stage: 'qa', width: W, height: H, since: new Date(1_000_000).toISOString(), control: false, recording: 'stopped' });
     expect(s.hub.state('r-2')).toBeNull();
-    expect(s.changed).toEqual(['r-1']);
+    expect(s.changed).toEqual(['run:r-1']);
   });
 
   it('is not made where the platform has no display: nothing is dialled and every answer is none', async () => {
@@ -87,7 +90,7 @@ describe('a live screen', () => {
     expect(s.hub.state('r-1')).toMatchObject({ stage: 'qa' });
     expect(sink.aborted).toBe(0);
     // Another run is not the first one's business.
-    expect(await s.hub.open({ run: 'r-2', stage: 'qa', agent: 'qa', socket: '/x/X98', kind: 'sandbox' })).toBe(true);
+    expect(await s.hub.open({ key: 'run:r-2', thread: 'run-r-2', stage: 'qa', agent: 'qa', socket: '/x/X98', kind: 'sandbox' })).toBe(true);
   });
 
   it('takes a new one once the earlier one has ended', async () => {
@@ -216,7 +219,7 @@ describe('the end of a live screen', () => {
     expect(await s.hub.frame('r-1', 0, 640)).toEqual({ state: 'none' });
     expect(await s.hub.frame('r-1', 1, 640)).toEqual({ state: 'none' });
     expect(s.conn.grabs).toBe(grabs);
-    expect(s.changed).toEqual(['r-1', 'r-1']);
+    expect(s.changed).toEqual(['run:r-1', 'run:r-1']);
   });
 
   it('is idempotent, and ending a run that has none changes nothing', async () => {
@@ -226,7 +229,7 @@ describe('the end of a live screen', () => {
     s.hub.end('r-1');
     await s.hub.finish('r-1');
     s.hub.end('r-nobody');
-    expect(s.changed).toEqual(['r-1', 'r-1']);
+    expect(s.changed).toEqual(['run:r-1', 'run:r-1']);
   });
 
   it('answers none, not a late picture, to a read that was under way when the stage ended', async () => {
@@ -278,13 +281,13 @@ describe('the end of a live screen', () => {
     expect(s.hub.state('r-1')).toBeNull();
     expect(await s.hub.frame('r-1', 0, 640)).toEqual({ state: 'none' });
     expect(s.connect).toHaveBeenCalledTimes(1);
-    expect(s.changed).toEqual(['r-1', 'r-1']);
+    expect(s.changed).toEqual(['run:r-1', 'run:r-1']);
   });
 
   it('is not troubled by a listener that throws', async () => {
     const conn = fakeConn();
     const hub = createScreenHub({ enabled: true, encoder: { encode: () => null }, connect: async () => conn, changed: () => { throw new Error('x'); } });
-    await expect(hub.open({ run: 'r-1', stage: 'qa', agent: 'qa', socket: '/x', kind: 'host' })).resolves.toBe(true);
+    await expect(hub.open({ key: 'run:r-1', thread: 'run-r-1', stage: 'qa', agent: 'qa', socket: '/x', kind: 'host' })).resolves.toBe(true);
     expect(() => hub.end('r-1')).not.toThrow();
   });
 });
@@ -310,8 +313,8 @@ describe('taking control', () => {
     expect(await s.hub.control('r-1', false)).toEqual({ ok: true });
     expect(s.hub.state('r-1')?.control).toBe(false);
     expect(s.notes).toEqual([
-      { run: 'r-1', stage: 'qa', code: 'runner.screen.controlOn', params: { agent: 'qa' } },
-      { run: 'r-1', stage: 'qa', code: 'runner.screen.controlOff', params: { agent: 'qa' } },
+      { thread: 'run-r-1', stage: 'qa', code: 'runner.screen.controlOn', params: { agent: 'qa' } },
+      { thread: 'run-r-1', stage: 'qa', code: 'runner.screen.controlOff', params: { agent: 'qa' } },
     ]);
     // The run list refreshes each time, so a phone shows the mark at once.
     expect(s.changed.length).toBe(3);
@@ -440,7 +443,9 @@ describe('bursts of input', () => {
     await s.hub.input('r-1', [key('a', true), key('a', false)]);
     expect(s.notes.filter((n) => n.code === 'runner.screen.used')).toEqual([]);
     s.quiet();
-    expect(s.notes.filter((n) => n.code === 'runner.screen.used')).toEqual([{ run: 'r-1', stage: 'qa', code: 'runner.screen.used', params: { agent: 'qa', from: local(t0), to: local(t0 + 1800) } }]);
+    expect(s.notes.filter((n) => n.code === 'runner.screen.used')).toEqual([{ thread: 'run-r-1', stage: 'qa', code: 'runner.screen.used', params: { agent: 'qa', from: local(t0), to: local(t0 + 1800) } }]);
+    // The audit hears the same interval, in ms of the clock, with the screen and the agent and nothing the person did.
+    expect(s.used).toEqual([{ key: 'run:r-1', agent: 'qa', thread: 'run-r-1', from: t0, to: t0 + 1800 }]);
     expect(s.timers.every((t) => !t.live || t.ms === BURST_GAP_MS)).toBe(true);
   });
 
@@ -633,7 +638,7 @@ describe('the recording of a live screen', () => {
       await r.second();
     }
     expect(r.hub.state('r-1')).toMatchObject({ recording: 'stopped' });
-    expect(r.notes.filter((n) => n.code === 'runner.screen.cappedSize')).toEqual([{ run: 'r-1', stage: 'qa', code: 'runner.screen.cappedSize', params: { agent: 'qa', max: '24' } }]);
+    expect(r.notes.filter((n) => n.code === 'runner.screen.cappedSize')).toEqual([{ thread: 'run-r-1', stage: 'qa', code: 'runner.screen.cappedSize', params: { agent: 'qa', max: '24' } }]);
     const grabs = r.conn.grabs;
     // A viewer still reads (the live view is not the recording); nothing else does.
     r.clock.t += 1000;
@@ -653,7 +658,7 @@ describe('the recording of a live screen', () => {
     };
     await r.second();
     expect(r.hub.state('r-1')).toMatchObject({ recording: 'stopped' });
-    expect(r.notes.filter((n) => n.code === 'runner.screen.resized')).toEqual([{ run: 'r-1', stage: 'qa', code: 'runner.screen.resized', params: { agent: 'qa' } }]);
+    expect(r.notes.filter((n) => n.code === 'runner.screen.resized')).toEqual([{ thread: 'run-r-1', stage: 'qa', code: 'runner.screen.resized', params: { agent: 'qa' } }]);
     expect(r.notes.map((n) => n.code)).not.toContain('runner.screen.encoderStopped');
     const out = await r.hub.finish('r-1');
     expect(out?.ok && out.meta).toMatchObject({ width: W, height: H });
@@ -946,5 +951,75 @@ describe('a screen in use', () => {
     const r = await bare();
     const answer = await r.hub.frame('r-1', 0, 640);
     expect(answer.state).toBe('frame');
+  });
+});
+
+describe('screens by key', () => {
+  const call = { key: 'call:general:dev', thread: 'general', stage: '', agent: 'dev', socket: '/x/X77', kind: 'sandbox' as const };
+
+  it('holds two screens of one run at once: the stage\'s and a mentioned agent\'s, each with its own connection and thread', async () => {
+    const s = setup({ own: true });
+    await s.open();
+    expect(await s.hub.open({ ...call, key: 'call:run-r-1:dev', thread: 'run-r-1' })).toBe(true);
+    expect(s.connect).toHaveBeenCalledTimes(2);
+    expect(s.hub.state('run:r-1')).toMatchObject({ stage: 'qa' });
+    expect(s.hub.state('call:run-r-1:dev')).toMatchObject({ stage: '' });
+    expect(s.changed).toEqual(['run:r-1', 'call:run-r-1:dev']);
+    // Ending one leaves the other.
+    s.hub.end('call:run-r-1:dev');
+    expect(s.hub.state('call:run-r-1:dev')).toBeNull();
+    expect(s.hub.state('run:r-1')).not.toBeNull();
+  });
+
+  it('refuses a second screen with the same key, whichever way the key is written', async () => {
+    const s = setup({ own: true });
+    expect(await s.hub.open(call)).toBe(true);
+    expect(await s.hub.open(call)).toBe(false);
+    await s.open();
+    expect(await s.open()).toBe(false);
+    expect(s.connect).toHaveBeenCalledTimes(2);
+  });
+
+  it('answers a bare run id as the stage\'s screen and a key as itself', async () => {
+    const s = setup({ own: true });
+    await s.open();
+    expect(s.hub.state('r-1')).toEqual(s.hub.state('run:r-1'));
+    expect((await s.hub.frame('r-1', 0, 640)).state).toBe('frame');
+    expect(await s.hub.control('r-1', true)).toEqual({ ok: true });
+    expect(s.hub.state('run:r-1')?.control).toBe(true);
+    expect(await s.hub.input('run:r-1', [])).toMatchObject({ ok: true });
+  });
+
+  it('writes the lines of a conversation screen in its own thread, and reports the person\'s use under its key', async () => {
+    const s = setup({ own: true });
+    await s.hub.open(call);
+    await s.hub.control('call:general:dev', true);
+    await s.hub.input('call:general:dev', [move(1, 1)]);
+    s.quiet();
+    expect(s.notes.map((n) => [n.thread, n.stage, n.code])).toEqual([['general', '', 'runner.screen.controlOn'], ['general', '', 'runner.screen.used']]);
+    expect(s.used).toMatchObject([{ key: 'call:general:dev', agent: 'dev', thread: 'general' }]);
+  });
+
+  it('opens nothing for a key that is not one, and answers none for it without throwing', async () => {
+    const s = setup({ own: true });
+    for (const key of ['', 'run:', 'call:general', 'call:a:b:c', 'x y', 'run:a:b']) expect(await s.hub.open({ ...call, key }), key).toBe(false);
+    expect(s.connect).not.toHaveBeenCalled();
+    for (const key of ['', 'a:b', 'call:general']) {
+      expect(s.hub.state(key)).toBeNull();
+      expect(await s.hub.frame(key, 0, 640)).toEqual({ state: 'none' });
+      expect(await s.hub.control(key, true)).toEqual({ ok: false, reason: 'none' });
+      expect(await s.hub.finish(key)).toBeNull();
+    }
+  });
+
+  it('finishes one screen and leaves the others open', async () => {
+    const s = setup({ own: true });
+    await s.open();
+    await s.hub.open(call);
+    await s.hub.finish('run:r-1');
+    expect(s.hub.state('run:r-1')).toBeNull();
+    expect(s.hub.state('call:general:dev')).not.toBeNull();
+    s.hub.endAll();
+    expect(s.hub.state('call:general:dev')).toBeNull();
   });
 });

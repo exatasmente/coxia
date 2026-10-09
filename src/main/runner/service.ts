@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
 import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, mentionableIds, parseMentions, runThreadId } from '../../shared/forum';
+import { runKey } from '../../shared/browser';
 import { ATTACHMENT_KINDS, type AttachmentRef } from '../../shared/attachments';
 import { createTranslator, t } from '../../shared/i18n';
 import {
@@ -422,7 +423,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   };
   // The live screen of the working stage's display, handed out like the command: never written to the run's file.
   const withScreen = (run: Run | null): Run | null => {
-    const live = run ? deps.screens?.state(run.id) : null;
+    const live = run ? deps.screens?.state(runKey(run.id)) : null;
     return run && live ? { ...run, screen: live } : run;
   };
 

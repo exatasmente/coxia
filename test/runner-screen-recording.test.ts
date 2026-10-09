@@ -7,7 +7,6 @@ import { putRecording } from '../src/main/evidence/recording';
 import { evidencePath } from '../src/main/evidence/store';
 import { type ScreenHub, createScreenHub } from '../src/main/screen/hub';
 import type { WorkspaceConfig } from '../src/shared/config/types';
-import { runThreadId } from '../src/shared/forum';
 import { recordEvidence } from '../src/shared/runs';
 import type { Run } from '../src/shared/runs';
 import { type Boot, boot, doc, fakeSandbox, keepQaEvidence, work } from './helpers/runner';
@@ -93,7 +92,7 @@ function screens(forum: () => Boot['forum'], sink: FakeSink) {
     encoder: { encode: () => ({ jpeg: Uint8Array.from([1]), width: 1, height: 1 }) },
     connect: async () => conn,
     sink: () => sink,
-    note: (run, stage, code, params) => forum().append(runThreadId(run), { kind: 'system', author: { type: 'app' }, code, params, stage }),
+    note: (thread, stage, code, params) => forum().append(thread, { kind: 'system', author: { type: 'app' }, code, params, stage }),
   });
   return { conn, hub };
 }
@@ -341,7 +340,7 @@ describe('the recording of a QA stage', () => {
       connect: async () => conn,
       sink: () => sink,
       recordingLimits: { bytes: 3000, reserve: 1200 },
-      note: (run, stage, code, params) => b.forum.append(runThreadId(run), { kind: 'system', author: { type: 'app' }, code, params, stage }),
+      note: (thread, stage, code, params) => b.forum.append(thread, { kind: 'system', author: { type: 'app' }, code, params, stage }),
       // The look at the screen goes off at once, as if every second passed.
       schedule: (_ms, fn) => {
         const timer = setTimeout(fn, 0);
@@ -379,7 +378,7 @@ describe('an agent called during a QA stage', () => {
       encoder: { encode: () => ({ jpeg: Uint8Array.from([1]), width: 1, height: 1 }) },
       connect,
       sink: () => sink,
-      note: (run, stage, code, params) => b.forum.append(runThreadId(run), { kind: 'system', author: { type: 'app' }, code, params, stage }),
+      note: (thread, stage, code, params) => b.forum.append(thread, { kind: 'system', author: { type: 'app' }, code, params, stage }),
     });
     const sandbox = fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/stage/x11/X99', kind: 'sandbox' } });
     b = await boot({ sandbox, screens: hub, configure: (c) => { c.language = 'en'; shellOf(c, 'qa', 'sandbox'); shellOf(c, 'developer', 'sandbox'); } });

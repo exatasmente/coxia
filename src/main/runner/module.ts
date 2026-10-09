@@ -25,8 +25,9 @@ import { createPublisher } from './publish';
 import { applyDocsFlow, startDocsRun } from '../harness/docsRun';
 import { docsStatus } from '../harness/status';
 import { docsFlowOf } from '../../shared/config/squads';
-import { runThreadId } from '../../shared/forum';
+import { parseKey } from '../../shared/browser';
 import { SCREEN_EVENT } from '../../shared/screen';
+import { auditScreen } from '../browser/audit';
 import { type NativeImageLike, createFrameEncoder } from '../screen/frame';
 import { type EncoderHost, createEncoderHost } from '../screen/encoderHost';
 import { realEncoderEnv } from '../screen/encoderWindow';
@@ -114,11 +115,17 @@ export const runsModule: Module = (ctx) => {
     enabled: process.platform === 'linux',
     encoder: createFrameEncoder({ nativeImage: nativeImage as unknown as NativeImageLike }),
     sink: () => encoderHost.sink(),
-    changed: (run) => ctx.emit({ type: 'module', name: SCREEN_EVENT, payload: { run } }),
+    // The intervals in which the person used the screen go to the audit log: from and to only, never what was done.
+    used: ({ key, agent, from, to }) => {
+      const parsed = parseKey(key);
+      const issue = parsed?.kind === 'run' ? runStore().get(parsed.run)?.issue.iid : undefined;
+      auditScreen.used({ key, agent, place: parsed?.kind === 'run' ? 'stage' : 'conversation', ...(issue ? { issue } : {}), from: new Date(from).toISOString(), to: new Date(to).toISOString() });
+    },
+    changed: (key) => ctx.emit({ type: 'module', name: SCREEN_EVENT, payload: { key } }),
     // The conversation says when the person took control of the screen and what they did with it: written by the app, never by the agent.
-    note: (run, stage, code, params) => {
+    note: (thread, stage, code, params) => {
       try {
-        forumStore().append(runThreadId(run), { kind: 'system', author: { type: 'app' }, code, params, stage });
+        forumStore().append(thread, { kind: 'system', author: { type: 'app' }, code, params, ...(stage ? { stage } : {}) });
       } catch (e) {
         console.error('[runner] could not record a note on the screen', e instanceof Error ? e.message : e);
       }
@@ -223,9 +230,9 @@ export const runsModule: Module = (ctx) => {
   // The evidence a run kept: read only, from the run's own store, and open to a paired browser like the thread beside it. The bytes come back as an ArrayBuffer.
   ctx.handle('runs:evidenceList', (run: unknown) => r.evidence(id(run)));
   ctx.handle('runs:evidence', (run: unknown, evidence: unknown) => r.evidenceBytes(id(run), text(evidence))?.bytes ?? null);
-  // The latest frame of a run's live screen, for a viewer that shows `since` and wants about `width`: a read like the ones beside it, open to a paired browser. It answers
-  // `none` when the run has no live screen (the stage ended): only a malformed call is an error.
-  ctx.handle('runs:screen', (run: unknown, since: unknown, width: unknown) => hub.frame(id(run), typeof since === 'number' && Number.isFinite(since) ? since : 0, typeof width === 'number' ? width : Number.NaN));
+  // The latest frame of a live screen, for a viewer that shows `since` and wants about `width`: a read like the ones beside it, open to a paired browser. The first argument
+  // is a screen key (`run:<id>`, `call:<thread>:<agent>`) or a bare run id. It answers `none` when there is no such screen (it ended): only a malformed call is an error.
+  ctx.handle('runs:screen', (key: unknown, since: unknown, width: unknown) => hub.frame(id(key), typeof since === 'number' && Number.isFinite(since) ? since : 0, typeof width === 'number' ? width : Number.NaN));
   // Removing a piece of evidence is the person's action, never an agent's; the file goes and the run drops the record.
   ctx.handle('runs:evidenceDelete', (run: unknown, evidence: unknown) => r.removeEvidence(id(run), text(evidence)));
   ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined));

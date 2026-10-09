@@ -1,11 +1,14 @@
+import { keyOf, parseKey } from '../../shared/browser';
 import { type LiveScreen, RECORDING_INTERVAL_MS, RECORDING_MAX_BYTES, RECORDING_MAX_MS, SCREEN_INPUT_MAX, SCREEN_INPUT_PER_SECOND, type ScreenControlAnswer, type ScreenFrameAnswer, type ScreenInputAnswer, clampFrameWidth } from '../../shared/screen';
 import { type FrameEncoder, type RawFrame, fixPad, hashFrame } from './frame';
 import { type Recorder, type RecorderLimits, type RecorderSink, type RecordingOutcome, createRecorder } from './recorder';
 import { type X11Connection, connectX11 } from './x11';
 import { type InputPlanner, createInputPlanner } from './xinput';
 
-// The registry of live screens: one per working stage that has a virtual display. The hub holds the connection to that display, the latest frame (read only when a
-// viewer asks, and never more than once in `FRAME_MIN_MS` however many viewers there are), the encoded pictures of it and the state the run is handed out with.
+// The registry of live screens: one per screen key (`run:<id>` for a working stage's display, `call:<thread>:<agent>` for an agent in a conversation), so a run can have its
+// stage's screen and a mentioned agent's at once. Every method takes the key; a bare run id means `run:<id>`, as it did before keys existed.
+// The hub holds the connection to that display, the latest frame (read only when a
+// viewer asks, and never more than once in `FRAME_MIN_MS` however many viewers there are), the encoded pictures of it and the state the screen is handed out with.
 // Frames never go through the app's broadcast: a viewer asks, and is answered alone. Nothing here reads the screen once a live screen has ended.
 //
 // The person's input (Take control, desktop only) goes through the same connection as the frames: it is not a command of the agent, so it is not queued behind the
@@ -32,10 +35,12 @@ export interface ScreenHubDeps {
   now?: () => number;
   /** Opens the connection to a display's socket (tests give a fake). */
   connect?: (socket: string) => Promise<X11Connection>;
-  /** A live screen opened or ended, or control was taken or given back: the run list refreshes at once. It carries the run's id and no pixels. */
-  changed?: (run: string) => void;
-  /** A line the app writes in the run's conversation (a system line with a catalog code and its parameters). */
-  note?: (run: string, stage: string, code: string, params: Record<string, string>) => void;
+  /** A live screen opened or ended, or control was taken or given back: the lists refresh at once. It carries the screen's key and no pixels. */
+  changed?: (key: string) => void;
+  /** A line the app writes in the screen's conversation (a system line with a catalog code and its parameters); `stage` is empty outside a run's stage. */
+  note?: (thread: string, stage: string, code: string, params: Record<string, string>) => void;
+  /** A burst of the person's use of the screen ended: from when to when, in ms of the clock. What they did is not reported. */
+  used?: (use: { key: string; agent: string; thread: string; from: number; to: number }) => void;
   /** Calls `fn` after `ms`; returns what cancels it. The burst of input and the recording's look at the screen are timed by it. */
   schedule?: (ms: number, fn: () => void) => () => void;
   /** The encoder a recording feeds; one per live screen. Without it nothing is recorded. */
@@ -45,7 +50,11 @@ export interface ScreenHubDeps {
 }
 
 export interface OpenScreen {
-  run: string;
+  /** `run:<id>` or `call:<thread>:<agent>`. */
+  key: string;
+  /** The conversation the screen's lines are written in. */
+  thread: string;
+  /** The stage, when the screen is a stage's; empty in a conversation. */
   stage: string;
   /** The agent that works the stage: the conversation's lines name it. */
   agent: string;
@@ -55,21 +64,21 @@ export interface OpenScreen {
 }
 
 export interface ScreenHub {
-  /** Connects to the stage's display and registers it; false when it cannot, or when the run already has a live screen (the stage goes on without one). Made before the agent's first command. */
+  /** Connects to the display and registers it; false when it cannot, when the key is not one, or when the key already has a live screen (the work goes on without one). Made before the agent's first command. */
   open(screen: OpenScreen): Promise<boolean>;
-  /** What the run is handed out with; null when its stage has no live screen. */
-  state(run: string): LiveScreen | null;
-  /** The latest frame of a run's live screen for a viewer that shows `since`, about `width` wide. Never throws. */
-  frame(run: string, since: number, width: number): Promise<ScreenFrameAnswer>;
+  /** What the screen is handed out with; null when the key has no live screen. */
+  state(key: string): LiveScreen | null;
+  /** The latest frame of a live screen for a viewer that shows `since`, about `width` wide. Never throws. */
+  frame(key: string, since: number, width: number): Promise<ScreenFrameAnswer>;
   /** The person takes control of the screen (desktop only) or gives it back; giving it back puts up every key and button still held. */
-  control(run: string, on: boolean): Promise<ScreenControlAnswer>;
+  control(key: string, on: boolean): Promise<ScreenControlAnswer>;
   /** The person's input: pointer, buttons, wheel and keys. Reaches the screen only while control is on. Never throws. */
-  input(run: string, events: readonly unknown[]): Promise<ScreenInputAnswer>;
-  /** The stage's end: stops everything, closes the connection and builds the recording. Null when the run had no live screen or nothing is recorded. Idempotent; nothing is read afterwards. */
-  finish(run: string): Promise<RecordingOutcome | null>;
-  /** Drops the live screen of a run without keeping anything of it (the stage failed before it started, the app is closing). Idempotent. */
-  end(run: string): void;
-  /** `end` for every run. */
+  input(key: string, events: readonly unknown[]): Promise<ScreenInputAnswer>;
+  /** The screen's end: stops everything, closes the connection and builds the recording. Null when the key had no live screen or nothing is recorded. Idempotent; nothing is read afterwards. */
+  finish(key: string): Promise<RecordingOutcome | null>;
+  /** Drops a live screen without keeping anything of it (the work failed before it started, the app is closing). Idempotent. */
+  end(key: string): void;
+  /** `end` for every screen. */
   endAll(): void;
 }
 
@@ -82,7 +91,8 @@ interface Grabbed {
 }
 
 interface Live {
-  run: string;
+  key: string;
+  thread: string;
   stage: string;
   agent: string;
   since: string;
@@ -133,14 +143,14 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
   const lost = new Map<string, { rec: Recorder; sawWindow: boolean }>();
   const say = (live: Live, code: string, params: Record<string, string> = {}): void => {
     try {
-      deps.note?.(live.run, live.stage, code, { agent: live.agent, ...params });
+      deps.note?.(live.thread, live.stage, code, { agent: live.agent, ...params });
     } catch {
       // A line that cannot be written is not the stage's to know.
     }
   };
-  const changed = (run: string): void => {
+  const changed = (key: string): void => {
     try {
-      deps.changed?.(run);
+      deps.changed?.(key);
     } catch {
       // A listener that fails is not the stage's to know.
     }
@@ -154,6 +164,11 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     live.burst = null;
     if (!b) return;
     say(live, 'runner.screen.used', { from: clockText(b.from), to: clockText(b.last) });
+    try {
+      deps.used?.({ key: live.key, agent: live.agent, thread: live.thread, from: b.from, to: b.last });
+    } catch {
+      // The audit is not the person's to wait for.
+    }
     // The same interval is a mark on the recording, so the evidence never credits the agent with what the person did.
     live.rec?.mark(b.from, b.last);
   };
@@ -171,9 +186,9 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     return live.planner;
   };
 
-  /** Ends the live screen of a run. `keep`: the screen was lost, not ended by the stage, so its recording is set aside for `finish`. */
-  const drop = (run: string, keep: boolean): void => {
-    const live = lives.get(run);
+  /** Ends the live screen of a key. `keep`: the screen was lost, not ended by the stage, so its recording is set aside for `finish`. */
+  const drop = (key: string, keep: boolean): void => {
+    const live = lives.get(key);
     if (!live) return;
     if (keep) {
       closeBurst(live);
@@ -184,7 +199,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       }
     }
     live.ended = true;
-    lives.delete(run);
+    lives.delete(key);
     live.cancelBurst?.();
     live.cancelBurst = null;
     live.cancelTick?.();
@@ -194,17 +209,17 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     live.rec = null;
     if (rec) {
       if (keep) {
-        lost.get(run)?.rec.abort();
-        lost.set(run, { rec, sawWindow: live.sawWindow });
+        lost.get(key)?.rec.abort();
+        lost.set(key, { rec, sawWindow: live.sawWindow });
       } else rec.abort();
     }
-    changed(run);
+    changed(key);
   };
 
-  const end = (run: string): void => {
-    drop(run, false);
-    lost.get(run)?.rec.abort();
-    lost.delete(run);
+  const end = (key: string): void => {
+    drop(key, false);
+    lost.get(key)?.rec.abort();
+    lost.delete(key);
   };
 
   /** The conversation says once that the recording stopped before the stage did, and why. */
@@ -215,7 +230,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     else if (rec.stoppedBy === 'time') say(live, 'runner.screen.cappedTime', { max: String(RECORDING_MAX_MS / 60_000) });
     else if (rec.stoppedBy === 'resized') say(live, 'runner.screen.resized');
     else say(live, 'runner.screen.encoderStopped');
-    changed(live.run);
+    changed(live.key);
   };
 
   /**
@@ -237,7 +252,7 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       if (live.ended) return null;
       if (!f) {
         live.failed++;
-        if (live.failed >= FAILED_READS_MAX || live.conn.closed) drop(live.run, true);
+        if (live.failed >= FAILED_READS_MAX || live.conn.closed) drop(live.key, true);
         return live.ended ? null : live.grabbed;
       }
       live.failed = 0;
@@ -267,16 +282,16 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
     const used = await live.conn.inUse();
     if (live.ended) return;
     if (used !== true) {
-      // The run is handed out as waiting for a window again: the list refreshes to say so.
+      // The screen is handed out as waiting for a window again: the list refreshes to say so.
       if (live.usedSince !== null) {
         live.usedSince = null;
-        changed(live.run);
+        changed(live.key);
       }
       return;
     }
     if (live.usedSince === null) {
       live.usedSince = checkedAt;
-      changed(live.run);
+      changed(live.key);
     }
     live.sawWindow = true;
     const got = await read(live, live.usedSince);
@@ -300,34 +315,34 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
 
   return {
     async open(screen) {
-      if (!deps.enabled) return false;
-      // A run has one live screen: a second display never replaces the one that is recording.
-      if (lives.has(screen.run)) return false;
-      end(screen.run);
+      if (!deps.enabled || !parseKey(screen.key)) return false;
+      // A key has one live screen: a second display never replaces the one that is recording.
+      if (lives.has(screen.key)) return false;
+      end(screen.key);
       let conn: X11Connection;
       try {
         conn = await connect(screen.socket);
       } catch {
         return false;
       }
-      const live: Live = { run: screen.run, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits, openedAt: now() }) : null, cancelTick: null, stopSaid: false, sawWindow: false, usedSince: null, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, readingFrom: 0, failed: 0, pictures: new Map() };
-      lives.set(screen.run, live);
+      const live: Live = { key: screen.key, thread: screen.thread, stage: screen.stage, agent: screen.agent, since: new Date(now()).toISOString(), conn, rec: deps.sink ? createRecorder({ sink: deps.sink(), limits: deps.recordingLimits, openedAt: now() }) : null, cancelTick: null, stopSaid: false, sawWindow: false, usedSince: null, ended: false, control: false, planner: null, burst: null, cancelBurst: null, rate: { at: 0, n: 0 }, grabbed: null, reading: null, readingFrom: 0, failed: 0, pictures: new Map() };
+      lives.set(screen.key, live);
       // A connection that is lost ends the screen: it is never dialled again, since what is at the socket's path is not the app's to trust after the agent has run.
       conn.onClose(() => {
-        if (lives.get(screen.run) === live) drop(screen.run, true);
+        if (lives.get(screen.key) === live) drop(screen.key, true);
       });
-      changed(screen.run);
+      changed(screen.key);
       // The first look is at once (the screen as it opens is the first frame of the video); it is not waited for, so the stage does not wait for the encoder to start.
       if (live.rec) void tick(live);
       return true;
     },
-    state(run) {
-      const live = lives.get(run);
+    state(k) {
+      const live = lives.get(keyOf(k) ?? '');
       if (!live) return null;
       return { stage: live.stage, width: live.grabbed?.frame.width ?? live.conn.size.width, height: live.grabbed?.frame.height ?? live.conn.size.height, since: live.since, control: live.control, recording: !live.rec || live.rec.state === 'stopped' ? 'stopped' : live.usedSince === null ? 'waiting' : 'on' };
     },
-    async frame(run, since, width) {
-      const live = lives.get(run);
+    async frame(k, since, width) {
+      const live = lives.get(keyOf(k) ?? '');
       if (!live) return { state: 'none' };
       const got = await read(live);
       // The screen ended while the frame was being read, or the encoder is gone: nothing more to show.
@@ -345,8 +360,9 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       }
       return { state: 'frame', seq: got.seq, width: picture.width, height: picture.height, screen: { width: got.frame.width, height: got.frame.height }, jpeg: picture.jpeg, control: live.control };
     },
-    async control(run, on) {
-      const live = lives.get(run);
+    async control(k, on) {
+      const key = keyOf(k) ?? '';
+      const live = lives.get(key);
       if (!live) return { ok: false, reason: 'none' };
       if (live.control === on) return { ok: true };
       if (on) {
@@ -358,11 +374,11 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
         live.control = false;
         say(live, 'runner.screen.controlOff');
       }
-      changed(run);
+      changed(key);
       return { ok: true };
     },
-    async input(run, events) {
-      const live = lives.get(run);
+    async input(k, events) {
+      const live = lives.get(keyOf(k) ?? '');
       if (!live) return { ok: false, delivered: 0, rejected: 0, reason: 'none' };
       if (!live.control) return { ok: false, delivered: 0, rejected: 0, reason: 'off' };
       // What is over the limits of a call or of a second is rejected, never queued: a viewer that sends too much is told it was not delivered.
@@ -387,12 +403,13 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
       live.cancelBurst = schedule(BURST_GAP_MS, () => closeBurst(live));
       return { ok: true, delivered: plan.accepted, rejected };
     },
-    async finish(run) {
-      let live = lives.get(run);
+    async finish(k) {
+      const key = keyOf(k) ?? '';
+      let live = lives.get(key);
       // One last look: a window that mapped less than a second ago (the timer's interval) is on the screen now and is the video's, not an unused screen. The display may
       // die during it, which sets the recording aside as lost, so the screen is looked up again after.
       if (live?.rec && !live.ended) await look(live, live.rec).catch(() => undefined);
-      live = lives.get(run);
+      live = lives.get(key);
       let rec: Recorder | null;
       let sawWindow: boolean;
       // The screen this call ends, kept to read what a look still in flight saw before the screen is gone.
@@ -410,13 +427,13 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
         }
         // The recording leaves the screen here, so ending the screen does not throw it away.
         live.rec = null;
-        if (rec && lost.get(run)?.rec === rec) lost.delete(run);
-        end(run);
+        if (rec && lost.get(key)?.rec === rec) lost.delete(key);
+        end(key);
       } else {
-        const kept = lost.get(run);
+        const kept = lost.get(key);
         rec = kept?.rec ?? null;
         sawWindow = kept?.sawWindow ?? false;
-        lost.delete(run);
+        lost.delete(key);
       }
       if (!rec) return null;
       try {
@@ -428,9 +445,9 @@ export function createScreenHub(deps: ScreenHubDeps): ScreenHub {
         return { ok: false, reason: 'encoder' };
       }
     },
-    end,
+    end: (k) => end(keyOf(k) ?? ''),
     endAll() {
-      for (const run of [...lives.keys(), ...lost.keys()]) end(run);
+      for (const key of [...lives.keys(), ...lost.keys()]) end(key);
     },
   };
 }

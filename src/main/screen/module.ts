@@ -6,6 +6,7 @@ import { screenHub } from '../runner/module';
 // purpose, and webPolicy.ts denies the whole `screen:` prefix to a paired browser with a pattern, so a channel added here is closed to it from the day it exists. The
 // phone only watches (`runs:screen`, a read). Neither channel throws for a state (a stage that ended answers `none`): only a call that is not formed is an error.
 
+// The first argument is a screen key (`run:<id>` or `call:<thread>:<agent>`); a bare run id means the stage's.
 const runId = (v: unknown): string => {
   if (typeof v !== 'string') throw new RunError('unknown-run', { id: '' });
   return v;

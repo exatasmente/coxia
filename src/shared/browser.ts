@@ -12,6 +12,33 @@ export const RESULT_MAX = 40_000;
 /** The most steps a screen session's log keeps; the oldest go first. */
 export const STEP_LOG_MAX = 2000;
 
+/**
+ * The key of an agent's screen. A stage's agent session is `run:<runId>`; an agent in a conversation, or in a run's thread, is `call:<thread>:<agentId>`. One screen and one key
+ * per agent session. Thread and agent ids hold no `:`, so a key splits unambiguously.
+ */
+export const runKey = (run: string): string => `run:${run}`;
+export const callKey = (thread: string, agent: string): string => `call:${thread}:${agent}`;
+
+export type ParsedKey = { kind: 'run'; run: string } | { kind: 'call'; thread: string; agent: string };
+
+const PART = /^[^:\s]+$/;
+
+/** What a key says, or null when it is not one. */
+export function parseKey(key: unknown): ParsedKey | null {
+  if (typeof key !== 'string') return null;
+  const parts = key.split(':');
+  if (parts[0] === 'run' && parts.length === 2 && PART.test(parts[1])) return { kind: 'run', run: parts[1] };
+  if (parts[0] === 'call' && parts.length === 3 && PART.test(parts[1]) && PART.test(parts[2])) return { kind: 'call', thread: parts[1], agent: parts[2] };
+  return null;
+}
+
+/** The key a caller means: a key as it is, or a bare run id (the stage's screen, as before keys existed). Null when it is neither. */
+export function keyOf(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  if (parseKey(value)) return value;
+  return PART.test(value) ? runKey(value) : null;
+}
+
 /** What the app made of a step: nothing to hold, an irreversible act, or something it could not read. */
 export type StepClass = 'free' | 'irreversible' | 'unclassified';
 /** Why a step is held, for the card: a submit, a name, a shortcut, a dialog, or a step the app could not read. */
