@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.4] - 2026-10-08
+
 ### Added
 
 - **A person can watch an agent's virtual screen live, take control of it on the computer, and keep a recording of it.** A QA stage with the virtual display on (in the sandbox or for an agent set to `shell: host`) shows a **Live screen** button on its card, in the app and in a paired browser. The viewer refreshes about twice a second while it is open, with the full 1280×800 picture on the computer and a smaller one (640 wide) on the phone, and stops when it is closed, hidden or the stage ends. Nothing is read for the viewer while nobody watches. On the computer, **Take control** sends clicks, the wheel and keys to that screen; the viewer says plainly that control is on and being recorded, and Ctrl+Alt+Shift+Esc gives it back (it is never sent to the screen). A paired browser only watches and sees a "controlled from the computer" mark. The person's input is never counted as the agent's: it does not wait behind the agent's commands, costs none of its budget, and the conversation gets one line per burst ("used the screen from … to …"). While the display is on, the app records the screen as one WebM video, kept as a piece of evidence of the stage even when the stage fails or is cancelled (up to 24 MiB and 60 minutes; a limit stops the recording and says so). The evidence block plays it, with the intervals in which a person used the screen marked on a strip that seeks the video; the conversation carries it as an attachment. A new retention group, **Screen recordings of the stages**, sweeps the files with the workspace's retention days and leaves the record marked as removed. The QA prompt now tells the agent to run its browser headed when the display is on, so it draws on the screen. A run that holds a recording is written as run format 2: an app older than this one refuses it as written by a newer app, instead of reading it as invalid. Linux only; the person's own screen is never shown, and the agent's own `SaveEvidence` still refuses video.
@@ -327,7 +329,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.3...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.4...HEAD
+[0.9.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.3...v0.9.0-beta.4
 [0.9.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.2...v0.9.0-beta.3
 [0.9.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.1...v0.9.0-beta.2
 [0.9.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.8.0...v0.9.0-beta.1
