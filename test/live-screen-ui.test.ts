@@ -12,9 +12,10 @@ import { stageDone, startStage } from '../src/shared/runs';
 // src/renderer/src/api.ts reads window.api when it loads, and the viewer asks document whether it runs in a paired browser; the node environment has neither.
 const dom = vi.hoisted(() => {
   const documentElement = { dataset: {} as Record<string, string> };
-  (globalThis as unknown as { window: unknown }).window = { api: {} };
+  const invoke = vi.fn(async (..._args: unknown[]) => null);
+  (globalThis as unknown as { window: unknown }).window = { api: { invoke } };
   (globalThis as unknown as { document: unknown }).document = { documentElement };
-  return { documentElement };
+  return { documentElement, invoke };
 });
 vi.mock('../src/renderer/src/i18n', async (orig) => ({ ...(await orig<typeof import('../src/renderer/src/i18n')>()), useT: () => t }));
 // The document viewer draws diagrams with a library that needs a browser; the card does not open it here.
@@ -66,10 +67,7 @@ describe('the Live screen button on the stage card', () => {
   });
 });
 
-const viewer = (screen: LiveScreenState | null): string => {
-  const { run } = working(() => screen);
-  return renderToStaticMarkup(createElement(LiveScreen, { run, onClose: () => undefined }));
-};
+const viewer = (screen: LiveScreenState | null, screenKey = 'run:r1'): string => renderToStaticMarkup(createElement(LiveScreen, { screenKey, state: screen, onClose: () => undefined }));
 
 describe('the live screen viewer', () => {
   it('offers Take control, off, with the recording state, on the desktop', () => {
@@ -107,6 +105,12 @@ describe('the live screen viewer', () => {
     expect(html).not.toContain(t('ui.cycle.live.recordingOn'));
   });
 
+  it('shows a conversation screen by its key just as a stage\'s', () => {
+    const html = viewer(screenOf(), 'call:general:coder');
+    expect(html).toContain('role="switch"');
+    expect(html).toContain(t('ui.cycle.live.recordingOn'));
+  });
+
   it('says the stage ended, and offers nothing to control, when the run no longer has a screen', () => {
     const html = viewer(null);
     expect(html).toContain(t('ui.cycle.live.ended'));
@@ -116,6 +120,19 @@ describe('the live screen viewer', () => {
 
   it('puts the live screen in a dialog labelled with its title', () => {
     expect(viewer(screenOf())).toContain(`aria-label="${t('ui.cycle.live.title')}"`);
+  });
+});
+
+describe('the channels of the viewer', () => {
+  it('ask for a frame, take control and send input by the screen key, whatever the screen', async () => {
+    const { screenApi } = await import('../src/renderer/src/screens/cycle/screenApi');
+    for (const key of ['run:r1', 'call:general:coder']) {
+      dom.invoke.mockClear();
+      await screenApi.frame(key, 3, 640);
+      await screenApi.control(key, true);
+      await screenApi.input(key, [{ t: 'move', x: 1, y: 2 }]);
+      expect(dom.invoke.mock.calls.map((c) => [c[0], c[1]])).toEqual([['runs:screen', key], ['screen:control', key], ['screen:input', key]]);
+    }
   });
 });
 

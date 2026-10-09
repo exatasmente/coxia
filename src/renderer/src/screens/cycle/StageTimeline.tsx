@@ -3,6 +3,7 @@ import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { shownText } from '../../../../shared/cycles/text';
 import { type FlowStage, type Run, type StageUsage, hasUsage } from '../../../../shared/runs';
 import { type CommentRow, type StageRow, type StageState, canUndoPost, commentRows, stageRows, usageParams } from '../../../../shared/runs/view';
+import { runKey } from '../../../../shared/browser';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
@@ -159,7 +160,7 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
           </ul>
         )}
       </div>
-      {watching && <LiveScreen run={run} onClose={() => setWatching(false)} />}
+      {watching && <LiveScreen screenKey={runKey(run.id)} state={run.screen ?? null} onClose={() => setWatching(false)} />}
     </li>
   );
 }

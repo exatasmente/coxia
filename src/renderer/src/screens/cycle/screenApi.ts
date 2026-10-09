@@ -2,13 +2,13 @@ import { bytesToBase64 } from '../../../../shared/wire';
 import type { ScreenControlAnswer, ScreenFrameAnswer, ScreenInput, ScreenInputAnswer } from '../../../../shared/screen';
 import { api } from '../../api';
 
-// The channels of a run's live screen. `runs:screen` is a read, open to the paired browser like the other run reads; `screen:*` are the desktop's alone (the main
-// process refuses a paired browser), so the web build never calls them.
+// The channels of an agent's live screen, all taking the screen's key (`run:<id>`, `call:<thread>:<agent>`). `runs:screen` is a read, open to the paired browser like the
+// other run reads; `screen:*` are the desktop's alone (the main process refuses a paired browser), so the web build never calls them.
 
 export const screenApi = {
-  frame: (run: string, since: number, width: number) => api.invoke<ScreenFrameAnswer>('runs:screen', run, since, width),
-  control: (run: string, on: boolean) => api.invoke<ScreenControlAnswer>('screen:control', run, on),
-  input: (run: string, events: readonly ScreenInput[]) => api.invoke<ScreenInputAnswer>('screen:input', run, events),
+  frame: (key: string, since: number, width: number) => api.invoke<ScreenFrameAnswer>('runs:screen', key, since, width),
+  control: (key: string, on: boolean) => api.invoke<ScreenControlAnswer>('screen:control', key, on),
+  input: (key: string, events: readonly ScreenInput[]) => api.invoke<ScreenInputAnswer>('screen:input', key, events),
 };
 
 /**
