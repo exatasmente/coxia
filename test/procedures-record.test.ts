@@ -178,7 +178,8 @@ describe('checkContent: what a record never holds', () => {
     ['email', 'Sign in as the shared account', 'Sign in as someone@example.com', 'email'],
     ['digit run', 'Open the page 12345', 'Account 123456 is the one', 'digits'],
     ['digit run, spaced', 'Run it 3 times', 'Call 555 123 4567', 'digits'],
-    ['digit run, a date', 'Wait for 20 s', 'Done on 2026-10-09', 'digits'],
+    ['digit run, sixteen', 'Wait for 20 s', 'Card 4111111111111111 was used', 'digits'],
+    ['digit run, a date-like number', 'Wait for 20 s', 'Done on 2026-13-45-99', 'digits'],
     ['opaque token', 'Open docs.example.com/budget/sheets', 'Use abc123def456ghi789jk', 'token'],
     ['url query', 'Open docs.example.com/budget/sheets', 'Open https://docs.example.com/a?id=x', 'url-query'],
     ['url fragment', 'Open docs.example.com/budget/sheets', 'Open docs.example.com/a#top', 'url-query'],
@@ -191,6 +192,22 @@ describe('checkContent: what a record never holds', () => {
     expect(codes(field(pass)), pass).toEqual([]);
     const got = codes(field(refuse));
     expect(got, refuse).toContain(`steps[0].text:${code}`);
+  });
+
+  it('accepts a pinned version and an ISO date or instant, which are ordinary in a command and a pitfall', () => {
+    expect(codes(good({ steps: [{ text: 'Install it', run: 'npm i pkg@1.2.3' }] }))).toEqual([]);
+    expect(codes(good({ steps: [{ text: 'Install it', run: 'npm i @scope/pkg@1.2.3' }] }))).toEqual([]);
+    expect(codes(good({ steps: [{ text: 'Install it', run: 'npm i @angular-devkit/build-angular@17.0.0-rc.1' }] }))).toEqual([]);
+    expect(codes(good({ pitfalls: ['pkg@10.20.30 fails; use pkg@v2.1.0'] }))).toEqual([]);
+    expect(codes(good({ pitfalls: ['The dump of 2026-10-09 is stale'] }))).toEqual([]);
+    expect(codes(good({ waits: ['The report of 2026-10-09T12:30:45.000Z lags'] }))).toEqual([]);
+  });
+
+  it('still refuses an address and a number next to a version or a date', () => {
+    expect(codes(good({ pitfalls: ['Ask person@example.com'] }))).toContain('pitfalls[0]:email');
+    expect(codes(good({ pitfalls: ['Mail pkg@1.2.3 and person@example.com'] }))).toContain('pitfalls[0]:email');
+    expect(codes(good({ pitfalls: ['Account 4111111111111111 on 2026-10-09'] }))).toContain('pitfalls[0]:digits');
+    expect(codes(good({ pitfalls: ['Use 20261009123456 for 2026-10-09'] }))).toContain('pitfalls[0]:digits');
   });
 
   it('applies to the command of a step, a pitfall and a wait as well', () => {

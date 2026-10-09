@@ -86,6 +86,12 @@ const URL_QUERY = /(?:\b[a-z][a-z0-9+.-]*:\/\/|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b)\S
 const GUI_KEY = /^[\p{L}\p{N}][\p{L}\p{N} ._+()-]*$/u;
 const SLUG = /^[a-z0-9][a-z0-9._-]*$/;
 
+// A pinned version (`pkg@1.2.3`, `@scope/pkg@1.2.3-beta.1`) is email-shaped and an ISO date or instant is a digit run; both are ordinary in a command or a pitfall, so the
+// checks of those two classes (and the net under them) read the text with them taken out. The shared `redact` is not changed for other callers.
+const PINNED = /([\w.-])@v?\d+(?:\.\d+){1,2}(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?(?![\w@-]|\.\w)/g;
+const ISO_DATE = /(?<![\d.-])\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)?(?![\d-])/g;
+const withoutPinsAndDates = (s: string): string => s.replace(PINNED, '$1').replace(ISO_DATE, 'DATE');
+
 const hasOpaqueToken = (text: string): boolean => text.split(/\s+/).some((w) => w.length >= 20 && /\d/.test(w) && /\p{L}/u.test(w));
 
 // Pairs of quotation marks. A single quote counts as one only when it is not inside a word, so "don't" and "user's" do not pair up.
@@ -137,14 +143,15 @@ function text(out: Out, field: string, value: unknown, rule: TextRule, home: str
     ok = false;
   }
   const before = out.refusals.length;
-  if (EMAIL.test(s)) refuse(out, field, 'email');
+  const plain = withoutPinsAndDates(s);
+  if (EMAIL.test(plain)) refuse(out, field, 'email');
   if (home && home !== '/' && s.includes(home)) refuse(out, field, 'home');
   if (URL_QUERY.test(s)) refuse(out, field, 'url-query');
-  if (rule.free !== false && DIGIT_RUN.test(s)) refuse(out, field, 'digits');
-  if (rule.free !== false && hasOpaqueToken(s)) refuse(out, field, 'token');
+  if (rule.free !== false && DIGIT_RUN.test(plain)) refuse(out, field, 'digits');
+  if (rule.free !== false && hasOpaqueToken(plain)) refuse(out, field, 'token');
   if (rule.gui && quotesTooMuch(s)) refuse(out, field, 'quote');
   // What `redact` would change and no class above named: a credential-shaped string, an assignment to a secret-looking name.
-  if (out.refusals.length === before && redact(s, home) !== s) refuse(out, field, 'credential');
+  if (out.refusals.length === before && redact(plain, home) !== plain) refuse(out, field, 'credential');
   return ok && out.refusals.length === before ? s : null;
 }
 
