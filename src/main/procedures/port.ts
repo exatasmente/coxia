@@ -44,6 +44,8 @@ export interface PortDeps {
   /** The context window of the agent's model in tokens, when known: a small one shrinks the list. */
   contextWindow?(model: AgentDef['model']): number | null;
   now?(): number;
+  /** Where a failure of the procedures is reported (the error log); the source is `procedures` and the error carries no path. */
+  onError?(source: string, error: Error): void;
   /** The store, when the caller made one (a test); the port makes its own over `dir` otherwise. */
   store?: ProcedureStore;
 }
@@ -57,32 +59,51 @@ export function commandTools(commands: readonly string[] | undefined): string[] 
 }
 
 export function createProceduresPort(deps: PortDeps): ProceduresPort {
-  const store = deps.store ?? createProcedureStore(deps.dir);
-  return {
-    open(ctx) {
-      const config = deps.config();
-      if (!proceduresOn(config)) return null;
-      const agent = ctx.agent;
-      const tools = [...new Set([...(deps.pluginNames?.() ?? []).map(slug), ...config.vcs.map((v) => v.kind), ...commandTools(agent.allowedCommands)].filter(Boolean))];
-      return createProcedureSession(
-        { store, now: deps.now, note: ctx.note, audit: deps.audit },
-        {
-          writer: { by: agent.id, surface: ctx.surface, ...(ctx.stage ? { stage: ctx.stage } : {}), ref: ctx.ref, permission: agent.permission, ...(agent.shell ? { shell: agent.shell } : {}) },
-          issue: ctx.issue,
-          ...(ctx.screen ? { screen: ctx.screen } : {}),
-          workspaceRepos: config.projects.repos.map((r) => r.id),
-          select: {
-            repos: ctx.repos,
-            ...(ctx.stage ? { stageKind: ctx.stage } : {}),
-            tools,
-            hosts: [...new Set((agent.allowedHosts ?? []).map((h) => h.trim().toLowerCase()).filter(Boolean))],
-            ...(ctx.requests ? { requests: true } : {}),
-            ...(ctx.agentsMd ? { agentsMd: ctx.agentsMd } : {}),
-            language: config.language,
-            contextWindow: deps.contextWindow?.(agent.model) ?? null,
-          },
+  const store = deps.store ?? createProcedureStore(deps.dir, { onError: (e) => deps.onError?.('procedures', e) });
+  let said = false;
+
+  function openSession(ctx: OpenContext): ProcedureSession | null {
+    const config = deps.config();
+    if (!proceduresOn(config)) return null;
+    const agent = ctx.agent;
+    const tools = [...new Set([...(deps.pluginNames?.() ?? []).map(slug), ...config.vcs.map((v) => v.kind), ...commandTools(agent.allowedCommands)].filter(Boolean))];
+    return createProcedureSession(
+      { store, now: deps.now, note: ctx.note, audit: deps.audit },
+      {
+        writer: { by: agent.id, surface: ctx.surface, ...(ctx.stage ? { stage: ctx.stage } : {}), ref: ctx.ref, permission: agent.permission, ...(agent.shell ? { shell: agent.shell } : {}) },
+        issue: ctx.issue,
+        ...(ctx.screen ? { screen: ctx.screen } : {}),
+        workspaceRepos: config.projects.repos.map((r) => r.id),
+        select: {
+          repos: ctx.repos,
+          ...(ctx.stage ? { stageKind: ctx.stage } : {}),
+          tools,
+          hosts: [...new Set((agent.allowedHosts ?? []).map((h) => h.trim().toLowerCase()).filter(Boolean))],
+          ...(ctx.requests ? { requests: true } : {}),
+          ...(ctx.agentsMd ? { agentsMd: ctx.agentsMd } : {}),
+          language: config.language,
+          contextWindow: deps.contextWindow?.(agent.model) ?? null,
         },
-      );
+      },
+    );
+  }
+
+  return {
+    // A call goes on without procedures when they cannot be opened: a stage or an answer is never failed by its memory.
+    open(ctx) {
+      try {
+        return openSession(ctx);
+      } catch (e) {
+        if (!said) {
+          said = true;
+          try {
+            deps.onError?.('procedures', new Error(`procedures could not be opened (${e instanceof Error ? e.name : 'error'})`));
+          } catch {
+            // The log failing is not the call's to know.
+          }
+        }
+        return null;
+      }
     },
   };
 }

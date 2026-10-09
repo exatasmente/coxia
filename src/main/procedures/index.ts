@@ -1,4 +1,5 @@
 import { recordWrite } from '../auditoria';
+import { logError } from '../errorlog';
 import { ATAS } from '../env';
 import { pluginNotes } from '../plugins/module';
 import { getConfig, rc } from '../workspaceConfig';
@@ -18,4 +19,4 @@ export function contextWindowOf(model: Parameters<ReturnType<typeof rc>['agentMo
 let port: ProceduresPort | null = null;
 
 /** The running workspace's door to its procedures, over its own folder. One for the process, as the shared activities memory is. */
-export const proceduresPort = (): ProceduresPort => (port ??= createProceduresPort({ config: getConfig, dir: ATAS, pluginNames: () => pluginNotes().map((p) => p.name), audit: recordWrite, contextWindow: contextWindowOf }));
+export const proceduresPort = (): ProceduresPort => (port ??= createProceduresPort({ config: getConfig, dir: ATAS, pluginNames: () => pluginNotes().map((p) => p.name), audit: recordWrite, contextWindow: contextWindowOf, onError: logError }));

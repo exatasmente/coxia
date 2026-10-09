@@ -1,4 +1,5 @@
 import { recordWrite } from '../auditoria';
+import { logError } from '../errorlog';
 import { ATAS } from '../env';
 import type { Module } from '../module';
 import { getConfig } from '../workspaceConfig';
@@ -11,7 +12,7 @@ import { createProcedureStore } from './store';
 // process (coxia_procedures).
 
 export const proceduresModule: Module = (ctx) => {
-  const c = createProcedureChannels({ store: createProcedureStore(ATAS), config: getConfig, audit: recordWrite });
+  const c = createProcedureChannels({ store: createProcedureStore(ATAS, { onError: (e) => logError('procedures', e) }), config: getConfig, audit: recordWrite });
   ctx.handle('procedures:list', () => c.list());
   ctx.handle('procedures:get', (id: unknown) => c.get(id));
   ctx.handle('procedures:stats', () => c.stats());

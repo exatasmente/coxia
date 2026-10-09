@@ -99,6 +99,8 @@ export interface StoreDeps {
   hex?: () => string;
   /** Moves the written file into place; a test makes it fail. */
   rename?: (from: string, to: string) => void;
+  /** Where a folder that cannot be read is reported (the error log). It gets a sentence with no path in it, once. */
+  onError?: (error: Error) => void;
 }
 
 export interface ProcedureStore {
@@ -144,6 +146,7 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
   const hex = deps.hex ?? (() => randomBytes(4).toString('hex'));
   const move = deps.rename ?? renameSync;
   const fileOf = (id: string): string => join(root, `${id}.json`);
+  let unreadableSaid = false;
 
   // One write, atomic: a failure leaves the file as it was and no temporary file behind.
   function write(path: string, value: unknown): boolean {
@@ -172,7 +175,22 @@ export function createProcedureStore(workspaceDir: string, deps: StoreDeps = {})
     if (!existsSync(root)) return { records: [], skipped: 0 };
     const records: ProcedureRecord[] = [];
     let skipped = 0;
-    for (const name of readdirSync(root).sort()) {
+    let names: string[];
+    try {
+      names = readdirSync(root).sort();
+    } catch (e) {
+      // A folder that cannot be read counts as empty: a stage and an answer go on without procedures. The path stays out of the line.
+      if (!unreadableSaid) {
+        unreadableSaid = true;
+        try {
+          deps.onError?.(new Error(`the procedures folder could not be read (${(e as NodeJS.ErrnoException).code ?? 'error'})`));
+        } catch {
+          // The log failing is not the store's to know.
+        }
+      }
+      return { records: [], skipped: 0 };
+    }
+    for (const name of names) {
       const m = FILE.exec(name);
       if (!m) continue;
       const got = read(m[1]);
