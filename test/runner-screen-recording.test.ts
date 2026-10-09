@@ -3,6 +3,7 @@
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { listAudit } from '../src/main/auditoria';
 import { putRecording } from '../src/main/evidence/recording';
 import { evidencePath } from '../src/main/evidence/store';
 import { type ScreenHub, createScreenHub } from '../src/main/screen/hub';
@@ -188,6 +189,19 @@ describe('the recording of a QA stage', () => {
     expect([...readFileSync(path).subarray(0, 4)]).toEqual([0x1a, 0x45, 0xdf, 0xa3]);
     expect(w.sink.closed).toBe(1);
     expect(w.conn.closed).toBe(true);
+  });
+
+  it('is audited as a screen reached through the agent\'s own shell: one line when it opens and one when the stage ends, with the recording kept', async () => {
+    const w = await qaStage();
+    const run = await reach(w.b, w.run, 'ready');
+    // The audit log is the file's, shared by every stage this file runs: this run's lines only.
+    const lines = listAudit().filter((e) => (e.kind === 'screen-open' || e.kind === 'screen-close') && e.target === `screen:run:${run.id}`).reverse();
+    expect(lines.map((e) => [e.kind, e.target, e.by, e.via])).toEqual([
+      ['screen-open', `screen:run:${run.id}`, 'qa', 'sandbox'],
+      ['screen-close', `screen:run:${run.id}`, 'qa', 'sandbox'],
+    ]);
+    expect(lines[0].fields).toMatchObject({ place: 'stage', path: 'shell', profile: 'none' });
+    expect(lines[1].fields).toMatchObject({ place: 'stage', reason: 'stage', recording: 'kept' });
   });
 
   it('is written to the run file as version 3 (the recording says when it started, #176), and the run without a recording stays 1', async () => {

@@ -378,6 +378,17 @@ describe('deleting the direct conversation of an agent', () => {
     expect(deleteAgentThread(store, files, 'trial')).toBe(false);
   });
 
+  it('tells the caller which conversation is about to go, once, and not for one that is not an agent\'s', () => {
+    const files = attachments();
+    ensureAgentThread(store, { id: 'trial', name: 'Trial' }, 'en');
+    store.ensureThread({ id: 'agent-odd', kind: 'general', title: 'Odd' });
+    const told: string[] = [];
+    expect(deleteAgentThread(store, files, 'odd', (thread) => told.push(thread))).toBe(false);
+    expect(told).toEqual([]);
+    expect(deleteAgentThread(store, files, 'trial', (thread) => told.push(thread))).toBe(true);
+    expect(told).toEqual(['agent-trial']);
+  });
+
   it('only ever deletes a conversation of kind agent', () => {
     const files = attachments();
     // threads that carry an agent\'s name in their id but are not an agent\'s conversation

@@ -187,4 +187,52 @@ New: `browser-contract` (pinned server, cheap), `browser-classify` (table, fixtu
 
 ## 11. What was and was not verified
 
-Read on this tree today: every `file:line` above; the spec; `@playwright/mcp` 0.0.83's `index.d.ts`, `config.d.ts`, CLI help, tool list and schemas; the snapshot builder in its bundle. Run: section 0, outside the app and its data folders. Not run: the repository's test suite, `tsc`, the app, a packaged build, any real site.
+Read on this tree before the implementation: every `file:line` above; the spec; `@playwright/mcp` 0.0.83's `index.d.ts`, `config.d.ts`, CLI help, tool list and schemas; the snapshot builder in its bundle. Run: section 0, outside the app and its data folders. Not run: the repository's test suite, `tsc`, the app, a packaged build, any real site.
+
+## 12. The pass over the acceptance criteria (commit 28)
+
+Read against the tree after commit 27, with the tests named from their files. "Real" means the test runs a real `bwrap`, `Xvfb` and Chromium and is skipped where they are missing; on the machine of this pass none of them was skipped. "By hand" means no test can say it and the maintainer checks it.
+
+| # | Criterion | Covered by |
+|---|---|---|
+| 1 | Which sessions get a display and a browser | `runner-stage-screen` "what a stage is offered of the screen" (QA with and without the switch on a sandbox and on the computer, non-QA with the switch on each of the four shells, a host list alone, the computer's shell alone, the workspace's display off); `mentions-screen` "which calls get the app's browser" (a direct conversation, a squad channel, a general thread and a ceremony, each with `none`, `allowlist`, `sandbox` and `host`, the workspace's display on and off) and "in a run's thread"; `prompts-screen` for the byte-identical prompt of a QA stage and of an agent with no switch (the cycle-parity goldens did not move). **Not covered, and not built: an agent a stage calls with `CallAgent`** (see "Left for the maintainer") |
+| 2 | The tool set and the contract with the server | `browser-allowlist`, `browser-contract` (the pinned server; no tool that is neither exposed nor refused), `browser-engine-tools` ("the same calls through both shapes": one run against the Claude SDK shape and the open engine's), `browser-agent-screen` |
+| 3 | Classification | `browser-classify` (the table over fixtures recorded from 0.0.83, the word lists, keys, "has a row for every tool") |
+| 4 | The hold | `browser-asks`, `browser-intermediary` "holding a step" (yes once; no, no answer and close leave the page alone; a pass never covers an irreversible step), `browser-sessions` "the idle clock" (held open by a question), `browser-engine-tools` (a call that waits stops when the screen closes) |
+| 5 | Results | `browser-intermediary` "what the agent gets back" (fence, cap, stub mask in order, **no redaction**, the app's own snapshot), "what is refused before the browser is asked" (selector, non-HTTP, host outside the list), "the log of steps" (one entry per call, the audit counts match) |
+| 6 | The step log | `browser-intermediary` "the log of steps" and "the step log on its own" |
+| 7 | Network of the app's browser | `browser-runtime` "a real browser in its sandbox" (real: the listed host loads; another host, plain `http`, a service on the loopback, a local address and a file are unreachable; nothing but its own loopback to go out by), "what the proxy decided, as a summary" (200 tunnels make one summary). **On screen with a real network: by hand** |
+| 8 | Keys | `screen-hub` "screens by key" (two screens in one run, a second same key refused, a bare run id), `browser-keys`; `changed(key)` carries the key only in `screen-hub`. The module's `SCREEN_EVENT` payload `{ key }` (`runner/module.ts`, two places) has no test of its own |
+| 9 | Lifetime | `browser-sessions` ("keeping a screen between messages", "the idle clock" with a fake clock, "closing a screen" in order, "what closes the screens of a group": by thread, by agent, quit, the config changes), `runner-stage-screen` (an earlier stage's screens close when the next begins), `forum-store` + `agentAssist` (commit 28: emptying an agent's conversation closes its screens). A thread deleted by a route other than the assistant: none exists |
+| 10 | Stopping | `mentions-screen` "stopping and closing", `mentions-stop`, `runs-screen-channels`, `runs-policy`, `screen-policy` (a made-up `screen:` channel stays denied) |
+| 11 | Channels | `runs-screen-channels`, `screen-policy` (no frame under `screen:`, no input channel elsewhere, `screen:sites` and `screen:revoke` denied), `runs-policy` (`runs:screenAnswer` behind the switch), `forum-policy` unchanged |
+| 12 | The viewer | Pieces: `screen-ui` (Watch, Stop, the strip, the card), `live-screen-ui` (no Take control in a paired browser). **On a real screen, by hand** |
+| 13 | The recording as an attachment | `attachments-video` (the app's door, the 24 MiB ceiling outside the message's 10 MiB, a person's WebM refused, the model's tool does not see it, no prompt, delete removes the file), `attachments-retention` and `screen-retention` (the group, only the file, the post marked), `screen-ui` (play in place, "removed by retention"), `runner-stage-screen` (a run's thread keeps it as evidence). **Playing in a paired browser: by hand** |
+| 14 | Network per agent | `network-agent` (the table of rule 25, the sandbox with a fake upstream), `config-schema` (validation of the list), `mentions-shell` (a conversation's proxy decisions are said) |
+| 15 | The profile | `browser-profile` (0700, links refused, the lock, a stale mark, the sandbox cannot be given the folder), `browser-profile-guard` (both engines, a Grep with no path), `browser-sessions` "the logged-in browser", `screen-retention` (no retention group lists it). Not in the config export or in a worktree: by construction (the config has no path to it), no test of its own |
+| 16 | Removal | `browser-module` (the config drops the agent, the start sweep), `browser-profile` "when the agent goes away", `workspaces-core` (deleting a workspace deletes profiles before the trash) |
+| 17 | Settings | `browser-sites` (the code against a fake page, the flow, and **real** against a real profile), `screen-settings-ui`, `screen-policy` |
+| 18 | The confirmation tool and the shell path | `browser-engine-tools` and `runs-screen-channels` (the tool, the card, the notice, the clocks, the answers), `browser-asks` (15 minutes), `mentions-screen` (who is offered it), `runner-stage-screen` "the shell path" (commit 28: a QA agent that drives a browser from its shell and never calls the tool: no hold, no confirmation, no step log, no mask; the recording, the host list and the session lines are there) |
+| 19 | The audit | `screen-audit`, `browser-asks`, `browser-sessions` (one line when it closes), `runner-screen-recording` (commit 28: a screen reached only through the shell has its two lines) |
+| 20 | Permissions | `config-web-scope`, `agent-permissions-config`, `cycle-templates`, `config-transfer`, `agent-assist-draft` |
+| 21 | Migration | `config-migrations` (20 to 21), `config-schema` |
+| 22 | Test workspace | `browser-guard`, `browser-sessions` "what a screen is not opened for" (the host agent's browser withheld, a sandboxed one opens without hosts or logins), `network-agent` |
+| 23 | Prompts | `prompts-screen` (the variants in both languages, byte for byte without the switches, a mention call) |
+| 24 | The server and its dependencies | `browser-runtime` (the argument list), `browser-contract`, `build-profiles` (both builds unpack the server; the public one still leaves the SDK out), `third-party-notices.mjs --check`, `electron-vite build`; **the installed package: by hand** |
+| 25 | Gates | `npm run i18n:lint`, `node scripts/theme-audit.mjs`, `node scripts/public-audit.mjs`, `npx tsc --noEmit` and `npx vitest run`, all run at the end of commit 28 |
+| 26 | Docs | `docs/runner.md` (both languages, including the old "never a mention" and the two doors) and `docs/configuration.md` carry the text. The rule files named in rule 40 are outside the repository and the main session's |
+
+### Fixed in this pass
+
+- **Quit.** The app waited for nothing: the screens' recordings were lost and the profiles not flushed. `before-quit` now holds the quit once, waits up to five seconds for the open screens to end, and quits again (`fix: wait for the open screens when the app quits`).
+- **Profile sites.** The list also asks about the hosts the agent may reach and reached before (from the audit lines of its closed screens), so a login kept in local storage alone is found (`fix: list the logged-in sites that keep their login in local storage`).
+- **A shell-only screen was not audited** (criteria 18 and 19). A QA stage's screen now writes the opening and closing lines with the path `shell`.
+- **Emptying the assistant's test conversation did not close the agent's screens** (criterion 9).
+- Tests that the criteria asked for and were missing: the display table for conversations and the workspace switch, the shell-path case, the retention group, the sandbox bind.
+
+### Left for the maintainer
+
+- **`CallAgent`.** An agent a stage brings in with `CallAgent` (`runner/conversation.ts`) has no screen, though spec rule 2 and criterion 1 name "an agent a stage calls". It needs a lease per conversation in `runConversation` and its prompt; not built here.
+- **Host session in a run's thread.** A kept host session's command question follows the life of the session, so Stop does not cancel a pending command question there; Close does.
+- **An agent with the switch whose browser could not start** has a QA-style display with no session line (the browser's own opening line never happens).
+- **By hand:** the viewer on a real screen (criteria 7, 12), the recording played in a paired browser (13), the installed package (24), `shell: host` with a profile, a heavy real site.

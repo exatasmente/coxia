@@ -2,6 +2,7 @@ import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { readOnlyFolders } from '../src/main/sandbox';
 import { BROWSER_DIR, ProfileError, browserRoot, clearSingletons, createProfileLocks, deleteAllProfiles, deleteProfile, ensureProfile, isInsideProfiles, openProfile, profileDenyGlobs, profileDirOf, sweepProfiles } from '../src/main/browser/profile';
 
 // The logged-in browser of an agent, on disk: where it lives, how it is protected, who may hold it, and what deletes it. Everything under a temporary folder; nothing
@@ -206,6 +207,14 @@ describe('when the agent goes away', () => {
     expect(deleteAllProfiles(ws)).toBe(true);
     expect(existsSync(browserRoot(ws))).toBe(false);
     expect(deleteAllProfiles(ws)).toBe(true);
+  });
+});
+
+describe('the agent\'s sandbox', () => {
+  it('cannot be given the profile as a folder: the app\'s data is refused as a bind, whole or in part', () => {
+    const dir = ensureProfile(ws, 'scout');
+    const data = join(ws, '..');
+    for (const folder of [dir, browserRoot(ws), ws]) expect(() => readOnlyFolders([folder], join(data, 'home'), [data]), folder).toThrow();
   });
 });
 

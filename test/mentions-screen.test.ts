@@ -157,6 +157,31 @@ describe('where an agent gets no screen', () => {
   });
 });
 
+describe('which calls get the app\'s browser (acceptance 1, for conversations)', () => {
+  const places: [string, MentionPlace][] = [
+    ['a direct conversation', { thread: 'squads', kind: 'channel', squad: null, owner: 'turn', repos: [], ref: 'app#7', title: 'The thing' }],
+    ['a squad channel', { thread: 'squads', kind: 'channel', squad: { id: 's1', name: 'One' } as never, repos: [], ref: 'app#7', title: 'The thing' }],
+    ['a general thread', { thread: 'squads', kind: 'general', repos: [], ref: 'app#7', title: 'The thing' }],
+    ['a ceremony', { thread: 'squads', kind: 'ceremony', repos: [], ref: 'app#7', title: 'Daily' }],
+  ];
+  const rows = places.flatMap(([name, place]) =>
+    (['none', 'allowlist', 'sandbox', 'host'] as const).flatMap((shell) => [true, false].map((workspace) => ({ name, place, shell, workspace }))),
+  );
+  it.each(rows)('$name, shell $shell, the workspace\'s display $workspace', async ({ place, shell, workspace }) => {
+    screens = fakeScreens({ configure: (c) => void (c.runner.sandbox.display = workspace) });
+    const cfg = config({ shell: shell as never });
+    cfg.runner.sandbox.display = workspace;
+    const { d, engine } = deps({ config: () => cfg });
+    engine.script('turn', () => ({ text: 'Said.' }));
+    await answerMentions(place, say(), d);
+    const gets = place.kind !== 'ceremony' && workspace;
+    expect(!!engine.calls[0].screen?.browser).toBe(gets);
+    expect(screens.starts).toHaveLength(gets ? 1 : 0);
+    // The confirmation tool follows the shell on the computer, with or without a screen; a ceremony has none of it.
+    if (place.kind === 'ceremony') expect(engine.calls[0].screen).toBeUndefined();
+  });
+});
+
 describe('stopping and closing', () => {
   it('stops one answer of the agent, tells the thread, and leaves the screen open', async () => {
     screens = fakeScreens();
