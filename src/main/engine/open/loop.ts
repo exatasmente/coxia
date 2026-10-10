@@ -32,6 +32,7 @@ import { effectivePoolMode } from '../../../shared/config/poolMode';
 import { type SubKind, MUTATING_KINDS, isSubKind, modelOfKind, offeredKinds, subTurnsOf, toolsOfKind } from './subagent';
 import { t } from '../../../shared/i18n';
 import { incomingActivity, incomingText } from '../incoming';
+import type { TurnLimit } from '../contract';
 
 /** Steps in a row of nothing but notes after which a model is taken as done (see `ToolImpl.note`). */
 const NOTE_STEPS_MAX = 3;
@@ -68,6 +69,10 @@ export interface SubAgentHandle {
   within<T>(fn: () => T): T;
   /** `queued`: another sub-agent that changes things is ahead of it; `started`: it runs. */
   state(state: 'queued' | 'started'): void;
+  /** The sub-agent reached its turn limit and waits for the person; `used` is the turns it has taken. */
+  waiting?(used: number): void;
+  /** The person let it go on for another round. */
+  continued?(): void;
   /** The sub-agent ended; a failure carries the reason. */
   end(failure?: string): void;
 }
@@ -138,6 +143,8 @@ export interface OpenRunParams {
   maxTurns: number;
   // The turns a sub-agent gets, read when it starts (the workspace's setting); without it, the defaults of `DEFAULT_SUB_TURNS`.
   subTurns?: () => Partial<Record<SubKind | 'plain', number>>;
+  // Reaching the turn limit asks the person instead of failing: a sub-agent always asks through it, the agent of the call only with `own`. Absent: the loop throws as before.
+  turnLimit?: TurnLimit;
   resume?: string;
   // Where the JSONL transcripts live; null keeps the session in memory only.
   sessionsDir: string | null;
@@ -351,6 +358,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   const { client } = p;
   const now = p.now ?? (() => new Date());
   const sources = p.sources ?? [];
+  // Sub-agents share the principal's list: where this run's own entries begin.
+  const startSources = sources.length;
   const describe = p.describeTool ?? defaultDescribe;
   const docs = p.docs ?? {};
   const events = p.events ?? {};
@@ -459,6 +468,16 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         allowedTools: p.allowedTools.filter((t) => t !== 'Agent' && !principalOnly.has(t)),
         systemAppend: [def?.body, kind ? subagentNote(kind) : undefined].filter(Boolean).join('\n\n') || undefined,
         maxTurns: allowed,
+        // The nested run asks through its node: the wait shows on it, and the question names the sub-agent's kind and task.
+        turnLimit: p.turnLimit && {
+          own: false,
+          ask: async (stop, signal) => {
+            handle?.waiting?.(stop.used);
+            const decision = await p.turnLimit!.ask({ ...stop, kind: kind ?? null, name: about.type?.trim() || null, task: about.description?.trim() || prompt.slice(0, 200) }, signal);
+            if (decision === 'continue' && !signal?.aborted) handle?.continued?.();
+            return decision;
+          },
+        },
         sessionsDir: null,
         sources,
         depth: (p.depth ?? 0) + 1,
@@ -652,6 +671,12 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
 
   // --- the loop
   let turns = 0;
+  // The limit rises by one round, the size it started with, each time the person lets the work go on; the last thing the model said between steps is what a work
+  // that is finished now falls back to.
+  let limit = p.maxTurns;
+  const round = p.maxTurns;
+  let granted = 0;
+  let narration = '';
   let nudges = 0;
   let repairs = 0;
   // Steps in a row whose every tool call was a note (`ToolImpl.note`): at NOTE_STEPS_MAX the step is taken as the end of the work.
@@ -694,8 +719,38 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   // stage with the failure, so a model that never follows the schema cannot spin.
   let doorRepairs = 0;
 
+  // At the point where the loop would stop for lack of turns: ask the person if the caller wired the question (a sub-agent always, the agent of the call with `own`), and
+  // otherwise throw as before. true: there is room again (the limit rose by a round); false: the person finished the work now.
+  const nested = (p.depth ?? 0) > 0;
+  const room = async (): Promise<boolean> => {
+    if (turns < limit) return true;
+    if (!p.turnLimit || !(nested || p.turnLimit.own)) throw new OpenMaxTurnsError(sessionId, sources);
+    const decision = await p.turnLimit.ask({ of: nested ? 'sub' : 'stage', role: p.role, kind: p.kind ?? null, name: null, task: '', used: turns, round, granted, canContinue: true }, p.signal);
+    // A cancel or a stop ends the wait the same way, and it is not the person's choice: the work stops with the abort.
+    if (p.signal?.aborted) throw new EngineError('aborted', 'aborted');
+    if (decision !== 'continue') return false;
+    limit += round;
+    granted++;
+    return true;
+  };
+  // "Finish now". A stage ends as running out of turns does (the caller makes its failure); a sub-agent hands back what it has, marked as partial, so the principal reads it
+  // as an answer and not as a tool error. One model call with no tool says what it found; if that fails, the last thing it said, else a line naming what it read.
+  const finishNow = async (): Promise<OpenRunResult<T>> => {
+    if (!nested) throw new OpenMaxTurnsError(sessionId, sources);
+    let said = '';
+    try {
+      write({ role: 'user', content: t('main.engine.text.partialAsk') });
+      said = (await call({ tools: [] })).text.trim();
+    } catch (e) {
+      if (e instanceof EngineError && (e.kind === 'aborted' || e.kind === 'budget' || e.kind === 'auth')) throw e;
+    }
+    const body = said || narration || t('main.engine.text.partialNone', { sources: sources.slice(startSources).slice(-10).map((x) => x.slice(0, 120)).join('; ') || '-' });
+    const note = p.kind ? t('main.engine.text.partialNote', { kind: p.kind, turns }) : t('main.engine.text.partialNotePlain', { turns });
+    return done(`${note}\n\n${body}`, turns);
+  };
+
   for (;;) {
-    if (turns >= p.maxTurns) throw new OpenMaxTurnsError(sessionId, sources);
+    if (!(await room())) return finishNow();
     turns++;
     let c: Completion;
     try {
@@ -724,7 +779,10 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         activity = 'write';
         continue;
       }
-      if (c.text.trim()) events.onInterim?.(c.text);
+      if (c.text.trim()) {
+        events.onInterim?.(c.text);
+        narration = c.text.trim();
+      }
       const results = await Promise.all(c.toolCalls.map(execute));
       c.toolCalls.forEach((tc, i) => write(toolMessage(tc, results[i].text)));
       // A tool message carries text only: the pictures the tools read follow in one message the model reads right after them.
@@ -781,7 +839,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       if (doorRepairs++ >= 1) throw new StructuredOutputError(describeErrors(parsed.errors));
       write({ role: 'user', content: t('main.engine.text.invalidAnswer', { errors: describeErrors(parsed.errors) }) });
       activity = 'write';
-      if (turns >= p.maxTurns) throw new OpenMaxTurnsError(sessionId, sources);
+      if (!(await room())) return finishNow();
       turns++;
       continue;
     }

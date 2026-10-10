@@ -34,3 +34,26 @@ Deviations from the plan:
 - A listener that throws (`changed`, `asked`, `audit`) is logged and ignored by the store, so it can neither decide an answer nor leave a question waiting.
 - The notification bodies take `{used}`, `{round}` and `{task}` (the task clipped to 120 characters); the kind of a sub-agent is on the card of commit 5, not in the notice.
 - The policy test reads `src/main/engine` to pin that the engine has no `turnAsks:` channel (the agent answerer is not built here).
+
+## Commit 3: pause the open engine at a turn limit and ask
+
+`TurnDecision`, `TurnStop` and `TurnLimit` in `engine/contract.ts` (and `EngineRequest.turnLimit`); `OpenRunParams.turnLimit`; the loop's `room()` and `finishNow()` in place of the
+two throws (the top of the turn and the door's repair round); the partial result of a sub-agent (`finishNow`: a closing call with no tool, then the last narration, then a
+line naming what it read, behind a note); `runAgent` of the loop wrapping the question of a sub-agent with its node (`waiting`, `continued`) and its kind and task;
+`bridge.ts` and `runOpenEngine` passing `turnLimit` through; `AgentCall.turnLimit` and `turnLimitOf` in `agents.ts` (the call's own node says it waits and that it works again);
+`RunActivity.waiting`/`continued` and the `waiting` activity state; `wrapUpAnswer` without the question. Every caller still passes none, so nothing asks yet and there is no
+CHANGELOG line in this commit.
+
+Deviations from the plan:
+
+- `SubAgentHandle.waiting` and `.continued` are optional, so a caller that does not show a node (and the harnesses of the tests) keeps working; `openSubAgent` implements both.
+- `OpenRunParams.task` was not added: the wrapper in the loop's `runAgent` fills the kind, the `subagent_type` and the task (the description, else the first 200 characters of the
+  prompt) of the stop itself, so the nested run needs no field for it.
+- The `{who}` of the partial note became two catalog keys, `main.engine.text.partialNote` (with the kind) and `main.engine.text.partialNotePlain` (a sub-agent of no kind), so the
+  sentence is translated whole.
+- `finishNow` of a stage throws `OpenMaxTurnsError` as the plan says; a sub-agent's returns through the same `done()` as any result, with the turns it used.
+- The sources that name what a sub-agent read when it had nothing to say start at the length of the shared list when the run began (`startSources`), since the list is the
+  principal's.
+- `test/agent-turn-limit-open.test.ts` is a file the plan did not list: it pins the part of `runAgent` that commit 3 adds (the node's states around the wait, the failure
+  of "finish now", the wrap-up that never asks). The part of the plan's `test/agent-turn-limit-sdk.test.ts` that is about the Claude engine stays for commit 7.
+- `test/activity-turn-wait.test.ts` holds the log's part now (the tree model's part comes with commit 6).

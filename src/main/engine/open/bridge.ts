@@ -9,7 +9,7 @@ import { ChatClient, type ProviderConfig } from './client';
 import { type DocSources, discoverClaudeMd } from './context';
 import { EngineError } from './errors';
 import { type Capabilities, type OpenRunParams, OpenMaxTurnsError, type RunEvents, runOpen } from './loop';
-import { ProviderBudgetError } from '../contract';
+import { ProviderBudgetError, type TurnLimit } from '../contract';
 import type { Activity, PoolMode, ScoreOverrides } from '../../../shared/config/types';
 import type { MemberParams, OpenPool, PoolMember, Tuning } from './pool';
 import type { Json } from './types';
@@ -129,6 +129,8 @@ export interface BridgeArgs {
   incoming?: OpenRunParams['incoming'];
   /** The turns a sub-agent gets, read when it starts. */
   subTurns?: OpenRunParams['subTurns'];
+  /** Reaching a turn limit asks the person; passed through from the engine request. */
+  turnLimit?: TurnLimit;
 }
 
 export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionId: string; sources: string[] }> {
@@ -172,6 +174,7 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
       events: a.events,
       incoming: a.incoming,
       subTurns: a.subTurns,
+      turnLimit: a.turnLimit,
     });
     return { data: r.data, sessionId: r.sessionId, sources: r.sources };
   } catch (e) {

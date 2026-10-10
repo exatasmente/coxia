@@ -15,7 +15,7 @@ import { ACTIVITY_NODE_MAX } from '../shared/activity';
 import { type RunActivity, beginActivity, bindActivityParent, currentActivity, withActivityParent } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, type TurnLimit, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
 import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
 import { budgetText, busyText, clipProviderText } from './engine/budget';
@@ -438,6 +438,8 @@ function openSubAgent(parent: RunActivity, req: EngineRequest, s: SubAgentStart)
     },
     within: (fn) => withActivityParent(child.id, fn),
     state: (state) => child.status(state),
+    waiting: (used) => child.waiting(used),
+    continued: () => child.continued(),
     end: (failure) => (failure === undefined ? child.status('finished') : child.status('failed', failure)),
   };
 }
@@ -720,6 +722,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     incoming: req.incoming,
     // Read when each sub-agent starts, so a change in Settings applies from the next one.
     subTurns: () => getConfig().runner.turns,
+    turnLimit: req.turnLimit,
     });
   } catch (e) {
     // A refusal by budget is a wait, not a failure: it goes up with the provider that refused (a spare of the pool names itself), else the one the role is mapped to.
@@ -1446,6 +1449,8 @@ export interface AgentCall {
   resume?: { session: string; engine: ResolvedRole['engine'] };
   /** The mailbox of a stage that talks while it works: where the engine gets a message to deliver between two steps (see EngineRequest.incoming). */
   incoming?: (delivered: (text: string) => void) => Promise<string | null>;
+  /** Reaching the turn limit asks the person instead of failing (see EngineRequest.turnLimit). The call's own node shows the wait; a sub-agent's is the engine's. */
+  turnLimit?: TurnLimit;
   /** The app tools of a stage that talks (`SendMessage`, `CallAgent`) or of a called agent (`AskConversation`); the engine offers each one by its name. */
   runnerTools?: ToolImpl[];
   /** The workspace's procedure tools, from the call's procedure session; absent: the call has none (a ceremony, a call with no session, the switch off). */
@@ -1599,6 +1604,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           poolMode,
           ...(call.background ? { background: true } : {}),
           incoming: only ? undefined : call.incoming,
+          turnLimit: only || !call.turnLimit ? undefined : turnLimitOf(call.turnLimit, activity),
           runnerTools: only ? undefined : underNode(call.runnerTools),
           procedures: call.procedures,
           // The last turn of procedures keeps the procedure tools and nothing else, the memory's included.
@@ -1631,6 +1637,20 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
   }
 }
 
+// The call's question at a turn limit with its own node told: the node of an agent that waits says so, and says it works again when the person lets it go on. A sub-agent
+// of the open engine is a node of its own that the loop tells.
+function turnLimitOf(limit: TurnLimit, activity: RunActivity): TurnLimit {
+  return {
+    own: limit.own,
+    ask: async (stop, signal) => {
+      if (stop.of === 'stage') activity.waiting(stop.used);
+      const decision = await limit.ask(stop, signal);
+      if (stop.of === 'stage' && decision === 'continue' && !signal?.aborted) activity.continued();
+      return decision;
+    },
+  };
+}
+
 // The resume of a call that ran out of turns: same session, same schema, 2 turns and no tool of any kind (no shell session, no code host read, no release step), so
 // it can only answer. Its transcript is the same session, so the cost panel counts it.
 async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activity: RunActivity): Promise<Run<T>> {
@@ -1653,6 +1673,8 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
       procedures: undefined,
       memoryTools: undefined,
       screen: undefined,
+      // Two turns to answer: running out of them must not ask.
+      turnLimit: undefined,
     });
     return { ...r, sources: [...e.sources, ...r.sources], partial: true };
   } catch (again) {

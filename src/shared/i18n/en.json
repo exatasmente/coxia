@@ -218,6 +218,8 @@
   "activity.blocked": "Blocked: {what}",
   "activity.secretFile": "[secret file]",
   "activity.queued": "Waiting its turn…",
+  "activity.turnLimit": "Reached {turns} turns: waiting for you",
+  "activity.continued": "Continuing with another round",
   "activity.call.title": "What {agent} is doing",
   "activity.call.working": "Working…",
   "activity.node.state.working": "Working",
