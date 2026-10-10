@@ -1,6 +1,6 @@
 {
   "name": "cerimonias",
-  "version": "0.9.0-beta.18",
+  "version": "0.9.0-beta.19",
   "description": "Coxia: cerimônias por voz com agentes por atividade",
   "main": "./out/main/index.js",
   "scripts": {
@@ -15,7 +15,7 @@
   },
   "type": "module",
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.287",
+    "@anthropic-ai/claude-agent-sdk": "^0.3.292",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@playwright/mcp": "0.0.83",
@@ -29,10 +29,10 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^5.2.0",
-    "electron": "^44.5.1",
+    "electron": "^44.6.0",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
-    "playwright-core": "1.62.1",
+    "playwright-core": "1.63.0",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
     "vitest": "^5.0.3"

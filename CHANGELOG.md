@@ -15,6 +15,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The plugin guide says that one call of a JavaScript plugin hands on at most 5 writes (the rest are dropped, and the audit line counts them) and how its document is masked.
 
+## [0.9.0-beta.19] - 2026-10-10
+
+### Changed
+
+- Dependencies updated: Electron and its toolchain, `playwright-core`, the Claude Agent SDK (0.3.292) and the CI's Node and artifact actions. The setup wizard follows the SDK's version range.
+
 ## [0.9.0-beta.18] - 2026-10-10
 
 ### Fixed
@@ -520,7 +526,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.18...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.19...HEAD
+[0.9.0-beta.19]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.18...v0.9.0-beta.19
 [0.9.0-beta.18]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.17...v0.9.0-beta.18
 [0.9.0-beta.17]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.16...v0.9.0-beta.17
 [0.9.0-beta.16]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.15...v0.9.0-beta.16
