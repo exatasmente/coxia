@@ -131,7 +131,7 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
     try {
       await wizardApi.save(config);
       const model = Object.values(config.llm.roles).find((r) => r.provider === p.id)?.model ?? p.models[0];
-      const result = await wizardApi.testProvider(p.id, model);
+      const result = await wizardApi.testProvider(p.id, model, { rich: true });
       setTests((all) => ({ ...all, [p.id]: { running: false, result } }));
       if (result.ok && result.engine === 'open') {
         setCatalogs((all) => ({ ...all, [p.id]: result.catalog }));
@@ -160,7 +160,7 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
     const at = { where, provider: ref.provider, model: ref.model };
     setModelTest({ ...at, state: { running: true } });
     try {
-      const result = await wizardApi.testProvider(ref.provider, ref.model);
+      const result = await wizardApi.testProvider(ref.provider, ref.model, { rich: false });
       setModelTest({ ...at, state: { running: false, result } });
       if (result.ok && result.engine === 'open') {
         setCatalogs((all) => ({ ...all, [ref.provider]: withProbed(all[ref.provider] ?? [], result.catalog, ref.model) }));

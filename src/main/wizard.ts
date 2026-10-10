@@ -190,12 +190,13 @@ async function testSdk(p: LlmProvider, model: string, started: number): Promise<
   }
 }
 
-async function testProvider(providerId: string, requestedModel?: string): Promise<ProviderTestResult> {
+// `rich` says whether the richer listing is read: the card of the provider asks for it (with the model it uses), the test of one more model of a pool does not; without it, no model named means the provider's own test.
+async function testProvider(providerId: string, requestedModel?: string, rich?: boolean): Promise<ProviderTestResult> {
   const started = Date.now();
   const p = getConfig().llm.providers.find((x) => x.id === providerId);
   if (!p) return failure('open', 'unknown-provider', providerId, started);
   const model = modelFor(p, requestedModel);
-  return p.engine === 'open' ? testOpen(p, model, started, requestedModel === undefined) : testSdk(p, model, started);
+  return p.engine === 'open' ? testOpen(p, model, started, rich ?? requestedModel === undefined) : testSdk(p, model, started);
 }
 
 // ---- SDK installation -----------------------------------------------------------------------------------------------------------------
@@ -319,7 +320,9 @@ export const wizard: Module = (ctx) => {
   ctx.handle(C.progressSet, (progress: unknown): WizardProgress => writeProgress(ATAS, progress));
   ctx.handle(C.progressClear, (): void => clearProgress(ATAS));
 
-  ctx.handle(C.providerTest, (providerId: string, model?: string): Promise<ProviderTestResult> => testProvider(String(providerId), typeof model === 'string' ? model : undefined));
+  ctx.handle(C.providerTest, (providerId: string, model?: string, opts?: { rich?: boolean }): Promise<ProviderTestResult> =>
+    testProvider(String(providerId), typeof model === 'string' ? model : undefined, typeof opts?.rich === 'boolean' ? opts.rich : undefined),
+  );
 
   ctx.handle(C.sdkStatus, (): SdkStatus => sdkStatus());
   ctx.handle(C.sdkInstall, (): { started: boolean } => {
