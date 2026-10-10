@@ -2,28 +2,39 @@
 
 ## O que foi conferido
 
-Leitura do diff inteiro da branch contra a spec e o plano, arquivo por arquivo, e execução dos portões desta máquina: tipos, auditoria de tema, catálogos de idioma e auditoria de conteúdo público. Também rodados os oito arquivos de teste novos ou ajustados, a suíte inteira, e — para separar o que a mudança quebra do que a máquina não tem — os mesmos arquivos de teste num ponto de partida da branch, em cópia descartável.
+Leitura do diff inteiro da branch contra a spec e o plano, e execução nesta rodada dos portões leves (tipos, auditoria de tema, catálogos de idioma, auditoria de conteúdo público), dos cinco arquivos de teste das portas e — para separar o que a mudança quebra do que a pasta onde a suíte roda provoca — dos mesmos arquivos de teste num diretório neutro, com o mesmo código e as mesmas dependências.
 
 O que a mudança entrega está correto pelo que foi lido e executado:
 
-- Os dois módulos e tudo o que eles importam não alcançam o runtime do desktop. Conferido por leitura e pelo teste que percorre os imports (verde), e o tipo de criptografia da loja passou a aceitar um motivo próprio de recusa, que o host sem interface usa para falar do seu arquivo de chave.
-- O arquivo de segredos de uma instalação que já existe abre sem migração, com o formato e a permissão de hoje; as leituras não o reescrevem (teste verde).
-- A chave-mestre: ida e volta com a mesma chave, recusa com chave diferente, e recusa fechada quando o arquivo falta, está legível por outros, é um link, não é a chave, ou está dentro da pasta de dados. Validado a cada operação, sem guardar a chave entre elas, com o modo GCM autenticando; nenhuma mensagem carrega a chave nem o conteúdo do arquivo (teste verde).
-- O que o desktop preenche continua sendo o que era: o cofre do sistema com as mesmas recusas de sempre, inclusive a queda do sistema para o modo inseguro contando como sem cofre, e as pastas do runtime lidas na hora do uso.
-- Nada visível muda na janela do desktop, então nenhum registro de versões era esperado, como o plano decidia.
+- Os dois módulos e tudo o que eles importam não alcançam o runtime do desktop: nenhum dos dois importa o runtime, e o teste que percorre os imports passa (verde).
+- O arquivo de segredos de uma instalação que já existe abre sem migração, mantendo o formato e a permissão (verde): a leitura não o reescreve e uma gravação mantém o formato.
+- A chave-mestre: ida e volta com a mesma chave, recusa com chave diferente e falha fechada quando o arquivo falta, está legível por outros, é um link, não é a chave ou está dentro da pasta de dados. Validada em cada operação, sem guardar a chave entre elas, com o modo GCM a fazer uma chave errada falhar na abertura; nenhuma mensagem carrega a chave nem o conteúdo do arquivo (verde).
+- O que o desktop preenche continua a ser o que era: o cofre do sistema com as mesmas recusas de sempre, inclusive a queda do sistema para o modo inseguro contando como sem cofre, e as pastas do runtime lidas na hora do uso (verde).
+- Nada visível muda na janela do desktop, então nenhum registo de versões era esperado, como o plano decidia.
 
-## O que bloqueia
+## O que bloqueava
 
-Duas coisas fora do assunto da issue, que a branch trouxe consigo. Nenhuma das duas tem a ver com as portas de segredos e caminhos; as duas fazem testes que passam no ponto de partida da branch falharem nesta árvore.
+A rodada anterior reprovou a entrega por dois conjuntos de testes vermelhos, os dois fora do assunto da issue. Esta rodada isolou a causa e conclui que os dois são artefactos da pasta onde a suíte roda, não da mudança:
 
-1. **O filtro de segredos passa a segurar um arquivo de código cujo nome começa com "a".** O teste que garante isso falha: espera a linha do arquivo `a-1-b.php` e recebe vazio. O filtro tenta os pedaços do nome que os dois-pontos delimitam e, para o pedaço curto, a regra de nome da branch considera segredo uma pasta de dados do próprio app — a mesma regra que, em versões anteriores, considerava código. O efeito é guardar do modelo arquivos que não escondem segredo nenhum.
-2. **Três testes do fluxo de propostas de conflito falham** — um hunk por arquivo deixa de ser enviado ao modelo, e o teste do arquivo removido aparece com um hunk só. Este código não foi tocado pela branch e a regra que decide se um arquivo do conflito é delicado vem do mesmo filtro de segredos. A causa exata não foi isolada; o que foi verificado é que o mesmo arquivo de teste passa inteiro no ponto de partida da branch e que o código do fluxo é idêntico entre os dois pontos.
+1. **O filtro de segredos e os três testes do fluxo de conflitos.** A causa é o nome da pasta da worktree: o nome começa com o identificador da issue, esse identificador começa pela palavra `secrets`, e a regra de nome do guarda de segredos casa com qualquer caminho que contenha `secret`/`credential`/`token` e não termine numa extensão de código. O caminho absoluto da pasta inteiro casa, e o filtro de resultados resolve cada caminho de entrada contra o diretório de trabalho antes de o julgar.
+   - Os dois ficheiros de teste, sem uma linha alterada, correm verdes a partir de um diretório neutro com o mesmo código e as mesmas dependências: 2 ficheiros, 128 de 128 testes. Do diretório da worktree, os mesmos ficheiros dão 2 ficheiros com falha, 4 testes vermelhos em 128.
+   - A regra de nome, copiada sem alteração do commit de partida da branch, devolve verdadeiro para um caminho absoluto sob a raiz de dados quando o diretório de trabalho é a worktree e falso para o mesmo caminho quando é neutra. Isto é: o que mudou entre as duas execuções não é a regra, é a pasta.
+   - O ficheiro das regras não é tocado por esta branch: a comparação de commits não tem nenhuma linha para ele. O comportamento vem de um commit anterior da linha de lançamento que é a base desta árvore, e não da entrega.
+   - A suíte inteira a partir de um diretório neutro: 420 ficheiros, 413 verdes e 7 com falha; 6934 testes, 6913 verdes. Os ficheiros que falham são os de navegador, sandbox e tela desta máquina; nem o ficheiro do filtro de segredos nem o do fluxo de conflitos está entre eles.
 
-Enquanto os dois arquivos de teste não passarem, as mudanças não estão prontas.
+2. **Nada novo bloqueia.** O diff desta rodada são duas limpezas (a constante morta removida num módulo de chave-mestre e uma linha solta de teste removida) mais documentos. Nenhuma das duas introduz defeito: os tipos continuam limpos e os sete testes da chave-mestre passam.
+
+## O que foi sugerido (não bloqueia)
+
+- **Sem par próprio de cifrar/decifrar no porto.** O comprimento mínimo é conferido na abertura, mas o corpo `iv(12) || tag(16) || texto` pressupõe a ordem dos campos; não há teste do par no porto em si (a ida e volta pela loja cobre-o indirectamente). Se o par mudar sem o outro, o erro aparece só no uso real.
+- **Recusa por caminho dentro da raiz de dados sem teste do lado positivo.** O teste confirma que um ficheiro dentro da raiz é recusado, mas nenhum verifica que um ficheiro que só partilha o prefixo textual da raiz (por exemplo `<raiz>-outro/chave.hex`) é aceite. A comparação usa a raiz mais o separador, então o caso é aceite por construção.
 
 ## O que não foi verificado
 
-- **O passo manual do plano** (abrir o app sobre uma instalação que já tem segredos gravados, numa máquina com cofre do sistema disponível): não foi executado. O que passa pelo cofre de verdade segue sem verificação.
-- **A contagem de 131 para 16 arquivos que alcançam o runtime do desktop**: não foi recalculada, como a spec já dizia; nada aqui a confirma.
-- **Quatro falhas da suíte que esta máquina explica**: os arquivos de teste do navegador e das pastas de navegador dependem do pacote do servidor de navegador embutido e de uma área de sandbox que não estão ligados nesta árvore; eles falham igual no ponto de partida da branch, então não entram no veredito.
-- **A origem das três falhas do fluxo de conflito**: verificada só até onde o teste mostra (os testes passam fora da branch, o código do fluxo é o mesmo); a causa dentro do filtro não foi isolada por experimento.
+- **A abertura manual do plano** (abrir o programa sobre uma instalação que já tem segredos gravados, numa máquina com cofre do sistema disponível): não foi executada. O que passa pelo cofre de verdade segue sem verificação.
+- **A contagem de 131 para 16 ficheiros que alcançam o runtime do desktop**: não foi recalculada, como a spec já dizia; nada aqui a confirma.
+- **Se todas as falhas que sobram são anteriores à branch**: quatro ficheiros de navegador, sandbox e tela desta máquina falham e não foram todos comparados com o ponto de partida; os dois ficheiros que a rodada anterior apontou foram.
+
+## Veredito
+
+Nada bloqueia. A entrega responde à spec e ao plano, e os testes que a rodada anterior apontou como vermelhos passam quando a suíte corre fora da pasta cujo nome carrega `secret`.
