@@ -1,6 +1,6 @@
 import { ASSIST_LIMITS, ASSIST_ROUND_SCHEMA, MINIMUM_SETTINGS, assistReviewSchema, clampSettings, readAssistDraft, type AssistDraft, type AssistSettings } from '../shared/agentAssist';
 import { agentThreadId } from '../shared/forum';
-import { addAgent, isDraft, removeAgent, updateAgent } from '../shared/config/team';
+import { addAgent, isDraft, isPersona, removeAgent, updateAgent } from '../shared/config/team';
 import { LLM_ROLES, type AgentDef, type WorkspaceConfig } from '../shared/config/types';
 import { t } from '../shared/i18n';
 import {
@@ -92,7 +92,7 @@ async function prepare(raw: unknown): Promise<Prepared> {
       settings: clampSettings(input.form?.settings, offers, settingsOf(original), { needReason: false }).settings,
     };
   }
-  const conversation = input.testId && config.agents.team.some((a) => a.id === input.testId && isDraft(a)) ? testConversation(forumStore().read(agentThreadId(input.testId), 0, 2000)?.messages ?? []) : '';
+  const conversation = input.testId && config.agents.team.some((a) => a.id === input.testId && isDraft(a) && !isPersona(a)) ? testConversation(forumStore().read(agentThreadId(input.testId), 0, 2000)?.messages ?? []) : '';
   return {
     input,
     context,
@@ -137,7 +137,8 @@ const stringOf = (v: unknown): string | null => (typeof v === 'string' && v ? v 
 /** The draft with this id in the stored team. Anything else (an agent of the person, a system agent, an id nobody has) is refused: this is the door that keeps an agent safe from "discard". */
 function draftOf(config: WorkspaceConfig, id: string | null): AgentDef {
   const found = id ? config.agents.team.find((a) => a.id === id) : undefined;
-  if (!found || !isDraft(found) || found.system) throw new AssistError(t('main.assist.error.notDraft', { id: (id ?? '').slice(0, 48) }));
+  // The persona's drafts are handled by the persona's own channels, never by the creator's.
+  if (!found || !isDraft(found) || found.system || isPersona(found)) throw new AssistError(t('main.assist.error.notDraft', { id: (id ?? '').slice(0, 48) }));
   return found;
 }
 
@@ -162,7 +163,7 @@ export async function saveAssistDraft(raw: unknown): Promise<{ id: string }> {
     const forum = forumStore();
 
     const existing = stringOf(body.id) ? config.agents.team.find((a) => a.id === body.id) : undefined;
-    if (existing && (!isDraft(existing) || existing.system)) throw new AssistError(t('main.assist.error.notDraft', { id: existing.id }));
+    if (existing && (!isDraft(existing) || existing.system || isPersona(existing))) throw new AssistError(t('main.assist.error.notDraft', { id: existing.id }));
     // A new id is free of the team, of the ids the app keeps, and of every direct conversation there is: `agent-<id>` of a draft is always a conversation that begins empty.
     const taken = new Set([...config.agents.team.map((a) => a.id), ...LLM_ROLES, ...forum.list().filter((s) => s.kind === 'agent').map((s) => s.id.slice('agent-'.length))]);
     const id = existing ? existing.id : draftIdFor(name, original?.id ?? null, taken);
@@ -171,7 +172,7 @@ export async function saveAssistDraft(raw: unknown): Promise<{ id: string }> {
     updateConfig((current) => {
       const here = current.agents.team.find((a) => a.id === id);
       if (!here) return addAgent(current, made);
-      if (!isDraft(here) || here.system) throw new AssistError(t('main.assist.error.notDraft', { id }));
+      if (!isDraft(here) || here.system || isPersona(here)) throw new AssistError(t('main.assist.error.notDraft', { id }));
       return updateAgent(current, id, {
         name: made.name,
         job: made.job,

@@ -1,6 +1,6 @@
 import { withStageName } from './cycles/text';
 import type { AgentDef } from './config/types';
-import { isDraft } from './config/team';
+import { isDraft, isPersona, outOfCycle } from './config/team';
 import type { AttachmentRef } from './attachments';
 import { t } from './i18n';
 
@@ -183,11 +183,12 @@ export function messageText(m: { text?: string; code?: string | null; params?: R
 
 /**
  * The ids a `@name` may resolve to: the agents of the team that take part in the cycle, and nothing else. A draft is left out, except in its own direct
- * conversation, where the person talks to it: there `@` the owner is not an unknown agent.
+ * conversation, where the person talks to it: there `@` the owner is not an unknown agent. The persona resolves no `@` at all, not even in its own thread:
+ * the chat does not address other agents, and a `@name` stays plain text there.
  */
-export function mentionableIds(team: readonly Pick<AgentDef, 'id' | 'draft'>[], thread?: string): string[] {
-  const ids = team.filter((a) => !isDraft(a)).map((a) => a.id);
-  const owner = thread ? team.find((a) => isDraft(a) && agentThreadId(a.id) === thread) : undefined;
+export function mentionableIds(team: readonly Pick<AgentDef, 'id' | 'draft' | 'kind'>[], thread?: string): string[] {
+  const ids = team.filter((a) => !outOfCycle(a)).map((a) => a.id);
+  const owner = thread ? team.find((a) => isDraft(a) && !isPersona(a) && agentThreadId(a.id) === thread) : undefined;
   return owner ? [...ids, owner.id] : ids;
 }
 

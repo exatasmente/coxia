@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { ATTACHMENT_LIMITS, type AttachmentRef } from '../shared/attachments';
 import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, agentThreadId, mentionableIds, parseMentions, unknownMentions } from '../shared/forum';
-import { isDraft, workingTeam } from '../shared/config/team';
+import { outOfCycle, personaOf, workingTeam } from '../shared/config/team';
 import { t } from '../shared/i18n';
 import { attachmentStore } from './attachments';
 import { ATAS } from './env';
@@ -99,9 +99,12 @@ export const forumModule: Module = (ctx) => {
     const config = getConfig();
     ensureSquadChannels(forum, config.squads ?? [], config.language);
     // One direct conversation per agent of the team, made as soon as the forum is listed, like the general thread and the channels. A draft has none here: the
-    // assistant makes it for the test, and it stays out of the list so an agent being tried out is no noise (no unread count) in the forum.
+    // assistant makes it for the test, and it stays out of the list so an agent being tried out is no noise (no unread count) in the forum. The persona's thread is
+    // made here too (the home is its one door) and is hidden the same way.
     for (const a of workingTeam(config.agents.team)) ensureAgentThread(forum, a, config.language);
-    const hidden = new Set(config.agents.team.filter(isDraft).map((a) => agentThreadId(a.id)));
+    const persona = personaOf(config.agents.team);
+    if (persona) ensureAgentThread(forum, persona, config.language);
+    const hidden = new Set(config.agents.team.filter(outOfCycle).map((a) => agentThreadId(a.id)));
     const runs = runStore();
     const all = forum.list().filter((s) => !hidden.has(s.id)).map((s) => (s.kind === 'run' && s.runId ? { ...s, squad: runs.get(s.runId)?.squad ?? null } : s));
     return typeof squad === 'string' && squad ? all.filter((s) => s.squad === squad) : all;

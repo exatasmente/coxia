@@ -123,8 +123,8 @@ export const personaDraftOf = (team: readonly AgentDef[]): AgentDef | null => te
 export const withoutPersona = (config: WorkspaceConfig): WorkspaceConfig =>
   config.agents.team.some(isPersona) ? { ...config, agents: { ...config.agents, team: config.agents.team.filter((a) => !isPersona(a)) } } : config;
 
-/** The team that takes part in the cycle: without the drafts. Whoever decides who works, is called or is offered reads the team through this. */
-export const workingTeam = (team: AgentDef[]): AgentDef[] => (team.some(isDraft) ? team.filter((a) => !isDraft(a)) : team);
+/** The team that takes part in the cycle: without the drafts and the persona. Whoever decides who works, is called or is offered reads the team through this. */
+export const workingTeam = (team: AgentDef[]): AgentDef[] => (team.some(outOfCycle) ? team.filter((a) => !outOfCycle(a)) : team);
 
 /** The team with whichever system agent is missing added back (seeded from the roles), so a file can never lose one. */
 export function ensureSystemAgents(team: AgentDef[], roles: Partial<Record<LlmRole, RoleSeed>> = {}): AgentDef[] {
@@ -134,13 +134,13 @@ export function ensureSystemAgents(team: AgentDef[], roles: Partial<Record<LlmRo
 
 /**
  * The agent that works a stage: the one the stage names, else the first agent of the team that lists the stage, else none.
- * A gate and a wait never have one, and a draft never works a stage, even when a file lists it.
+ * A gate and a wait never have one, and a draft or the persona never works a stage, even when a file lists it.
  */
 export function stageAgent(team: AgentDef[], stages: StageDef[], stageId: string): AgentDef | null {
   const stage = stages.find((s) => s.id === stageId);
   if (!stage || (stage.type && stage.type !== 'work')) return null;
-  const named = stage.agentId ? team.find((a) => a.id === stage.agentId && !isDraft(a)) : undefined;
-  return named ?? team.find((a) => a.stages.includes(stageId) && !isDraft(a)) ?? null;
+  const named = stage.agentId ? team.find((a) => a.id === stage.agentId && !outOfCycle(a)) : undefined;
+  return named ?? team.find((a) => a.stages.includes(stageId) && !outOfCycle(a)) ?? null;
 }
 
 export type AgentPatch = Partial<Omit<AgentDef, 'id' | 'system'>>;
