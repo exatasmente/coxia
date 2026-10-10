@@ -674,6 +674,7 @@
   "main.engine.text.noImage": "[aqui havia uma imagem; este modelo não recebe imagens]",
   "main.engine.text.subTurns": "[subagente do tipo {kind}] parou após {turns} voltas sem terminar. O que já fez em disco fica; divida a tarefa em partes menores ou faça você.",
   "main.engine.text.partialAsk": "A pessoa encerrou esta tarefa antes do fim e nenhuma ferramenta está mais disponível. Diga em poucas palavras o que você achou até aqui e o que não deu tempo de fazer. Não chame nenhuma ferramenta.",
+  "main.engine.text.continueRound": "A pessoa aumentou o limite de passos. Continue de onde parou, com o que você já leu, e conclua a tarefa.",
   "main.engine.text.partialNote": "[resultado parcial: a pessoa encerrou este subagente do tipo {kind} no limite de {turns} voltas; o que segue é o que ele tinha, e o resto da tarefa não foi feito]",
   "main.engine.text.partialNotePlain": "[resultado parcial: a pessoa encerrou este subagente no limite de {turns} voltas; o que segue é o que ele tinha, e o resto da tarefa não foi feito]",
   "main.engine.text.partialNone": "Não tinha nada a relatar quando parou. O que leu ou rodou antes: {sources}.",

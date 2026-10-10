@@ -118,3 +118,42 @@ Deviations from the plan:
   text key. `Steps` takes `waits` (the entry's, or `anyWaiting` for a renderer job's tree) and picks that line only while closed.
 - The tree still has no button: the row of a waiting node is the same markup as any other, with the class `act-state-waiting` that the amber rule reads.
 - The tests are in `test/activity-turn-wait.test.ts` (the log's part from commit 3, the model's part here), not in `activity-tree.test.ts`, whose cases are untouched.
+
+## Commit 7: a stage on the Claude engine continues past its turn limit
+
+### The real check (outside the suite, not committed)
+
+The throwaway script of the plan (`scratch/check-claude-resume.mjs`, git-ignored folder, deleted afterwards) was run on 2026-10-10 against the Claude Agent SDK 0.3.292 with the
+Claude login of this machine, in a clean environment (`env -i` with `HOME` and `PATH`, so no inherited Claude Code variable reached it) and with `CERIMONIAS_DATA_DIR` and
+`CERIMONIAS_SPECS_DIR` on empty temporary folders; the script does not read the app's data at all. It mimics the shape `runClaudeSdk` gives the SDK: a streaming prompt that stays
+open, an in-process tool server, `outputFormat` as a JSON Schema, `permissionMode: 'dontAsk'`, no setting sources. The first call has `maxTurns: 3` and is asked for five calls of a
+tool; the second resumes the session with `maxTurns: 6`.
+
+| Model | First call | Second call (resumed) |
+|---|---|---|
+| `haiku` | `error_max_turns`, a session id, 2 tool calls so far, `num_turns` 4 | `success`, `structured_output` `{"steps":5}`, 5 calls in total, same session id, `num_turns` 5 |
+| `sonnet` | `error_max_turns`, a session id, 2 tool calls so far, `num_turns` 4 | `success`, `structured_output` `{"steps":5}`, 5 calls in total, same session id, `num_turns` 6 |
+
+**It passes**, on each point the plan set: the first round ends with `error_max_turns` and a session id after two calls; the second ends with `success`; its structured answer says 5;
+the total of tool calls is 5 (three more in the resumed session, none redone); the in-process tool server answered in the resumed session (no unknown tool, no missing session); and
+the limit counts per invocation, not per session (the session had used 4 turns when it was resumed with 6, and the second call used 5 and 6 without ending in `error_max_turns`;
+counted from the start it would have run out). Not shown by the script, as the plan said: the stage's mailbox stream, which `runClaudeSdk` builds again on every call, pinned by the
+test with the scripted `query`.
+
+Because it held, `CLAUDE_CAN_CONTINUE` is `true` and the commit is the one that continues, not the one that offers only "finish now".
+
+### What the commit does
+
+`runAgent` (`agents.ts`) asks the stage's own limit on the Claude engine around the engine call: a `MaxTurnsError` with a session id, from a call whose `turnLimit.own` is set and whose
+picked model is on the Claude engine, raises the question; on "continue" the call runs again as a resume of the same session (`continueRound`: a new prompt, `resume` and
+`extra.resume` set, `extra.maxTurns` one round), the sources of the rounds are joined, and it asks again if that round is spent too; on "finish now", or when the call was
+cancelled during the wait, the `MaxTurnsError` goes up and the executor makes the "turns" failure as before. A call that wraps up still does after "finish now", and the wrap-up
+never asks. The new text is `main.engine.text.continueRound` in both catalogs; the CHANGELOG line now says the stage asks on either engine.
+
+Deviations from the plan:
+
+- The loop is in the callback of `withPool`, around `runnerFor(picked)`, with `anotherRound` and `continueRound` as small functions beside `turnLimitOf`, not a new `continueRound` of the
+  module's exported surface. `CLAUDE_CAN_CONTINUE` is exported, as the plan names it.
+- The test of the plan for `CLAUDE_CAN_CONTINUE = false` is not written: a constant cannot be flipped by a test, and the branch (`canContinue: false` refusing "continue") is the store's,
+  already pinned in `test/turn-asks-core.test.ts`. The asker still ignores a "continue" when the constant is `false`.
+- `EngineRequest.resume` is left as the plan had it (issue #253 tracks it); the commit sets it only on the request it builds for the resumed call, next to `extra.resume`.

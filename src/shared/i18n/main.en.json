@@ -674,6 +674,7 @@
   "main.engine.text.noImage": "[an image was here; this model does not take images]",
   "main.engine.text.subTurns": "[sub-agent of kind {kind}] stopped after {turns} turns without finishing. What it already did on disk stays; split the task into smaller ones or do it yourself.",
   "main.engine.text.partialAsk": "The person finished this task early and no tool is available any more. Say briefly what you found so far and what you did not get to. Do not call any tool.",
+  "main.engine.text.continueRound": "The person raised the limit on turns. Continue from where you stopped, with what you already read, and finish the task.",
   "main.engine.text.partialNote": "[partial result: the person finished this sub-agent of kind {kind} at its limit of {turns} turns; what follows is what it had, and the rest of the task was not done]",
   "main.engine.text.partialNotePlain": "[partial result: the person finished this sub-agent at its limit of {turns} turns; what follows is what it had, and the rest of the task was not done]",
   "main.engine.text.partialNone": "It had nothing to report when it stopped. What it read or ran before: {sources}.",

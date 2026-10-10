@@ -1614,11 +1614,29 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
         };
         // What the engine starts (an agent it calls) hangs under this call's node.
         return withActivityParent(activity.id, async () => {
-          try {
-            return await runnerFor(picked)<T>(request);
-          } catch (e) {
-            if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
-            return wrapUpAnswer<T>(request, e, activity);
+          // The stage's own limit on the Claude engine is asked here: the SDK ends the call with `error_max_turns`, and "continue" resumes the same session with a fresh limit.
+          // An open-engine `MaxTurnsError` has already been through the question inside its loop, so it is not asked again.
+          const asks = request.turnLimit?.own === true && picked.engine === 'claude-sdk';
+          let current = request;
+          let granted = 0;
+          // What the earlier rounds read: each call of the SDK reports only its own.
+          const before: string[] = [];
+          for (;;) {
+            try {
+              const r = await runnerFor(picked)<T>(current);
+              return granted ? { ...r, sources: [...before, ...r.sources] } : r;
+            } catch (e) {
+              if (!(e instanceof MaxTurnsError)) throw e;
+              if (asks && e.sessionId && request.turnLimit && (await anotherRound(request.turnLimit, picked.role, call.maxTurns, granted, call.abort?.signal))) {
+                before.push(...e.sources);
+                granted += 1;
+                current = continueRound(request, e.sessionId, call.maxTurns);
+                continue;
+              }
+              if (!call.wrapUp) throw e;
+              const partial = await wrapUpAnswer<T>(current, e, activity);
+              return granted ? { ...partial, sources: [...before, ...partial.sources] } : partial;
+            }
           }
         });
       },
@@ -1635,6 +1653,25 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(e.provider || target.providerId, e.engine, e.detail);
     throw e;
   }
+}
+
+/**
+ * Whether a stage on the Claude engine can go on past `maxTurns`. It resumes the same session by id with a fresh limit and the tools of the stage; checked against the real SDK
+ * (0.3.292) outside the suite on 2026-10-10: the call that ended with `error_max_turns` was resumed, kept the calls it had made, finished with its structured answer, and the
+ * limit counted per invocation and not per session. The question carries it so the card can offer only "finish now" if a later SDK stops doing so.
+ */
+export const CLAUDE_CAN_CONTINUE = true;
+
+// Asks the person once for the stage on the Claude engine; true when they said continue. A cancel or a stop is not an answer, so it ends the stage as the limit does.
+async function anotherRound(limit: TurnLimit, role: string, round: number, granted: number, signal?: AbortSignal): Promise<boolean> {
+  const decision = await limit.ask({ of: 'stage', role, kind: null, name: null, task: '', used: round * (granted + 1), round, granted, canContinue: CLAUDE_CAN_CONTINUE }, signal);
+  return decision === 'continue' && CLAUDE_CAN_CONTINUE && !signal?.aborted;
+}
+
+// The request of the next round: the same session, the same tools and schema, a fresh limit of one round. A stream of messages for the stage's door is built again by the engine.
+// Both `resume` fields are set: the engines read the session from `extra`, and `noteSession` from the request, so the session is not indexed twice.
+function continueRound(request: EngineRequest, sessionId: string, round: number): EngineRequest {
+  return { ...request, prompt: t('main.engine.text.continueRound'), resume: sessionId, extra: { ...request.extra, maxTurns: round, resume: sessionId } };
 }
 
 // The call's question at a turn limit with its own node told: the node of an agent that waits says so, and says it works again when the person lets it go on. A sub-agent
