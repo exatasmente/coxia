@@ -11,7 +11,7 @@ import { DATA_ROOT } from './env';
 
 const GCM_IV = 12;
 const GCM_TAG = 16;
-const KEY_BYTES = 32;
+// The 64 hex digits below are the 32-byte AES-256 key; `aes-256-gcm` is what fixes that size, so there is no separate byte count to keep in step.
 const HEX_KEY = /^[0-9a-fA-F]{64}\n?$/;
 
 /** The key when the file passes every check, null when it does not. */

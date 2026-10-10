@@ -58,4 +58,3 @@ describe('the app\'s browser when the app ends', () => {
     }
   }, 20_000);
 });
-;
