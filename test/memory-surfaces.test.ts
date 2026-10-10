@@ -342,3 +342,54 @@ describe('the conversations', () => {
     expect(call.system).not.toMatch(/evil\.example\.com|Ignore your rules/);
   });
 });
+
+describe('the question chain and the squad request', () => {
+  it('both read the memory, read only: the list and the tools to open an entry, the activity whole, no write tool, no folder and no line in any thread', async () => {
+    const { bootSquads, asking, receiving, requesting } = await import('./helpers/squadRunner');
+    const s = await bootSquads(undefined, { dir, memoryPort: w.port() });
+    const { b } = s;
+    b.engine.script('dev-a', asking('What does the totals API of the web return?'), () => work('Done.', { artifacts: [doc('3_IMPLEMENTATION.md')] }));
+    b.engine.script('lead-a', requesting('b', 'question', 'What does the totals API return, and in which unit?'));
+    b.engine.script('lead-b', receiving({ verdict: 'answer', text: 'Cents, as an integer.' }));
+    const run = await b.runner.start('app#101', 'app');
+    await b.settle();
+    expect(b.runner.get(run.id)?.status).toBe('done');
+    const chain = b.engine.calls.find((c) => c.agent.id === 'lead-a')!;
+    const request = b.engine.calls.find((c) => c.agent.id === 'lead-b')!;
+    for (const call of [chain, request]) {
+      expect(Object.keys(call.memoryTools ?? {}).sort()).toEqual(['list', 'read', 'unavailable']);
+      expect(call.system).toContain(RULES());
+      expect(call.system).not.toContain(WRITE_RULES());
+      expect(call.prompt).toMatch(/The memory of this workspace[^]*- sys:version/);
+      expect(call.prompt).toContain(cycleWords('runner.section.sharedOne', { text: '' }).split('\n')[0]);
+      expect(call.prompt).toContain('Add the thing');
+    }
+    // the chain reads its own run's documents whole, so the list does not repeat them; the request, made from another squad's repository, finds them in the list
+    expect(chain.prompt).not.toContain(`doc:${run.id}/`);
+    expect(request.prompt).toContain(`doc:${run.id}/0_TRIAGE.md`);
+    expect(w.lines.filter((l) => /^\[memory\] (chain lead-a|request lead-b) entries=/.test(l))).toHaveLength(2);
+    // no folder for either, and nothing audited: they only read
+    expect(agentsIn(runThreadId(run.id)).filter((a) => a.startsWith('lead-'))).toEqual([]);
+    expect(w.audits.filter((a) => a.by === 'lead-a' || a.by === 'lead-b')).toEqual([]);
+    expect(b.thread(run).some((m) => String(m.code).startsWith('runner.sharedMemory'))).toBe(false);
+  });
+
+  it('the switch off leaves both as they were', async () => {
+    const { bootSquads, asking, receiving, requesting } = await import('./helpers/squadRunner');
+    w.config.runner.sharedMemory = false;
+    const s = await bootSquads(undefined, { dir, memoryPort: w.port() });
+    const { b } = s;
+    b.engine.script('dev-a', asking('What does the totals API of the web return?'), () => work('Done.', { artifacts: [doc('3_IMPLEMENTATION.md')] }));
+    b.engine.script('lead-a', requesting('b', 'question', 'What does the totals API return?'));
+    b.engine.script('lead-b', receiving({ verdict: 'answer', text: 'Cents.' }));
+    await b.runner.start('app#101', 'app');
+    await b.settle();
+    for (const id of ['lead-a', 'lead-b']) {
+      const call = b.engine.calls.find((c) => c.agent.id === id)!;
+      expect(call.memoryTools, id).toBeUndefined();
+      expect(call.prompt, id).not.toContain('The memory of this workspace');
+      expect(call.system, id).not.toContain(RULES());
+    }
+    expect(folders()).toEqual([]);
+  });
+});

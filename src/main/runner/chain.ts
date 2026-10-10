@@ -22,6 +22,10 @@ export interface ChainInput {
   cwd: string;
   /** The holder is the liaison of a squad: its own squad and the other squads it may make a request to (those with a liaison to receive it). */
   liaison?: { squad: SquadDef; others: SquadDef[] };
+  /** The shared memory, as in a stage's input: a string means the call has a read-only session, and the string is the list its prompt carries. Absent: the memory is off. */
+  index?: string;
+  /** The run's own activity, whole, for a call that has the memory (the other activities are lines of the index). */
+  shared?: string;
 }
 
 export const CHAIN_VERDICTS = ['answer', 'pass', 'needs-person', 'request'] as const;
@@ -53,6 +57,7 @@ export function chainCall(i: ChainInput): AgentCall {
     i.liaison && others.length ? cp('runner.chain.liaison', { squad: cycleWord(i.liaison.squad.name), squads: others.map(squadLine).join('\n') }) : '',
     cp('runner.rules.data'),
     cp('runner.rules.claims'),
+    i.index !== undefined ? cp('runner.rules.sharedMemory') : '',
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.holder.instructions).trim(),
@@ -60,7 +65,12 @@ export function chainCall(i: ChainInput): AgentCall {
     .filter(Boolean)
     .join('\n\n');
   const thread = threadText(i.thread.slice(-40));
-  const sections = [...i.files.map((f) => cp('runner.section.file', { name: f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') })), thread ? cp('runner.section.thread', { text: fence(thread) }) : ''].filter(Boolean);
+  const sections = [
+    ...i.files.map((f) => cp('runner.section.file', { name: f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') })),
+    i.shared ? cp('runner.section.sharedOne', { text: fence(i.shared) }) : '',
+    i.index ? cp('runner.section.sharedIndex', { text: fence(i.index) }) : '',
+    thread ? cp('runner.section.thread', { text: fence(thread) }) : '',
+  ].filter(Boolean);
   return {
     agent: { ...i.holder, permission: 'read' },
     prompt: cp('runner.chain.main', { asker: i.asker, question: fence(i.question), sections: sections.join('\n\n') }),

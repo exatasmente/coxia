@@ -167,3 +167,26 @@ Deviations and additions:
 - **The conversation a called agent writes in** is the thread it was called in: the run's own for `place: 'run'`, the `run-<id>-talk-<agent>-<time>` thread for a new one. An id past 64 characters
   (a long agent id) makes the session a reader, as for any invalid conversation id (commit 6).
 - **Goldens**: none regenerated. `test/prompts-screen.test.ts`, `test/cycle-prompts.test.ts` and `test/golden/*` ran unchanged with this commit.
+
+## Commit 8: the question chain, squad requests and ceremonies read the memory
+
+`src/main/memory/ceremony.ts` (the door a ceremony asks, `setCeremonyMemory`, `openCeremonyMemory`, `ceremonyAddition`), the seam in `runOnce` (`agents.ts`), `mentions/ceremony.ts`,
+`ChainInput`/`RequestInput` with `index` and `shared` (`chain.ts`, `request.ts`) and their two call sites in `service.ts`, the registration and the warm-up in `memory/module.ts`, the key
+`runner.section.sharedIndexList`, a longer `CHANGELOG.md` line. Tests: `memory-ceremony`, the chain and request cases of `memory-surfaces`; the goldens ran unchanged.
+
+Deviations and additions:
+
+- **The door lives in `memory/ceremony.ts` and `agents.ts` re-exports `setCeremonyMemory`**, so the dependency from `agents.ts` goes one way (into the memory) as for the tools. The plan put the
+  function in `agents.ts`.
+- **The ceremonies' system text gets the rules; their prompt gets the list at its end.** For a role with tools (`turn`, `reply`, `deep`, `fix`) the system text carries
+  `runner.rules.sharedMemory` and the prompt `runner.section.sharedIndex`; for `teams` only `runner.section.sharedIndexList`, which says the entry cannot be opened and that the agent should say
+  where a line came from and say it does not know when it does not say. The plan listed the key for `teams` and implied the rest.
+- **The wrap-up resume and the pool**: the session is opened once before `withPool` and skipped when `extra.resume` is set; the tests run a busy refusal that moves to the second model
+  (one open, the same list on both calls) and an `error_max_turns` that resumes (the resume has no section, no server).
+- **The chain reads its run's documents whole, so the list leaves them out; the request does not exclude them** (the receiving liaison reads another repository and never the asker's cycle
+  folder), and both get the run's own activity whole in the `sharedOne` section, which closes divergence 3.
+- **A chain or request that cannot open the memory** is the call it was: no section, no rule, no tool, and no failure.
+- **The facts are warmed when the memory module starts, when the switch is on at that moment.** A workspace that turns the switch on later reads "not read yet" on its first ceremony turn, and
+  the background refresh that turn started answers the next ones. The module registers the door whatever the switch says; the port answers null while it is off.
+- **`askBare` is untouched** (decision log 11); it never reaches `runOnce`.
+- Not done, and not in the plan for this commit: `docs/memory.md`, `docs/runner.md`, the README index and the final `CHANGELOG.md` pass (commit 10), and the notice (commit 9).

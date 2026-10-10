@@ -52,6 +52,7 @@ import { shellMcpServer, shellToolImpl, viewImageToolImpl } from './sandbox/engi
 import { EVIDENCE_TOOL_NAMES, evidenceMcpServer, evidenceToolImpls } from './evidence/engineTool';
 import { evidenceMcpToolName } from './evidence/tool';
 import type { EvidenceTools } from './evidence/tool';
+import { ceremonyAddition, ceremonyAgent, openCeremonyMemory } from './memory/ceremony';
 import { memoryMcpServer, memorySubagentGuard, memoryToolImpls } from './memory/engineTool';
 import { MEMORY_WRITE_TOOLS, memoryMcpToolName, memoryToolNames, type MemoryTools } from './memory/tools';
 import { procedureMcpServer, procedureToolImpls } from './procedures/engineTool';
@@ -64,6 +65,9 @@ import { ATTACHMENT_MCP_TOOL_NAME, attachmentMcpServer, attachmentToolImpl } fro
 import type { SandboxSession } from './sandbox/session';
 
 export { GLAB_READ };
+
+// The door the ceremonies read the shared memory through is registered by the memory module at start.
+export { setCeremonyMemory } from './memory/ceremony';
 
 /** The projects of the code host the workspace works with (a team agent of a run, which sets `tracker`, is refused when there are none; the ceremonies are not): its issue project and the project of each repository (what the cards are limited to). */
 export function workspaceProjects(): string[] {
@@ -906,9 +910,34 @@ async function runOnce<T>(
   const tools = agent ? toolsForAgent(getConfig(), agent) : getConfig().agents.tools;
   // A ceremony has no stage: the system agent of the role, then the workspace.
   const poolMode = resolvePoolMode({ agent: agent?.poolMode, workspace: getConfig().llm.poolMode });
-  return withPool<T>(resolved, { resume: resumeEngine, notify: (n) => activity?.tool(poolNoticeText(n)) }, (target) =>
-    runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads, tools), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', tools, ask, poolMode }),
-  );
+  // The shared memory, read only (a ceremony never writes it): opened once, before the pool is asked, so a retry on another model reads the same list with the same tools. The
+  // wrap-up resume of a call that ran out of turns has no tool, so it gets none of it.
+  const memory = extra.resume ? null : await openCeremonyMemory({ agent: ceremonyAgent(getConfig().agents.team, role), tools: role !== 'teams' });
+  const added = memory ? ceremonyAddition(memory) : null;
+  try {
+    return await withPool<T>(resolved, { resume: resumeEngine, notify: (n) => activity?.tool(poolNoticeText(n)) }, (target) =>
+      runnerFor(target)<T>({
+        role,
+        prompt: added ? `${prompt}\n\n${added.prompt}` : prompt,
+        schema,
+        target,
+        system: [systemPrompt(role), added?.system].filter(Boolean).join('\n\n'),
+        cwd,
+        allowedTools: [...allowedFor(role, reads, tools), ...shell.rules],
+        extraDirs: extraDirs(cwd, role),
+        shell,
+        extra,
+        activity,
+        tracker: reads ? 'workspace' : 'none',
+        tools,
+        ask,
+        poolMode,
+        ...(memory?.tools ? { memoryTools: memory.tools } : {}),
+      }),
+    );
+  } finally {
+    memory?.finish();
+  }
 }
 
 // An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.

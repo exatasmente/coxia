@@ -131,6 +131,7 @@ import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
 import type { MemoryPort } from '../memory/port';
+import type { MemorySession } from '../memory/session';
 import { memoryOn } from '../../shared/memory';
 import type { ProceduresPort } from '../procedures/port';
 import type { ProcedureOffers } from '../procedures/offers';
@@ -1593,8 +1594,13 @@ export function createRunner(deps: RunnerDeps): Runner {
       let answer: ReturnType<typeof readChain> = null;
       let failure = '';
       let partial = false;
+      // The shared memory, read only: the answer to a question is a verdict, not a conversation, so it keeps no note and makes no folder. Its own run's documents are in the
+      // files the call reads whole.
+      let shared: MemorySession | null = null;
       try {
-        const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison });
+        shared = (await deps.memoryPort?.open({ surface: 'chain', agent: holder, conversation: null, writes: false, tools: true, ref: run.issue.ref, repo: run.repo, runId: run.id })) ?? null;
+        const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison, ...(shared ? { index: shared.list.text, shared: sharedTextOf(run.issue.ref, [], [], true) } : {}) });
+        if (shared?.tools) call.memoryTools = shared.tools;
         // The agent that answers reads what the stage's agent reads of the repository's documentation, at the stage the run is at.
         call.docs = existsSync(run.worktree)
           ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
@@ -1613,6 +1619,8 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (!answer) failure = 'empty-answer';
       } catch (e) {
         failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
+      } finally {
+        shared?.finish();
       }
       // The person (or a cancel) may have answered while the agent thought: then what it said is not used.
       const now = deps.runs.get(id)?.question;
@@ -1668,8 +1676,13 @@ export function createRunner(deps: RunnerDeps): Runner {
     let answer: RequestAnswer | null = null;
     let failure = '';
     let partial = false;
+    // The receiving liaison reads the memory too (read only, no folder): the activity the request is made from, whole, and the rest as lines. The asker's documents are in
+    // the memory's list for it: it does not read the asker's cycle folder.
+    let shared: MemorySession | null = null;
     try {
-      const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run) });
+      shared = (await deps.memoryPort?.open({ surface: 'request', agent: target, conversation: null, writes: false, tools: true, ref: run.issue.ref, repo: run.repo })) ?? null;
+      const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run), ...(shared ? { index: shared.list.text, shared: sharedTextOf(run.issue.ref, [], [], true) } : {}) });
+      if (shared?.tools) call.memoryTools = shared.tools;
       // The liaison that receives the request reads the documentation of its own squad's repository (the run's worktree when it has no repository of its own).
       call.docs = call.cwd === run.worktree
         ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
@@ -1684,6 +1697,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!answer) failure = 'empty-answer';
     } catch (e) {
       failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
+    } finally {
+      shared?.finish();
     }
     // The person (or a cancel) may have answered while the other liaison thought: then what it said is not used (the request stays in the channel as it was).
     const now = deps.runs.get(id)?.question;
