@@ -210,7 +210,7 @@ export const RECOMMENDED: Record<string, { tracker: AgentTracker; shell: AgentSh
   planner: { tracker: 'read', shell: 'sandbox' },
   reviewer: { tracker: 'read', shell: 'sandbox' },
   'release-manager': { tracker: 'read', shell: 'none' },
-  'docs-writer': { tracker: 'none', shell: 'none' },
+  'docs-writer': { tracker: 'none', shell: 'sandbox' },
 };
 
 export interface Recommendation {

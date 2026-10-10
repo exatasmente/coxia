@@ -82,8 +82,9 @@ describe('the defaults of an agent', () => {
     expect(Object.keys(RECOMMENDED).sort()).toEqual([...agentFlowTeam(), ...engineeringTeam(), releaseManager(), docsWriter()].map((a) => a.id).filter((x, i, l) => l.indexOf(x) === i).sort());
     // the Release manager of the release flow reads the host and runs nothing
     expect(by([releaseManager()])).toEqual({ 'release-manager': 'read/none' });
-    // the Documentation writer changes files in .coxia, runs nothing and reads no tracker
-    expect(by([docsWriter()])).toEqual({ 'docs-writer': 'none/none' });
+    // the Documentation writer changes files, builds and checks the site in the stage's sandbox, and reads no tracker
+    expect(by([docsWriter()])).toEqual({ 'docs-writer': 'none/sandbox' });
+    expect(RECOMMENDED['docs-writer']).toEqual({ tracker: 'none', shell: 'sandbox' });
   });
 
   it('only keep the sandbox where one works: an agent a template brings is lowered otherwise', () => {

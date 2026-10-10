@@ -240,7 +240,8 @@ describe('starting a documentation run', () => {
     expect(run.docs).toEqual({ mode: 'create' });
     expect(getConfig().devCycle.flows?.docs?.map((s) => s.id)).toEqual(['docs-draft', 'docs-gate', 'docs-publish', 'docs-ready', 'docs-done']);
     expect(getConfig().devCycle.stages).toEqual(before);
-    expect(getConfig().agents.team.find((a) => a.id === 'docs-writer')).toMatchObject({ permission: 'worktree', shell: 'none', tracker: 'none' });
+    // The template brings the writer a sandbox; where this machine has none, it is lowered to the commands it could run before one.
+    expect(getConfig().agents.team.find((a) => a.id === 'docs-writer')).toMatchObject({ permission: 'worktree', shell: expect.stringMatching(/^(sandbox|allowlist)$/), tracker: 'none' });
     await b.settle();
     // once it is there the flag is not needed
     b.runner.cancel(run.id);
@@ -817,6 +818,34 @@ describe('what a documentation agent may write, on both engines', () => {
     const hooks = confinedHooks({ root, commands: [] });
     expect(await sdk(hooks, 'Write', { file_path: 'src/app.ts', content: 'x' })).toBe('allow');
     expect(await sdk(hooks, 'Write', { file_path: '../x.ts', content: 'x' })).toBe('deny');
+  });
+
+  // The Documentation writer now runs commands, and it writes the pages of the site: what it may reach is the whole
+  // worktree, exactly as any other agent of a run that writes, because its writeRoot is given only inside a docs run.
+  // What stays refused is what every writer has refused: the git folder, a hook folder, a secret and a path that
+  // leaves the worktree.
+  it('a writing agent of a run that is not a documentation run writes the whole worktree, and the refusals stay', async () => {
+    const hooks = confinedHooks({ root, commands: [] });
+    for (const path of ['site/index.md', 'site/.vitepress/config.mts', 'src/app.ts', 'docs/runner.md', AGENTS_FILE, 'README.md']) {
+      expect(await sdk(hooks, 'Write', { file_path: path, content: 'x' }), path).toBe('allow');
+    }
+    for (const path of ['.git/config', '.git/hooks/pre-commit', '.husky/pre-commit', '.gitattributes', '.gitmodules', '../outside.ts', join(outside, 'x.md'), 'up/src/app.ts']) {
+      expect(await sdk(hooks, 'Write', { file_path: path, content: 'x' }), path).toBe('deny');
+    }
+    expect(await sdk(hooks, 'Bash', { command: 'npm run docs:build' })).toBe('deny');
+    expect(await sdk(hooks, 'WebFetch', { url: 'https://example.com' })).toBe('deny');
+    // the same rules on the open engine, where the tools ask the guard again
+    const ctx = { cwd: root, roots: [root], isSecret: () => false, secretGlobs: [], outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off' as const, writeRoot: root };
+    await writeTool.run({ file_path: 'site/page.md', content: 'x\n' }, ctx);
+    expect(readFileSync(join(root, 'site/page.md'), 'utf8')).toBe('x\n');
+    await expect(writeTool.run({ file_path: '.git/config', content: 'x' }, ctx)).rejects.toThrow();
+    await expect(editTool.run({ file_path: join(outside, 'x.md'), old_string: 'a', new_string: 'b' }, ctx)).rejects.toThrow();
+  });
+
+  it('the write fence of the documentation run itself is unchanged: only the instructions file, whatever the shell', async () => {
+    const hooks = confinedHooks({ root, writeRoot: writeRoot(), writeAllow: allow, commands: [] });
+    expect(await sdk(hooks, 'Write', { file_path: 'site/index.md', content: 'x' })).toBe('deny');
+    expect(await sdk(hooks, 'Write', { file_path: AGENTS_FILE, content: 'x' })).toBe('allow');
   });
 
   it('the Write tool of the open engine writes AGENTS.md at the root of the worktree and refuses every other path', async () => {

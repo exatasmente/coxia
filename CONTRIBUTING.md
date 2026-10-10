@@ -50,6 +50,8 @@ uv pip install --python sidecar/.venv/bin/python -r sidecar/requirements.txt
 | `npm run build` | Builds main, preload and renderer into `out/` |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | The whole test suite (`vitest run`); `npx vitest run test/<file>.test.ts` for one file |
+| `npm run docs:build` | Builds the documentation site into `site/.vitepress/dist` ([`docs/site.md`](docs/site.md)) |
+| `npm run docs:check` | Fails when a link of the built site points at a page it does not have, or a page lost one of its two languages |
 | `node scripts/theme-audit.mjs` | Counts literal colors per file and checks the contrast of the theme tokens |
 | `node scripts/public-audit.mjs` | Fails when a file carries a company or personal name, a private address, an email outside the reserved domains or a secret (exceptions go in `scripts/public-audit.allow.json`, with a reason) |
 | `npm run i18n:lint` | Checks that the `pt-BR` and `en` catalogs define the same keys |

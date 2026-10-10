@@ -688,11 +688,11 @@ describe('the docs-flow template', () => {
     for (const id of ['agent-flow', 'agent-flow-engineering', 'sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'release-flow']) for (const s of cycleOf(builtInTemplate(id)!).stages) expect(ids.has(s.id), `${id}: ${s.id}`).toBe(false);
   });
 
-  it('brings a Documentation writer that changes files, runs nothing and reads no tracker, and a flow that is not offered by the wizard', async () => {
+  it('brings a Documentation writer that changes files and builds the site in a sandbox, and a flow that is not offered by the wizard', async () => {
     const agent = flow.team!.find((a) => a.id === 'docs-writer')!;
-    expect(agent).toMatchObject({ permission: 'worktree', shell: 'none', tracker: 'none', autonomous: true, system: false, turnsTo: null, model: { role: 'deep' } });
+    expect(agent).toMatchObject({ permission: 'worktree', shell: 'sandbox', tracker: 'none', autonomous: true, system: false, turnsTo: null, model: { role: 'deep' } });
     expect(agent.stages.sort()).toEqual(['docs-draft', 'docs-publish']);
-    expect(RECOMMENDED['docs-writer']).toEqual({ tracker: 'none', shell: 'none' });
+    expect(RECOMMENDED['docs-writer']).toEqual({ tracker: 'none', shell: 'sandbox' });
     const { listCycleTemplates } = await import('../src/main/cycles');
     expect(listCycleTemplates('en').map((t) => t.id)).not.toContain('docs-flow');
   });

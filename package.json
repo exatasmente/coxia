@@ -9,6 +9,9 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "docs:dev": "vitepress dev site",
+    "docs:build": "node site/scripts/cli.mjs build",
+    "docs:check": "node site/scripts/cli.mjs check",
     "i18n:lint": "node scripts/i18n-lint.mjs --keys --scope renderer --max 0",
     "dist": "electron-vite build && electron-builder --linux AppImage deb",
     "dist:public": "electron-vite build && electron-builder --config electron-builder.public.yml --linux AppImage deb"
@@ -35,6 +38,7 @@
     "playwright-core": "1.62.1",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
+    "vitepress": "1.6.4",
     "vitest": "^5.0.3"
   },
   "allowScripts": {

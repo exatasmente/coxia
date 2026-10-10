@@ -17,6 +17,7 @@ Start with the [project README](../README.md). These documents go deeper. Severa
 | [Voice](voice.md) | Voice is optional: what "off" means, the call/chat wording, the voice setup, Edge and Kokoro engines | en |
 | [Plugins](plugins/README.md) | The plugin kit: the declaration, the fixed event catalog, the boundary and the example (web search for the agents) | pt-BR, en |
 | [Updates](updates.md) | How an installed app updates itself, channels, security of the update feed | pt-BR, en |
+| [The documentation site](site.md) | The site the repository publishes: where each page comes from, how it is built and checked, how it is published | pt-BR, en |
 
 ## Contributing and maintaining
 

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A documentation site, published from the repository itself.** The repository now carries a site in `site/` with a landing page, a guide (install, first workspace, first ceremony, first run), the reference documentation, use cases and a blog, in English and Portuguese (Brazil) side by side. It is not a second copy of anything: the reference pages are built from the documents of `docs/` where they already are, so the site and what the app's agents read at run time cannot drift apart, and the history page and the posts come from `CHANGELOG.md` while the site is built, one post per stable version. The site builds and its links and its two languages are checked in the same continuous-integration run as the other gates (`npm run docs:build`, `npm run docs:check`), and `.github/workflows/pages.yml` publishes it to the repository's own Pages address on every push to the default branch. **Turning Pages on is a single act of the person in the repository settings**; nothing in the app writes that setting, and no file of the tree carries the published address. The status line of both readme files now names the version of the manifest and leads to the site; `docs/site.md` describes the whole of it.
+
+- **The Documentation writer builds the site.** The agent of the documentation flow runs commands in the stage's sandbox, so it can build the site and check its links and its languages before handing the work over; it still reads no code host, and the fence over what it may write is unchanged. Where the machine has no sandbox, the template lowers it to the commands the agent could run before one, as for every other agent.
+
 ## [0.9.0-beta.15] - 2026-10-10
 
 ### Added

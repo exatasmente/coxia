@@ -22,6 +22,9 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The site's history page and its blog posts are read from CHANGELOG.md while the site is built.
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -50,6 +53,14 @@ jobs:
 
       - name: Build
         run: npx electron-vite build
+
+      # The site is part of the tree: if it does not build, or a link points at a page it does not have, or a page
+      # lost one of its two languages, the pull request is not ready.
+      - name: Build the documentation site
+        run: npm run docs:build
+
+      - name: Check the site links and languages
+        run: npm run docs:check
 
   windows-package:
     name: Windows NSIS package
