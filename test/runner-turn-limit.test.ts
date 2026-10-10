@@ -237,4 +237,37 @@ describe('a stage that uses its last turn', () => {
     expect(lines(b, run).slice(-2)).toEqual(['runner.turns.ask.sub', 'runner.turns.continue.sub']);
     expect(b.thread(run).some((x) => x.text?.includes('sub-agent: continue'))).toBe(true);
   });
+
+  it('stands the clocks of a conversation answer still while its sub-agent waits, with the answer\'s own watchdog', async () => {
+    const turnAsks = store();
+    // the answer\'s clocks come from the workspace (not from the run\'s deps): the shortest the setting allows, so that a wait that did not pause them trips both
+    const b = await boot({ turnAsks, configure: (c) => { c.runner.stageIdleMs = 10_000; c.runner.stageMaxMs = 60_000; } });
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    let decision: TurnDecision | undefined;
+    b.engine.script('planner', async (c) => {
+      await new Promise((r) => setTimeout(r, 20));
+      decision = await c.turnLimit!.ask(stageStop({ of: 'sub', role: 'planner:explore', kind: 'explore', task: 'read the logs', used: 12, round: 12 }), c.abort?.signal);
+      return { text: `sub-agent: ${decision}` };
+    });
+    // the clocks are the watchdog\'s own timers, so time is the test\'s to move
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    try {
+      const [m] = b.forum.append(`run-${run.id}`, { kind: 'post', author: { type: 'person' }, text: '@planner look at the logs', mentions: ['planner'] });
+      b.runner.onMessage(m);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(turnAsks.list()).toHaveLength(1);
+      // an hour: past the idle limit (10 s) and the cap (a minute)
+      await vi.advanceTimersByTimeAsync(60 * 60_000);
+      expect(turnAsks.list()).toHaveLength(1);
+      turnAsks.answer(turnAsks.list()[0].id, 'continue', 'window');
+      await vi.advanceTimersByTimeAsync(100);
+    } finally {
+      vi.useRealTimers();
+    }
+    await b.settle();
+    expect(decision).toBe('continue');
+    expect(b.thread(run).some((x) => x.text?.includes('sub-agent: continue'))).toBe(true);
+  });
 });
