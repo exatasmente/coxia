@@ -1204,6 +1204,7 @@
   "main.forum.code.runner.procedures.usedFailed": "Used: {title} ({id}, revision {revision}). A step failed and was reported.",
   "main.forum.code.runner.procedures.usedReplaced": "Used: {title} ({id}). It was replaced with a corrected version.",
   "main.forum.code.runner.procedures.unavailable": "The procedure tools are not available for {agent}: the Claude Agent SDK could not be loaded here. The list of procedures is still in its prompt, but {agent} cannot read, save or report one in this call.",
+  "main.forum.code.runner.sharedMemory.toolsMissing": "The memory tools are not available for {agent}: the Claude Agent SDK could not be loaded here. The list of the memory is still in its prompt, but {agent} cannot open an entry or keep a note in this call.",
   "main.forum.code.runner.procedures.wrapUp": "{agent} had one last turn to keep a procedure ({tokens} tokens).",
   "main.forum.code.runner.procedures.offered": "The app offers to keep {count} steps as a procedure (\"{title}\"). Answer on the computer.",
   "main.forum.code.runner.procedures.offerKept": "You kept the procedure \"{title}\" ({id}, revision {revision}) from the work of {agent}. It is marked as reviewed, so the agents of the workspace can read it.",

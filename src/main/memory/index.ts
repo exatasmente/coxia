@@ -104,6 +104,8 @@ export interface MemoryIndex {
   /** The list a prompt carries or `memory_list` answers: the entries that match `view`, within `caps`. */
   list(opts: BuildOptions, view: ListView, caps: ListCaps): Promise<Rendered>;
   open(opts: BuildOptions, id: string, open?: OpenOptions): Promise<Opened>;
+  /** Whether the activities record knows this reference: a note may say it concerns one. */
+  knows(ref: string): boolean;
 }
 
 const day = (iso: string): string => iso.slice(0, 10);
@@ -299,6 +301,8 @@ export function createMemoryIndex(deps: IndexDeps): MemoryIndex {
 
   return {
     build: async (opts) => buildFrom(opts, snapshot()),
+
+    knows: (ref) => deps.activities.read(deps.runs, deps.language()).fronts[ref] !== undefined,
 
     async list(opts, view, caps) {
       const built = await buildFrom(opts, snapshot());

@@ -85,3 +85,10 @@ export interface NoteSummary {
 
 /** Whether an agent's list and read may offer the note: it was reviewed, the app knows it and it passes the checks. */
 export const visibleToAgents = (n: Pick<NoteSummary, 'foreign' | 'unsafe' | 'reviewed'>): boolean => !n.foreign && !n.unsafe && n.reviewed;
+
+/**
+ * Where a call that reads the memory runs: a run stage, a mention in a run's thread, the general conversation, a direct conversation, a squad channel, an agent called by
+ * another (or from a stage), the answer of a question chain, a squad request and a ceremony. Only the first six write; the last three read.
+ */
+export const MEMORY_SURFACES = ['stage', 'run-thread', 'forum', 'direct', 'channel', 'called', 'chain', 'request', 'ceremony'] as const;
+export type MemorySurface = (typeof MEMORY_SURFACES)[number];

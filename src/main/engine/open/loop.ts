@@ -368,6 +368,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   // Sub-agents that change something (edit, shell, screen) run one at a time, in the order they were asked: a chain of promises per loop.
   let mutating: Promise<unknown> = Promise.resolve();
   const delegatedTo = new Set<string>();
+  const principalOnly = new Set((p.extraTools ?? []).filter((x) => x.principalOnly).map((x) => x.name));
   const inOrder = <R,>(work: () => Promise<R>): Promise<R> => {
     const result = mutating.then(work);
     mutating = result.catch(() => undefined);
@@ -392,7 +393,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         prompt,
         schema: undefined,
         resume: undefined,
-        allowedTools: p.allowedTools.filter((t) => t !== 'Agent'),
+        // `Agent` is the principal's alone, and so is every tool that writes into the principal's place (the memory's write tools): a sub-agent reads.
+        allowedTools: p.allowedTools.filter((t) => t !== 'Agent' && !principalOnly.has(t)),
         systemAppend: [def?.body, kind ? subagentNote(kind) : undefined].filter(Boolean).join('\n\n') || undefined,
         maxTurns: kind ? KIND_TURNS[kind] : 12,
         sessionsDir: null,

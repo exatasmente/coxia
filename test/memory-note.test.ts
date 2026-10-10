@@ -173,5 +173,11 @@ describe('the prose validator', () => {
     // the net under the named classes still reads a query string and a 32+ character opaque string as what it would mask
     expect(codes(prose('see https://example.com/a?x=1&y=2'))).toEqual(['credential']);
     expect(codes(prose('the fix landed in 3fa91c02d4e5b6a7c8d9e0f1a2b3c4d5e6f70812'))).toEqual(['credential']);
+    // A full hash is refused, and the reason tells the agent what to write instead; a query string gets the plain reason.
+    const hash = prose('the fix landed in 3fa91c02d4e5b6a7c8d9e0f1a2b3c4d5e6f70812');
+    expect(!hash.ok && hash.refusals[0].text).toContain('short form (7 to 12 characters)');
+    expect(JSON.stringify(hash)).not.toContain('3fa91c02d4e5b6a7c8d9e0f1a2b3c4d5e6f70812');
+    const query = prose('see https://example.com/a?x=1&y=2');
+    expect(!query.ok && query.refusals[0].text).not.toContain('short form');
   });
 });

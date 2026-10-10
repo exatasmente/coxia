@@ -128,6 +128,9 @@ function hasPasswordFlag(s: string): boolean {
   return false;
 }
 
+// A full commit hash (or any hex run of 32+ characters): the `redact` net masks it as a key, so a note refuses it and says what to write instead.
+const LONG_HEX = /(?<![0-9a-f])[0-9a-f]{32,}(?![0-9a-f])/i;
+
 const hasOpaqueToken = (text: string): boolean => text.split(/\s+/).some((w) => w.length >= 20 && /\d/.test(w) && /\p{L}/u.test(w));
 
 // Pairs of quotation marks. A single quote counts as one only when it is not inside a word, so "don't" and "user's" do not pair up.
@@ -195,7 +198,7 @@ function text(out: Out, field: string, value: unknown, rule: TextRule, home: str
   // What `redact` would change and no class above named: a credential-shaped string, an assignment to a secret-looking name.
   // A placeholder after `=` or `:` is what the refusals ask for, so the net reads the text without it.
   const net = plain.replace(/[=:](?:<[^<>]*>|\$\{\w+\}|\$\w+)(?=["']?(?:\s|$))/g, ' ');
-  if (out.refusals.length === before && redact(net, home) !== net) refuse(out, field, 'credential');
+  if (out.refusals.length === before && redact(net, home) !== net) refuse(out, field, 'credential', rule.prose && LONG_HEX.test(net) ? `${REASON.credential}; a full commit hash counts as one, so write its short form (7 to 12 characters)` : undefined);
   return ok && out.refusals.length === before ? s : null;
 }
 

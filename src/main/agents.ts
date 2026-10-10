@@ -52,6 +52,8 @@ import { shellMcpServer, shellToolImpl, viewImageToolImpl } from './sandbox/engi
 import { EVIDENCE_TOOL_NAMES, evidenceMcpServer, evidenceToolImpls } from './evidence/engineTool';
 import { evidenceMcpToolName } from './evidence/tool';
 import type { EvidenceTools } from './evidence/tool';
+import { memoryMcpServer, memorySubagentGuard, memoryToolImpls } from './memory/engineTool';
+import { MEMORY_WRITE_TOOLS, memoryMcpToolName, memoryToolNames, type MemoryTools } from './memory/tools';
 import { procedureMcpServer, procedureToolImpls } from './procedures/engineTool';
 import { procedureMcpToolName, procedureToolNames, type ProcedureTools } from './procedures/tools';
 import { incomingActivity, incomingText } from './engine/incoming';
@@ -611,8 +613,9 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const evidenceOut = req.exec?.outputDir;
   const evidence = req.evidence ? evidenceToolImpls(req.evidence, evidenceOut) : [];
   const procedures = req.procedures ? procedureToolImpls(req.procedures) : [];
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? []), ...procedures, ...(req.screen ? screenToolImpls(req.screen) : [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name), ...(req.procedures ? procedureToolNames(req.procedures) : []), ...(req.screen ? screenToolNames(req.screen) : [])];
+  const memory = req.memoryTools ? memoryToolImpls(req.memoryTools) : [];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? []), ...procedures, ...memory, ...(req.screen ? screenToolImpls(req.screen) : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name), ...(req.procedures ? procedureToolNames(req.procedures) : []), ...(req.memoryTools ? memoryToolNames(req.memoryTools) : []), ...(req.screen ? screenToolNames(req.screen) : [])];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -730,15 +733,19 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // The procedure tools: unlike the tools above, a server that cannot be built does not stop the call. The list is in its prompt; the thread says the tools are not there.
   const procedures = req.procedures ? await procedureMcpServer(req.procedures) : null;
   if (req.procedures && !procedures) req.procedures.unavailable?.();
+  // The memory tools are the same kind of server and fail the same way: the list stays in the prompt, the thread says the tools are not there (once, however often the
+  // server is rebuilt for another model of the pool).
+  const memory = req.memoryTools ? await memoryMcpServer(req.memoryTools) : null;
+  if (req.memoryTools && !memory) req.memoryTools.unavailable?.();
   // The agent's screen: the app's browser and the confirmation tool, two more in-process servers.
   const screen = req.screen ? await screenMcpServers(req.screen) : null;
-  const mcp = vcs || shell || release || attachment || evidence || runner || procedures || screen ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}), ...(runner ?? {}), ...(procedures ?? {}), ...(screen ?? {}) } : null;
+  const mcp = vcs || shell || release || attachment || evidence || runner || procedures || memory || screen ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}), ...(runner ?? {}), ...(procedures ?? {}), ...(memory ?? {}), ...(screen ?? {}) } : null;
   const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
   const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
   const options = {
-    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : []), ...(procedures && req.procedures ? procedureToolNames(req.procedures).map(procedureMcpToolName) : []), ...(screen && req.screen ? screenMcpToolNames(req.screen) : [])], confine }),
+    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : []), ...(procedures && req.procedures ? procedureToolNames(req.procedures).map(procedureMcpToolName) : []), ...(memory && req.memoryTools ? memoryToolNames(req.memoryTools).map(memoryMcpToolName) : []), ...(screen && req.screen ? screenMcpToolNames(req.screen) : [])], confine }),
     ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
     // `tools: []` turns off the SDK's built-in tools and leaves the in-process servers; the strict config keeps out every server the person has set up themselves.
     ...(req.procedureOnly ? { tools: [], strictMcpConfig: true } : {}),
@@ -779,6 +786,8 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     };
     options.hooks = { ...options.hooks, PostToolBatch: [...(options.hooks?.PostToolBatch ?? []), between] };
   }
+  // Only the agent whose folder it is writes into it: a call from inside a sub-agent is refused (the SDK's `agent_id` on the hook input).
+  if (memory && req.memoryTools?.save) options.hooks = { ...options.hooks, PreToolUse: [...(options.hooks?.PreToolUse ?? []), { matcher: MEMORY_WRITE_TOOLS.map(memoryMcpToolName).join('|'), hooks: [memorySubagentGuard] }] };
   const q = query({ prompt: stream ?? req.prompt, options });
   const counted = new Set<string>();
   // What the assistant said, kept for the failure a call with no structured output throws: the provider's refusal reaches the person, never only the subtype.
@@ -1306,6 +1315,8 @@ export interface AgentCall {
   runnerTools?: ToolImpl[];
   /** The workspace's procedure tools, from the call's procedure session; absent: the call has none (a ceremony, a call with no session, the switch off). */
   procedures?: ProcedureTools;
+  /** The shared memory's tools, from the call's memory session; absent: the call has none (the switch off, a call with no session). */
+  memoryTools?: MemoryTools;
   /** The agent's screen (the app's browser and the confirmation tool), offered by name to either engine. */
   screen?: ScreenToolset;
   /**
@@ -1451,6 +1462,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           incoming: only ? undefined : call.incoming,
           runnerTools: only ? undefined : call.runnerTools,
           procedures: call.procedures,
+          // The last turn of procedures keeps the procedure tools and nothing else, the memory's included.
+          memoryTools: only ? undefined : call.memoryTools,
           screen: only ? undefined : call.screen,
           ...(only ? { procedureOnly: true } : {}),
         };
@@ -1496,6 +1509,7 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
       exec: undefined,
       release: undefined,
       procedures: undefined,
+      memoryTools: undefined,
       screen: undefined,
     });
     return { ...r, sources: [...e.sources, ...r.sources], partial: true };

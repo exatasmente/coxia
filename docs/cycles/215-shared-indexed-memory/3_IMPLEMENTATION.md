@@ -111,3 +111,32 @@ Deviations and additions:
   the flag nothing changes, byte for byte (`test/activityIndex.test.ts`); the call sites pass it in commit 7.
 - **Measured** (risk 2 of the plan), on a temporary workspace of 500 notes in 10 conversations and 200 runs with 5 documents each (the 30 newest are read): the first list of a process takes
   about 160 ms, the following ones 33 to 37 ms, with the cycle documents cached by path, modification time and size. The run files are listed once per call (a test counts it).
+
+## Commit 6: the memory tools in both engines
+
+`src/main/memory/tools.ts` (names, descriptions, schemas, `MemoryTools`), `session.ts` (the four handlers and the list a call carries), `engineTool.ts` (`memoryToolImpls`,
+`memoryMcpServer`, `memorySubagentGuard`), `port.ts` (`createMemoryPort`, `MemoryOpenContext`); `AgentCall.memoryTools` and the plumbing in `agents.ts` (`runAgent`, `wrapUpAnswer`,
+`runOpenEngine`, `runClaudeSdk`), `EngineRequest.memoryTools`, `ToolImpl.principalOnly` and the sub-agent filter in `open/loop.ts`; `MemorySurface` in `shared/memory.ts`; the audit entry
+learns an agent's save, replace and remove; the catalog key `main.forum.code.runner.sharedMemory.toolsMissing`. Tests: `memory-tools`, `memory-port`, `memory-engine`, the tools half of
+`memory-secret-path`, the hash case of `memory-note`, and the `test/helpers/memory.ts` world they share. No call site yet.
+
+Deviations and additions:
+
+- **`MemoryPort.open` is asynchronous** (`Promise<MemorySession | null>`): the list is built by the index, whose version fact reads git. The call sites of commit 7 are all in async code
+  already. A voice path uses `cacheOnly`, which never waits (commit 8).
+- **The refusal of a full commit hash says what to write** (maintainer's decision after commit 4): in a note, the credential refusal that comes from the `redact` net and finds a hex run of
+  32 or more characters adds "a full commit hash counts as one, so write its short form (7 to 12 characters)" (`record.ts`, prose only; the procedures' refusals are unchanged), and the
+  description of `memory_save` tells the agent to name a commit by its short hash. A query string keeps the plain reason. Masking is as it was.
+- **The audit entry of an agent's write** reuses `memoryAuditEntry` with `by` = the agent, `via` = the surface the call ran in and the run's `issue`; ops `save` and `replace` were added
+  beside the person's. A refusal records the code and the field names, never a value or a title. A refusal by `activity` (not a known reference) or `typed` is audited the same way.
+- **`memory_list` answers inside the fence with the standing sentence**, like `memory_read` (the plan only fenced the read): the lines are titles an agent or a person wrote, which is outside
+  text too. The closing line of a list that did not fit names `memory_list` and `memory_read`.
+- **`MemoryIndex.knows(ref)`** is new: `memory_save` checks the `activity` the agent names against the activities record before the store sees it. A note with no `activity` of its own takes
+  the call's (`ref`), as the plan says.
+- **A session whose conversation is not a valid thread id, or whose folder cannot be made, is a reader**: no folder, no write tools, no refusal for the person to see. The plan's `open` only said
+  it makes the folder.
+- **The sub-agent hook is added only when the memory server was built and the session writes**; its matcher is the two prefixed names. Its callback is `memorySubagentGuard` in `engineTool.ts`
+  so a test calls it directly. Whether the SDK fires it for an in-process call from its built-in sub-agent stays unverified, as the plan says.
+- **The `withPool` retry** is covered by running two calls over the same tools with a server that cannot be built (one thread line), not by forcing a busy refusal through the pool; both go through
+  the same `unavailable()` that the retry would call.
+- **Not done here, by the plan's order:** the singleton `memoryPort()` over the running workspace (commit 7, with the first call site) and `setCeremonyMemory` with the `runOnce` seam (commit 8).

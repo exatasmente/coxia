@@ -6,6 +6,7 @@ import type { HookInput } from '@anthropic-ai/claude-agent-sdk';
 import { SECRET_PATH, noSecrets, secretPath } from '../src/main/agents';
 import { NOTE_FILE, STATE_FILE } from '../src/shared/memory';
 import { conversationsPath, createMemoryStore } from '../src/main/memory/store';
+import { memoryWorld } from './helpers/memory';
 
 // `SECRET_PATH` judges the whole path, and a conversation or an agent whose id the person chose may hold one of its words. The app opens a note by the id it validated and
 // never asks the filter, so the store works for every id; a direct Read of such a note by path stays refused, which is the safe side (spec rule 4: the tool is the
@@ -46,6 +47,22 @@ describe('a conversation or an agent whose id holds a word the secret filter hol
       const out = await noSecrets(input, undefined, { signal: new AbortController().signal });
       expect(JSON.stringify(out)).toContain('"permissionDecision":"deny"');
     }
+  });
+});
+
+describe('the tools on such an id', () => {
+  it('list, read, save and remove work for a conversation token-rotation and an agent secret-keeper, whatever the path filter says of the files', async () => {
+    const w = memoryWorld();
+    const s = await w.session({ conversation: 'token-rotation', agent: 'secret-keeper' });
+    const saved = await s.tools!.save!({ kind: 'decision', title: 'Rotate on Fridays', text: 'The rotation happens on Fridays.' });
+    expect(saved.text).toBe('Saved m-00000001 at revision 1.');
+    const path = join(conversationsPath(w.ws), 'token-rotation', 'secret-keeper', 'm-00000001.md');
+    expect(secretPath(path)).toBe(true);
+    const other = await w.session({ agent: 'qa', writes: false });
+    expect((await other.tools!.list({ query: 'rotate' })).text).toContain('m-00000001 decision: Rotate on Fridays (secret-keeper, token-rotation,');
+    expect((await other.tools!.read({ id: 'm-00000001' })).text).toContain('The rotation happens on Fridays.');
+    expect((await s.tools!.save!({ id: 'm-00000001', revision: 1, kind: 'decision', title: 'Rotate on Fridays', text: 'Mondays now.' })).text).toMatch(/^Replaced/);
+    expect((await s.tools!.remove!({ id: 'm-00000001' })).text).toBe('Removed m-00000001.');
   });
 });
 

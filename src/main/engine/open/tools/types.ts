@@ -64,6 +64,11 @@ export interface ToolImpl {
    * without one (an MCP tool, the evidence, release and attachment tools) leaves the turn to the role's own list.
    */
   activity?: Activity;
+  /**
+   * A tool only the principal agent calls: a sub-agent of the session never gets it, whatever its kind. The memory's write tools are these, so a sub-agent cannot write
+   * into the principal's folder.
+   */
+  principalOnly?: true;
 }
 
 // A failure the model should read and recover from, not a crash.
