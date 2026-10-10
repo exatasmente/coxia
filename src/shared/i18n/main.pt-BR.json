@@ -841,6 +841,7 @@
   "main.secrets.noKeychain": "não há chaveiro do sistema para cifrar o segredo; aceite o arquivo inseguro explicitamente, ou use um comando ou uma variável de ambiente",
   "main.secrets.badCommand": "o comando do segredo está vazio ou tem caracteres de controle",
   "main.secrets.badEnvName": "nome de variável de ambiente inválido \"{name}\"",
+  "main.secrets.keyFile": "o arquivo de chave está ausente, legível por outros usuários ou não abre estes segredos",
   "main.engine.text.read.tooBig": "Arquivo grande demais ({size} bytes); use Grep ou leia por offset/limit em um arquivo menor.",
   "main.engine.text.read.more": "… (mais {count} linhas; use offset {offset})",
   "main.engine.text.clipped": "… (cortado em {max} de {total} caracteres)",

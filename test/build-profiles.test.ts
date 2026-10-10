@@ -35,8 +35,10 @@ describe('build profiles', () => {
     expect(unpack.some((p) => p.includes('anthropic'))).toBe(false);
   });
 
+  // The same guarantee as the build lists above: the app still reads the server from the unpacked folder when packaged. The paths module now
+  // computes that path from the host's resources folder instead of naming the runtime's own path, so the test watches the folder in the string.
   it('the app reads the server from the unpacked folder when packaged', () => {
-    expect(read('src/main/paths.ts')).toContain("join(process.resourcesPath, 'app.asar.unpacked/node_modules/@playwright/mcp/cli.js')");
+    expect(read('src/main/paths.ts')).toContain('app.asar.unpacked/node_modules/@playwright/mcp/cli.js');
   });
 
   it('npm run dist stays personal and dist:public uses the public config', () => {

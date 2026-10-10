@@ -8,7 +8,7 @@ import { t } from '../shared/i18n';
 import { FLUSH_EVENT, type BuildInfo, type UpdateInfo } from '../shared/update';
 import { DATA_ROOT, HOME } from './env';
 import type { Module } from './module';
-import { PACKAGED } from './paths';
+import { isPackaged } from './paths';
 import {
   announcement,
   ownedDescendants,
@@ -73,7 +73,7 @@ export function trackWindow(visible: () => boolean): void {
 }
 
 function info(): UpdateInfo {
-  return { build: BUILD, packaged: PACKAGED, announce: windowVisible() ? announcement(readMarker(), BUILD) : null };
+  return { build: BUILD, packaged: isPackaged(), announce: windowVisible() ? announcement(readMarker(), BUILD) : null };
 }
 
 // A published-release update leaves its marker when it is downloaded: the install may happen at a later quit, and the first start
@@ -88,7 +88,7 @@ export function writeReleaseMarker(version: string): void {
 }
 
 async function run(): Promise<{ logPath: string }> {
-  if (!PACKAGED) throw new Error(t('updates.error.dev'));
+  if (!isPackaged()) throw new Error(t('updates.error.dev'));
   const dir = sourceDir();
   if (!dir) throw new Error(t('updates.error.noSource'));
   const script = join(dir, 'scripts/update.sh');
@@ -116,7 +116,7 @@ function clearRunInfo(): void {
 }
 
 export function announceRunning(): void {
-  if (!PACKAGED) return;
+  if (!isPackaged()) return;
   try {
     writeFileSync(RUN_FILE, JSON.stringify(runInfo(process.pid, BUILD, new Date().toISOString()), null, 1));
   } catch (e) {

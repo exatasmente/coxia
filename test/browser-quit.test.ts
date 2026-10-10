@@ -3,7 +3,7 @@
 // browser-runtime), so it ends when the server does; what is left to show is that the server ends when the pipe closes.
 import { type ChildProcess, spawn } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
-import { PLAYWRIGHT_MCP_CLI } from '../src/main/paths';
+import { playwrightMcpCli } from '../src/main/paths';
 
 const alive = (pid: number): boolean => {
   try {
@@ -33,7 +33,7 @@ setInterval(() => undefined, 1000);
 
 describe('the app\'s browser when the app ends', () => {
   it('ends the Playwright MCP server when the app is killed, so its browser goes with it', async () => {
-    const app: ChildProcess = spawn(process.execPath, ['-e', APP, PLAYWRIGHT_MCP_CLI], { stdio: ['ignore', 'pipe', 'inherit'] });
+    const app: ChildProcess = spawn(process.execPath, ['-e', APP, playwrightMcpCli()], { stdio: ['ignore', 'pipe', 'inherit'] });
     const pid = await new Promise<number>((resolve, reject) => {
       app.stdout?.on('data', (d: Buffer) => {
         const m = /SERVER (\d+)/.exec(String(d));
@@ -58,3 +58,4 @@ describe('the app\'s browser when the app ends', () => {
     }
   }, 20_000);
 });
+;
