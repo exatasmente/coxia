@@ -2,6 +2,7 @@
 import { EngineError, type Learned, adaptBodyForError, mapHttpError, mapNetworkError, newLearned, withoutImages } from './errors';
 import { type Lang, msg } from './messages';
 import { SseParser, ThinkSplitter, newId } from './text';
+import type { ReasoningEffort } from '../../../shared/config/types';
 import { t } from '../../../shared/i18n';
 import type { ChatChunk, ChatMessage, ChatRequest, ChatResponse, Completion, Json, ToolCall, ToolChoice, ToolDef, Usage } from './types';
 
@@ -54,6 +55,12 @@ export interface CallOptions {
   toolChoice?: ToolChoice;
   responseFormat?: Json;
   maxTokens?: number;
+  /** Ask a server with tiers for the cheaper, slower one. Only for a call nobody waits for. */
+  serviceTier?: 'flex';
+  /** How hard the model thinks. Only for a model the caller knows reasons. */
+  effort?: ReasoningEffort;
+  /** Refuse at once (429) instead of queueing when the model is busy, so a pool can move on. */
+  failFast?: boolean;
   signal?: AbortSignal;
   onText?: (text: string) => void;
   onReasoning?: (text: string) => void;
@@ -254,6 +261,10 @@ export class ChatClient {
       if (o.toolChoice && !this.learned.dropParams.has('tool_choice')) body.tool_choice = o.toolChoice;
     }
     if (o.responseFormat && !this.learned.dropParams.has('response_format')) body.response_format = o.responseFormat;
+    // Nothing here unless the caller asked, and nothing the server has already refused.
+    if (o.serviceTier && !this.learned.dropParams.has('service_tier')) body.service_tier = o.serviceTier;
+    if (o.effort && !this.learned.dropParams.has('reasoning_effort')) body.reasoning_effort = o.effort;
+    if (o.failFast && !this.learned.dropParams.has('fail_fast')) body.fail_fast = true;
     return body;
   }
 
@@ -264,6 +275,7 @@ export class ChatClient {
     let body = this.build(o);
     let transient = 0;
     let adapted = 0;
+    let tierRetried = false;
     for (;;) {
       let res: Response;
       try {
@@ -283,6 +295,15 @@ export class ChatClient {
         if (retryBody) {
           adapted++;
           body = retryBody;
+          continue;
+        }
+        // A refusal the call asked for is the answer: the pool moves on, and retrying here would put the queue back.
+        if (res.status === 429 && body.fail_fast === true) throw err;
+        // A flex call that is refused goes again once in the standard tier, instead of leaving the model for the sake of a discount. Nothing is learned from it.
+        if (res.status === 429 && body.service_tier !== undefined && !tierRetried) {
+          tierRetried = true;
+          const { service_tier: _tier, ...rest } = body;
+          body = rest as ChatRequest;
           continue;
         }
         if (err.retryable && transient < (this.cfg.maxRetries ?? 2)) {

@@ -3,6 +3,8 @@
 
 /** How long a model rests when the server did not say. */
 export const DEFAULT_REST_MS = 5 * 60_000;
+/** How long a model rests after it refused at once (`fail_fast`) and said nothing more: the queue it avoided is usually short. */
+export const FAIL_FAST_REST_MS = 60_000;
 /** The longest a Retry-After may keep a model out. */
 export const MAX_REST_MS = 15 * 60_000;
 

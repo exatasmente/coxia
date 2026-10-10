@@ -84,6 +84,9 @@ export function toolStep(calls: FakeCall[], opts: { text?: string; usageTokens?:
 
 export const errorStep = (status: number, message: string, extra: Record<string, unknown> = {}): Step => ({ status, json: { error: { message, ...extra } } });
 
+// What a server answers when the call asked not to queue and the model is busy: 429 with the code `engine_overloaded`.
+export const busyStep = (): Step => errorStep(429, 'Model is busy, retry later', { type: 'engine_overloaded', code: 'engine_overloaded' });
+
 // Serves /v1/chat/completions and /v1/models. `script` returns the step for each chat call; a function sees the request.
 export async function fakeOpenAI(script: Step[] | ((req: FakeRequest) => Step), opts: { models?: object[]; auth?: string; modelsStatus?: number } = {}): Promise<Fake> {
   const requests: FakeRequest[] = [];

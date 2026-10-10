@@ -91,6 +91,10 @@ export interface LlmProvider {
 export const ACTIVITIES = ['explore', 'edit', 'shell', 'screen', 'write'] as const;
 export type Activity = (typeof ACTIVITIES)[number];
 
+/** How hard a model that reasons is asked to think (`reasoning_effort`). */
+export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high'] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
 /** The activities that have a quality floor (the others are ordered by price alone). */
 export const SCORED_ACTIVITIES = ['shell', 'edit', 'screen'] as const;
 export type ScoredActivity = (typeof SCORED_ACTIVITIES)[number];

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { ChatClient, normalizeBaseUrl } from '../src/main/engine/open/client';
 import { EngineError } from '../src/main/engine/open/errors';
-import { type Fake, closedPort, errorStep, fakeOpenAI, textStep, toolStep, usage } from './helpers/fakeOpenAI';
+import { type Fake, busyStep, closedPort, errorStep, fakeOpenAI, textStep, toolStep, usage } from './helpers/fakeOpenAI';
 
 let fake: Fake | null = null;
 afterEach(async () => {
@@ -246,6 +246,109 @@ describe('parameter fallbacks', () => {
     await client(fake.url).complete({ messages: user, tools, toolChoice: { type: 'function', function: { name: 'Read' } } });
     expect(fake.chats()[1].body).not.toHaveProperty('tool_choice');
     expect(fake.chats()[1].body?.tools).toHaveLength(1);
+  });
+});
+
+describe('what only some servers take: tier, effort and fail-fast', () => {
+  const asked = { serviceTier: 'flex' as const, effort: 'low' as const, failFast: true };
+
+  it('sends nothing unless the caller asked, and each parameter when it did', async () => {
+    fake = await fakeOpenAI([textStep('a'), textStep('b'), textStep('c'), textStep('d')]);
+    const c = client(fake.url);
+    await c.complete({ messages: user });
+    await c.complete({ messages: user, serviceTier: 'flex' });
+    await c.complete({ messages: user, effort: 'none' });
+    await c.complete({ messages: user, failFast: true });
+    const [none, tier, effort, fast] = fake.chats().map((r) => r.body ?? {});
+    for (const k of ['service_tier', 'reasoning_effort', 'fail_fast']) expect(none).not.toHaveProperty(k);
+    expect(tier).toMatchObject({ service_tier: 'flex' });
+    expect(tier).not.toHaveProperty('fail_fast');
+    expect(effort).toMatchObject({ reasoning_effort: 'none' });
+    expect(fast).toMatchObject({ fail_fast: true });
+    expect(fast).not.toHaveProperty('service_tier');
+  });
+
+  it.each([
+    ['service_tier', "Unknown parameter: 'service_tier'."],
+    ['reasoning_effort', "Unrecognized request argument supplied: reasoning_effort"],
+    ['fail_fast', 'fail_fast is not supported for this model'],
+  ])('a 400 that names %s drops it, and the client does not send it again', async (param, message) => {
+    fake = await fakeOpenAI((req) => (param in (req.body ?? {}) ? errorStep(400, message) : textStep('ok')));
+    const c = client(fake.url);
+    expect((await c.complete({ messages: user, ...asked })).text).toBe('ok');
+    expect(fake.chats()).toHaveLength(2);
+    expect(fake.chats()[1].body).not.toHaveProperty(param);
+    // the other two stay
+    expect(Object.keys(fake.chats()[1].body ?? {}).filter((k) => ['service_tier', 'reasoning_effort', 'fail_fast'].includes(k))).toHaveLength(2);
+    await c.complete({ messages: user, ...asked });
+    expect(fake.chats()[2].body).not.toHaveProperty(param);
+  });
+
+  it('a refusal of reasoning_effort never makes the client stop echoing the reasoning', async () => {
+    fake = await fakeOpenAI((req) => ('reasoning_effort' in (req.body ?? {}) ? errorStep(400, 'Unknown parameter: reasoning_effort (reasoning models only)') : textStep('ok')));
+    const c = client(fake.url, { echoReasoning: true });
+    const history = [
+      { role: 'user' as const, content: 'q' },
+      { role: 'assistant' as const, content: 'r', reasoning_content: 'because' },
+      { role: 'user' as const, content: 'q2' },
+    ];
+    await c.complete({ messages: history, effort: 'low' });
+    expect(c.learned.echoRefused).toBeUndefined();
+    expect(c.learned.dropParams.has('reasoning_effort')).toBe(true);
+    expect(fake.chats()[1].body?.messages[1].reasoning_content).toBe('because');
+  });
+
+  it('reads a 429 with the code engine_overloaded as a busy model, resting a minute unless the server says more', async () => {
+    fake = await fakeOpenAI([busyStep()]);
+    const e = await failure(client(fake.url).complete({ messages: user, failFast: true }));
+    expect(e).toMatchObject({ kind: 'overloaded', status: 429, restMs: 60_000 });
+  });
+
+  it('does not retry a 429 of a call that asked to fail fast', async () => {
+    fake = await fakeOpenAI([busyStep(), textStep('ok')]);
+    const e = await failure(client(fake.url, { maxRetries: 3 }).complete({ messages: user, failFast: true }));
+    expect(e.kind).toBe('overloaded');
+    expect(fake.chats()).toHaveLength(1);
+  });
+
+  it('still retries a 429 of a call that did not ask to fail fast', async () => {
+    fake = await fakeOpenAI([busyStep(), textStep('ok')]);
+    expect((await client(fake.url).complete({ messages: user })).text).toBe('ok');
+    expect(fake.chats()).toHaveLength(2);
+  });
+
+  it('a 5xx still retries with fail-fast on', async () => {
+    fake = await fakeOpenAI([errorStep(503, 'overloaded'), textStep('ok')]);
+    expect((await client(fake.url).complete({ messages: user, failFast: true })).text).toBe('ok');
+    expect(fake.chats()).toHaveLength(2);
+  });
+
+  it('sends a refused flex call again once in the standard tier, and remembers nothing', async () => {
+    fake = await fakeOpenAI((req) => ('service_tier' in (req.body ?? {}) ? errorStep(429, 'Rate limit reached') : textStep('ok')));
+    const c = client(fake.url);
+    expect((await c.complete({ messages: user, serviceTier: 'flex' })).text).toBe('ok');
+    expect(fake.chats()).toHaveLength(2);
+    expect(fake.chats()[0].body).toHaveProperty('service_tier', 'flex');
+    expect(fake.chats()[1].body).not.toHaveProperty('service_tier');
+    expect(c.learned.dropParams.has('service_tier')).toBe(false);
+    // the next flex call is a flex call again
+    await c.complete({ messages: user, serviceTier: 'flex' });
+    expect(fake.chats()[2].body).toHaveProperty('service_tier', 'flex');
+  });
+
+  it('a flex call that is also fail-fast leaves the model on a 429 instead of falling back to standard', async () => {
+    fake = await fakeOpenAI([busyStep(), textStep('ok')]);
+    const e = await failure(client(fake.url).complete({ messages: user, serviceTier: 'flex', failFast: true }));
+    expect(e.kind).toBe('overloaded');
+    expect(fake.chats()).toHaveLength(1);
+  });
+
+  it('the standard retry of a flex call happens once; a second 429 follows the usual retries', async () => {
+    fake = await fakeOpenAI([errorStep(429, 'Rate limit reached')]);
+    const e = await failure(client(fake.url, { maxRetries: 1 }).complete({ messages: user, serviceTier: 'flex' }));
+    expect(e.kind).toBe('rate_limit');
+    // flex, standard, then the one retry the client allows
+    expect(fake.chats()).toHaveLength(3);
   });
 });
 

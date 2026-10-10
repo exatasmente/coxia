@@ -66,6 +66,13 @@ describe('the rest an error asks for', () => {
     expect(mapHttpError(502, 'bad gateway', headers({ 'retry-after': '20' }), ctx)).toMatchObject({ kind: 'server', restMs: 20_000 });
   });
 
+  it('reads engine_overloaded on a 429 as an overloaded model: a minute unless a Retry-After says more, and not a rate limit', () => {
+    const body = '{"error":{"message":"Model is busy","code":"engine_overloaded"}}';
+    expect(mapHttpError(429, body, headers({}), ctx)).toMatchObject({ kind: 'overloaded', status: 429, retryable: true, restMs: 60_000 });
+    expect(mapHttpError(429, body, headers({ 'retry-after': '120' }), ctx).restMs).toBe(120_000);
+    expect(mapHttpError(429, '{"error":{"message":"slow down","code":"rate_limit_exceeded"}}', headers({}), ctx)).toMatchObject({ kind: 'rate_limit', restMs: undefined });
+  });
+
   it('reads a date, and has none without the header', () => {
     const at = new Date(Date.now() + 120_000).toUTCString();
     const e = mapHttpError(429, 'x', headers({ 'retry-after': at }), ctx);
