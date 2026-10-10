@@ -481,7 +481,7 @@
   "wizard.suggest.intro": "Modelos da listagem de {provider} que chamam ferramentas, respondem de forma estruturada e têm ao menos {tokens} tokens de contexto, na ordem do custo estimado de uma etapa típica. Nos tipos de trabalho que têm piso de qualidade, vão primeiro os que o alcançam.",
   "wizard.suggest.scoresNote": "As notas vêm de uma tabela que acompanha o app, e a maioria é declarada pelo fornecedor de cada modelo: servem de piso e de desempate, não de garantia. Mude um piso ou uma nota abaixo se souber melhor. Nada é salvo até você salvar.",
   "wizard.suggest.floors": "Pisos de qualidade",
-  "wizard.suggest.floorsHint": "Um modelo abaixo do piso de um tipo de trabalho vai depois dos que o alcançam. Leitura e busca e o começo da etapa não têm piso: o preço decide.",
+  "wizard.suggest.floorsHint": "Um modelo abaixo do piso de um tipo de trabalho vai depois dos que o alcançam. Leitura e busca e o começo da etapa não têm piso: vão primeiro os modelos que têm nota em algum tipo de trabalho, por preço, depois os que ninguém mediu, por preço.",
   "wizard.suggest.floorFor": "Piso de qualidade de {activity}",
   "wizard.suggest.floorTable": "tabela do app: {floor}",
   "wizard.suggest.default": "Lista padrão",

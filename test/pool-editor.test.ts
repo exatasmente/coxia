@@ -269,9 +269,10 @@ describe('the suggestion panel', () => {
 
   it('puts the models that reach a floor first, with the score, its source and the vendor\'s own word', () => {
     setLanguage('en');
-    const out = panel([model('XiaomiMiMo/MiMo-V2.6-Flash', 0.4, { vision: true }), model('plain', 0.1, { vision: true })]);
+    const out = panel([model('XiaomiMiMo/MiMo-V2.6-Flash', 0.4, { vision: true }), model('deepseek-ai/DeepSeek-V4.1-Flash', 0.1, { vision: true })]);
+    // the second one is scored for the shell and for editing, not for the screen: cheaper, it leads the default list, and the screen list puts the first one ahead
     const screen = out.slice(out.indexOf('aria-label="Virtual screen"'));
-    expect(screen.indexOf('MiMo-V2.6-Flash')).toBeLessThan(screen.indexOf('plain'));
+    expect(screen.indexOf('MiMo-V2.6-Flash')).toBeLessThan(screen.indexOf('DeepSeek-V4.1-Flash'));
     expect(screen).toContain('Virtual screen: 80.8 (OSWorld-Verified, self-reported)');
   });
 

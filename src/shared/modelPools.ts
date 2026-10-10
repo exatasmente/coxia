@@ -53,6 +53,8 @@ export function refOf(m: CatalogModel, provider: string): ModelRef {
   };
 }
 
+const SCORED = ['shell', 'edit', 'screen'] as const;
+
 const byCost = (a: RankedModel, b: RankedModel): number => {
   if (a.cost !== b.cost) return a.cost === null ? 1 : b.cost === null ? -1 : a.cost - b.cost;
   return a.ref.model < b.ref.model ? -1 : a.ref.model > b.ref.model ? 1 : 0;
@@ -60,7 +62,8 @@ const byCost = (a: RankedModel, b: RankedModel): number => {
 
 /**
  * The eligible models for one activity, best first. With a floor (shell, edit, screen): the models that reach it by price, then the ones under it by price, then
- * the ones without a score by price. Without one (explore, write): by price. A tie goes to the smaller id, so the order never depends on the listing's.
+ * the ones without a score by price. Without one (explore, write): the models with a score for any activity (the table's or the person's) by price, then the ones
+ * without any by price: a model nobody measured is not the default only for being the cheapest. A tie goes to the smaller id, so the order never depends on the listing's.
  */
 export function rankForActivity(models: readonly CatalogModel[], activity: Activity, opts: RankOptions): RankedModel[] {
   const floor = floorFor(activity, opts.scoreOverrides);
@@ -79,7 +82,8 @@ export function rankForActivity(models: readonly CatalogModel[], activity: Activ
       };
     })
     .filter((r) => !(opts.dropBelowFloor && r.belowFloor));
-  const bucket = (r: RankedModel): number => (floor === null || (r.score !== null && !r.belowFloor) ? 0 : r.belowFloor ? 1 : 2);
+  const known = new Set(models.filter((m) => SCORED.some((a) => scoreFor(m.id, a, opts.scoreOverrides))).map((m) => m.id));
+  const bucket = (r: RankedModel): number => (floor === null ? (known.has(r.ref.model) ? 0 : 1) : r.score !== null && !r.belowFloor ? 0 : r.belowFloor ? 1 : 2);
   return rows.sort((a, b) => bucket(a) - bucket(b) || byCost(a, b));
 }
 

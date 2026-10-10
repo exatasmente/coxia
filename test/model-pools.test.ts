@@ -33,6 +33,13 @@ describe('rankForActivity', () => {
     expect(ids(rankForActivity(list, 'write', opts))).toEqual(['model-a', 'model-b', 'model-c', 'model-z']);
   });
 
+  it('puts the models with a score for any activity ahead of the ones nobody measured in explore and write, each group by price', () => {
+    const list = [model('model-a', 0.5), model('model-b', 0.3), model('tiny-unknown', 0.01), model('model-c', 0.2), model('other-unknown', 0.02)];
+    const scoreOverrides: ScoreOverrides = { models: { 'model-a': { edit: 75 }, 'model-b': { shell: 50 } } };
+    expect(ids(rankForActivity(list, 'write', { ...opts, scoreOverrides }))).toEqual(['model-b', 'model-a', 'tiny-unknown', 'other-unknown', 'model-c']);
+    expect(ids(rankForActivity(list, 'explore', { ...opts, scoreOverrides }))).toEqual(['model-b', 'model-a', 'tiny-unknown', 'other-unknown', 'model-c']);
+  });
+
   it('puts the models that reach the floor first, by price, then the ones under it, then the ones without a score', () => {
     const list = [model('model-a', 0.5), model('model-b', 0.2), model('model-c', 0.1), model('model-d', 0.05)];
     const overrides: ScoreOverrides = { floors: { shell: 85 }, models: { 'model-a': { shell: 90.6 }, 'model-b': { shell: 87.6 }, 'model-c': { shell: 80 } } };

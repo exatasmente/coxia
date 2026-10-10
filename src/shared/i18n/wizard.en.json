@@ -481,7 +481,7 @@
   "wizard.suggest.intro": "Models in the listing of {provider} that call tools, answer in a structured form and have at least {tokens} tokens of context, in the order of the estimated cost of a typical stage. For the kinds of work that have a quality floor, the models that reach it come first.",
   "wizard.suggest.scoresNote": "The scores come from a table that ships with the app, and most are reported by the vendor of each model: they are a floor and a tie-breaker, not a guarantee. Change a floor or a score below if you know better. Nothing is saved until you save.",
   "wizard.suggest.floors": "Quality floors",
-  "wizard.suggest.floorsHint": "A model under the floor of a kind of work goes after the ones that reach it. Reading and searching and the start of a stage have no floor: the price decides.",
+  "wizard.suggest.floorsHint": "A model under the floor of a kind of work goes after the ones that reach it. Reading and searching and the start of a stage have no floor: the models that have a score for any kind of work come first, by price, then the ones nobody measured, by price.",
   "wizard.suggest.floorFor": "Quality floor for {activity}",
   "wizard.suggest.floorTable": "app's table: {floor}",
   "wizard.suggest.default": "Default list",
