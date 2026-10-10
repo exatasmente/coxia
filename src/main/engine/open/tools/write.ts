@@ -19,6 +19,7 @@ function confined(input: unknown, ctx: ToolContext): string {
     ...(narrow ? { fence: ctx.cwd } : {}),
     reserved: ctx.writeReserved,
     writeAllow: ctx.writeAllow,
+    anywhere: ctx.writeAnywhere && !narrow,
   });
   if (!check.ok) throw new ToolError(t(`main.engine.text.write.denied.${check.code}`));
   return check.path;

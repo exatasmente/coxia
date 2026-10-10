@@ -9,9 +9,16 @@ const keys = (d: RunnerDraft, flow = true) => runnerProblems(d, flow).map((p) =>
 describe('the runner draft', () => {
   it('round trips the defaults and a configured runner', () => {
     expect(runnerOf(base())).toEqual(neutralConfig().runner);
-    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40 }, identity: { name: 'Bot', email: 'bot@example.com' }, sandbox: neutralConfig().runner.sandbox, autonomy: neutralConfig().runner.autonomy, evidence: 'app', procedures: true, flex: false, commitMessage: 'fix: {summary} {iid}', prTitle: '#{iid} {title}', linkDependencies: true, release: { soleMaintainer: true }, conversations: { roundsPerConversation: 8, perStage: 2 } };
+    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40 }, identity: { name: 'Bot', email: 'bot@example.com' }, sandbox: neutralConfig().runner.sandbox, autonomy: neutralConfig().runner.autonomy, evidence: 'app', procedures: true, flex: false, unconfined: true, commitMessage: 'fix: {summary} {iid}', prTitle: '#{iid} {title}', linkDependencies: true, release: { soleMaintainer: true }, conversations: { roundsPerConversation: 8, perStage: 2 } };
     expect(runnerOf(draftOfRunner(r))).toEqual(r);
     expect(draftOfRunner(r)).toMatchObject({ commandsMode: 'custom', idleMinutes: 15, maxMinutes: 90, turnsRead: 12, turnsWrite: 40 });
+  });
+
+  it('carries the fence switch both ways, a config stored without it shows as fenced, and a paired browser keeps the stored one', () => {
+    expect(runnerOf({ ...base(), unconfined: true }).unconfined).toBe(true);
+    expect(draftOfRunner({ ...neutralConfig().runner, unconfined: undefined }).unconfined).toBe(false);
+    expect(runnerOfWeb({ ...base(), unconfined: true }, neutralConfig().runner).unconfined).toBe(false);
+    expect(runnerOfWeb(base(), { ...neutralConfig().runner, unconfined: true }).unconfined).toBe(true);
   });
 
   it('carries the dependency link setting both ways, and a config stored without it shows as on', () => {

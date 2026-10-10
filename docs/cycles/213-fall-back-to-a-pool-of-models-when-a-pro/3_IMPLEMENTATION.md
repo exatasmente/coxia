@@ -299,3 +299,14 @@ Segunda corrida da suíte inteira, depois do `fix:`: 433 arquivos, 7269 testes, 
 | 15 e 16 | typecheck, vitest da **suíte inteira** (430 arquivos, 7171 e 7184 testes; no 15 uma primeira corrida com 5 testes que estouraram o tempo sob carga alta da máquina e passaram com `--testTimeout=20000`), theme-audit, i18n:lint, public-audit |
 | 17 a 20 | typecheck, vitest só nos arquivos que o commit toca ou acrescenta (23, 60, 12 e 17 arquivos), theme-audit, i18n:lint, public-audit (pedido do coordenador, para poupar a máquina) |
 | depois do 20 | suíte inteira uma vez (1 falha em `runner-config`, corrigida no `fix:`), e de novo (verde) |
+
+## Renumeração para o esquema 26
+
+A `release/0.9.0` (0.9.0-beta.13) trouxe a PR #230, que tomou o **esquema 25** para si: o passo `v24ToV25` dela escreve `runner.unconfined = false` (a cerca das ferramentas de arquivo dos agentes das execuções), e a beta já foi cortada com ele. O conjunto de modelos desta branch também estava no 25, e dois passos não podem dividir um número.
+
+- **O que ficou.** O `v24ToV25` da release está exatamente como ela o escreveu. O passo do conjunto de modelos virou `v25ToV26` (o último de `STEPS`, chave 25) e só sobe a versão para 26 e deixa a mesma nota ("model pools were added …"). `CONFIG_SCHEMA_VERSION` = 26.
+- **O que o passo faz e não faz.** Nada nele sobe permissão: `runner.unconfined` não é tocado (um workspace em 24 recebe `false` do passo da release, e o `v25ToV26` o deixa como está). O campo `runner.flex` e os demais campos novos seguem opcionais; ausente lê o padrão.
+- **Mexidas.** `types.ts` (versão e cabeçalho), `schema.ts` (cabeçalho), `migrations.ts` (passo, linhas do histórico no topo), `docs/configuration.md` (tabela PT e EN com `schemaVersion: 26`, histórico PT e EN com a v25 da release e a v26 desta branch, e a linha de `runner` com `unconfined`), `CHANGELOG.md` (a linha de #213 diz "schema 26" e continua em `[Unreleased]`), `defaults.ts` (o runner neutro tem `flex` e `unconfined`).
+- **Testes.** `config-migrations` traz o bloco "schema 24 to 25" da release intacto e o bloco do conjunto de modelos como "schema 25 to 26" (arquivo de partida em 25, `schemaVersion = 26` nos casos de reparo, "26 is current and 27 is refused"); `runner-config` e `team-runner-edit` esperam `flex` e `unconfined` juntos. Os caminhos de reparo (`POOL_KEYS`, `poolKeyAt`) não citam número de versão e não mudaram.
+- **Texto histórico.** A spec e o plano continuam como foram escritos, cada um com uma nota no topo que remete a esta seção. Os textos anteriores deste arquivo que dizem "24 → 25" ou "v24ToV25" para o conjunto de modelos valem como "25 → 26" e "v25ToV26".
+

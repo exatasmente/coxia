@@ -3,7 +3,7 @@ import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
 import { ACTIVITIES, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 25). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 26). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -579,6 +579,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         evidence: enumOf('Where a stage\'s evidence is kept: app (only with the run, in the workspace\'s data, never in a commit; the default) or cycle (also copied into the cycle folder and committed with the stage). Only the computer changes it. Optional: absent reads as app.', EVIDENCE_PLACEMENTS),
         procedures: boolean('Agents keep what they learned as procedures in the workspace and read them the next time. Only the computer changes it. Off: no tool and no prompt section; the Procedures view still lists, edits and deletes. Optional: absent reads as off.'),
         flex: boolean('Calls nobody waits for (stages, questions between agents) ask for the cheaper flex tier where the provider has it and the model is marked for it. Ceremonies and mentions never do. Only the computer changes it. Optional: absent reads as on.'),
+        unconfined: boolean('The file tools of a run\'s agents read, and write when the agent writes, anywhere on the machine instead of only in the run\'s worktree; .git, hook folders and secret files stay refused, and the shell\'s sandbox is not affected. Only the computer changes it. Optional: absent reads as off.'),
         commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         prTitle: string('The title of the pull request a run opens; {title} (the agent\'s title, or the issue\'s) and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         linkDependencies: boolean('A run\'s worktree gets a link to the dependency folders (node_modules, .venv) of the repository\'s clone, so the commands the app runs there find their tools. Optional: absent reads as true.'),

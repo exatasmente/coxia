@@ -1,5 +1,7 @@
 # Plano: conjunto de modelos por papel, com troca na mesma sessão
 
+> **Nota (renumeração):** ao trazer a `release/0.9.0` (0.9.0-beta.13), o esquema 25 já era de outro trabalho (`runner.unconfined`, #230). Onde este texto diz `v24ToV25` ou "esquema 25" para o conjunto de modelos, leia `v25ToV26` e "esquema 26"; a seção "Renumeração para o esquema 26" de `3_IMPLEMENTATION.md` explica. O texto abaixo fica como foi escrito.
+
 Tudo abaixo foi lido no código da `release/0.9.0` (0.9.0-beta.12). O que o plano supõe e não conferiu está em **Riscos**. Nada foi executado nesta etapa.
 
 ## O que será construído

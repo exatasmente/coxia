@@ -383,3 +383,54 @@ describe('through the loop of the open engine', () => {
     expect(tools).not.toContain('Edit');
   });
 });
+
+describe('a workspace that lifted the fence of its runs (runner.unconfined)', () => {
+  const anywhere = (input: unknown, opts = {}) => code(input, { anywhere: true, ...opts });
+
+  it('lets a read and a write reach any folder, by absolute path, by .. or through a link that leaves the worktree', () => {
+    expect(code(join(outside, 'target.txt'))).toBe('outside');
+    expect(anywhere(join(outside, 'target.txt'))).toBe('ok');
+    expect(anywhere(join(outside, 'new/deep/file.txt'))).toBe('ok');
+    expect(anywhere('../elsewhere/target.txt')).toBe('ok');
+    expect(anywhere('file-link')).toBe('ok');
+    expect(anywhere('dir-link/x.txt')).toBe('ok');
+    expect(anywhere(join(outside, 'target.txt'), { read: true })).toBe('ok');
+  });
+
+  it('still refuses .git, the hook folders, git\'s own files, a secret and a dangling link, outside the worktree as inside', () => {
+    expect(anywhere(join(outside, 'repo/.git/config'))).toBe('git');
+    expect(anywhere(join(outside, 'repo/.git/config'), { read: true })).toBe('git');
+    expect(anywhere(join(outside, 'repo/.husky/pre-commit'))).toBe('hooks');
+    expect(anywhere(join(outside, 'repo/.gitattributes'))).toBe('git');
+    expect(anywhere(join(outside, '.env'))).toBe('secret');
+    expect(anywhere('.git/hooks/pre-commit')).toBe('git');
+    expect(anywhere('dangling')).toBe('dangling');
+  });
+
+  it('keeps the fence of a narrow write: a single-file output stays the only thing it may write', () => {
+    expect(anywhere(join(outside, 'x.txt'), { writeAllow: ['AGENTS.md'] })).toBe('reserved');
+  });
+
+  it('the hooks of a reader and of a writer let a path elsewhere through, and the secret filter still runs in front', async () => {
+    const reader = policyFromHooks(readConfinedHooks({ root, roots: [], anywhere: true }), 's1');
+    expect(await reader.pre('Read', { file_path: join(outside, 'target.txt') }, root)).toBeNull();
+    expect(await reader.pre('Read', { file_path: '.git/config' }, root)).toMatch(/\.git/);
+    expect(await reader.pre('Read', { file_path: join(outside, '.env') }, root)).toMatch(/segredo|secret/i);
+    const writer = policyFromHooks(confinedHooks({ root, commands: [], anywhere: true }), 's1');
+    expect(await writer.pre('Write', { file_path: join(outside, 'made.txt'), content: 'x' }, root)).toBeNull();
+    expect(await writer.pre('Write', { file_path: join(outside, 'repo/.git/hooks/post-checkout'), content: 'x' }, root)).toMatch(/\.git/);
+    // A narrow write folder (a documentation run) keeps its fence even with the switch on.
+    const narrow = policyFromHooks(confinedHooks({ root, writeRoot: join(root, 'src'), commands: [], anywhere: true }), 's1');
+    expect(await narrow.pre('Write', { file_path: join(outside, 'made.txt'), content: 'x' }, root)).toMatch(/fora da pasta|outside/i);
+  });
+
+  it('the open engine\'s Write writes outside the worktree only with the switch on', async () => {
+    const ctx = (writeAnywhere: boolean): ToolContext => ({ cwd: root, roots: [root], isSecret: (p) => secretPath(p, root), secretGlobs: SECRET_GLOBS, outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off', writeRoot: root, writeAnywhere });
+    const target = join(outside, 'open-engine.txt');
+    await expect(writeTool.run({ file_path: target, content: 'x' }, ctx(false))).rejects.toThrow(/outside|fora/i);
+    expect(existsSync(target)).toBe(false);
+    await writeTool.run({ file_path: target, content: 'hello\n' }, ctx(true));
+    expect(readFileSync(target, 'utf8')).toBe('hello\n');
+    await expect(writeTool.run({ file_path: join(outside, 'repo/.git/config'), content: 'x' }, ctx(true))).rejects.toThrow();
+  });
+});

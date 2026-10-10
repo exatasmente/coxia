@@ -112,6 +112,8 @@ export interface BridgeArgs {
   writeRoot?: string;
   writeReserved?: readonly string[];
   writeAllow?: readonly string[];
+  // The workspace lifted the fence of its runs: Write and Edit may land anywhere, `.git`, hooks and secrets still refused.
+  writeAnywhere?: boolean;
   signal?: AbortSignal;
   /** What the call is for: background (nobody waits) and the effort of each activity. */
   tuning?: Tuning;
@@ -156,6 +158,7 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
       writeRoot: a.writeRoot,
       writeReserved: a.writeReserved,
       writeAllow: a.writeAllow,
+      writeAnywhere: a.writeAnywhere,
       signal: a.signal,
       describeTool: a.describeTool,
       events: a.events,

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { migrateConfig } from '../src/shared/config/migrations';
 import { proceduresOn } from '../src/shared/procedures';
+import { unconfinedOf } from '../src/shared/unconfined';
 import { neutralConfig, neutralRunner, newProvider, withConfigDefaults } from '../src/shared/config/defaults';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
@@ -585,18 +586,51 @@ describe('migrateConfig', () => {
     });
   });
 
-  describe('schema 24 to 25: model pools', () => {
-    const v24 = (): Record<string, any> => {
+  describe('schema 24 to 25: the fence of the runs\' file tools', () => {
+    const v24 = (change: (runner: Record<string, any>) => void = () => undefined): Record<string, any> => {
       const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
       c.schemaVersion = 24;
+      delete c.runner.unconfined;
+      change(c.runner);
+      return c;
+    };
+
+    it('keeps the fence of a workspace that existed, bumps the version and yields a valid file', () => {
+      const r = migrateConfig(v24(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(24);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.runner.unconfined).toBe(false);
+      expect(unconfinedOf(r.config.runner)).toBe(false);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('never lifts the fence on its own, whatever the file says, and a second start changes nothing', () => {
+      const once = migrateConfig(v24((runner) => (runner.unconfined = true)), { legacyInstall: false });
+      expect(once.config.runner.unconfined).toBe(false);
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+    });
+
+    it('a new workspace is born with the fence, and a runner stored without the field reads as fenced', () => {
+      expect(neutralRunner().unconfined).toBe(false);
+      expect(unconfinedOf({})).toBe(false);
+      expect(unconfinedOf(null)).toBe(false);
+      expect(unconfinedOf({ unconfined: true })).toBe(true);
+    });
+  });
+
+  describe('schema 25 to 26: model pools', () => {
+    const v25 = (): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 25;
       c.llm.providers.push(newProvider({ id: 'spare', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://example.com/v1' }));
       c.agents.team.push({ id: 'writer', name: 'Writer', job: '', model: { role: null, provider: 'spare', model: 'model-a' }, stages: [], permission: 'read', tracker: 'none', shell: 'none', autonomous: false, turnsTo: null, instructions: '', system: false });
       return c;
     };
 
     it('only bumps the version, leaves a note and yields a valid file with no pool anywhere', () => {
-      const r = migrateConfig(v24(), { legacyInstall: false });
-      expect(r.fromVersion).toBe(24);
+      const r = migrateConfig(v25(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(25);
       expect(r.changed).toBe(true);
       expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.notes.join(' ')).toContain('model pools were added');
@@ -610,13 +644,13 @@ describe('migrateConfig', () => {
     });
 
     it('changes nothing else: the rest of the file is exactly as it was', () => {
-      const before = v24();
+      const before = v25();
       const r = migrateConfig(structuredClone(before), { legacyInstall: false });
-      expect({ ...r.config, schemaVersion: 24 }).toEqual(before);
+      expect({ ...r.config, schemaVersion: 25 }).toEqual(before);
     });
 
     it('keeps a pool a file already carries, and a second start changes nothing', () => {
-      const c = v24();
+      const c = v25();
       c.llm.roles.deep.fallbacks = [{ provider: 'spare', model: 'model-b', images: true }];
       c.llm.roles.deep.activities = { shell: [{ provider: 'spare', model: 'model-b' }] };
       const once = migrateConfig(c, { legacyInstall: false });
@@ -628,10 +662,10 @@ describe('migrateConfig', () => {
     });
 
     it('a bad pool entry is dropped alone: the role keeps its model, and so do the good entries', () => {
-      const c = v24();
+      const c = v25();
       c.llm.roles.deep = { provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'gone', model: 'model-b' }, { provider: 'spare', model: 'model-c' }], activities: { edit: [{ provider: 'spare', model: 'model-b' }, { provider: 'spare', model: 'model-b' }] } };
       c.agents.team[c.agents.team.length - 1].model.fallbacks = [{ provider: 'gone', model: 'model-b' }];
-      c.schemaVersion = 25;
+      c.schemaVersion = 26;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.changed).toBe(true);
       expect(r.config.llm.roles.deep).toEqual({ provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'spare', model: 'model-c' }], activities: { edit: [{ provider: 'spare', model: 'model-b' }] } });
@@ -640,11 +674,11 @@ describe('migrateConfig', () => {
     });
 
     it('a pool field of the wrong type is dropped, not the role around it', () => {
-      const c = v24();
+      const c = v25();
       c.llm.roles.turn.fallbacks = 'model-b';
       c.llm.roles.turn.images = 'yes';
       c.llm.scoreOverrides = { floors: { shell: 120 } };
-      c.schemaVersion = 25;
+      c.schemaVersion = 26;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.config.llm.roles.turn).toEqual(c.llm.roles.turn && { provider: c.llm.roles.turn.provider, model: c.llm.roles.turn.model });
       expect(r.config.llm.scoreOverrides).toBeUndefined();
@@ -652,7 +686,7 @@ describe('migrateConfig', () => {
     });
 
     it('reads a file without a pool mode as delegate and writes none into the agents and stages', () => {
-      const c = v24();
+      const c = v25();
       delete c.llm.poolMode;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.config.llm.poolMode ?? 'delegate').toBe('delegate');
@@ -662,13 +696,13 @@ describe('migrateConfig', () => {
     });
 
     it('keeps a mode a file carries, in the workspace, an agent, a stage and a flow', () => {
-      const c = v24();
+      const c = v25();
       c.devCycle.stages = [structuredClone(TEST_STAGES[0])];
       c.llm.poolMode = 'switch';
       c.agents.team[c.agents.team.length - 1].poolMode = 'fallback';
       c.devCycle.stages[0].poolMode = 'delegate';
       c.devCycle.flows = { release: [{ ...c.devCycle.stages[0], poolMode: 'switch' }] };
-      c.schemaVersion = 25;
+      c.schemaVersion = 26;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.changed).toBe(false);
       expect(r.config.llm.poolMode).toBe('switch');
@@ -678,14 +712,14 @@ describe('migrateConfig', () => {
     });
 
     it('drops an invalid mode alone: the workspace, the agent, the stage and the flow keep everything else', () => {
-      const c = v24();
+      const c = v25();
       c.devCycle.stages = [structuredClone(TEST_STAGES[0])];
       c.llm.poolMode = 'both';
       const writer = c.agents.team[c.agents.team.length - 1];
       writer.poolMode = 3;
       c.devCycle.stages[0].poolMode = 'sometimes';
       c.devCycle.flows = { release: [{ ...c.devCycle.stages[0], poolMode: 'x' }] };
-      c.schemaVersion = 25;
+      c.schemaVersion = 26;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.changed).toBe(true);
       expect(r.config.llm.poolMode ?? 'delegate').toBe('delegate');
@@ -701,7 +735,7 @@ describe('migrateConfig', () => {
     });
 
     it('switches nothing on for what the provider offers: no features, no offer, no effort, and a file without flex reads it as on', () => {
-      const c = v24();
+      const c = v25();
       delete c.runner.flex;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.notes.join(' ')).toContain('what a provider offers');
@@ -713,7 +747,7 @@ describe('migrateConfig', () => {
     });
 
     it('keeps what a file already carries of it, and a second start changes nothing', () => {
-      const c = v24();
+      const c = v25();
       c.llm.providers[c.llm.providers.length - 1].features = { serviceTier: true, catalogUrl: 'http://example.com/models/list' };
       c.llm.effort = { shell: 'low', write: 'default' };
       c.llm.roles.deep.offer = { flex: true, effort: true, deprecated: 1790000000, replacedBy: 'model-b' };
@@ -728,7 +762,7 @@ describe('migrateConfig', () => {
     });
 
     it('a bad field of it is dropped alone: the provider, the role and the workspace keep the rest', () => {
-      const c = v24();
+      const c = v25();
       const last = c.llm.providers.length - 1;
       c.llm.providers[last].features = { serviceTier: 'yes', failFast: true };
       c.llm.effort = { shell: 'max', edit: 'high' };
@@ -736,7 +770,7 @@ describe('migrateConfig', () => {
       c.llm.roles.turn.offer = { flex: true };
       c.agents.team[c.agents.team.length - 1].model.offer = { effort: 3 };
       c.runner.flex = 'on';
-      c.schemaVersion = 25;
+      c.schemaVersion = 26;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.config.llm.providers[last]).toMatchObject({ id: 'spare', baseUrl: 'http://example.com/v1', features: { failFast: true } });
       expect(r.config.llm.providers[last].features?.serviceTier).toBeUndefined();
@@ -750,19 +784,19 @@ describe('migrateConfig', () => {
     });
 
     it('a catalog address of another origin is dropped, not the provider', () => {
-      const c = v24();
+      const c = v25();
       const last = c.llm.providers.length - 1;
       c.llm.providers[last].features = { serviceTier: true, catalogUrl: 'https://elsewhere.example.net/models/list' };
-      c.schemaVersion = 25;
+      c.schemaVersion = 26;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.config.llm.providers[last].features).toEqual({ serviceTier: true });
       expect(r.config.llm.providers[last].baseUrl).toBe('http://example.com/v1');
       expect(validateConfig(r.config).ok).toBe(true);
     });
 
-    it('is the newest step: 25 is current and 26 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(25);
-      expect(() => migrateConfig({ schemaVersion: 26 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is the newest step: 26 is current and 27 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(26);
+      expect(() => migrateConfig({ schemaVersion: 27 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

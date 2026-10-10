@@ -43,6 +43,8 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v22 `runner.procedures`: the learned procedures of the agents, off for a workspace that existed and on for a new one. Nothing else moves.
 //   v23 `testEnvironment`: the workspace's test environment (variables and secret references delivered to the stages that allow it), empty by default. Nothing else moves.
 //   v24 `mcpState`: the opt-in of the local read-only state server a terminal session adds over stdio, off for every workspace. Nothing else moves.
+//   v25 `runner.unconfined`: the lifted fence of the file tools of a run's agents, off for every workspace that existed. Nothing else moves.
+//   v26 model pools, pool mode and what a provider offers: optional fields, absent = nothing is used, switched on or raised. Only the version moves.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -376,15 +378,21 @@ function v23ToV24(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 24, mcpState: old.mcpState ?? { enabled: false } };
 }
 
+// The runs gain a switch that lifts the fence of their file tools; a workspace that existed keeps the fence, as a new one does.
+function v24ToV25(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
+  if (!isObject(old.runner)) return { ...old, schemaVersion: 25 };
+  return { ...old, schemaVersion: 25, runner: { ...old.runner, unconfined: false } };
+}
+
 // A role and an agent's own model may now carry a pool (`fallbacks`, `activities`) and the workspace `llm.scoreOverrides`. A v24 file has none, and a model without a pool is
 // the only one its call uses: nothing is raised or switched on. The pool mode (`llm.poolMode`, `agents.team[].poolMode`, a stage's `poolMode`) is part of the same unreleased step: it
 // is no permission and a file without it reads as the default. The bump is what keeps an app that does not know the fields from reading a file that carries them as an llm block to repair.
-function v24ToV25(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+function v25ToV26(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   notes.push('model pools were added (fallbacks and activities per role and per agent; absent = no fallbacks) with the way they are used (poolMode; absent = delegate, which acts only on an activity list) and what a provider offers (features, offer, effort, flex; absent = nothing is sent)');
-  return { ...old, schemaVersion: 25 };
+  return { ...old, schemaVersion: 26 };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, resolve, sep } from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { UsageReport } from '../shared/runs/usage';
@@ -437,7 +437,8 @@ function sdkOptions(req: EngineRequest): Options {
   // A ceremony agent that may ask has the whole shell: the hook decides every command (allowed, a rule, or the person's answer).
   const asks = !confine && !!req.ask;
   const shellOff = asks ? false : confine ? !req.shell.rules.length : !((host && vcsReadPolicy().via === 'cli') || req.shell.rules.length);
-  const dirs = [...req.extraDirs, ...(read?.roots ?? [])];
+  // A workspace that lifted the fence of its runs opens the whole file system to the engine; the hooks still refuse `.git`, hooks and secrets.
+  const dirs = confine?.anywhere || read?.anywhere ? [sep] : [...req.extraDirs, ...(read?.roots ?? [])];
   return {
     cwd: req.cwd,
     // dontAsk denies every tool that allowedTools does not pre-approve.
@@ -611,6 +612,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     writeRoot: req.confine?.writeRoot ?? req.confine?.root,
     writeReserved: req.confine?.writeReserved,
     writeAllow: req.confine?.writeAllow,
+    writeAnywhere: req.confine?.anywhere && !req.confine.writeRoot,
     signal: req.abort?.signal,
     tuning: tuningOf(req),
     describeTool: source,

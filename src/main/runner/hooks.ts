@@ -31,6 +31,8 @@ export interface ConfineOptions {
   documents?: { folder: string; names: readonly string[] };
   /** Called for every refusal, before the agent is told: the runner posts it to the run's thread. */
   onDenied?: (denial: Denial) => void;
+  /** The workspace lifted the fence of its runs (`runner.unconfined`): read and write anywhere, `.git`, hooks and secrets still refused. A narrow `writeRoot` keeps its fence. */
+  anywhere?: boolean;
 }
 
 export interface ReadConfinementOptions {
@@ -39,6 +41,8 @@ export interface ReadConfinementOptions {
   roots?: string[];
   /** Called for every refusal, before the agent is told: the runner posts it to the run's thread. */
   onDenied?: (denial: Denial) => void;
+  /** The workspace lifted the fence of its runs (`runner.unconfined`): a read anywhere, `.git` and secrets still refused. */
+  anywhere?: boolean;
 }
 
 const escapeRe = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
@@ -70,6 +74,7 @@ export function confinedHooks(o: ConfineOptions): Hooks {
       isSecret: (p) => secretPath(p, o.root),
       ...(narrow ? { fence: o.root, reserved: o.writeReserved } : {}),
       writeAllow: o.writeAllow,
+      anywhere: o.anywhere && !o.writeRoot,
     });
     if (!check.ok) return say(input.tool_name, target, check.code);
     // A document of the cycle written by the agent itself lands where its working directory is (the worktree's root) and would go into the pull request.
@@ -94,7 +99,7 @@ export function confinedHooks(o: ConfineOptions): Hooks {
   return {
     PreToolUse: [
       { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [writeGuard] },
-      { matcher: 'Read|Grep|Glob', hooks: [noSecrets, readGuardOf({ root: o.root, onDenied: o.onDenied })] },
+      { matcher: 'Read|Grep|Glob', hooks: [noSecrets, readGuardOf({ root: o.root, onDenied: o.onDenied, anywhere: o.anywhere })] },
       { matcher: 'Bash', hooks: [bashGuard] }, // i18n-ignore: the tool's name
       { matcher: 'WebFetch|WebSearch', hooks: [networkGuard] },
     ],
@@ -106,7 +111,7 @@ export function confinedHooks(o: ConfineOptions): Hooks {
  * The guard over `Read`, `Grep` and `Glob`: the one path check, over the worktree and the extra roots a reading agent was given.
  * Reading is confined too, because the agent's own folder is all it needs and a path elsewhere is somebody else's file.
  */
-function readGuardOf(o: Pick<ReadConfinementOptions, 'root' | 'roots' | 'onDenied'>): HookCallback {
+function readGuardOf(o: Pick<ReadConfinementOptions, 'root' | 'roots' | 'onDenied' | 'anywhere'>): HookCallback {
   const say = (tool: string, target: unknown, code: RunnerDenialCode) => {
     const what = typeof target === 'string' ? target.slice(0, 300) : '';
     o.onDenied?.({ tool, target: what, code });
@@ -121,7 +126,7 @@ function readGuardOf(o: Pick<ReadConfinementOptions, 'root' | 'roots' | 'onDenie
     else if (typeof args.path === 'string' && args.path.trim()) wanted.push(args.path);
     if (input.tool_name === 'Glob' && typeof args.pattern === 'string' && /^[/~]|(^|\/)\.\.(\/|$)/.test(args.pattern)) wanted.push(globBase(args.pattern));
     for (const p of wanted) {
-      const check = checkPath(o.root, p, { read: true, roots: o.roots });
+      const check = checkPath(o.root, p, { read: true, roots: o.roots, anywhere: o.anywhere });
       if (!check.ok) return say(input.tool_name, p, check.code);
     }
     return {};

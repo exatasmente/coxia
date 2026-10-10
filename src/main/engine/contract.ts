@@ -154,6 +154,8 @@ export interface Confinement {
   writeReserved?: readonly string[];
   /** Exact relative file paths the agent may write, when a task has a single-file output. */
   writeAllow?: readonly string[];
+  /** The workspace lifted the fence of its runs (`runner.unconfined`): the file tools read and write anywhere; a narrow `writeRoot` keeps its fence. */
+  anywhere?: boolean;
   /** The hooks that enforce it (runner/hooks.ts). Both engines run these same callbacks, so a refusal is the same on either. */
   hooks: NonNullable<Options['hooks']>;
 }
@@ -167,6 +169,8 @@ export interface ReadConfinement {
   root: string;
   /** Absolute folders the config lists as documentation outside the worktree, which the reader may still reach. */
   roots: string[];
+  /** The workspace lifted the fence of its runs (`runner.unconfined`): the file tools read anywhere. */
+  anywhere?: boolean;
   /** The hooks that enforce it (runner/hooks.ts, `readConfinedHooks`): the read policy plus the path guard, never one instead of the other. */
   hooks: NonNullable<Options['hooks']>;
 }

@@ -1,3 +1,4 @@
+import { unconfinedOf } from '../../shared/unconfined';
 import { offersViewImage } from '../sandbox/tool';
 import { existsSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
@@ -666,13 +667,14 @@ async function openStageScreen(d: ExecutorDeps, run: Run, stage: FlowStage, agen
 }
 
 /**
- * The confinement of a reading agent of a run: the run's worktree and the documentation folders the config lists outside it. `undefined` when there is no
- * worktree to be confined to (a call outside a run, or a stage whose worktree is gone): inventing a root would close the read over a folder that is not the run's.
+ * The confinement of a reading agent of a run: the run's worktree and the documentation folders the config lists outside it, or the whole machine when the workspace
+ * lifted the fence (`anywhere`). `undefined` when there is no worktree to be confined to (a call outside a run, or a stage whose worktree is gone): inventing a root
+ * would close the read over a folder that is not the run's.
  */
-export function readConfinement(root: string, role: ModelRole, onDenied?: (denial: Denial) => void): ReadConfinement | undefined {
+export function readConfinement(root: string, role: ModelRole, onDenied?: (denial: Denial) => void, anywhere = false): ReadConfinement | undefined {
   if (!existsSync(root)) return undefined;
   const roots = extraReadRoots(root, role);
-  return { root, roots, hooks: readConfinedHooks({ root, roots, onDenied }) };
+  return { root, roots, anywhere, hooks: readConfinedHooks({ root, roots, onDenied, anywhere }) };
 }
 
 /** Whether this kind of stage checks its scenarios against the commands of its stage (only QA does). */
@@ -981,6 +983,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
           now: () => new Date().toISOString(),
         })
       : undefined;
+  const anywhere = unconfinedOf(config.runner);
   // A documentation run may change the universal instructions file and nothing else.
   const writeRoot = writes && run.docs ? wt : undefined;
   const writeAllow = writeRoot ? [AGENTS_FILE] : undefined;
@@ -994,8 +997,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     cwd: wt,
     // The repository's root AGENTS.md, delivered as plain Markdown.
     docs: await runDocsAsk({ wt, base: run.base, cycleFolder: run.cycleFolder, stage: { id: stage.id, kind: stage.kind }, texts: input.files.map((f) => f.text) }),
-    confine: writes ? { root: wt, ...(writeRoot ? { writeRoot, writeAllow } : {}), hooks: confinedHooks({ root: wt, writeRoot, writeAllow, commands, documents, onDenied: denied }) } : undefined,
-    readRoot: writes ? undefined : readConfinement(wt, agent.model.role ?? 'deep', denied),
+    confine: writes ? { root: wt, ...(writeRoot ? { writeRoot, writeAllow } : {}), anywhere, hooks: confinedHooks({ root: wt, writeRoot, writeAllow, commands, documents, onDenied: denied, anywhere }) } : undefined,
+    readRoot: writes ? undefined : readConfinement(wt, agent.model.role ?? 'deep', denied, anywhere),
     exec: session ?? undefined,
     // The app's browser and the confirmation tool, when the agent has them: a screen that closes under the stage leaves the browser's calls answering that it is gone.
     screen: screen?.toolset,

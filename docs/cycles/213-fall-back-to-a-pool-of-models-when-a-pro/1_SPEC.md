@@ -1,5 +1,7 @@
 # Um conjunto de modelos por papel: o provedor ocupado não derruba a etapa
 
+> **Nota (renumeração):** ao trazer a `release/0.9.0` (0.9.0-beta.13), o esquema 25 já era de outro trabalho (`runner.unconfined`, #230). Onde este texto diz `v24ToV25` ou "esquema 25" para o conjunto de modelos, leia `v25ToV26` e "esquema 26"; a seção "Renumeração para o esquema 26" de `3_IMPLEMENTATION.md` explica. O texto abaixo fica como foi escrito.
+
 ## O que se pede
 
 Hoje uma etapa falha quando o provedor recusa por limite de taxa ou por sobrecarga
