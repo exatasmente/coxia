@@ -41,7 +41,7 @@ beforeEach(() => {
   scripts = [];
   pushed = [];
   activityLog.clear();
-  setThoughtsGate(null);
+  setThoughtsGate(() => true);
   activityLog.setSink((e) => pushed.push(e));
   vi.spyOn(console, 'error').mockImplementation(() => undefined);
 });

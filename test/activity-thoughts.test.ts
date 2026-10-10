@@ -52,7 +52,7 @@ beforeEach(() => {
   calls = 0;
   pushed = [];
   log.activityLog.clear();
-  log.setThoughtsGate(null);
+  log.setThoughtsGate(() => true);
   log.activityLog.setSink((e) => pushed.push(e));
 });
 

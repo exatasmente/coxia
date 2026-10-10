@@ -264,7 +264,7 @@ describe('the nodes of a tree', () => {
 
 describe('the thought and the answer of a node', () => {
   it('makes one masked line, cut at its cap with an ellipsis, and the sink receives what get returns', () => {
-    const log = createActivityLog();
+    const log = createActivityLog({ thoughts: () => true });
     const pushed: ActivityEntry[] = [];
     log.setSink((e) => pushed.push(e));
     const run = log.begin('dev', { isSecretPath: (p) => p.endsWith('.env') });
@@ -283,7 +283,7 @@ describe('the thought and the answer of a node', () => {
   });
 
   it('masks before it cuts, and bounds what it scans: a credential at the cut is never half shown, a huge text still keeps its masked start', () => {
-    const log = createActivityLog();
+    const log = createActivityLog({ thoughts: () => true });
     const run = log.begin('dev');
     const secret = 'ghp_0123456789abcdefghij';
     run.thought(`${'x'.repeat(ACTIVITY_THOUGHT_MAX - 10)} ${secret} tail`);
@@ -317,9 +317,25 @@ describe('the thought and the answer of a node', () => {
     const quiet = other.begin('dev');
     quiet.thought('nothing');
     expect(other.get(quiet.id)).toEqual([]);
-    other.setThoughtsGate(null);
+    other.setThoughtsGate(() => true);
     quiet.thought('now');
     expect(other.get(quiet.id)).toHaveLength(1);
+  });
+
+  it('makes no thought while no switch was ever given, even with a sink, and closes again when the switch is taken away', () => {
+    const log = createActivityLog();
+    const pushed: ActivityEntry[] = [];
+    log.setSink((e) => pushed.push(e));
+    const run = log.begin('dev');
+    run.thought('reasoning that must not show');
+    run.tool('Read routes.ts');
+    expect(log.get(run.id).map((e) => e.kind)).toEqual(['tool']);
+    expect(pushed.map((e) => e.kind)).toEqual(['tool']);
+    log.setThoughtsGate(() => true);
+    run.thought('now it shows');
+    log.setThoughtsGate(null);
+    run.thought('closed again');
+    expect(log.get(run.id).filter((e) => e.kind === 'thought').map((e) => e.label)).toEqual(['now it shows']);
   });
 
   it('does not let the answer be switched off, caps it, and keeps both out of the narration rule', () => {
@@ -342,7 +358,7 @@ describe('the thought and the answer of a node', () => {
   });
 
   it('comes before the narration and the tools of its turn, and leaves the narration rule as it is', () => {
-    const log = createActivityLog();
+    const log = createActivityLog({ thoughts: () => true });
     const run = log.begin('dev');
     run.text('Reading the routes.');
     run.thought('plan');

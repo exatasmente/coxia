@@ -65,7 +65,7 @@ export interface ActivityLogOptions {
   /** Nodes kept in all, over every tree; only finished trees are dropped for it. Default four times `maxRuns`. */
   maxNodes?: number;
   now?: () => number;
-  /** Whether a thought is made: read each time one arrives, so the switch takes effect from the next one. */
+  /** Whether a thought is made: read each time one arrives, so the switch takes effect from the next one. Without it no thought is made. */
   thoughts?: () => boolean;
 }
 
@@ -106,7 +106,8 @@ export function createActivityLog(options: ActivityLogOptions = {}) {
   const maxRuns = options.maxRuns ?? 60;
   const maxNodes = options.maxNodes ?? maxRuns * 4;
   const now = options.now ?? Date.now;
-  let thoughtsOn: () => boolean = options.thoughts ?? (() => true);
+  // Closed until the workspace switch is read: a thought made before that would show reasoning the person turned off.
+  let thoughtsOn: () => boolean = options.thoughts ?? (() => false);
   const runs = new Map<string, Run>();
   const handles = new Map<string, RunActivity>();
   const latestCall = new Map<string, string>();
@@ -284,9 +285,9 @@ export function createActivityLog(options: ActivityLogOptions = {}) {
     setSink(fn: ((entry: ActivityEntry) => void) | null): void {
       sink = fn;
     },
-    /** Points the switch of the reasoning at the workspace; null makes every thought welcome again. */
+    /** Points the switch of the reasoning at the workspace; null closes it again. */
     setThoughtsGate(fn: (() => boolean) | null): void {
-      thoughtsOn = fn ?? (() => true);
+      thoughtsOn = fn ?? (() => false);
     },
     startCall(jobId: string, callId: string): void {
       latestCall.set(jobId, callId);
