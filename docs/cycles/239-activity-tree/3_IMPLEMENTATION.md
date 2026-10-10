@@ -126,3 +126,41 @@ Deviations from the plan:
 - No component is rendered by a test (the runner is a node environment); the markup was checked by `tsc`, the catalog and theme gates and the production build, not seen on screen.
 - `test/gitlab-catalogs-unchanged.test.ts` pins every key of the snapshot of `main`; `activity.generic` is one of them, so it is listed in that test's `REMOVED` table with its reason
   (the way that test takes a key out), not left in the catalogs unused.
+
+## Commit 7: documentation
+
+`docs/runner.md` gains "A atividade ao vivo" and "The live activity" (the tree, the three paths, the thought, the switch, what the tree is not, the known limit) and one item each in
+"Não verificado" and "Not verified"; `docs/configuration.md` was done with the switch in commit 1. `CHANGELOG.md` has the entries under `## [Unreleased]`: the tree, the thought, the
+switch (on for every workspace, stated), and the removal of the generic card. The plan put the changelog line in this commit, not in the one that changes behaviour; the commits 1 to 6
+leave `[Unreleased]` empty on purpose.
+
+## Delivery summary
+
+What the branch does, in the order of the commits (`git log` of the branch, after the plan and the spec):
+
+1. `runner.showReasoning` in the configuration (schema 28, `v27ToV28`, defaults, schema, editable from a paired browser, the toggle and its texts).
+2. The activity log with nodes: a ring per node, eviction by tree, `get` by subtree, the new kinds `thought` and `answer`, `withActivityParent`, `currentActivity`, the thoughts gate;
+   the renderer store's per-run cap and `backfillLive` that keeps new children.
+3. Sub-agents as nodes in both engines (`onSubAgent` and its handle, `parent_tool_use_id` routing, `queued` for the ordered kinds).
+4. Called agents under their caller on paths A, B and C, with the answer excerpt and the refusal line.
+5. The thought of each turn as one line in both engines, masked and cut, behind the switch.
+6. The tree on the dock, the run screen and the inline panels, with the badge of top entries and the generic card removed.
+7. This documentation.
+
+Gates at the head of the branch: `npx tsc --noEmit`, `npx vitest run` (461 files, 7,755 tests), `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`
+and `npx electron-vite build`, all clean when commit 6 was made. No prompt text changed: the goldens (`test/golden/*`, `prompts-screen`, `cycle-prompts`) ran unchanged.
+
+## Not verified
+
+- **Nothing was seen on screen.** The tree, the dock, the run screen and the thought rows were built and typed, and every decision above the markup is tested as a plain function, but
+  no component is rendered by a test (the runner is a node environment) and the app was not run. The CSS (indent, wrapping, the 44px targets, the dark panels) is unseen.
+- **No real model.** Both engines were driven by a fake model server and a scripted `query`. Whether the Claude models used return the thinking text by default (the manual check of
+  the plan's Q3, outside the suite) was not made; if it comes empty, the Claude engine shows fewer thoughts than the open one, and requesting the summarized display is a decision of
+  its own.
+- **The Claude SDK's sub-agent messages.** The live order, the `parent_tool_use_id` of parallel sub-agents, the `Agent`/`Task` naming and the closing `tool_result` were read in the
+  SDK's declarations; the tests pin the loop's reading of scripted messages, not the SDK's behaviour. A `CallAgent` made from inside an SDK sub-agent hangs under the main agent (the
+  in-process tool server is not told which sub-agent called).
+- **The paired phone** was not driven: the stream, the masking before it and the backfill are tested; the policy of the channel and the switch's editability are pinned by
+  `test/activity-policy.test.ts` and `test/config-web-scope.test.ts`, not by a browser.
+- **The schema number.** 28 was free when commit 1 was made; the plan names an open pull request that also takes a step in the chain. Look again at the rebase.
+- **Memory and rendering cost** of a large fan-out (a live tree is never trimmed; every line rebuilds its bucket's tree) was not measured.
