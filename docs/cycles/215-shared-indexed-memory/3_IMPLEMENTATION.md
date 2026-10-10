@@ -65,3 +65,26 @@ Deviations and additions:
 - **`confinedHooks` callers are untouched**: the default `keep` lives in `hooks.ts`, so the stage (`executor.ts`) and the called agent (`conversation.ts`) get it without a change. A
   mention in a run's thread and the question chain use `readConfinedHooks`, which writes nothing and is not changed.
 - The test of the sub-agent runs a scripted `edit` sub-agent that tries `Write` into the folder (`test/memory-guard.test.ts`); the sub-agent runs on the principal's parameters, so it inherits the guard.
+
+## Commit 4: the person and the paired phone view, edit and remove the memory
+
+`src/main/memory/` gains `channels.ts`, `module.ts`, `audit.ts` and `instance.ts` (the one store of the running workspace and its change listeners); `src/shared/memoryView.ts`
+(the shapes the view reads); `webPolicy.ts` (`MEMORY_CHANNELS`, `MEMORY_UNLISTED`); `AuditKind` `'memory'`; `src/renderer/src/screens/memory/` (the screen, the note panel, the model, the api
+and the stylesheet); `ui-memory.*.json`; the nav in `App.tsx`, `Today.tsx`, `BottomNav.tsx`, `dashboard.ts`; `deleteAgentThread` and its three callers in `agentAssist.ts`; the comment and the
+audit of `runs:activitySave` and `runs:memory` in `runner/module.ts`; the first `CHANGELOG.md` line.
+
+Deviations and additions:
+
+- **The channels take the note `id`, not a file name.** The plan says `file` against `NOTE_FILE`; the id is the same string without `.md`, the screen has it, and the check is
+  `NOTE_ID`. Nothing else about the argument checks changed: the conversation against the thread id, the agent against the agent id, before any path is built.
+- **The store announces its changes** (`MemoryStoreDeps.onChange`, also when a folder is first made), and `instance.ts` turns that into the `memory-changed` event, so a note written by an
+  agent in commit 6 reaches an open screen without a new piece. Not in the plan's file list; the plan's `MEMORY_EVENT` is in `src/shared/memoryView.ts`.
+- **`memory:remove-folder` takes an optional agent**: with it, that agent's folder; without it, the whole conversation's (the plan said both and gave one channel).
+- **The audit of `runs:memory` and `runs:activitySave`** records `memory:cycle-memory-edit` and `memory:activity-correct` with the door and the run id or the activity reference, only when the
+  correction took effect, and never the text. The plan only named the activity correction; the cycle memory edit is the other open channel of divergence 4 and is audited the same way.
+- **The screen is the same on the computer and on the phone**, with no `isWeb()` branch: the plan's decision (the phone has the desktop's capabilities). The desktop nav button sits in the
+  header beside Procedures, and the phone's More sheet has a row.
+- **`CHANGELOG.md` gets its first lines here** (an Added entry for the screen and the switch, a Changed entry for the folder guard of commit 3), as the rules ask for the line in the commit that
+  makes the change visible; commit 10 completes it.
+- Tests: `memory-channels`, `memory-policy`, `memory-ui`, `memory-retention` (new), `runs-policy`, `forum-store`, `agent-assist-draft` and `memory-store` (extended). The audit kind's two
+  catalog keys are covered by `memory-ui`; there is no test that renders the screen (the project has no React renderer test, and the view's logic is in `memoryModel.ts`).

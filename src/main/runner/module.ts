@@ -12,6 +12,8 @@ import type { Module } from '../module';
 import { failureText, noteRetroIssue } from '../retroIssues';
 import { callStops } from '../mentions/stop';
 import { callOrigin } from '../rpc';
+import { recordWrite } from '../auditoria';
+import { memoryAuditEntry, type MemoryAuditInput } from '../memory/audit';
 import { attachmentStore } from '../attachments';
 import { keepConversationRecording } from '../mentions/recording';
 import { runStore } from '../runs';
@@ -116,6 +118,15 @@ const id = (v: unknown): string => {
   if (typeof v !== 'string') throw new RunError('unknown-run', { id: '' });
   return v;
 };
+
+/** The origin of a correction of the activities or of a run's memory, in the audit log: the window or a paired browser. Never the text; a failing log is no failure of the move. */
+function auditMove(input: Pick<MemoryAuditInput, 'op' | 'ref'>): void {
+  try {
+    recordWrite(memoryAuditEntry({ ...input, via: callOrigin() === 'web' ? 'paired' : 'window' }));
+  } catch {
+    // The correction already happened.
+  }
+}
 
 /**
  * The proposal a retro raised to open an issue was approved and the host answered: the issue exists, so the task starts on it. A host that did not answer
@@ -315,8 +326,13 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('runs:get', (run: unknown) => (typeof run === 'string' ? r.get(run) : null));
   // The record of the activities, for the runs screen: read only, no model call anywhere in the path, open to a paired browser like the list beside it.
   ctx.handle('runs:activities', () => r.activities());
-  // The person's correction of one activity's front, recorded as theirs and written with the app's own masking and cap; like `runs:memory`, only the window's.
-  ctx.handle('runs:activitySave', (ref: unknown, body: unknown) => r.correctActivity(text(ref), text(body)));
+  // The person's correction of one activity's front, recorded as theirs and written with the app's own masking and cap. Like `runs:memory` it is open to a paired browser on
+  // purpose (the phone has the desktop's capabilities over the memory, gate 1 of #215); the audit records which door each correction came through.
+  ctx.handle('runs:activitySave', (ref: unknown, body: unknown) => {
+    const done = r.correctActivity(text(ref), text(body));
+    if (done) auditMove({ op: 'activity-correct', ref: text(ref) });
+    return done;
+  });
   // The open issues of the project that carry the trigger label and have no assignee: the manual-start list of the runs screen. Read only, open to a
   // paired browser like the list beside it; nothing here starts a run (the person's start goes through runs:start).
   ctx.handle('runs:unassigned', async () => {
@@ -332,7 +348,11 @@ export const runsModule: Module = (ctx) => {
     const found = typeof run === 'string' ? r.get(run) : null;
     return found ? readArtifact(found.worktree, found.cycleFolder, text(name)) : null;
   });
-  ctx.handle('runs:memory', (run: unknown, body: unknown) => r.editMemory(id(run), text(body)));
+  ctx.handle('runs:memory', async (run: unknown, body: unknown) => {
+    const done = await r.editMemory(id(run), text(body));
+    if (done) auditMove({ op: 'cycle-memory-edit', ref: id(run) });
+    return done;
+  });
   // The evidence a run kept: read only, from the run's own store, and open to a paired browser like the thread beside it. The bytes come back as an ArrayBuffer.
   ctx.handle('runs:evidenceList', (run: unknown) => r.evidence(id(run)));
   ctx.handle('runs:evidence', (run: unknown, evidence: unknown) => r.evidenceBytes(id(run), text(evidence))?.bytes ?? null);

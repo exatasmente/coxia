@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A Memory screen and the switch of the shared memory of the agents (first part).** The new Memory screen (a button in the header, under More on the phone) lists the notes kept for each conversation, grouped by the agent that wrote them (decisions, findings and notes), opens each one with who wrote it and when, and lets you edit it, mark it reviewed or remove it, and remove an agent's folder or a whole conversation's, from the computer and from a paired phone alike. An edit makes the note yours: the agent that wrote it can no longer replace or remove it. Settings › Runner has the new switch (off for a workspace that existed, on for a new one, and changeable from the phone), Settings › Documentation a field for the roadmap file the agents will read the priorities from, and the audit log records which door each change came through. The agents' side (tools, lists in the prompts, notices to a running stage) follows in this release.
+
+### Changed
+
+- **The file tools of a run's agents can no longer write the app's own `memory/` folder**, even with the fence of the runs lifted (`runner.unconfined`): the notes, the activities record and the procedures are written only through the app. Reading it is unchanged.
+
 ## [0.9.0-beta.14] - 2026-10-09
 
 ### Added

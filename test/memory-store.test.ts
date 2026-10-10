@@ -611,3 +611,38 @@ describe('what the memory does not do', () => {
     expect(errors).toEqual([]);
   });
 });
+
+describe('telling a screen that the memory changed', () => {
+  it('announces a change that took effect, once, and nothing for one that was refused or only read', () => {
+    let told = 0;
+    const store = make({ onChange: () => void told++ });
+    store.list();
+    store.save(req({ title: 'dev@example.com' }));
+    expect(told).toBe(0);
+    const note = created(store);
+    expect(told).toBe(1);
+    store.read(dev, note.id, 'agent');
+    store.save(req({ id: note.id, revision: 9 }));
+    store.remove(qa, note.id);
+    expect(told).toBe(1);
+    store.save(req({ id: note.id, revision: 1, text: 'again' }));
+    store.edit({ scope: dev, id: note.id, text: 'by the person' });
+    store.review(dev, note.id);
+    store.removeNote(dev, note.id);
+    expect(told).toBe(5);
+    store.ensureFolder(qa);
+    expect(told).toBe(6);
+    store.ensureFolder(qa);
+    expect(told).toBe(6);
+    expect(store.removeFolder(qa)).toBe(true);
+    expect(store.removeFolder(qa)).toBe(false);
+    expect(store.removeConversation('general')).toBe(true);
+    expect(told).toBe(8);
+  });
+
+  it('is not failed by a listener that throws: the write took effect', () => {
+    const store = make({ onChange: () => { throw new Error('the window is gone'); } });
+    expect(store.save(req())).toMatchObject({ ok: true });
+    expect(store.list().notes).toHaveLength(1);
+  });
+});

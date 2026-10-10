@@ -29,6 +29,7 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   procedure: { key: 'ui.audit.kind.procedure' },
   'screen-handoff': { key: 'ui.audit.kind.screenHandoff' },
   'test-env': { key: 'ui.audit.kind.testEnv' },
+  memory: { key: 'ui.audit.kind.memory' },
 };
 
 function Row({ e }: { e: AuditEntry }) {

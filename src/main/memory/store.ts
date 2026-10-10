@@ -116,6 +116,8 @@ export interface MemoryStoreDeps {
   /** Where a folder that cannot be read is reported (the error log). It gets a sentence with no path in it, once. */
   onError?: (error: Error) => void;
   home?: string;
+  /** Told after every change that took effect (a note written, edited, reviewed or removed, a folder removed), so an open screen reads again. */
+  onChange?: () => void;
 }
 
 export interface MemoryStore {
@@ -600,17 +602,33 @@ export function createMemoryStore(workspaceDir: string, deps: MemoryStoreDeps = 
     return true;
   }
 
+  // The change is announced once the call is over, and only when it took effect; a listener that throws never turns a write into a failure.
+  const announce = <R,>(r: R, took: (r: R) => boolean): R => {
+    if (took(r)) {
+      try {
+        deps.onChange?.();
+      } catch {
+        // the write already happened
+      }
+    }
+    return r;
+  };
+  const okOf = (r: { ok: boolean }): boolean => r.ok;
+
   return {
     list,
     read,
-    ensureFolder,
-    save,
-    remove: (s, id) => drop(s, id, 'agent'),
-    edit,
-    review,
-    removeNote: (s, id) => drop(s, id, 'person'),
-    removeFolder,
-    removeConversation,
+    ensureFolder: (s) => {
+      const had = validScope(s) && existsSync(folderOf(s));
+      return announce(ensureFolder(s), (made) => made && !had);
+    },
+    save: (req) => announce(save(req), okOf),
+    remove: (s, id) => announce(drop(s, id, 'agent'), okOf),
+    edit: (req) => announce(edit(req), okOf),
+    review: (s, id) => announce(review(s, id), okOf),
+    removeNote: (s, id) => announce(drop(s, id, 'person'), okOf),
+    removeFolder: (s) => announce(removeFolder(s), Boolean),
+    removeConversation: (c) => announce(removeConversation(c), Boolean),
     locate,
   };
 }

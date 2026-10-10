@@ -85,12 +85,21 @@ const SCREEN_INPUT = /^screen:/;
 // leaves the machine). The agents' tools are in process and have no channel at all. test/procedures-policy.test.ts pins it.
 const PROCEDURES_WRITE = /^procedures:(?!(list|get|stats)$)/;
 
+// The shared memory (#215): the Memory view's six channels are open to a paired browser on purpose. The maintainer decided at gate 1 that the phone has the desktop's
+// capabilities over the memory, ahead of #218: it lists, reads, edits, reviews and removes notes, and turns the memory on and off (runner.sharedMemory is in WEB_EDITABLE).
+// Unlike the procedures, whose writes stay closed because their text enters every prompt, the notes are masked, size-checked, marked as the person's and audited with the
+// door they came through; nothing here leaves the machine, so none is behind the external-effects switch. They are named so a later change of the default does not close or
+// open them by accident, and a pattern denies any other `memory:` channel until somebody classifies it. test/memory-policy.test.ts pins both.
+export const MEMORY_CHANNELS = new Set(['memory:list', 'memory:read', 'memory:save', 'memory:review', 'memory:remove', 'memory:remove-folder']);
+const MEMORY_UNLISTED = /^memory:(?!(list|read|save|review|remove|remove-folder)$)/;
+
 // The local state server's doors: the opt-in writes the workspace config, the write offer writes a project folder's .mcp.json (a path of this
 // machine), and the view answers machine-local paths. Desktop-only in full; a paired browser never sees the panel.
 const MCP_STATE_ADMIN = /^mcpstate:/;
 
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MCP_STATE_ADMIN.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MEMORY_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel)) return 'deny';
+  if (MEMORY_CHANNELS.has(channel)) return 'allow';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

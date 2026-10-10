@@ -23,6 +23,7 @@ import { BoardScreen } from './screens/cycle/BoardScreen';
 import { ForumScreen } from './screens/cycle/ForumScreen';
 import { RunScreen } from './screens/cycle/RunScreen';
 import { RunsScreen } from './screens/cycle/RunsScreen';
+import { MemoryScreen } from './screens/memory/MemoryScreen';
 import { ProceduresScreen } from './screens/procedures/ProceduresScreen';
 import { PromptsScreen, usePromptsShortcut } from './screens/prompts/PromptsScreen';
 import { QaHandoff } from './screens/QaHandoff';
@@ -71,6 +72,7 @@ export type Screen =
   | { name: 'board' }
   | { name: 'forum'; thread?: string }
   | { name: 'procedures' }
+  | { name: 'memory' }
   | { name: 'prompts' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
@@ -215,6 +217,8 @@ export function App() {
       return <BoardScreen go={go} />;
     case 'procedures':
       return <ProceduresScreen go={go} />;
+    case 'memory':
+      return <MemoryScreen go={go} />;
     case 'prompts':
       return <PromptsScreen go={go} />;
     case 'run':

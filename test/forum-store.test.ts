@@ -6,6 +6,7 @@ import { ForumError, createForumStore, type ForumStore } from '../src/main/forum
 import { personPost } from '../src/main/forum';
 import { createAttachmentStore } from '../src/main/attachments';
 import { deleteAgentThread, ensureAgentThread } from '../src/main/forum-channels';
+import { createMemoryStore } from '../src/main/memory/store';
 import { MAX_TEXT, parseMentions, type ForumMessage } from '../src/shared/forum';
 
 let dir: string;
@@ -401,6 +402,21 @@ describe('deleting the direct conversation of an agent', () => {
     expect(deleteAgentThread(store, files, 'squad-a')).toBe(false);
     expect(store.list().map((t) => t.id).sort()).toEqual(['agent-odd', 'run-r-abc-1234', 'squad-a']);
     expect(files.get('agent-odd', kept.id)).not.toBeNull();
+  });
+
+  it('takes the memory folder of the conversation with it, before the thread, and never the memory of a conversation that is not an agent\'s', () => {
+    const files = attachments();
+    const memory = createMemoryStore(join(dir, '..', 'workspace'));
+    ensureAgentThread(store, { id: 'trial', name: 'Trial' }, 'en');
+    store.ensureThread({ id: 'agent-odd', kind: 'general', title: 'Odd' });
+    const note = (conversation: string) => memory.save({ scope: { conversation, agent: 'trial' }, kind: 'note', title: 'A note', text: 'Written by the agent.' }).ok;
+    expect(note('agent-trial') && note('agent-odd') && note('general')).toBe(true);
+    const order: string[] = [];
+    expect(deleteAgentThread(store, files, 'odd', undefined, memory)).toBe(false);
+    expect(memory.list().folders.map((f) => f.conversation)).toEqual(['agent-odd', 'agent-trial', 'general']);
+    expect(deleteAgentThread(store, files, 'trial', undefined, { removeConversation: (c) => (order.push(`${c}:${store.summary(c) ? 'thread-still-there' : 'thread-gone'}`), memory.removeConversation(c)) })).toBe(true);
+    expect(order).toEqual(['agent-trial:thread-still-there']);
+    expect(memory.list().folders.map((f) => f.conversation)).toEqual(['agent-odd', 'general']);
   });
 
   it('refuses an agent id that could become a path', () => {

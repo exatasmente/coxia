@@ -30,6 +30,7 @@ import { MaxTurnsError, ProviderBudgetError } from './engine/contract';
 import { redact } from './errorlog-core';
 import { forumStore } from './forum';
 import { deleteAgentThread, ensureAgentThread } from './forum-channels';
+import { memoryStore } from './memory/instance';
 import type { Module } from './module';
 import { screenSessions } from './runner/module';
 import { sandbox } from './sandbox/workspace';
@@ -188,7 +189,7 @@ export async function saveAssistDraft(raw: unknown): Promise<{ id: string }> {
         draft: true,
       });
     });
-    if (existing) deleteAgentThread(forum, attachmentStore(), id, endScreensOn);
+    if (existing) deleteAgentThread(forum, attachmentStore(), id, endScreensOn, memoryStore());
     ensureAgentThread(forum, { id, name }, config.language);
     return { id };
   } catch (e) {
@@ -205,7 +206,7 @@ export function concludeAssistDraft(raw: unknown): { id: string } {
     const config = getConfig();
     const draft = draftOf(config, stringOf(raw));
     const forum = forumStore();
-    deleteAgentThread(forum, attachmentStore(), draft.id, endScreensOn);
+    deleteAgentThread(forum, attachmentStore(), draft.id, endScreensOn, memoryStore());
     ensureAgentThread(forum, { id: draft.id, name: draft.name }, config.language);
     return { id: draft.id };
   } catch (e) {
@@ -218,7 +219,7 @@ export function discardAssistDraft(raw: unknown): { id: string } {
   try {
     const draft = draftOf(getConfig(), stringOf(raw));
     updateConfig((current) => removeAgent(current, draft.id));
-    deleteAgentThread(forumStore(), attachmentStore(), draft.id);
+    deleteAgentThread(forumStore(), attachmentStore(), draft.id, undefined, memoryStore());
     return { id: draft.id };
   } catch (e) {
     throw explain(e);
