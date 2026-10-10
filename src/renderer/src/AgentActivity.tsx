@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { latestStep, stepText } from './activity';
 import { ActivityTree, Chevron } from './ActivityTree';
-import { buildTree } from './activityTree';
+import { buildTree } from './activityTreeModel';
 import { useT } from './i18n';
 import { formatElapsed } from './jobs';
 import { useActivity } from './useActivity';

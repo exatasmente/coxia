@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActivityEntry, ActivityNode } from '../src/shared/activity';
 import { createActivityStore } from '../src/renderer/src/activity';
-import { buildTree, buildTreeOnce, createTreeView, defaultOpen, dockCounts, hasWork, newestLine, nodeTitle, stepText, topEntries, workingRoles } from '../src/renderer/src/activityTree';
+import { buildTree, buildTreeOnce, createTreeView, defaultOpen, dockCounts, hasWork, newestLine, nodeTitle, stepText, topEntries, workingRoles } from '../src/renderer/src/activityTreeModel';
 
 let seq = 0;
 let clock = 1000;

@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ActivityEntry } from '../../shared/activity';
 import { atBottom } from './activity';
-import { type TreeItem, type TreeNode, createTreeView, defaultOpen, nodeTitle, stepText } from './activityTree';
+import { type TreeItem, type TreeNode, createTreeView, defaultOpen, nodeTitle, stepText } from './activityTreeModel';
 import { useT } from './i18n';
 import { formatElapsed } from './jobs';
 import { agentName } from './screens/cycle/names';

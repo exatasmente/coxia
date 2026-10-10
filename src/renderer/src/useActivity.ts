@@ -2,7 +2,7 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { ACTIVITY_EVENT, ACTIVITY_GET, type ActivityEntry, EVENTS_RECONNECTED } from '../../shared/activity';
 import { api, moduleEvents } from './api';
 import { type ActivityStore, createActivityStore } from './activity';
-import { type TopEntry, type TreeNode, buildTree, topEntries } from './activityTree';
+import { type TopEntry, type TreeNode, buildTree, topEntries } from './activityTreeModel';
 import { jobs } from './useJobs';
 
 export const activity: ActivityStore = createActivityStore();

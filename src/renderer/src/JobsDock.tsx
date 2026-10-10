@@ -4,7 +4,7 @@ import { api } from './api';
 import type { ActivityEntry } from '../../shared/activity';
 import { ActivityTree, Chevron, useTreeOpen } from './ActivityTree';
 import { latestStep, stepText } from './activity';
-import { type TopEntry, type TreeNode, buildTree, dockCounts, workingRoles } from './activityTree';
+import { type TopEntry, type TreeNode, buildTree, dockCounts, workingRoles } from './activityTreeModel';
 import { t, tNodes, useT } from './i18n';
 import { appInView, systemNotify } from './jobNotify';
 import { type Job, formatElapsed, notificationText, sameScreen } from './jobs';
