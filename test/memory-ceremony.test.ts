@@ -232,6 +232,36 @@ describe('the door', () => {
     }
   });
 
+  it('warms the version when the memory starts on, and when the switch goes from off to on, and not otherwise', async () => {
+    // Fresh modules: the listeners the other tests of this file registered would count their own warm-ups.
+    vi.resetModules();
+    const { memoryModule } = await import('../src/main/memory/module');
+    const { memoryFacts } = await import('../src/main/memory/runtime');
+    const fresh = await import('../src/main/workspaceConfig');
+    const warm = vi.spyOn(memoryFacts(), 'warm').mockResolvedValue(undefined);
+    const set = (on: boolean) => fresh.updateConfig((c) => ({ ...c, runner: { ...c.runner, sharedMemory: on } }));
+    try {
+      set(false);
+      memoryModule({ handle: vi.fn(), notify: vi.fn(), emit: vi.fn(), job: vi.fn() });
+      expect(warm).not.toHaveBeenCalled();
+      set(false);
+      expect(warm).not.toHaveBeenCalled();
+      set(true);
+      expect(warm).toHaveBeenCalledTimes(1);
+      set(true);
+      expect(warm).toHaveBeenCalledTimes(1);
+      set(false);
+      expect(warm).toHaveBeenCalledTimes(1);
+      set(true);
+      expect(warm).toHaveBeenCalledTimes(2);
+      warm.mockClear();
+      memoryModule({ handle: vi.fn(), notify: vi.fn(), emit: vi.fn(), job: vi.fn() });
+      expect(warm).toHaveBeenCalledTimes(1);
+    } finally {
+      warm.mockRestore();
+    }
+  });
+
   it('answers null with no door registered, and with a door that throws', async () => {
     setCeremonyMemory(null);
     expect(await openCeremonyMemory({ agent: { id: 'turn', permission: 'read', model: { role: null, provider: '', model: '' } } as never, tools: true })).toBeNull();

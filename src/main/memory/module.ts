@@ -3,7 +3,7 @@ import type { Module } from '../module';
 import { forumStore } from '../forum';
 import { setCeremonyMemory } from './ceremony';
 import { callOrigin } from '../rpc';
-import { getConfig } from '../workspaceConfig';
+import { getConfig, onConfigChange } from '../workspaceConfig';
 import { MEMORY_EVENT } from '../../shared/memoryView';
 import { memoryOn } from '../../shared/memory';
 import { createMemoryChannels } from './channels';
@@ -19,7 +19,15 @@ export const memoryModule: Module = (ctx) => {
   // The ceremonies read the memory through a door registered here (askAgent has no dependency object), read only and from the cache: the facts are warmed now, so the first
   // voice turn finds the version already read. Both are inert while the workspace's switch is off.
   setCeremonyMemory((ask) => memoryPort().open({ surface: 'ceremony', agent: ask.agent, conversation: null, writes: false, tools: ask.tools, cacheOnly: true }));
-  if (memoryOn(getConfig())) void memoryFacts().warm().catch(() => undefined);
+  const warm = (): void => void memoryFacts().warm().catch(() => undefined);
+  let wasOn = memoryOn(getConfig());
+  if (wasOn) warm();
+  // A switch turned on later warms the cache too, or the first voice turn after it would still read "not read yet".
+  onConfigChange((config) => {
+    const on = memoryOn(config);
+    if (on && !wasOn) warm();
+    wasOn = on;
+  });
   const c = createMemoryChannels({
     store: memoryStore(),
     config: getConfig,

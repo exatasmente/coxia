@@ -190,3 +190,10 @@ Deviations and additions:
   the background refresh that turn started answers the next ones. The module registers the door whatever the switch says; the port answers null while it is off.
 - **`askBare` is untouched** (decision log 11); it never reaches `runOnce`.
 - Not done, and not in the plan for this commit: `docs/memory.md`, `docs/runner.md`, the README index and the final `CHANGELOG.md` pass (commit 10), and the notice (commit 9).
+
+## Fix after commit 8: warm the version when the switch is turned on
+
+`src/main/memory/module.ts` also warms the facts when the configuration changes from off to on (`onConfigChange`, remembering the last state), not only when the module starts with the
+switch on; commit 8 left that as a known gap ("a workspace that turns the switch on later reads `not read yet` on its first ceremony turn"). Turning it off, or saving with the switch
+unchanged, warms nothing. Test: the `warms the version …` case of `test/memory-ceremony.test.ts`, on freshly imported modules so the listeners of the other tests do not count. No user-visible
+change, so no `CHANGELOG.md` line.
