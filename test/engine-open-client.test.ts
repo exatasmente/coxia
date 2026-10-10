@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { ChatClient, normalizeBaseUrl } from '../src/main/engine/open/client';
-import { EngineError } from '../src/main/engine/open/errors';
+import { EngineError, adaptBodyForError, newLearned } from '../src/main/engine/open/errors';
+import type { ChatRequest } from '../src/main/engine/open/types';
 import { type Fake, busyStep, closedPort, errorStep, fakeOpenAI, textStep, toolStep, usage } from './helpers/fakeOpenAI';
 
 let fake: Fake | null = null;
@@ -282,6 +283,22 @@ describe('what only some servers take: tier, effort and fail-fast', () => {
     expect(Object.keys(fake.chats()[1].body ?? {}).filter((k) => ['service_tier', 'reasoning_effort', 'fail_fast'].includes(k))).toHaveLength(2);
     await c.complete({ messages: user, ...asked });
     expect(fake.chats()[2].body).not.toHaveProperty(param);
+  });
+
+  it('only a complaint about the reasoning field itself makes the client stop echoing the reasoning', async () => {
+    const history = [
+      { role: 'user' as const, content: 'q' },
+      { role: 'assistant' as const, content: 'r', reasoning_content: 'because' },
+      { role: 'user' as const, content: 'q2' },
+    ];
+    const body = { model: 'm', messages: history } as ChatRequest;
+    const other = newLearned();
+    expect(adaptBodyForError(body, 400, 'Setting a temperature is unsupported for reasoning models', other)).toBeNull();
+    expect(other.echoRefused).toBeUndefined();
+    const field = newLearned();
+    const again = adaptBodyForError(body, 400, 'Unknown field: messages[1].reasoning_content', field);
+    expect(field.echoRefused).toBe(true);
+    expect(again?.messages[1]).not.toHaveProperty('reasoning_content');
   });
 
   it('a refusal of reasoning_effort never makes the client stop echoing the reasoning', async () => {

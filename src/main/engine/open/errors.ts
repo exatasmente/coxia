@@ -229,7 +229,7 @@ export function adaptBodyForError(body: ChatRequest, status: number, message: st
     return next;
   }
   // Reasoning sent back from the first call (a model marked for it) against a server that does not take the field: stop sending it, and remember.
-  if (body.messages.some((x) => x.reasoning_content !== undefined) && /reasoning/.test(m)) {
+  if (body.messages.some((x) => x.reasoning_content !== undefined) && /reasoning_content/.test(m)) {
     learned.echoRefused = true;
     learned.echoReasoning = false;
     next.messages = body.messages.map(({ reasoning_content: _r, ...rest }) => rest as ChatRequest['messages'][number]);
