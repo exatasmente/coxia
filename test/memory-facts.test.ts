@@ -158,6 +158,30 @@ describe('the version', () => {
     expect(warm.line).toBe('Version: api latest v2.0.0, stable v2.0.0');
   });
 
+  it('reads the repositories at once and keeps the order of the configuration', async () => {
+    const dirs = ['api', 'web', 'cli'].map((name) => ({ id: name, path: repo(name, []) }));
+    const started: string[] = [];
+    const gates = new Map<string, () => void>();
+    const facts = createFacts({
+      config: () => config(dirs),
+      secret: noSecret,
+      home: HOME,
+      tags: (cwd) => {
+        started.push(cwd);
+        return new Promise<string[]>((resolve) => gates.set(cwd, () => resolve([`v${started.indexOf(cwd) + 1}.0.0`])));
+      },
+    });
+    const pending = facts.version([]);
+    await new Promise((r) => setTimeout(r, 20));
+    // every git read has started before any of them answered: one after the other would have started only the first
+    expect(started).toEqual(dirs.map((d) => d.path));
+    // they answer in the reverse order; the line still follows the configuration
+    for (const d of [...dirs].reverse()) gates.get(d.path)?.();
+    const v = await pending;
+    expect(v.repos.map((r) => r.repo)).toEqual(['api', 'web', 'cli']);
+    expect(v.line).toBe('Version: api latest v1.0.0, stable v1.0.0; web latest v2.0.0, stable v2.0.0; cli latest v3.0.0, stable v3.0.0');
+  });
+
   it('survives a git that fails', async () => {
     const dir = repo('api', []);
     const facts = createFacts({

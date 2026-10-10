@@ -222,22 +222,18 @@ export function createFacts(deps: FactsDeps): Facts {
   return {
     async version(runs, opts = {}) {
       const releases = [...new Set(runs.filter((r) => r.subject?.kind === 'release' && !isTerminal(r)).map((r) => r.subject?.version ?? '').filter(Boolean))];
-      const found: RepoVersion[] = [];
       let cold = 0;
-      for (const repo of reposOf()) {
+      // The repositories are read at once (each with its own git timeout), and the answer keeps the order of the configuration.
+      const reads = reposOf().map((repo): Promise<RepoVersion | null> | RepoVersion | null => {
         const hit = cache.get(repo.path);
-        const fresh = hit !== undefined && now() - hit.at < TTL_MS;
-        if (fresh) {
-          found.push(hit.value);
-        } else if (opts.cacheOnly) {
-          // Stale is still an answer from earlier; nothing at all is "not read yet".
-          void refresh(repo).catch(() => undefined);
-          if (hit) found.push(hit.value);
-          else cold++;
-        } else {
-          found.push(await refresh(repo));
-        }
-      }
+        if (hit !== undefined && now() - hit.at < TTL_MS) return hit.value;
+        if (!opts.cacheOnly) return refresh(repo);
+        // Stale is still an answer from earlier; nothing at all is "not read yet".
+        void refresh(repo).catch(() => undefined);
+        if (!hit) cold++;
+        return hit ? hit.value : null;
+      });
+      const found = (await Promise.all(reads)).filter((v): v is RepoVersion => v !== null);
       const any = found.some((v) => repoPart(v)) || releases.length > 0;
       return { state: any ? 'ok' : cold ? 'cold' : 'unknown', repos: found, releases, line: versionLine(found, releases, cold > 0) };
     },
