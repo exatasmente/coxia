@@ -847,6 +847,7 @@
   "main.secrets.noKeychain": "no OS keychain is available to encrypt the secret; accept the insecure file explicitly, or use a command or an environment variable",
   "main.secrets.badCommand": "the secret command is empty or has control characters",
   "main.secrets.badEnvName": "invalid environment variable name \"{name}\"",
+  "main.secrets.keyFile": "the key file is missing, readable by other users, or does not open these secrets",
   "main.engine.text.read.tooBig": "File too large ({size} bytes); use Grep or read it by offset/limit from a smaller file.",
   "main.engine.text.read.more": "… ({count} more lines; use offset {offset})",
   "main.engine.text.clipped": "… (cut at {max} of {total} characters)",

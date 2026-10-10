@@ -14,14 +14,15 @@ vi.mock('../src/main/errorlog', () => ({ logError: logErrorMock }));
 vi.mock('../src/main/paths', () => {
   const user = () => `${process.env.CERIMONIAS_DATA_DIR}/userData`;
   return {
-    PACKAGED: false,
-    RESOURCES: '',
-    CLAUDE_BIN: undefined,
-    SIDECAR_DIR: `${process.cwd()}/sidecar`,
+    isPackaged: () => false,
+    resourcesDir: () => '',
+    claudeBin: () => undefined,
+    sidecarDir: () => `${process.cwd()}/sidecar`,
     voiceVenvDir: () => `${user()}/voice-venv`,
     voiceModelsDir: () => `${user()}/voice-models`,
     voiceToolsDir: () => `${user()}/voice-tools`,
     legacyVenvDir: () => null,
+    setPathsPort: () => undefined,
   };
 });
 

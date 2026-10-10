@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import type { RunnerSandbox } from '../../shared/config/types';
 import type { EffectiveNetwork } from '../../shared/network';
-import { PLAYWRIGHT_MCP_CLI } from '../paths';
+import { playwrightMcpCli } from '../paths';
 import { removeTree } from '../sandbox/remove';
 import { FORWARDER_JS } from '../sandbox/policy';
 import { type ProxyOptions, type RegistryProxy, createRegistryProxy } from '../sandbox/proxy';
@@ -178,7 +178,7 @@ export async function startBrowser(o: BrowserStartOptions, deps: BrowserDeps = {
     cleanup.push(() => void removeTree(sockets));
     // The server's own control socket is of no use to the app and a way around it for anyone who could reach it: its name is taken away as it appears (`controlSocket.ts`).
     cleanup.push(dropControlSockets(folder(join(sockets, 'browser'))));
-    const args = [...serverArgs({ cli: deps.cli ?? PLAYWRIGHT_MCP_CLI, profile, outDir: join(sessionDir, 'out'), wrapper, config, images: o.seesImages, proxy: o.network.mode === 'proxy', headless: o.headless }), ...(deps.serverExtra ?? [])];
+    const args = [...serverArgs({ cli: deps.cli ?? playwrightMcpCli(), profile, outDir: join(sessionDir, 'out'), wrapper, config, images: o.seesImages, proxy: o.network.mode === 'proxy', headless: o.headless }), ...(deps.serverExtra ?? [])];
     const { child, client } = spawnMcp(
       { command: executable, args, env: serverEnv({ home: join(sessionDir, 'home'), tmp: join(sessionDir, 'tmp'), display: displayName, browsers: o.browsers, sockets }), cwd: join(sessionDir, 'home'), detached: true },
       deps.spawn,

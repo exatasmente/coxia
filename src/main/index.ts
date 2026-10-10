@@ -10,13 +10,14 @@ import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
 import { continueInClaude, pasteCommand } from './claude';
 import { getSettings, saveSettings } from './config';
+import { installElectronPorts } from './electronPorts';
 import { installProcessHandlers, logError } from './errorlog';
 import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGateRound, recordGate, startGate, visualGate } from './gate';
 import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
 import { askRetro, latestRetro, prepareRetro } from './retro';
 import { MODULES } from './modules';
 import { endLiveScreens, hasOpenScreens } from './runner/module';
-import { RESOURCES } from './paths';
+import { resourcesDir } from './paths';
 import { wantsQuitForUpdate } from './update-core';
 import { SHOWN_EVENT } from '../shared/update';
 import { announceRunning, flushRenderer, forgetRunning, terminateChildren, trackWindow } from './update';
@@ -36,6 +37,8 @@ import { broadcast, pushNotice, registerWebAccess, stopWebAccess, syncWebAccess 
 import { t } from '../shared/i18n';
 import { warmLoginPath } from './loginPath';
 
+// The modules load before this body runs, so the desktop fills the ports first: the secrets and path modules take the keychain and the folders from them.
+installElectronPorts();
 installProcessHandlers();
 
 // Mitigate blank/black repaints reported on Windows by using Electron's software-rendering path.
@@ -67,7 +70,7 @@ function emit(ev: AppEvent): void {
 
 function showNotice(n: Notice, send: (ev: AppEvent) => void): void {
   if (!Notification.isSupported()) return;
-  const note = new Notification({ title: n.title, body: n.body, icon: join(RESOURCES, 'icon.png') });
+  const note = new Notification({ title: n.title, body: n.body, icon: join(resourcesDir(), 'icon.png') });
   note.on('click', () => {
     show();
     send(n.onClick);
@@ -99,7 +102,7 @@ function createWindow(): void {
     minWidth: 760,
     minHeight: 560,
     title: 'Coxia',
-    icon: join(RESOURCES, 'icon.png'),
+    icon: join(resourcesDir(), 'icon.png'),
     autoHideMenuBar: true,
     show: !HIDDEN,
     backgroundColor: '#F4F5F7',
@@ -155,7 +158,7 @@ function trayMenu(): Menu {
 }
 
 function createTray(): void {
-  tray = new Tray(nativeImage.createFromPath(join(RESOURCES, 'tray.png')));
+  tray = new Tray(nativeImage.createFromPath(join(resourcesDir(), 'tray.png')));
   tray.setToolTip('Coxia');
   tray.setContextMenu(trayMenu());
   // The labels follow the language of the workspace: rebuild when the configuration changes.

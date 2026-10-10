@@ -26,6 +26,8 @@ export interface CryptoPort {
   encrypt(text: string): Buffer;
   decrypt(data: Buffer): string;
   backend(): string | null;
+  /** Why the port is off, when it can say in its own words; empty when the store's messages are the ones to show. */
+  unavailableReason?(): string;
 }
 
 export interface SecretsDeps {
@@ -82,6 +84,9 @@ export function createSecretsStore(deps: SecretsDeps): SecretsStore {
   // Command results stay in memory for the life of the process: a key script is slow and the value does not change under us.
   const cache = new Map<string, string>();
 
+  // What to show when the port refuses: the reason it gives (a host's master key file), else the message of this store as it always was.
+  const offMessage = (fallback: string): string => deps.crypto.unavailableReason?.() || fallback;
+
   function read(): FileShape {
     try {
       if (!existsSync(file)) return emptyFile();
@@ -117,7 +122,7 @@ export function createSecretsStore(deps: SecretsDeps): SecretsStore {
 
   function valueOfStored(e: Entry): string {
     if (e.cipher !== undefined) {
-      if (!deps.crypto.available()) throw new SecretError('unavailable', t('main.secrets.noKeychainDecrypt'));
+      if (!deps.crypto.available()) throw new SecretError('unavailable', offMessage(t('main.secrets.noKeychainDecrypt')));
       return deps.crypto.decrypt(Buffer.from(e.cipher, 'base64'));
     }
     return e.plain ?? '';
@@ -173,7 +178,7 @@ export function createSecretsStore(deps: SecretsDeps): SecretsStore {
       if (input.source === 'stored') {
         if (!input.value || input.value.length > SECRET_MAX_LENGTH) throw new SecretError('invalid', t('main.secrets.badValue'));
         const status = storageStatus(data);
-        if (!status.canStore) throw new SecretError('insecure-refused', t('main.secrets.noKeychain'));
+        if (!status.canStore) throw new SecretError('insecure-refused', offMessage(t('main.secrets.noKeychain')));
         entry = status.secure ? { source: { type: 'stored' }, cipher: deps.crypto.encrypt(input.value).toString('base64'), updatedAt: at } : { source: { type: 'stored' }, plain: input.value, updatedAt: at };
       } else if (input.source === 'command') {
         if (!input.command.trim() || /[\0\n\r]/.test(input.command)) throw new SecretError('invalid', t('main.secrets.badCommand'));
