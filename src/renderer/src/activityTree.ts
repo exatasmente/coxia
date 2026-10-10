@@ -100,6 +100,19 @@ export function buildTree(entries: readonly ActivityEntry[]): TreeNode[] {
   return roots.sort((a, b) => (began.get(a.id) as number) - (began.get(b.id) as number));
 }
 
+// The store hands back the same array for a bucket that did not change, so the tree of a bucket is built once per change and not once per incoming line.
+const treeCache = new WeakMap<readonly ActivityEntry[], TreeNode[]>();
+
+/** `buildTree`, remembered by the identity of the array: the nodes are shared between calls, so a reader must not change them. */
+export function buildTreeOnce(entries: readonly ActivityEntry[]): TreeNode[] {
+  let tree = treeCache.get(entries);
+  if (!tree) {
+    tree = buildTree(entries);
+    treeCache.set(entries, tree);
+  }
+  return tree;
+}
+
 /** Whether the node or anything under it still has work: it is working, or it waits its turn. */
 export function hasWork(node: TreeNode): boolean {
   return node.state === 'working' || node.state === 'queued' || node.children.some(hasWork);
@@ -126,7 +139,7 @@ export function topEntries(all: ReadonlyMap<string, readonly ActivityEntry[]>, o
   const make = (key: string, kind: TopEntry['kind'], id: string, nodes: TreeNode[]): TopEntry => ({ key, kind, id, nodes, since: Math.min(...nodes.map((n) => n.since)), latest: newestLine(nodes) });
   for (const [bucket, entries] of all) {
     if (owned.has(bucket)) continue;
-    const roots = buildTree(entries).filter(hasWork);
+    const roots = buildTreeOnce(entries).filter(hasWork);
     if (!roots.length) continue;
     if (bucket.startsWith('run:')) out.push(make(bucket, 'run', bucket.slice('run:'.length), roots));
     else if (bucket.startsWith(mentionJob(''))) out.push(make(bucket, 'conversation', bucket.slice(mentionJob('').length), roots));

@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActivityEntry, ActivityNode } from '../src/shared/activity';
 import { createActivityStore } from '../src/renderer/src/activity';
-import { buildTree, createTreeView, defaultOpen, dockCounts, hasWork, newestLine, nodeTitle, stepText, topEntries, workingRoles } from '../src/renderer/src/activityTree';
+import { buildTree, buildTreeOnce, createTreeView, defaultOpen, dockCounts, hasWork, newestLine, nodeTitle, stepText, topEntries, workingRoles } from '../src/renderer/src/activityTree';
 
 let seq = 0;
 let clock = 1000;
@@ -97,6 +97,19 @@ describe('topEntries', () => {
     // more children do not change the number
     const more = new Map(all).set('run:r1', [...run(), status('s3', 'started', { jobId: 'run:r1', ...under('s2', sub('shell: three'), 'dev:shell') })]);
     expect(topEntries(more, new Set())).toHaveLength(2);
+  });
+
+  it('builds the tree of a bucket once per change: the same array gives the same nodes, a new array builds again, and the other buckets are left alone', () => {
+    const busy = run();
+    const other = conversation();
+    const first = topEntries(new Map<string, readonly ActivityEntry[]>([['run:r1', busy], ['mention:squads', other]]), new Set());
+    // a line arrives in the conversation only: the store keeps the array of the run
+    const grown = [...other, line('agent', { jobId: 'mention:squads', label: 'Read x' })];
+    const second = topEntries(new Map<string, readonly ActivityEntry[]>([['run:r1', busy], ['mention:squads', grown]]), new Set());
+    expect(second[0].nodes[0]).toBe(first[0].nodes[0]);
+    expect(second[1].nodes[0]).not.toBe(first[1].nodes[0]);
+    expect(buildTreeOnce(busy)).toBe(buildTreeOnce(busy));
+    expect(buildTreeOnce(grown)).toEqual(buildTree(grown));
   });
 
   it('leaves a bucket a running renderer job owns to the job', () => {
