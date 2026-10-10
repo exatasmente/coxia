@@ -116,7 +116,7 @@ export function gitlabExecutor(d: GitLabExecDeps): VcsExecutor {
           if (errors.length) throw new Error(t('vcs.exec.refused', { host: d.host, detail: scrubSecrets(errors.join(' ')).slice(0, 500) }));
           return JSON.stringify(r.body).slice(0, RESULT_MAX);
         }
-        if (!d.client) throw new VcsError('not_configured', { kind: 'GitLab' });
+        if (!d.client) throw new VcsError(c.bodyFile ? 'upload_needs_api' : 'not_configured', { kind: 'GitLab' });
         // An upload of evidence sends the file itself, with its own content type, rather than a form field.
         const r = c.bodyFile ? await d.client.request(c.method, c.endpoint, { body: readFileSync(c.bodyFile), headers: c.headers ?? {} }) : await d.client.request(c.method, c.endpoint, { form: c.fields });
         meta.code = r.status;
@@ -135,6 +135,8 @@ export interface GitHubExecDeps {
   run?: CliRun;
   client: HttpClient | null;
   graphqlClient: HttpClient | null;
+  /** The client of GitHub's uploads host (its own origin, the API token in its headers). Null when the integration has no token for it or is not github.com. */
+  uploadClient?: HttpClient | null;
   validate: (c: VcsCommand) => void;
 }
 
@@ -171,11 +173,17 @@ export function githubExecutor(d: GitHubExecDeps): VcsExecutor {
           if (errors.length) throw new Error(t('vcs.exec.refused', { host: d.host, detail: scrubSecrets(errors.join(' ')).slice(0, 500) }));
           return JSON.stringify(r.body).slice(0, RESULT_MAX);
         }
+        if (c.bodyFile) {
+          // An upload of evidence goes to GitHub's own uploads host with the file as the body, by the client that holds the token for that host. Without one
+          // the cause is said as it is (a CLI integration with no token, or a host that is not github.com), not as a missing integration.
+          if (!d.uploadClient) throw d.client ? new VcsError('unsupported', { kind: 'GitHub', what: t('vcs.write.evidenceUpload') }) : new VcsError('upload_needs_api', { kind: 'GitHub' });
+          const up = await d.uploadClient.absolute(`https://${c.endpoint}`, { body: readFileSync(c.bodyFile), headers: c.headers ?? {} });
+          meta.code = up.status;
+          meta.response = up.body;
+          return JSON.stringify(up.body ?? {}).slice(0, RESULT_MAX);
+        }
         if (!d.client) throw new VcsError('not_configured', { kind: 'GitHub' });
-        // An upload of evidence goes to GitHub's own uploads host with the file as the body, not through the API root: the absolute call is made here.
-        const r = c.bodyFile
-          ? await d.client.absolute(`https://${c.endpoint}`, { body: readFileSync(c.bodyFile), headers: c.headers ?? {} })
-          : await d.client.request(c.method, c.endpoint, { json: c.json !== undefined ? JSON.parse(c.json) : undefined });
+        const r = await d.client.request(c.method, c.endpoint, { json: c.json !== undefined ? JSON.parse(c.json) : undefined });
         meta.code = r.status;
         meta.response = r.body;
         return JSON.stringify(r.body ?? {}).slice(0, RESULT_MAX);

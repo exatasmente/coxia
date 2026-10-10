@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -16,6 +16,10 @@ import { flowOf } from '../src/shared/runs/flow';
 import type { FlowStage, Run } from '../src/shared/runs';
 import type { VcsCommand, VcsComment, VcsProvider, VcsWriteOp } from '../src/main/vcs/types';
 import type { ReleaseAction } from '../src/shared/types';
+import { VcsError } from '../src/main/vcs/errors';
+import { buildRuntime, type VcsSettings } from '../src/main/vcs/runtime';
+import type { CliRun } from '../src/main/vcs/transport';
+import type { ExecMeta } from '../src/main/vcs/types';
 
 // The evidence a comment cites going to the code host: the upload is planned and run through the door, the address the host answers with is embedded under the
 // text, and a host that cannot carry the file leaves the comment saying how many pieces there are. A fake provider and a recording door: no host, no network.
@@ -29,7 +33,7 @@ afterEach(() => {
 const make = (): string => mkdtempSync(join(tmpdir(), 'cerimonias-evidence-upload-'));
 
 /** A provider that answers the reads a comment needs and plans an upload, with a fixed address (or refuses to take the file). */
-function fakeProvider(o: { upload?: boolean } = {}): VcsProvider {
+function fakeProvider(o: { upload?: boolean; planError?: Error } = {}): VcsProvider {
   return {
     kind: 'github',
     id: 'gh',
@@ -53,14 +57,13 @@ function fakeProvider(o: { upload?: boolean } = {}): VcsProvider {
     },
     async planWrite(op: VcsWriteOp): Promise<VcsCommand[]> {
       if (op.op === 'uploadAttachment') {
+        // A host that refuses to plan the upload says why (a workspace on the CLI with no token), instead of planning nothing.
+        if (o.planError) throw o.planError;
         return o.upload === false ? [] : [{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'uploads.github.com/?repository_id=group%2Fproject&name=ev-1.png&content_type=image%2Fpng', fields: {}, headers: { 'Content-Type': 'image/png' }, bodyFile: op.path }];
       }
       const body = op.op === 'commentIssue' || op.op === 'commentMr' || op.op === 'editIssueNote' || op.op === 'editMrNote' || op.op === 'createMr' ? op.body : '';
       if (op.op === 'createMr') return [{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'repos/group/project/pulls', fields: {}, json: JSON.stringify({ title: op.title, body, base: op.targetBranch }) }];
       return [{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'repos/group/project/issues/101/comments', fields: {}, json: JSON.stringify({ body }) }];
-    },
-    async uploadToken() {
-      return 'TESTTOKEN-not-real-0001';
     },
     validateCommand() {},
     issueUrl: () => '',
@@ -99,13 +102,15 @@ function world(dataDir: string): World {
 
 type Door = Parameters<typeof createPublisher>[0]['door'];
 
-function doorOf(provider: VcsProvider, posted: VcsCommand[][], proposed: VcsCommand[][] = [], metas: Record<string, unknown>[] = [], o: { refusal?: string; postMetas?: Record<string, unknown>[]; noAddress?: boolean } = {}): Door {
+function doorOf(provider: VcsProvider, posted: VcsCommand[][], proposed: VcsCommand[][] = [], metas: Record<string, unknown>[] = [], o: { refusal?: string; postMetas?: Record<string, unknown>[]; noAddress?: boolean; failUpload?: Error } = {}): Door {
   return {
     provider: () => provider,
     refusal: () => o.refusal ?? null,
     post: async (meta: Record<string, unknown>, commands: VcsCommand[]) => {
-      posted.push(commands);
       o.postMetas?.push(meta);
+      // An upload the host refuses throws at its own command, as the real door does; the comment or the pull request is another call.
+      if (o.failUpload && commands.some((c) => c.bodyFile)) throw o.failUpload;
+      posted.push(commands);
       // One answer per command, in the order they ran: an upload answers where the file lives, a comment its note id.
       return commands.map((c) => {
         if (c.bodyFile && o.noAddress) return {};
@@ -197,6 +202,30 @@ describe('evidence and the code host', () => {
     expect(commentBodyOf(posted)).toContain('1 piece(s) of evidence stay in the app');
   });
 
+  it('posts the comment without the images when the upload fails, and says why in the thread', async () => {
+    const dataDir = make();
+    dirs.push(dataDir);
+    const { config, run, runs, forum, stage, agent } = world(dataDir);
+    forum.ensureThread({ id: runThreadId(run.id), kind: 'run', runId: run.id, title: 'Add the thing' });
+    const posted: VcsCommand[][] = [];
+    const publisher = createPublisher({
+      runs,
+      forum,
+      config: () => config,
+      env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }),
+      door: doorOf(fakeProvider(), posted, [], [], { failUpload: new Error('the host said no') }),
+      now: () => new Date('2026-10-03T12:00:00Z'),
+      evidenceUploads: uploads,
+    });
+    const output = readOutput({ summary: 'Looked.', comment: { sections: [{ heading: 'What I saw', body: 'The field.' }], technical: '' }, evidence: ['ev-1'] }, 'qa');
+    await publisher.stageEnded(run.id, { stage, agent, kind: 'qa', output, autonomous: true } as StageEnd);
+    expect(commentBodyOf(posted)).toContain('1 piece(s) of evidence stay in the app');
+    expect(commentBodyOf(posted)).not.toContain('![');
+    const line = forum.read(runThreadId(run.id), 0, 100)?.messages.filter((m) => m.code === 'runner.evidence.notUploaded') ?? [];
+    expect(line).toHaveLength(1);
+    expect(line[0].params).toMatchObject({ count: 1, reason: 'the host said no' });
+  });
+
   it('sends no image before the "sim" of an agent that waits', async () => {
     const dataDir = make();
     dirs.push(dataDir);
@@ -230,7 +259,7 @@ describe('the pull request an autonomous run opens', () => {
   const ADDRESS = 'https://example.test/group/project/assets/ev-1.png';
 
   /** A run at the point the push is done: its description is drafted (citing `ids`), and the pull request is next. */
-  function opened(o: { pullRequest: boolean; ids?: string[]; door?: Parameters<typeof doorOf>[4]; upload?: boolean; baseBranch?: string }) {
+  function opened(o: { pullRequest: boolean; ids?: string[]; door?: Parameters<typeof doorOf>[4]; upload?: boolean; planError?: Error; baseBranch?: string }) {
     const dataDir = make();
     dirs.push(dataDir);
     const { config, run, runs, forum } = world(dataDir);
@@ -248,12 +277,13 @@ describe('the pull request an autonomous run opens', () => {
       forum,
       config: () => config,
       env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }),
-      door: doorOf(fakeProvider({ upload: o.upload }), posted, proposed, metas, { postMetas, ...(o.door ?? {}) }),
+      door: doorOf(fakeProvider({ upload: o.upload, planError: o.planError }), posted, proposed, metas, { postMetas, ...(o.door ?? {}) }),
       now: () => new Date('2026-10-03T12:00:00Z'),
       evidenceUploads: uploads,
     });
     const go = () => publisher.actionDone({ kind: 'run-push', unit: { runId: run.id } } as unknown as ReleaseAction, []);
-    return { run, runs, forum, posted, proposed, metas, postMetas, go };
+    const said = (code: string) => forum.read(runThreadId(run.id), 0, 100)?.messages.filter((m) => m.code === code) ?? [];
+    return { run, runs, forum, posted, proposed, metas, postMetas, go, said, publisher };
   }
 
   const prBody = (posted: VcsCommand[][]): string => {
@@ -315,11 +345,148 @@ describe('the pull request an autonomous run opens', () => {
     expect(w.metas[0].evidence).toEqual({ titles: ['The screen'], positions: [0], bodyAt: 1 });
   });
 
+  it('opens the pull request without the images when the host refuses the upload, and says how many stayed behind and why', async () => {
+    const w = opened({ pullRequest: true, ids: ['ev-1'], door: { failUpload: new Error('the host said no') } });
+    await w.go();
+    expect(w.proposed).toEqual([]);
+    // Only the pull request went out; the description counts the piece instead of embedding it.
+    expect(w.posted.flat().map((c) => c.endpoint)).toEqual(['repos/group/project/pulls']);
+    expect(prBody(w.posted)).toContain('1 piece(s) of evidence stay in the app');
+    expect(prBody(w.posted)).not.toContain('![');
+    expect(w.runs.get(w.run.id)!.comments.pr).toMatchObject({ status: 'published', noteId: 9 });
+    const line = w.said('runner.evidence.notUploaded');
+    expect(line).toHaveLength(1);
+    expect(line[0].params).toMatchObject({ count: 1, reason: 'the host said no' });
+    expect(w.said('runner.pr.created')).toHaveLength(1);
+    expect(w.said('runner.pr.failed')).toHaveLength(0);
+  });
+
+  it('plans no image when the host says an upload is impossible, and the pull request opens listing the evidence', async () => {
+    const err = new VcsError('upload_needs_api', { kind: 'GitHub' });
+    const w = opened({ pullRequest: true, ids: ['ev-1'], planError: err });
+    await w.go();
+    expect(w.posted.flat().map((c) => c.endpoint)).toEqual(['repos/group/project/pulls']);
+    expect(prBody(w.posted)).toContain('1 piece(s) of evidence stay in the app');
+    expect(w.said('runner.evidence.notUploaded')[0].params).toMatchObject({ count: 1, reason: err.message });
+    expect(err.message).toMatch(/CLI/);
+    expect(w.said('runner.pr.created')).toHaveLength(1);
+  });
+
+  it('proposes the pull request with the evidence listed when the upload is impossible and the choice is off', async () => {
+    const w = opened({ pullRequest: false, ids: ['ev-1'], planError: new VcsError('upload_needs_api', { kind: 'GitHub' }) });
+    await w.go();
+    expect(w.posted).toEqual([]);
+    expect(w.proposed).toHaveLength(1);
+    expect(w.proposed[0].some((c) => c.bodyFile)).toBe(false);
+    expect(JSON.parse(w.proposed[0][0].json!).body).toContain('1 piece(s) of evidence stay in the app');
+    expect(w.said('runner.evidence.notUploaded')).toHaveLength(1);
+  });
+
+  it('says what the "sim" could not upload when a group comes back with a failed image', async () => {
+    const w = opened({ pullRequest: false, ids: ['ev-1'] });
+    await w.go();
+    const evidence = w.metas[0].evidence as { titles: string[]; positions: number[]; bodyAt: number };
+    // The upload failed inside the approved group (the group went on without it): its slot holds the reason, the pull request's answer follows.
+    await w.publisher.actionDone({ kind: 'vcs', unit: { runId: w.run.id, purpose: 'run-pr' }, evidence } as unknown as ReleaseAction, [{ uploadError: 'upload refused' }, { number: 7, html_url: 'https://example.test/group/project/pull/7' }]);
+    expect(w.said('runner.evidence.notUploaded')[0].params).toMatchObject({ count: 1, reason: 'upload refused' });
+    expect(w.runs.get(w.run.id)!.comments.pr).toMatchObject({ status: 'published', noteId: 7 });
+    expect(w.runs.get(w.run.id)!.comments.pr!.body).toContain('1 piece(s) of evidence stay in the app');
+  });
+
   it('is still refused in a test workspace: nothing goes up and nothing is proposed', async () => {
     const w = opened({ pullRequest: true, ids: ['ev-1'], door: { refusal: 'a test workspace writes nothing' } });
     await w.go();
     expect(w.posted).toEqual([]);
     expect(w.proposed).toEqual([]);
     expect(w.forum.read(runThreadId(w.run.id), 0, 100)?.messages.some((m) => m.code === 'runner.pr.refused')).toBe(true);
+  });
+});
+
+describe('a GitHub workspace that talks to the host through the CLI', () => {
+  // The real GitHub provider and executor on a fake CLI and a fake fetch: the door runs each command through the executor, as the app's door does (minus the
+  // audit log). Nothing here reaches a host.
+  const TOKEN = 'TESTTOKEN-github-not-real-0003';
+  const settings = (over: Partial<VcsSettings> = {}): VcsSettings => ({ id: 'gh', kind: 'github', host: 'github.com', apiUrl: '', user: '', secretRef: 'gh.token', cli: 'gh', preference: 'cli', repos: [], ...over });
+
+  function world2(o: { token: boolean }) {
+    const dataDir = make();
+    dirs.push(dataDir);
+    const { config, run, runs, forum } = world(dataDir);
+    config.runner.autonomy = { ...config.runner.autonomy, cycle: true, pullRequest: true };
+    runs.update(run.id, (r) => ({ run: { ...r, baseBranch: 'main' }, messages: [] }));
+    runs.update(run.id, (r) => recordCommentDraft(r, 'pr', { target: 'mr', bodyHash: 'draft', body: 'Closes #101\n', headline: '', title: 'Add the thing', evidenceIds: ['ev-1'] }, '2026-10-03T12:00:00Z'));
+    forum.ensureThread({ id: runThreadId(run.id), kind: 'run', runId: run.id, title: 'Add the thing' });
+    const cliCalls: string[][] = [];
+    const prBodies: string[] = [];
+    const fetched: { url: string; auth: string | undefined }[] = [];
+    const cliRun: CliRun = async (_file, args) => {
+      cliCalls.push(args);
+      // The runner's reads (looking for a pull request that already exists) find nothing; only the write carries a body.
+      if (!args.includes('--method')) return '[]';
+      const input = args[args.indexOf('--input') + 1];
+      prBodies.push(input ? (JSON.parse(readFileSync(input, 'utf8')) as { body: string }).body : '');
+      return JSON.stringify({ number: 12, html_url: 'https://example.test/group/project/pull/12' });
+    };
+    const fetchFn = (async (url: string, init: RequestInit) => {
+      fetched.push({ url: String(url), auth: (init.headers as Record<string, string>).Authorization });
+      return new Response(JSON.stringify({ url: 'https://example.test/assets/ev-1.png' }), { status: 201, headers: { 'content-type': 'application/json' } });
+    }) as unknown as typeof fetch;
+    const rt = buildRuntime(settings({ secretRef: o.token ? 'gh.token' : null }), {
+      token: () => {
+        if (!o.token) throw new VcsError('no_token', { id: 'gh', ref: '' });
+        return TOKEN;
+      },
+      env: () => ({}),
+      run: cliRun,
+      fetch: fetchFn,
+    });
+    const door = {
+      provider: () => rt.provider,
+      refusal: () => null,
+      post: async (_meta: unknown, commands: VcsCommand[]) => {
+        const out: unknown[] = [];
+        for (const c of commands) {
+          const meta: ExecMeta = {};
+          await rt.exec.run(c, meta);
+          out.push(meta.response);
+        }
+        return out;
+      },
+      propose: () => true,
+      proposePush: () => true,
+      proposeRelease: () => true,
+      release: async () => 'ok',
+    } as unknown as Door;
+    const publisher = createPublisher({ runs, forum, config: () => config, env: () => ({ issueProject: 'group/project', repos: [{ id: 'app', projectPath: 'group/project' }] }), door, now: () => new Date('2026-10-03T12:00:00Z'), evidenceUploads: uploads });
+    const go = () => publisher.actionDone({ kind: 'run-push', unit: { runId: run.id } } as unknown as ReleaseAction, []);
+    const said = (code: string) => forum.read(runThreadId(run.id), 0, 100)?.messages.filter((m) => m.code === code) ?? [];
+    return { run, runs, go, said, cliCalls, prBodies, fetched };
+  }
+
+  it('with a token set, uploads the image by the API and opens the pull request through the CLI with the image embedded', async () => {
+    const w = world2({ token: true });
+    await w.go();
+    expect(w.fetched).toEqual([{ url: expect.stringMatching(/^https:\/\/uploads\.github\.com\//), auth: `Bearer ${TOKEN}` }]);
+    expect(w.cliCalls.filter((a) => a.includes('--method'))).toHaveLength(1);
+    expect(w.cliCalls.flat().join(' ')).not.toContain(TOKEN);
+    expect(w.prBodies[0]).toContain('![The screen](https://example.test/assets/ev-1.png)');
+    expect(w.said('runner.evidence.notUploaded')).toEqual([]);
+    expect(w.runs.get(w.run.id)!.comments.pr).toMatchObject({ status: 'published', noteId: 12 });
+  });
+
+  it('with no token, opens the pull request with the evidence listed and says the real cause in the thread', async () => {
+    const w = world2({ token: false });
+    await w.go();
+    expect(w.fetched).toEqual([]);
+    expect(w.cliCalls.filter((a) => a.includes('--method'))).toHaveLength(1);
+    expect(w.prBodies[0]).toContain('1 piece(s) of evidence stay in the app');
+    expect(w.prBodies[0]).not.toContain('![');
+    const [line] = w.said('runner.evidence.notUploaded');
+    expect(line.params).toMatchObject({ count: 1 });
+    expect(String(line.params?.reason)).toMatch(/CLI/);
+    expect(String(line.params?.reason)).not.toMatch(/no GitHub integration|não tem uma integração/);
+    expect(w.said('runner.pr.created')).toHaveLength(1);
+    expect(w.said('runner.pr.failed')).toEqual([]);
+    expect(w.runs.get(w.run.id)!.comments.pr).toMatchObject({ status: 'published', noteId: 12 });
   });
 });

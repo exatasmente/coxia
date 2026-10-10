@@ -25,6 +25,7 @@
   "vcs.error.server": "{host} answered with error {status}.",
   "vcs.error.timeout": "{host} did not answer within {seconds} s.",
   "vcs.error.unsupported": "{kind} does not offer this: {what}",
+  "vcs.error.upload_needs_api": "Sending evidence to {kind} needs the API with a token, and this workspace reaches {kind} through its CLI with no token set for it. Set the integration's token in Settings, or the evidence stays in the app.",
   "vcs.exec.refused": "{host} refused: {detail}",
   "vcs.exec.responded": "{host} answered {code}: {body}",
   "vcs.health.api": "{host} API: authenticated as {user}.",

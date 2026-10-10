@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A run with evidence can open its pull request on a GitHub workspace that uses the `gh` CLI.** The images the description cites went up through the API client, which that preference never builds, so every attempt failed with "no GitHub integration configured" and the run stayed blocked. The image now goes up through the API when the integration has a token set (the file hosting is not reachable by `gh api`), with the token in the client's headers and never on a command line; the same path also fixes the upload on the API preference, which the client refused for being another origin. With no token nothing is attempted, and the message says so ("an upload of evidence needs the API, and this workspace reaches GitHub through its CLI"). An image that cannot go up, on any host and any preference, no longer stops the comment or the pull request that cites it: it opens with the evidence listed without images, and the run's conversation says how many pieces were left out and why.
+
 ## [0.9.0-beta.15] - 2026-10-10
 
 ### Added

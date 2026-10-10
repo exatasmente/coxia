@@ -517,8 +517,6 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
     },
 
     validateCommand: validateBitbucketCommand,
-    // Bitbucket's upload carries the same Basic credential the client already sends on every call.
-    uploadToken: async () => null,
   };
   return provider;
 }
