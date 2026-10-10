@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ActivityEntry } from '../../shared/activity';
-import { atBottom, latestStep } from './activity';
+import { atBottom, latestStep, stepText } from './activity';
 import { useT } from './i18n';
 import { formatElapsed } from './jobs';
 import { useActivity } from './useActivity';
@@ -14,11 +14,15 @@ function KindIcon({ entry }: { entry: ActivityEntry }) {
       ? 'M14.5 6.5a4 4 0 0 0-5 5L4 17l3 3 5.5-5.5a4 4 0 0 0 5-5l-2.5 2.5-2-2z'
       : entry.kind === 'text'
         ? 'M5 7h14M5 12h14M5 17h9'
-        : entry.state === 'finished'
-          ? 'M5 12.5l4.5 4.5L19 7.5'
-          : bad
-            ? 'M12 7v6m0 3.5v.5'
-            : 'M12 8v4l3 2';
+        : entry.kind === 'thought'
+          ? 'M12 3a6 6 0 0 0-3.5 10.9V17h7v-3.1A6 6 0 0 0 12 3zM9.5 20.5h5'
+          : entry.kind === 'answer'
+            ? 'M4 5h16v11H10l-6 4z'
+            : entry.state === 'finished'
+              ? 'M5 12.5l4.5 4.5L19 7.5'
+              : bad
+                ? 'M12 7v6m0 3.5v.5'
+                : 'M12 8v4l3 2';
   return (
     <svg className={`act-icon ${bad ? 'act-icon-bad' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label={t(`activity.kind.${entry.kind}`)}>
       <path d={d} />
@@ -61,7 +65,7 @@ export function ActivityTimeline({ entries }: { entries: readonly ActivityEntry[
           <li key={`${e.runId}:${e.seq}`} className={`act-step act-${e.kind} ${e.state === 'blocked' || e.state === 'failed' ? 'act-bad' : ''}`}>
             <time className="act-time">{formatElapsed(e.at - first)}</time>
             <KindIcon entry={e} />
-            <span className="act-label">{e.label}</span>
+            <span className="act-label">{stepText(e, t('activity.thought'))}</span>
           </li>
         ))}
       </ol>
@@ -103,7 +107,7 @@ export function AgentActivity({ jobId, since, agent }: { jobId: string | undefin
         </svg>
         <span className="act-head-text">
           <span className="act-title">{title}</span>
-          <span className="act-now" aria-live="off">{step ? step.label : t('activity.waiting')}</span>
+          <span className="act-now" aria-live="off">{step ? stepText(step, t('activity.thought')) : t('activity.waiting')}</span>
         </span>
         <span className="act-elapsed">{elapsed}</span>
         <span className="sr-only">{open ? t('activity.hide') : t('activity.show')}</span>

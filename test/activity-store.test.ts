@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActivityCall, ActivityEntry } from '../src/shared/activity';
 import { tagArgs, takeContext } from '../src/shared/activity';
-import { activeRunIds, atBottom, callGroups, createActivityStore, latestStep, mergeEntries, strayActivity } from '../src/renderer/src/activity';
+import { BUCKET_RUNS_MAX, activeRunIds, atBottom, callGroups, createActivityStore, latestStep, mergeEntries, stepText, strayActivity } from '../src/renderer/src/activity';
 import { createJobStore, currentJob, withJob } from '../src/renderer/src/jobs';
 
 let seq = 0;
@@ -36,6 +36,48 @@ describe('mergeEntries', () => {
     const many = Array.from({ length: 12 }, () => entry());
     const list = mergeEntries([], many, 5);
     expect(list).toEqual(many.slice(-5));
+  });
+
+  it('caps each run on its own: a child that floods leaves the lines of its parent', () => {
+    const parent = Array.from({ length: 4 }, () => entry({ runId: 'p' }));
+    const flood = Array.from({ length: 30 }, () => entry({ runId: 'c', parent: 'p', node: { type: 'sub', label: 'explore: x' } }));
+    const list = mergeEntries(mergeEntries([], parent, 5), flood, 5);
+    expect(list.filter((e) => e.runId === 'p')).toEqual(parent);
+    expect(list.filter((e) => e.runId === 'c')).toEqual(flood.slice(-5));
+    // the same when the lines arrive one by one, interleaved
+    let live: readonly ActivityEntry[] = [];
+    for (let i = 0; i < 12; i++) {
+      live = mergeEntries(live, [entry({ runId: 'c', parent: 'p' })], 5);
+      if (i < 4) live = mergeEntries(live, [entry({ runId: 'p' })], 5);
+    }
+    expect(live.filter((e) => e.runId === 'p')).toHaveLength(4);
+    expect(live.filter((e) => e.runId === 'c')).toHaveLength(5);
+  });
+
+  it('keeps the newest status line of a run even when the cap pushes it past the rest', () => {
+    const started = status('started', { runId: 'c' });
+    const tools = Array.from({ length: 9 }, () => entry({ runId: 'c' }));
+    const list = mergeEntries([], [started, ...tools], 4);
+    expect(list).toEqual([started, ...tools.slice(-4)]);
+    expect(activeRunIds(list)).toEqual(['c']);
+  });
+
+  it('drops the oldest finished trees whole past the bound of runs, and never a tree with a node still going', () => {
+    const tree = (id: string, over: 'finished' | 'live') => [
+      status('started', { runId: id }),
+      status('started', { runId: `${id}.1`, parent: id }),
+      status('finished', { runId: `${id}.1`, parent: id }),
+      ...(over === 'finished' ? [status('finished', { runId: id })] : []),
+    ];
+    const old = tree('old', 'finished');
+    const live = tree('live', 'live');
+    const fresh = tree('fresh', 'finished');
+    const list = mergeEntries(mergeEntries([], [...old, ...live], 200, 4), fresh, 200, 4);
+    expect([...new Set(list.map((e) => e.runId))].sort()).toEqual(['fresh', 'fresh.1', 'live', 'live.1']);
+    expect(BUCKET_RUNS_MAX).toBe(240);
+    // a bucket of finished trees only: the oldest go, whole
+    const many = Array.from({ length: 5 }, (_, i) => tree(`t${i}`, 'finished')).flat();
+    expect([...new Set(mergeEntries([], many, 200, 4).map((e) => e.runId))].sort()).toEqual(['t3', 't3.1', 't4', 't4.1']);
   });
 
   it('tells two runs apart even when their sequence numbers meet', () => {
@@ -125,12 +167,64 @@ describe('the activity store', () => {
       expect(store.entries('deep:#1:ask').map((e) => e.runId)).toEqual(['now', 'now']);
     });
 
+    it('keeps a sub-agent that began and ended in the gap when its parent is going, and a finished node of a tree it holds', () => {
+      const store = createActivityStore();
+      const key = 'run:r1';
+      store.add(status('started', { runId: 'stage', jobId: key }));
+      const gap = [
+        status('started', { runId: 'stage', jobId: key }),
+        status('started', { runId: 'kid', parent: 'stage', jobId: key, node: { type: 'sub', label: 'explore: x' } }),
+        entry({ runId: 'kid', parent: 'stage', jobId: key }),
+        status('finished', { runId: 'kid', parent: 'stage', jobId: key }),
+        status('started', { runId: 'grand', parent: 'kid', jobId: key }),
+        status('finished', { runId: 'grand', parent: 'kid', jobId: key }),
+      ];
+      store.backfillLive(key, gap);
+      expect(new Set(store.entries(key).map((e) => e.runId))).toEqual(new Set(['stage', 'kid', 'grand']));
+    });
+
+    it('keeps a finished child of a run the bucket already holds, and does not stitch an old tree in', () => {
+      const store = createActivityStore();
+      const key = 'run:r1';
+      store.add(status('finished', { runId: 'stage', jobId: key }));
+      store.backfillLive(key, [
+        status('started', { runId: 'late', parent: 'stage', jobId: key }),
+        status('finished', { runId: 'late', parent: 'stage', jobId: key }),
+        status('started', { runId: 'oldroot', jobId: key }),
+        status('finished', { runId: 'oldroot', jobId: key }),
+        status('started', { runId: 'oldkid', parent: 'oldroot', jobId: key }),
+        status('finished', { runId: 'oldkid', parent: 'oldroot', jobId: key }),
+        status('started', { runId: 'orphan', parent: 'missing', jobId: key }),
+        status('finished', { runId: 'orphan', parent: 'missing', jobId: key }),
+      ]);
+      expect(new Set(store.entries(key).map((e) => e.runId))).toEqual(new Set(['stage', 'late']));
+    });
+
+    it('survives a loop of parents without hanging', () => {
+      const store = createActivityStore();
+      store.backfillLive('k', [status('finished', { runId: 'a', parent: 'b', jobId: 'k' }), status('finished', { runId: 'b', parent: 'a', jobId: 'k' })]);
+      expect(store.entries('k')).toEqual([]);
+    });
+
     it('a screen opened fresh still gets every entry it asks for', () => {
       const store = createActivityStore();
       const gap = [status('started', { runId: 'old' }), status('finished', { runId: 'old' }), entry({ runId: 'old' })];
       store.backfill('deep:#1:ask', gap);
       expect(store.entries('deep:#1:ask')).toEqual(gap);
     });
+  });
+});
+
+describe('the words of the newest line', () => {
+  it('say the word for a thought and the label for any other line, so no collapsed row prints the reasoning', () => {
+    const thought = entry({ kind: 'thought', label: 'the reasoning, which may quote a file' });
+    expect(stepText(thought, 'Thought')).toBe('Thought');
+    expect(stepText(thought, 'Thought')).not.toContain('reasoning');
+    for (const kind of ['tool', 'text', 'answer', 'status'] as const) {
+      const e = entry({ kind, label: `a ${kind} line` });
+      expect(stepText(e, 'Thought')).toBe(`a ${kind} line`);
+    }
+    expect(stepText(latestStep([entry(), thought]) as ActivityEntry, 'Thought')).toBe('Thought');
   });
 });
 

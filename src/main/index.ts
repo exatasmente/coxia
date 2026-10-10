@@ -3,9 +3,9 @@ import { BrowserWindow, Menu, Notification, Tray, app, clipboard, ipcMain, nativ
 import type { HunkChoice } from '../shared/conflict';
 import type { Settings } from '../shared/settings';
 import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, TurnOptions, Voice } from '../shared/types';
-import { ACTIVITY_EVENT, ACTIVITY_GET } from '../shared/activity';
+import { ACTIVITY_EVENT, ACTIVITY_GET, reasoningOn } from '../shared/activity';
 import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, freeReleaseCheckout, listActions, previewAction, skipAction, startActions } from './actions';
-import { activityLog, setActivitySink } from './activity';
+import { activityLog, setActivitySink, setThoughtsGate } from './activity';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
 import { continueInClaude, pasteCommand } from './claude';
@@ -26,7 +26,7 @@ import { setBoardHost } from './board';
 import { realBoardHost, startBoardHost } from './boardHost';
 import { upperFirst } from '../shared/cycles/text';
 import { ceremonyLabel } from './cyclePrompts';
-import { onConfigChange } from './workspaceConfig';
+import { getConfig, onConfigChange } from './workspaceConfig';
 import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
@@ -282,6 +282,8 @@ if (!app.requestSingleInstanceLock()) {
     bindIpc((channel, fn) => ipcMain.handle(channel, (_e, ...args) => (fn as (...a: unknown[]) => unknown)(...args)));
     handlers();
     setActivitySink((entry) => emit({ type: 'module', name: ACTIVITY_EVENT, payload: entry }));
+    // Read when a thought is made, so the switch of the workspace takes effect from the next one.
+    setThoughtsGate(() => reasoningOn(getConfig()));
     registerWebAccess(join(import.meta.dirname, '../renderer'));
     startVoice();
     createWindow();

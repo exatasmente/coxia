@@ -3,7 +3,7 @@ import type { Screen } from './App';
 import { api } from './api';
 import type { ActivityEntry } from '../../shared/activity';
 import { ActivityTimeline } from './AgentActivity';
-import { callGroups, latestStep } from './activity';
+import { callGroups, latestStep, stepText } from './activity';
 import { t, tNodes, useT } from './i18n';
 import { appInView, systemNotify } from './jobNotify';
 import { type Job, formatElapsed, notificationText, sameScreen } from './jobs';
@@ -98,7 +98,7 @@ function Steps({ entries, name }: { entries: readonly ActivityEntry[]; name: str
         <svg className={`act-chevron ${open ? 'act-chevron-open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M9 6l6 6-6 6" />
         </svg>
-        <span className="jobs-steps-now">{step ? step.label : t('activity.waiting')}</span>
+        <span className="jobs-steps-now">{step ? stepText(step, t('activity.thought')) : t('activity.waiting')}</span>
         <span className="sr-only">{open ? t('activity.dock.hide', { name }) : t('activity.dock.show', { name })}</span>
       </button>
       {open && <ActivityTimeline entries={entries} />}

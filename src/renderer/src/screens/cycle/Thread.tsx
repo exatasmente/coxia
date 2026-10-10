@@ -6,7 +6,7 @@ import { type ForumMessage, MAX_MENTIONS, type MessageKind, messageText, parseMe
 import { type QuestionChain, applyMention, commandRound, groupThread, mentionAt, mentionChoices, mentionOptions } from '../../../../shared/forumView';
 import { type Run, canSendBack } from '../../../../shared/runs';
 import { mentionJob } from '../../../../shared/activity';
-import { type CallGroup, callGroups } from '../../activity';
+import { type CallGroup, callGroups, stepText } from '../../activity';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import { useActivity } from '../../useActivity';
@@ -66,7 +66,7 @@ export function CallLine({ group, team, screen, onWatch }: { group: CallGroup; t
   const t = useT();
   const [stopping, setStopping] = useState(false);
   const state = group.entry.state;
-  const label = state === 'queued' ? t('activity.queued') : state === 'started' ? t('activity.call.working') : group.entry.label;
+  const label = state === 'queued' ? t('activity.queued') : state === 'started' ? t('activity.call.working') : stepText(group.entry, t('activity.thought'));
   // A call that still waits its turn has no answer to stop yet: the main process would refuse, so the button is not offered.
   const queued = group.entries.findLast((e) => e.kind === 'status')?.state === 'queued';
   const name = agentName(team, group.agent);

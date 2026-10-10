@@ -32,7 +32,19 @@ const place: MentionPlace = { thread: 'squads', kind: 'channel', squad: null, re
 
 function line(id: string): RunActivity & { states: string[] } {
   const states: string[] = [];
-  return { id, states, tool: () => undefined, text: () => undefined, blocked: () => undefined, status: (s) => void states.push(s) };
+  const made: RunActivity & { states: string[] } = {
+    id,
+    states,
+    tool: () => undefined,
+    text: () => undefined,
+    thought: () => undefined,
+    answer: () => undefined,
+    blocked: () => undefined,
+    status: (s) => void states.push(s),
+    child: () => line(`${id}-child`),
+    lend: () => made,
+  };
+  return made;
 }
 
 describe('the call line of a mention', () => {
