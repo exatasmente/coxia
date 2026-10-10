@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { DocsConfig } from '../../../shared/config/types';
 import { type DocsRepoStatus, type DocsStatus, isClaudeSource } from '../../../shared/harness/status';
-import { docsListsOf, withDocsSources } from '../../../shared/harness/sources';
+import { docsListsOf, withDocsSources, withRoadmapFile } from '../../../shared/harness/sources';
 import type { DocsKey } from '../../../shared/wizard';
 import type { Screen } from '../App';
 import { errorText } from '../api';
@@ -25,6 +25,10 @@ export function DocsSection({ go }: { go: (s: Screen) => void }) {
   const [lists, setLists] = useState<Pick<DocsConfig, DocsKey> | null>(null);
   const [dirty, setDirty] = useState(false);
   const [saved, setSaved] = useState(false);
+  // The roadmap pointer is saved on its own: `null` until the configuration is read, then the text typed (blank = none).
+  const [roadmap, setRoadmap] = useState<string | null>(null);
+  const [roadmapStored, setRoadmapStored] = useState('');
+  const [roadmapSaved, setRoadmapSaved] = useState(false);
 
   const read = useCallback(async () => {
     setLoading(true);
@@ -41,7 +45,11 @@ export function DocsSection({ go }: { go: (s: Screen) => void }) {
   useEffect(() => {
     if (web) return;
     void read();
-    void wizardApi.config().then((view) => setLists(docsListsOf(view.config)), (e) => setError(errorText(e)));
+    void wizardApi.config().then((view) => {
+      setLists(docsListsOf(view.config));
+      setRoadmap(view.config.docs.roadmapFile ?? '');
+      setRoadmapStored(view.config.docs.roadmapFile ?? '');
+    }, (e) => setError(errorText(e)));
   }, [web, read]);
 
   if (web) return null;
@@ -82,6 +90,21 @@ export function DocsSection({ go }: { go: (s: Screen) => void }) {
       await wizardApi.save(withDocsSources(current, lists));
       setDirty(false);
       setSaved(true);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
+  const saveRoadmap = async () => {
+    if (roadmap === null) return;
+    setError(null);
+    try {
+      // Same reason as `save`: the configuration as it is now, since saving replaces the whole of it.
+      const current = (await wizardApi.config()).config;
+      await wizardApi.save(withRoadmapFile(current, roadmap));
+      setRoadmapStored(roadmap.trim());
+      setRoadmap(roadmap.trim());
+      setRoadmapSaved(true);
     } catch (e) {
       setError(errorText(e));
     }
@@ -156,6 +179,28 @@ export function DocsSection({ go }: { go: (s: Screen) => void }) {
           <div className="row" style={{ gap: 10 }}>
             <button type="button" className="btn btn-dark" disabled={!dirty} onClick={() => void save()}>{t('ui.settings.docs.sources.save')}</button>
             {saved && <span className="small" style={{ color: 'var(--teal-ink)' }}>{t('ui.settings.docs.sources.saved')}</span>}
+          </div>
+        </div>
+      )}
+
+      {roadmap !== null && (
+        <div className="panel" style={{ padding: 14, gap: 10 }}>
+          <div>
+            <h3 className="wz-sub">{t('ui.settings.docs.roadmap.title')}</h3>
+            <p className="small muted">{t('ui.settings.docs.roadmap.hint')}</p>
+          </div>
+          <input
+            className="text-input mono"
+            spellCheck={false}
+            maxLength={4000}
+            aria-label={t('ui.settings.docs.roadmap.title')}
+            placeholder={t('ui.settings.docs.roadmap.placeholder')}
+            value={roadmap}
+            onChange={(e) => { setRoadmap(e.target.value); setRoadmapSaved(false); }}
+          />
+          <div className="row" style={{ gap: 10 }}>
+            <button type="button" className="btn btn-dark" disabled={roadmap.trim() === roadmapStored} onClick={() => void saveRoadmap()}>{t('ui.settings.docs.roadmap.save')}</button>
+            {roadmapSaved && <span className="small" style={{ color: 'var(--teal-ink)' }}>{t('ui.settings.docs.sources.saved')}</span>}
           </div>
         </div>
       )}

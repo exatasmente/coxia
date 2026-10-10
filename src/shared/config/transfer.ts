@@ -175,6 +175,7 @@ export function collectPaths(c: WorkspaceConfig): { field: string; path: string 
   c.projects.repos.forEach((r) => add(`projects.repos[${r.id}].path`, r.path));
   for (const key of ['claudeMdRoots', 'skillsDirs', 'rulesDirs', 'agentsDirs', 'knowledgeDirs', 'mcpConfigFiles'] as const) c.docs[key].forEach((p, i) => add(`docs.${key}[${i}]`, p));
   add('docs.specsDir', c.docs.specsDir);
+  add('docs.roadmapFile', c.docs.roadmapFile ?? null);
   add('externalTools.releaseSync.cwd', c.externalTools.releaseSync.cwd);
   add('externalTools.releaseSync.mirrorsDir', c.externalTools.releaseSync.mirrorsDir);
   add('externalTools.cardSource.stateFile', c.externalTools.cardSource.stateFile);

@@ -305,6 +305,8 @@
   "ui.runner.sandbox.pathsNone": "none",
   "ui.runner.sandbox.unavailable": "This computer cannot make a sandbox: {reason}.",
   "ui.runner.saved": "Runner settings saved.",
+  "ui.runner.sharedMemory": "Shared memory of the agents",
+  "ui.runner.sharedMemoryHint": "On, agents keep notes per conversation (decisions and findings) and read a short list of what the whole app has kept, wherever they run; they open one entry only when they need it. The Memory view lists, edits and removes the notes whether this is on or off. A workspace that existed before this was added has it off. The computer and a paired browser both change it.",
   "ui.runner.soleMaintainer": "I am the only maintainer of the repository",
   "ui.runner.soleMaintainerHint": "For when nobody else can review: the host does not let you approve a {crLong} you opened, so a release could never merge one. On, your yes in Actions on a release merge stands for the review of a {crLong} opened by the account the app uses on the host, on which nobody asked for changes; every release merge then waits for that yes, even with an agent that runs by itself. One that someone else opened still needs an approval on the host. Off when the repository has other reviewers.",
   "ui.runner.soleMaintainerOff": "Off: a release merge needs an approval on the host",

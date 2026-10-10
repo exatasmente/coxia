@@ -9,7 +9,7 @@ const keys = (d: RunnerDraft, flow = true) => runnerProblems(d, flow).map((p) =>
 describe('the runner draft', () => {
   it('round trips the defaults and a configured runner', () => {
     expect(runnerOf(base())).toEqual(neutralConfig().runner);
-    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40 }, identity: { name: 'Bot', email: 'bot@example.com' }, sandbox: neutralConfig().runner.sandbox, autonomy: neutralConfig().runner.autonomy, evidence: 'app', procedures: true, flex: false, unconfined: true, commitMessage: 'fix: {summary} {iid}', prTitle: '#{iid} {title}', linkDependencies: true, release: { soleMaintainer: true }, conversations: { roundsPerConversation: 8, perStage: 2 } };
+    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40 }, identity: { name: 'Bot', email: 'bot@example.com' }, sandbox: neutralConfig().runner.sandbox, autonomy: neutralConfig().runner.autonomy, evidence: 'app', procedures: true, flex: false, unconfined: true, sharedMemory: false, commitMessage: 'fix: {summary} {iid}', prTitle: '#{iid} {title}', linkDependencies: true, release: { soleMaintainer: true }, conversations: { roundsPerConversation: 8, perStage: 2 } };
     expect(runnerOf(draftOfRunner(r))).toEqual(r);
     expect(draftOfRunner(r)).toMatchObject({ commandsMode: 'custom', idleMinutes: 15, maxMinutes: 90, turnsRead: 12, turnsWrite: 40 });
   });
@@ -46,6 +46,17 @@ describe('the runner draft', () => {
     expect(runnerOfWeb({ ...base(), procedures: false }, neutralConfig().runner).procedures).toBe(true);
     expect(runnerOfWeb({ ...base(), procedures: true }, { ...old, procedures: false }).procedures).toBe(false);
     expect(runnerOfWeb({ ...base(), procedures: true }, old).procedures).toBeUndefined();
+  });
+
+  it('carries the shared memory switch from the computer and from a paired browser, and reads a config stored without it as off', () => {
+    expect(base().sharedMemory).toBe(true);
+    expect(runnerOf({ ...base(), sharedMemory: false }).sharedMemory).toBe(false);
+    const { sharedMemory: _gone, ...old } = neutralConfig().runner;
+    expect(draftOfRunner(old).sharedMemory).toBe(false);
+    // unlike the procedures, a paired browser changes it both ways (the path is in WEB_EDITABLE), so the draft's choice is what is saved
+    expect(runnerOfWeb({ ...base(), sharedMemory: false }, neutralConfig().runner).sharedMemory).toBe(false);
+    expect(runnerOfWeb({ ...base(), sharedMemory: true }, { ...neutralConfig().runner, sharedMemory: false }).sharedMemory).toBe(true);
+    expect(runnerOfWeb({ ...base(), sharedMemory: true }, old).sharedMemory).toBe(true);
   });
 
   it('carries the flex switch from the computer, reads a config stored without it as on, and keeps the stored one from a paired browser', () => {

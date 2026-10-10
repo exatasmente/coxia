@@ -100,6 +100,19 @@ describe('what a browser may change', () => {
     expect(WEB_EDITABLE.some((p) => 'runner.procedures'.startsWith(p))).toBe(false);
   });
 
+  it('lets a paired browser turn the shared memory on and off, and still refuses the roadmap pointer, which names a file of the computer', () => {
+    expect(refused((c) => { c.runner.sharedMemory = false; })).toEqual([]);
+    const off = edit((c) => { c.runner.sharedMemory = false; });
+    expect(refusedPaths(off, edit((c) => { c.runner.sharedMemory = true; }))).toEqual([]);
+    expect(WEB_EDITABLE).toContain('runner.sharedMemory');
+    // a stored config that never had the field gets it written by the draft: the same path, admitted
+    expect(refusedPaths(edit((c) => { delete c.runner.sharedMemory; }), edit((c) => { c.runner.sharedMemory = false; }))).toEqual([]);
+    expect(refused((c) => { c.docs.roadmapFile = '/etc/passwd'; })).toEqual(['docs.roadmapFile']);
+    expect(WEB_EDITABLE.some((p) => 'docs.roadmapFile'.startsWith(p))).toBe(false);
+    // nothing but the switch comes through with it
+    expect(refused((c) => { c.runner.sharedMemory = false; c.runner.unconfined = true; })).toEqual(['runner.unconfined']);
+  });
+
   it('refuses the external tools, the documents, the projects, the models, the hosts, the voice and everything else', () => {
     expect(refused((c) => { c.externalTools.terminal.command = 'sh'; })).toEqual(['externalTools.terminal.command']);
     expect(refused((c) => { c.docs.specsDir = '/etc'; })).toEqual(['docs.specsDir']);
