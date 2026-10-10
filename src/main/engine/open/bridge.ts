@@ -10,7 +10,7 @@ import { EngineError } from './errors';
 import { type Capabilities, type OpenRunParams, OpenMaxTurnsError, type RunEvents, runOpen } from './loop';
 import { ProviderBudgetError } from '../contract';
 import type { Activity, PoolMode, ScoreOverrides } from '../../../shared/config/types';
-import type { OpenPool, PoolMember } from './pool';
+import type { MemberParams, OpenPool, PoolMember, Tuning } from './pool';
 import type { Json } from './types';
 import { existsSync } from 'node:fs';
 
@@ -24,6 +24,8 @@ export interface PoolMemberSpec {
   provider?: string;
   config: ProviderConfig;
   capabilities?: Capabilities;
+  /** The extra parameters this model may be sent (its provider's features and the catalog's mark of it). */
+  params?: MemberParams;
 }
 
 /** The pool of the role the call is made for: the model the call starts on is `provider`, and these are the others. */
@@ -39,6 +41,8 @@ export interface SelectionPool {
 
 export interface OpenEngineSelection {
   provider: ProviderConfig;
+  /** What the model the call starts on may be sent beyond the protocol; absent: nothing. */
+  params?: MemberParams;
   pool?: SelectionPool;
   capabilities?: Capabilities;
   structured?: OpenRunParams['structured'];
@@ -85,7 +89,7 @@ export function defaultDocSources(cwd: string): DocSources {
 
 function memberOf(spec: PoolMemberSpec): PoolMember {
   const c = spec.capabilities;
-  return { key: spec.key, label: spec.label, model: spec.config.model, provider: spec.provider, client: clientFor(spec.config), images: c?.images, tools: c?.tools, contextWindow: c?.contextWindow };
+  return { key: spec.key, label: spec.label, model: spec.config.model, provider: spec.provider, client: clientFor(spec.config), images: c?.images, tools: c?.tools, contextWindow: c?.contextWindow, ...(spec.params ? { params: spec.params } : {}) };
 }
 
 function poolOf(pool: SelectionPool | undefined): OpenPool | undefined {
@@ -109,6 +113,8 @@ export interface BridgeArgs {
   writeReserved?: readonly string[];
   writeAllow?: readonly string[];
   signal?: AbortSignal;
+  /** What the call is for: background (nobody waits) and the effort of each activity. */
+  tuning?: Tuning;
   describeTool?: (name: string, input: Json) => string;
   events?: RunEvents;
   makeMaxTurnsError: (sessionId: string, sources: string[]) => Error;
@@ -129,6 +135,8 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
       client: clientFor(a.selection.provider),
       pool: poolOf(a.selection.pool),
       capabilities: a.selection.capabilities,
+      ...(a.selection.params ? { params: a.selection.params } : {}),
+      ...(a.tuning ? { tuning: a.tuning } : {}),
       structured: a.selection.structured,
       cwd,
       additionalDirectories: o.additionalDirectories,

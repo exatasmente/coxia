@@ -302,6 +302,7 @@ async function turnOf(
     confine: writes ? { root: deps.run.worktree, hooks: confinedHooks({ root: deps.run.worktree, commands: deps.commands, onDenied: denied }) } : undefined,
     exec: session ?? undefined,
     label: deps.called.id,
+    background: true,
     maxTurns: 12,
     abort: held?.abort ?? deps.abort,
     runnerTools: calledAgentTools(tools),

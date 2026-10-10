@@ -266,6 +266,11 @@ export interface EngineRequest {
    * at the start of a call and nothing more. Absent: `switch`, which is how a pool behaved before the modes.
    */
   poolMode?: PoolMode;
+  /**
+   * Nobody waits for the answer, so the open engine may ask a server that has it for the cheaper tier (flex), for the models that take it. Set for a stage, a question
+   * between agents and the last turn of procedures; absent for a ceremony and a mention, where the person is waiting. The Claude SDK ignores it.
+   */
+  background?: boolean;
   /** Where the engine reports what it is doing (tool calls, narration, blocked calls); the run's own states are reported by `run`. */
   activity?: RunActivity;
   /**

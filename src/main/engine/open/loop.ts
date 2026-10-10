@@ -14,7 +14,7 @@ import {
   skillTool,
 } from './context';
 import { EngineError } from './errors';
-import { type OpenPool, type PoolMember, type PoolSwitch, PoolClient, activityOf, weigh } from './pool';
+import { type MemberParams, type OpenPool, type PoolMember, type PoolSwitch, type Tuning, PoolClient, activityOf, weigh } from './pool';
 import { scrubbedEnv } from '../guard';
 import { type SdkHooks, policyFromHooks } from './policy';
 import { describeErrors, prune, validate } from './schema';
@@ -60,6 +60,8 @@ export interface RunEvents {
   onInterim?: (text: string) => void;
   // The call moved to another model of the role's pool (it was busy, or the turn is for an activity the first one does not serve).
   onSwitch?: (e: PoolSwitch) => void;
+  // A call waits in the server's queue (the flex tier): a sign of life every so often, though the model says nothing.
+  onWait?: () => void;
 }
 
 export interface OpenRunParams {
@@ -77,6 +79,10 @@ export interface OpenRunParams {
   // A sub-agent handed a task in `delegate` mode: it has only the tools of this kind that its parent has.
   kind?: SubKind;
   capabilities?: Capabilities;
+  // What `client`'s model may be sent beyond the protocol (the tier, the effort, fail-fast), as its provider and the catalog allow; a model of the pool has its own.
+  params?: MemberParams;
+  // What the call is for: a call nobody waits for may use the cheaper tier, and the effort of each activity.
+  tuning?: Tuning;
   structured?: StructuredStrategy;
   cwd: string;
   additionalDirectories?: string[];
@@ -333,14 +339,18 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     images: p.capabilities?.images,
     tools: p.capabilities?.tools,
     contextWindow: p.capabilities?.contextWindow,
+    ...(p.params ? { params: p.params } : {}),
   };
   // How the pool is used. Without lists for explore, edit, shell or screen only a busy model moves the call (`fallback`); a pool the engine is given without a mode
   // is a `switch` one. `switch` sends each turn to its activity's list, the other two keep the model in use on the role's `write` list.
-  const mode = p.pool?.mode ? effectivePoolMode(p.pool.mode, p.pool.activities) : 'switch';
+  // A call with no pool at all has no list to switch by: it is a plain `fallback`, and its main model asks for one effort (that of `write`) on every turn.
+  const mode = !p.pool ? 'fallback' : p.pool.mode ? effectivePoolMode(p.pool.mode, p.pool.activities) : 'switch';
   const pool =
     p.poolClient ??
     new PoolClient(primary, p.pool, {
       route: mode === 'switch' ? 'activity' : 'fixed',
+      ...(p.tuning ? { tuning: p.tuning } : {}),
+      onWait: () => events.onWait?.(),
       onSwitch: (e) => {
         if (persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'switch', at: now().toISOString(), from: e.from.label, to: e.to.label, reason: e.reason, until: e.until, activity: e.activity }]);
         events.onSwitch?.(e);
@@ -383,7 +393,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         sessionsDir: null,
         sources,
         depth: (p.depth ?? 0) + 1,
-        ...(own ? { client: own.client, capabilities: own.capabilities, pool: own.pool, poolClient: undefined } : { poolClient: pool }),
+        ...(own ? { client: own.client, capabilities: own.capabilities, params: own.params, pool: own.pool, poolClient: undefined } : { poolClient: pool }),
         startActivity: 'explore',
         ...(kind ? { kind, incoming: undefined, events: { ...events, onUsage: (u) => { model = u.model; events.onUsage?.(u); } } } : {}),
       });
@@ -486,7 +496,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     let compacted = false;
     for (;;) {
       try {
-        const { completion: c, member } = await pool.complete({ messages, tools: o.tools?.length ? o.tools : undefined, toolChoice: o.toolChoice, responseFormat: o.responseFormat, signal: p.signal, onText: events.onText, onReasoning: events.onReasoning }, need());
+        const { completion: c, member } = await pool.complete({ messages, tools: o.tools?.length ? o.tools : undefined, toolChoice: o.toolChoice, responseFormat: o.responseFormat, signal: p.signal, onText: events.onText, onReasoning: events.onReasoning }, need(), p.kind);
         const u: UsageRecord = c.usage
           ? {
               promptTokens: c.usage.promptTokens,

@@ -65,6 +65,7 @@ export function requestCall(i: RequestInput): AgentCall {
     label: i.holder.id,
     maxTurns: i.config.runner.turns.read,
     wrapUp: true,
+    background: true,
   };
 }
 

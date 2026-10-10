@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { activityLog, withActivityContext } from '../src/main/activity';
-import { obj, runAgent, str } from '../src/main/agents';
+import { askAgent, obj, runAgent, str } from '../src/main/agents';
 import { confinedHooks, readConfinedHooks, type Denial } from '../src/main/runner/hooks';
 import { newProvider } from '../src/shared/config/defaults';
 import { newAgent } from '../src/shared/config/team';
@@ -156,6 +156,90 @@ describe('runAgent on the open engine', () => {
     } finally {
       await metered.close();
     }
+  });
+
+  describe('what the provider offers', () => {
+    const ON = { serviceTier: true, failFast: true, reasoningEffort: true };
+    const OFFER = { flex: true, effort: true };
+    const seen = (f: Fake, n: number) => Object.fromEntries(['service_tier', 'reasoning_effort', 'fail_fast'].filter((k) => k in (f.chats()[n].body ?? {})).map((k) => [k, (f.chats()[n].body as Record<string, unknown>)[k]]));
+    const setup = async (id: string, features: object | undefined, efforts: object = {}) => {
+      const f = await fakeOpenAI((req) => (req.n === 1 ? toolStep([{ id: 'g', name: 'Glob', args: { pattern: '*' } }], { usageTokens: [10, 2] }) : toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }], { usageTokens: [10, 2] })));
+      const { updateConfig } = await import('../src/main/workspaceConfig');
+      updateConfig((c) => {
+        c.llm.providers.push({ ...newProvider({ id, kind: 'openai-compatible', baseUrl: f.url, structured: 'tool' }), ...(features ? { features } : {}) } as never);
+        c.llm.effort = efforts;
+        return c;
+      });
+      return f;
+    };
+    const reader = (id: string) => newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider: id, model: 'model-a', offer: OFFER } });
+    const ask = (agent: ReturnType<typeof reader>, extra: object = {}) => runAgent({ agent, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'reviewer', maxTurns: 4, ...extra });
+
+    it('a stage (a call nobody waits for) on a model marked for flex asks for the flex tier, with the effort of write', async () => {
+      const f = await setup('offer1', ON, { write: 'high' });
+      try {
+        await ask(reader('offer1'), { background: true });
+        expect([0, 1].map((n) => seen(f, n))).toEqual([{ service_tier: 'flex', reasoning_effort: 'high' }, { service_tier: 'flex', reasoning_effort: 'high' }]);
+      } finally {
+        await f.close();
+      }
+    });
+
+    it('a call somebody waits for never asks for the flex tier, and still asks for the effort', async () => {
+      const f = await setup('offer2', ON, { write: 'high' });
+      try {
+        await ask(reader('offer2'));
+        expect(seen(f, 0)).toEqual({ reasoning_effort: 'high' });
+      } finally {
+        await f.close();
+      }
+    });
+
+    it('a ceremony asks for neither the tier nor, with no effort chosen for write, any effort, though its provider has them', async () => {
+      const f = await setup('offer3', ON);
+      try {
+        const { updateConfig } = await import('../src/main/workspaceConfig');
+        updateConfig((c) => {
+          c.llm.roles.deep = { provider: 'offer3', model: 'model-a', offer: OFFER };
+          return c;
+        });
+        await askAgent('deep', 'question', obj({ fala: str }), { maxTurns: 3 });
+        expect(seen(f, 0)).toEqual({});
+      } finally {
+        await f.close();
+      }
+    });
+
+    it('a provider without the features sends none of the three, for a stage too', async () => {
+      const f = await setup('offer4', undefined, { write: 'high' });
+      try {
+        await ask(reader('offer4'), { background: true });
+        expect([0, 1].map((n) => seen(f, n))).toEqual([{}, {}]);
+      } finally {
+        await f.close();
+      }
+    });
+
+    it('a model the catalog did not mark gets nothing, and the flex switch of the workspace turns the tier off', async () => {
+      const f = await setup('offer5', ON, { write: 'high' });
+      try {
+        await ask(newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider: 'offer5', model: 'model-a' } }), { background: true });
+        expect(seen(f, 0)).toEqual({});
+        const { updateConfig } = await import('../src/main/workspaceConfig');
+        updateConfig((c) => {
+          c.runner.flex = false;
+          return c;
+        });
+        await ask(reader('offer5'), { background: true });
+        expect(seen(f, 2)).toEqual({ reasoning_effort: 'high' });
+        updateConfig((c) => {
+          c.runner.flex = true;
+          return c;
+        });
+      } finally {
+        await f.close();
+      }
+    });
   });
 
   it('serves a reader with no Write, no Edit and no shell', async () => {

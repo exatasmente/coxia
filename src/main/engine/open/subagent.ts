@@ -2,7 +2,7 @@
 // more), how many turns it gets, and which model list it runs on. Everything here is pure: `loop.ts` runs the sub-agent.
 import type { Activity, ScoreOverrides } from '../../../shared/config/types';
 import type { Capabilities } from './loop';
-import type { OpenPool, PoolMember } from './pool';
+import type { MemberParams, OpenPool, PoolMember } from './pool';
 import type { ChatClient } from './client';
 import type { ToolImpl } from './tools/types';
 
@@ -56,6 +56,7 @@ export function offeredKinds(o: OfferInput): SubKind[] {
 export interface KindModel {
   client: ChatClient;
   capabilities: Capabilities;
+  params?: MemberParams;
   pool: OpenPool;
 }
 
@@ -66,6 +67,7 @@ export function modelOfKind(kind: SubKind, pool: OpenPool | undefined): KindMode
   const overrides: ScoreOverrides | undefined = pool.scoreOverrides;
   return {
     client: first.client,
+    ...(first.params ? { params: first.params } : {}),
     capabilities: { ...(first.tools !== undefined ? { tools: first.tools } : {}), ...(first.contextWindow !== undefined ? { contextWindow: first.contextWindow } : {}), ...(first.images !== undefined ? { images: first.images } : {}) },
     // Its pool is the list: a busy model hands the call to the next of the list, and the call stays where it is (`fallback`), never moving by activity.
     pool: { name: pool.name, primary: { key: first.key, label: first.label, provider: first.provider }, fallbacks: list.filter((m) => m.key !== first.key), mode: 'fallback', ...(overrides ? { scoreOverrides: overrides } : {}) },

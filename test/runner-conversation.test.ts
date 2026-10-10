@@ -65,6 +65,8 @@ describe('a conversation between two agents', () => {
     expect(r.rounds).toBe(1);
     // The called agent answered once; the second message of the caller never reached it.
     expect(calls).toHaveLength(1);
+    // nobody waits for it, so the engine may use the cheaper tier
+    expect(calls[0].background).toBe(true);
     const thread = forum.read(runThreadId('r1'), 0, 500)?.messages ?? [];
     expect(thread.find((m) => m.code === 'runner.conversation.rounds')?.params).toMatchObject({ cap: 1 });
     expect(thread.find((m) => m.code === 'runner.conversation.ended')).toBeDefined();

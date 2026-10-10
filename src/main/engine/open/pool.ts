@@ -1,6 +1,6 @@
 // The pool of models a call may move between. The first half is pure: which list serves a turn, which members of it can take the turn, which one is picked; it
 // knows nothing of clients or of the clock. `PoolClient` below puts those choices in front of the clients of the members.
-import { ACTIVITIES, type Activity, type PoolMode, type ScoreOverrides } from '../../../shared/config/types';
+import { ACTIVITIES, type Activity, type PoolMode, type ReasoningEffort, type ScoreOverrides } from '../../../shared/config/types';
 import { t } from '../../../shared/i18n';
 import { floorFor, scoreFor } from '../../../shared/modelScores';
 import { ProviderBusyError } from '../contract';
@@ -105,6 +105,22 @@ export function allMembers<M extends MemberFacts>(lists: PoolLists<M>): M[] {
 // ---------------------------------------------------------------------------------------------------------------------
 // The client of a pool.
 
+/**
+ * Which extra parameters a model may be sent: what the provider's features and the catalog's mark of the model already allow (see `config/offer`). Absent: none, and the
+ * request is exactly what it was before these existed.
+ */
+export interface MemberParams {
+  flex?: boolean;
+  effort?: boolean;
+  failFast?: boolean;
+}
+
+/** What the call is for: a call nobody waits for may ask for the cheaper tier, and the effort each activity asks of a model that reasons. */
+export interface Tuning {
+  background?: boolean;
+  efforts?: Partial<Record<Activity, ReasoningEffort>>;
+}
+
 /** A model of the pool with the client that talks to it. */
 export interface PoolMember extends MemberFacts {
   /** The model as the person reads it. */
@@ -112,6 +128,7 @@ export interface PoolMember extends MemberFacts {
   /** The provider id the model is reached through, for messages. */
   provider?: string;
   client: ChatClient;
+  params?: MemberParams;
 }
 
 /** What the loop is given besides the model it was started on: its spares, and the complete lists some activities have. */
@@ -156,6 +173,11 @@ export interface PoolClientOptions {
   registry?: RestRegistry;
   onSwitch?: (e: PoolSwitch) => void;
   route?: PoolRoute;
+  tuning?: Tuning;
+  /** Called while a call in the flex tier waits in the server's queue, so the stage is not read as stopped. */
+  onWait?: () => void;
+  /** How often `onWait` is called (ms). */
+  waitEveryMs?: number;
 }
 
 /**
@@ -211,8 +233,34 @@ export class PoolClient {
     this.authors.set(message, member.key);
   }
 
-  async complete(o: CallOptions, need: Need): Promise<{ completion: Completion; member: PoolMember }> {
-    if (!this.pooled) return { completion: await this.primary.client.complete(o), member: this.primary };
+  /**
+   * The call as one member is to receive it: the tier, the effort and fail-fast only where the member's provider and the catalog allow them and the call asks for them.
+   * The effort is that of the activity the call belongs to (`effortAs`: a sub-agent of a kind asks for its kind's), and the main model of a fixed route asks for `write`'s.
+   */
+  private tuned(o: CallOptions, member: PoolMember, need: Need, effortAs: Activity | undefined, failFast: boolean): CallOptions {
+    const params = member.params;
+    if (!params) return o;
+    const t = this.opts.tuning;
+    const effort = params.effort ? t?.efforts?.[effortAs ?? (this.opts.route === 'fixed' ? 'write' : need.activity)] : undefined;
+    return { ...o, ...(t?.background && params.flex ? { serviceTier: 'flex' as const } : {}), ...(effort ? { effort } : {}), ...(failFast && params.failFast ? { failFast: true } : {}) };
+  }
+
+  /** Runs the call; while it waits in the flex queue, tells the caller every `waitEveryMs`. */
+  private async waiting<R>(o: CallOptions, run: () => Promise<R>): Promise<R> {
+    if (!o.serviceTier || !this.opts.onWait) return run();
+    const timer = setInterval(() => this.opts.onWait?.(), this.opts.waitEveryMs ?? 30_000);
+    try {
+      return await run();
+    } finally {
+      clearInterval(timer);
+    }
+  }
+
+  async complete(o: CallOptions, need: Need, effortAs?: Activity): Promise<{ completion: Completion; member: PoolMember }> {
+    if (!this.pooled) {
+      const call = this.tuned(o, this.primary, need, effortAs, false);
+      return { completion: await this.waiting(call, () => this.primary.client.complete(call)), member: this.primary };
+    }
     // Members that refused during this call: they rest app-wide, and are not asked again by it either way.
     const refused = new Map<string, EngineError>();
     let left: { member: PoolMember; reason: SwitchReason; until: number | null } | null = null;
@@ -228,8 +276,11 @@ export class PoolClient {
         this.opts.onSwitch?.({ from: { label: from.label, provider: from.provider }, to: { label: pick.label, provider: pick.provider }, reason, until: left ? left.until : resting, activity: need.activity });
       }
       left = null;
+      // A model that is not the last one available refuses at once when busy, and the pool goes on to the next; the last one waits in the queue.
+      const others = list.some((m) => m.key !== pick.key && !this.skipped(m.key) && !refused.has(m.key));
+      const call = this.tuned({ ...o, messages: this.viewFor(pick, o.messages) }, pick, need, effortAs, others);
       try {
-        const completion = await pick.client.complete({ ...o, messages: this.viewFor(pick, o.messages) });
+        const completion = await this.waiting(call, () => pick.client.complete(call));
         return { completion, member: pick };
       } catch (e) {
         if (e instanceof EngineError && BUSY.has(e.kind)) {

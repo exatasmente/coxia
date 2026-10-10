@@ -25,6 +25,7 @@ import { scrubShellHooks } from './engine/scrubShell';
 import { type DocSources, type OpenEngineSelection, type PoolMemberSpec, type SelectionPool, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
 import { memberKey, withPool, withoutPool } from './modelPick';
 import { ACTIVITIES, type Activity } from '../shared/config/types';
+import { canEffort, canFailFast, canFlex, effortFor } from '../shared/config/offer';
 import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
 import { crossDayRepeats } from './minutesStore';
 import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchangedTurn } from './sameDay';
@@ -42,6 +43,7 @@ import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } 
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
 import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
 import { runnerMcpServer, runnerMcpToolName } from './runner/tools';
+import type { MemberParams, Tuning } from './engine/open/pool';
 import type { ToolImpl } from './engine/open/tools/types';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider, vcsReady } from './vcs';
@@ -475,6 +477,16 @@ function openDocs(cwd: string, role: ModelRole, isolated = false, bare = false):
   return isolated || Object.values(docs).some((list) => list.length) ? docs : defaultDocSources(cwd);
 }
 
+/** What the model may be sent beyond the protocol: only what the provider's features and the catalog's mark of the model allow, and the workspace's flex switch. */
+function extras(t: ResolvedRole): MemberParams | undefined {
+  const params: MemberParams = {
+    ...(canFlex(t.features, t.offer, getConfig().runner.flex) ? { flex: true } : {}),
+    ...(canEffort(t.features, t.offer) ? { effort: true } : {}),
+    ...(canFailFast(t.features) ? { failFast: true } : {}),
+  };
+  return Object.keys(params).length ? params : undefined;
+}
+
 /** How to reach one model of the open engine and what is known of it: the key from the secrets store, the probe results from the config, the facts of the pool entry. */
 function openMember(t: ResolvedRole): PoolMemberSpec {
   const c = t.capabilities;
@@ -495,6 +507,7 @@ function openMember(t: ResolvedRole): PoolMemberSpec {
       ...(t.timeoutMs !== null ? { timeoutMs: t.timeoutMs } : {}),
       ...(t.echoReasoning !== undefined ? { echoReasoning: t.echoReasoning } : {}),
     },
+    ...(extras(t) ? { params: extras(t) } : {}),
     ...(c || images !== undefined || contextWindow !== null
       ? { capabilities: { ...(c ? { tools: c.tools, jsonSchema: c.jsonSchema } : {}), ...(contextWindow !== null ? { contextWindow } : {}), ...(images !== undefined ? { images } : {}) } }
       : {}),
@@ -534,6 +547,7 @@ export function openSelection(t: ResolvedRole, cwd: string, isolated = false, ba
   const overrides = getConfig().llm.scoreOverrides;
   return {
     provider: first.config,
+    ...(first.params ? { params: first.params } : {}),
     ...(pooled ? { pool: { name: t.role, primary: { key: first.key, label: first.label, provider: first.provider }, fallbacks, activities, ...(overrides ? { scoreOverrides: overrides } : {}), ...(mode ? { mode } : {}) } } : {}),
     ...(first.capabilities ? { capabilities: first.capabilities } : {}),
     structured: t.structured,
@@ -559,6 +573,13 @@ function wantsVcsTool(req: EngineRequest): boolean {
 async function commandPath(): Promise<Record<string, string>> {
   const path = mergedPath(await loginPath.resolve(), process.env);
   return path ? { PATH: path } : {};
+}
+
+/** What the call is for, as the open engine needs it: whether anyone waits for it, and the effort the workspace asks for per activity. */
+function tuningOf(req: EngineRequest): Tuning {
+  const llm = getConfig().llm;
+  const efforts = Object.fromEntries(ACTIVITIES.flatMap((a) => (effortFor(llm, a) ? [[a, effortFor(llm, a)]] : []))) as Tuning['efforts'];
+  return { background: req.background === true, efforts };
 }
 
 async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
@@ -591,6 +612,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     writeReserved: req.confine?.writeReserved,
     writeAllow: req.confine?.writeAllow,
     signal: req.abort?.signal,
+    tuning: tuningOf(req),
     describeTool: source,
     events: {
       onSession: (id) => {
@@ -608,6 +630,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
       },
       onText: () => req.beat?.(),
       onReasoning: () => req.beat?.(),
+      // A call in the flex tier waits in the server's queue without a word: that is not a stage that stopped.
+      onWait: () => req.beat?.(),
       onInterim: (text) => req.activity?.text(text),
       // A switch of model shows on the live line and, when the caller keeps a thread, there.
       onSwitch: (e) => {
@@ -1291,6 +1315,8 @@ export interface AgentCall {
   onPool?: (notice: PoolNotice) => void;
   /** The `poolMode` of the stage the call works for (the cycle model's), between the agent's own and the workspace's. */
   stagePoolMode?: PoolMode;
+  /** Nobody waits for the answer (a stage, a question between agents, the last turn of procedures): the engine may use the cheaper tier. Absent: someone does. */
+  background?: boolean;
 }
 
 // What a reader of a run may use: the tools the agent uses (its own when it names them, else the workspace's), as the ceremonies get them, and no shell beyond the
@@ -1404,6 +1430,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           onUsage: call.onUsage,
           onPool: call.onPool,
           poolMode,
+          ...(call.background ? { background: true } : {}),
           incoming: only ? undefined : call.incoming,
           runnerTools: only ? undefined : call.runnerTools,
           procedures: call.procedures,

@@ -1003,6 +1003,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     onLooked,
     label: agent.id,
     stagePoolMode: stagePoolModeOf(config, run, stage.id),
+    background: true,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
     procedures: procedures?.tools,
     abort,
