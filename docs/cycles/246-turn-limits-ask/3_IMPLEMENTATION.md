@@ -87,3 +87,20 @@ Deviations from the plan:
 The maintainer wants every limit that can ask to ask. The runner's `answerMention` (`service.ts`) now passes `turnAsks` to `answerMentions`, so a sub-agent of an agent named in a run's
 thread leaves its question, with the run and the thread named, and the lines are in that thread (`answer.ts` already handled `place.run`). This replaces the second deviation of commit 4;
 the answer's own limit still ends in a partial answer (spec Q6), and the chain question and the request between squads still pass none. Pinned in `test/runner-turn-limit.test.ts`.
+
+## Commit 5: show the questions waiting for the person on every screen
+
+`AskStack.tsx` (the one `div.cc-stack` holding the command cards and the turn cards, mounted by `WebGate` in place of `CeremonyCommands` for the window and the paired browser alike),
+`CeremonyCommands.tsx` split into `useCeremonyCommands()` and the card `CommandCard`, `TurnAsks.tsx` (`useTurnAsks()` and `TurnAskCard`), the DOM-free `turnAskView.ts`
+(`turnAskLines`, `sameTurnAsks`), `turnAsks.css` and the `ui.ask.*` / `ui.turnAsk.*` keys in both `ui-shell` catalogs. `ui.ceremonyCommand.region` went with its last reader.
+
+Deviations from the plan:
+
+- `turnAskLines(ask, say, time)` takes the translating function and a time formatter and returns finished strings, not keys and params: the test renders the real catalogs, so a wrong
+  key or parameter fails there. `useT()` and the catalogs are the only renderer parts the card needs.
+- Two keys the plan did not list: `ui.turnAsk.title.subPlain` (a sub-agent of no kind), `ui.turnAsk.noTask` and `ui.turnAsk.refused` (an answer the door refused as `decision`); three
+  `ui.turnAsk.where.*` keys say where it waits (a run's stage, a run, a conversation). `ui.turnAsk.gone` was not added: an answer that comes back `gone` only takes the card away,
+  there is nothing to say.
+- The stage's title reads "{agent} used {used} of {limit} turns" with `limit` equal to `used`: the work stopped at its limit, and the record carries no separate limit.
+- `useCeremonyCommands()` is the old effect unchanged (it does not refetch on reconnect, as before); the new hook does, on reconnect and on window focus.
+- The card reuses the classes of the command card (`cc-item`, `cc-title`, `cc-actions`); `turnAsks.css` only adds the detail line.
