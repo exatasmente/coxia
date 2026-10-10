@@ -157,3 +157,56 @@ Deviations from the plan:
 - The test of the plan for `CLAUDE_CAN_CONTINUE = false` is not written: a constant cannot be flipped by a test, and the branch (`canContinue: false` refusing "continue") is the store's,
   already pinned in `test/turn-asks-core.test.ts`. The asker still ignores a "continue" when the constant is `false`.
 - `EngineRequest.resume` is left as the plan had it (issue #253 tracks it); the commit sets it only on the request it builds for the resumed call, next to `extra.resume`.
+
+## Commit 8: document the turn limits that ask
+
+`docs/runner.md` in both languages (a section "When a turn limit is reached (#246)" after "Questions and mentions"; the sentence about a stage that runs out of steps in the
+"Turn limit of these calls" paragraph; a bullet in "The live activity" for the node that waits; a bullet in "Not verified"), a pointer in the `turns` row of `docs/configuration.md` in
+both languages (the rows and the history of the schema were done in commit 1), and the `CHANGELOG.md` line under `## [Unreleased]` completed (the screens and the phone, the audit, the
+tree, the Claude engine).
+
+Deviations from the plan: none beyond the ones of the commits above. The plan listed the CHANGELOG line as written in this commit; it was written in commit 4 and is completed here, as
+the maintainer decided after commit 4 (no reshuffle).
+
+## Delivery summary
+
+What the delivery does, against the acceptance criteria of `1_SPEC.md`:
+
+1. **Settings.** Five numbers (`runner.turns.explore|edit|shell|screen|plain`, schema 29, `v28ToV29`) in Settings › Runner, 12/30/20/30/12, 1 to 500 with the stage's error, edited by the
+   computer and a paired browser (the path was already in `WEB_EDITABLE`). Met by the tests of commit 1; not seen on screen.
+2. **A limit is a setting.** A sub-agent reads its number when it starts (`subTurnsOf`); a setting changed during a wait does not change its round. Met by `test/engine-open-turn-limit.test.ts`.
+3. **Continue, sub-agent.** The loop is kept waiting and goes on with the same dialog; it asks again after the round. Met by the same file.
+4. **Finish now, sub-agent.** A closing call with no tools, then the last narration, then a fixed line, behind a partial note; a tool result and not an error; the node ends finished; the thread
+   says it. Met by `test/engine-open-turn-limit.test.ts`, `test/agent-turn-limit-open.test.ts` and `test/runner-turn-limit.test.ts`. The usefulness of the summary on a real model is not known.
+5. **A stage.** It leaves the question; continue finishes it normally; finish now ends in `turns`, retryable, with the line that it was the person's answer. Met by
+   `test/runner-turn-limit.test.ts` (scripted engine) and `test/agent-turn-limit-open.test.ts` (the real loop).
+6. **No answer.** Idle and wall clocks stand still for the whole wait (a real watchdog under fake timers, and real clocks in the runner test); cancelling ends it with no question left. Met.
+7. **Clocks while only a sub-agent waits; two waiting at once.** Met by `test/turn-limit-ask.test.ts` and `test/runner-conversation.test.ts`.
+8. **Several questions.** Three parallel sub-agents leave three independent questions, answered in any order. Met by `test/engine-open-turn-limit.test.ts`.
+9. **Where it shows.** The store and its event, the stack on every screen of the window and the phone (`AskStack`), the run's thread, the notification, the paired phone. The data and the
+   lines are tested; **the stack was not seen on screen** (no `.tsx` is rendered by the suite).
+10. **The phone's answer.** Named in the web policy as open to a paired browser, pinned in `test/turn-asks-policy.test.ts`.
+11. **One door.** A second answer, or one after the work ended, is refused as `gone`; the audit line says `window` or `paired`. Met by `test/turn-asks-core.test.ts` and the policy test.
+12. **The tree.** The `waiting` state, the amber row, the collapsed line of the ancestors and of the dock's entry, counted once by the badge. The model is tested
+    (`test/activity-turn-wait.test.ts`); **the rows were not seen on screen**.
+13. **The Claude engine.** The real check passed (commit 7), so continue resumes the same session with a fresh limit and the stage goes on; finish ends it with the "turns" failure. Met by
+    `test/agent-turn-limit-sdk.test.ts` with the scripted `query`, and by the real check once by hand.
+14. **Nothing else moves.** A mention that runs out of turns still answers partially with its note; the idle and wall limits keep their values; the run's file holds no question; the stage's
+    hint no longer says it fails. Met by `test/forum-mentions.test.ts`, `test/runner-turn-limit.test.ts` and the catalogs.
+15. **Wording and theme.** Every new string is in both catalogs through `t()`; the card, the stack and the tree use theme tokens only (`node scripts/theme-audit.mjs`, `npm run i18n:lint`).
+
+Also in the delivery, beyond the plan's list: a mention answered in a run's thread asks for its sub-agents too (the fix after commit 4).
+
+### Not verified
+
+- **The cards, the stack and the tree on screen.** The suite renders no component (`vitest.config.ts` is `environment: 'node'`); the pure functions behind them are tested, and the colors pass the
+  theme guard. How the stack looks with three sub-agents plus a command at once, on the phone and in the dark panels, was not seen.
+- **A real model at a limit.** Nothing ran with a real model through the loop's pause: whether the closing call with no tools gives a useful summary is not known (spec Q1).
+- **The Claude resume with the stage's open message stream.** The real check used a streaming prompt that stays open, but not the app's door; the scripted `query` pins that the app builds
+  the stream again. Checked on `haiku` and `sonnet` only, with SDK 0.3.292.
+- **A caller's clock the plan did not cover.** The agent a stage calls has no clock of its own, so the wait of its sub-agent stops the stage's clocks (risk 7 of the plan); whether a called agent
+  that works for long without a sign of life already trips them today was not checked.
+- **A node that waits for days** and the activity log's limit of live trees: not measured.
+- **A paired browser with a stale bundle** saving `runner.turns` without the five keys: the server fills them from the defaults, which was read and not run.
+- **The schema number.** 29 was free on `0.9.0`; the persona (another branch) also takes a step. Whichever lands second renumbers, and this has to be looked at again before the pull request.
+- **Issue #253** (`EngineRequest.resume` looks unused) is the maintainer's to track; this delivery sets `extra.resume` itself and does not depend on the field.
