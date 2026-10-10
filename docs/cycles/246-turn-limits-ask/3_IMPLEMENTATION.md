@@ -168,6 +168,22 @@ tree, the Claude engine).
 Deviations from the plan: none beyond the ones of the commits above. The plan listed the CHANGELOG line as written in this commit; it was written in commit 4 and is completed here, as
 the maintainer decided after commit 4 (no reshuffle).
 
+## Review fixes
+
+The review (`4_REVIEW.md`) found no blocker; these are the six points it asked to fix before the merge, one commit each.
+
+1. **Leaving the waiting state on "finish now".** A sub-agent's node kept saying it waited for the person while its closing call ran. Any answer that is not an abort now moves the node out of the
+   waiting state before the work goes on: `continued` for a new round, `started` for "finish now" (the round text would be wrong there). The finish case of `engine-open-turn-limit.test.ts` pins the order of the notes.
+2. **Sub-agents ask in a stage's extra rounds.** The repair, evidence and missing-document rounds (`askAgain`) dropped the question altogether. They now keep it with `own: false`: the round's own limit stays
+   quiet and ends as before, and the sub-agents the round starts ask. Test in `runner-turn-limit.test.ts`.
+3. **The pause of a conversation answer's clock is pinned.** A test runs a mention answer with its real watchdog (the shortest limits the setting allows, time moved by fake timers) and shows the answer outlives both
+   limits while its sub-agent waits. With `pause` replaced by a no-op the test fails.
+4. **An older client cannot reset the sub-agent limits.** `keepStoredTurns` (`configScope.ts`) fills the missing `runner.turns` keys from the stored configuration before `config:save` and `config:cycle-save`
+   validate, so the defaults no longer overwrite what the person set. Tests in `config-web-scope.test.ts`.
+5. **The abort listeners of a question are released.** `either()` in `turnLimit.ts` now removes its listeners from both signals when the combined one fires and when the question settles. Test with two distinct signals.
+6. **Texts.** One Portuguese word for "turn" in the turn texts ("passos", as the settings use): `activity.turnLimit`, the partial notes and the sub-agent stop text. `ui.turnAsk.where.run` is gone (the card
+   passes the reference itself). The time placeholder `--:--` is gone too: it read the same in both languages, so a time that cannot be read now leaves its line out. The unused `ta-item` class is removed.
+
 ## Delivery summary
 
 What the delivery does, against the acceptance criteria of `1_SPEC.md`:
@@ -207,6 +223,6 @@ Also in the delivery, beyond the plan's list: a mention answered in a run's thre
 - **A caller's clock the plan did not cover.** The agent a stage calls has no clock of its own, so the wait of its sub-agent stops the stage's clocks (risk 7 of the plan); whether a called agent
   that works for long without a sign of life already trips them today was not checked.
 - **A node that waits for days** and the activity log's limit of live trees: not measured.
-- **A paired browser with a stale bundle** saving `runner.turns` without the five keys: the server fills them from the defaults, which was read and not run.
+- **A paired browser with a stale bundle** saving `runner.turns` without the five keys: fixed after the review (review fix 4); not tried from a real old bundle.
 - **The schema number.** 29 was free on `0.9.0`; the persona (another branch) also takes a step. Whichever lands second renumbers, and this has to be looked at again before the pull request.
 - **Issue #253** (`EngineRequest.resume` looks unused) is the maintainer's to track; this delivery sets `extra.resume` itself and does not depend on the field.

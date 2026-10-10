@@ -49,6 +49,12 @@ describe('the lines of a question at a turn limit', () => {
     expect(lines(ask({ stage: null })).details[0]).toBe('Agent Refiner, in app#101');
   });
 
+  it('leaves out the line of the time when it cannot be read, instead of drawing a placeholder', () => {
+    const l = turnAskLines(ask(), t, () => null);
+    expect(l.details.some((d) => d.includes('Waiting since'))).toBe(false);
+    expect(l.details).toHaveLength(1);
+  });
+
   it('offers no continue where the engine cannot go on', () => {
     const l = lines(ask({ canContinue: false }));
     expect(l.continueLabel).toBeNull();

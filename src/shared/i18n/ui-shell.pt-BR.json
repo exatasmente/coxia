@@ -67,7 +67,6 @@
   "ui.turnAsk.title.stage": "{agent} usou {used} de {limit} passos",
   "ui.turnAsk.title.sub": "Subagente do tipo {kind}: {task}, usou {used} de {limit} passos",
   "ui.turnAsk.title.subPlain": "Subagente: {task}, usou {used} de {limit} passos",
-  "ui.turnAsk.where.run": "{ref}",
   "ui.turnAsk.where.stage": "{ref}, etapa {stage}",
   "ui.turnAsk.where.thread": "uma conversa",
   "ui.webGate.browser": "Navegador",

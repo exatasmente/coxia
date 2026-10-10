@@ -18,7 +18,7 @@ const TASK_MAX = 160;
 
 const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text);
 
-export function turnAskLines(ask: PendingTurnAsk, say: Say, time: (iso: string) => string): TurnAskLines {
+export function turnAskLines(ask: PendingTurnAsk, say: Say, time: (iso: string) => string | null): TurnAskLines {
   const agent = ask.name || ask.agent;
   // The work stopped at its limit, so the turns it used are the turns it had.
   const counts = { used: ask.used, limit: ask.used };
@@ -28,10 +28,12 @@ export function turnAskLines(ask: PendingTurnAsk, say: Say, time: (iso: string) 
     const task = clip(ask.task.trim() || say('ui.turnAsk.noTask'), TASK_MAX);
     title = ask.kind ? say('ui.turnAsk.title.sub', { kind: ask.kind, task, ...counts }) : say('ui.turnAsk.title.subPlain', { task, ...counts });
   }
-  const where = ask.ref ? (ask.stage ? say('ui.turnAsk.where.stage', { ref: ask.ref, stage: ask.stage }) : say('ui.turnAsk.where.run', { ref: ask.ref })) : say('ui.turnAsk.where.thread');
+  const where = ask.ref ? (ask.stage ? say('ui.turnAsk.where.stage', { ref: ask.ref, stage: ask.stage }) : ask.ref) : say('ui.turnAsk.where.thread');
   const details = [say('ui.turnAsk.detail', { agent, where })];
   if (ask.granted > 0) details.push(say('ui.turnAsk.rounds', { granted: ask.granted }));
-  details.push(say('ui.turnAsk.since', { time: time(ask.since) }));
+  // A time that cannot be read is left out, not drawn as a placeholder.
+  const at = time(ask.since);
+  if (at) details.push(say('ui.turnAsk.since', { time: at }));
   return {
     title,
     details,

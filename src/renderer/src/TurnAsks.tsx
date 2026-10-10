@@ -28,9 +28,9 @@ export function useTurnAsks(): [PendingTurnAsk[], (id: string) => void] {
   return [list, (id) => setList((l) => l.filter((x) => x.id !== id))];
 }
 
-const clock = (iso: string): string => {
+const clock = (iso: string): string | null => {
   const at = new Date(iso);
-  return Number.isNaN(at.getTime()) ? '--:--' : at.toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
+  return Number.isNaN(at.getTime()) ? null : at.toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
 };
 
 // The card of one question. Both buttons go through the one call every answerer uses; an answer that comes back as gone (another screen answered first) only takes the card away.
@@ -57,7 +57,7 @@ export function TurnAskCard({ item, onDone }: { item: PendingTurnAsk; onDone: (i
     );
   };
   return (
-    <section className="cc-item ta-item" aria-labelledby={`ta-${item.id}`}>
+    <section className="cc-item" aria-labelledby={`ta-${item.id}`}>
       <h2 id={`ta-${item.id}`} className="cc-title">{lines.title}</h2>
       {lines.details.map((d) => (
         <p key={d} className="small ta-detail">{d}</p>

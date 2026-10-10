@@ -250,7 +250,7 @@ describe('a sub-agent', () => {
     expect(r.data).toBe('principal done');
     expect(stops).toMatchObject([{ of: 'sub', kind: null, used: 2, round: 2 }]);
     const sawBack = messages(a.chats().at(-1) as FakeRequest).filter((m) => m.role === 'tool').map((m) => String(m.content));
-    expect(sawBack[0]).toMatch(/^\[partial result: the person finished this sub-agent at its limit of 2 turns|^\[resultado parcial: a pessoa encerrou este subagente no limite de 2 voltas/);
+    expect(sawBack[0]).toMatch(/^\[partial result: the person finished this sub-agent at its limit of 2 turns|^\[resultado parcial: a pessoa encerrou este subagente no limite de 2 passos/);
     expect(sawBack[0]).toContain('plain partial');
   });
 

@@ -67,7 +67,6 @@
   "ui.turnAsk.title.stage": "{agent} used {used} of {limit} turns",
   "ui.turnAsk.title.sub": "Sub-agent of kind {kind}: {task}, used {used} of {limit} turns",
   "ui.turnAsk.title.subPlain": "Sub-agent: {task}, used {used} of {limit} turns",
-  "ui.turnAsk.where.run": "{ref}",
   "ui.turnAsk.where.stage": "{ref}, stage {stage}",
   "ui.turnAsk.where.thread": "a conversation",
   "ui.webGate.browser": "Browser",
