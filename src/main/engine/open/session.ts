@@ -11,13 +11,17 @@ export interface UsageRecord {
   cachedTokens: number;
   // What the provider said the call cost, in US dollars, when it said.
   costUsd?: number;
+  // Of the prompt, the tokens written to the server's cache; and the tokens the model spent reasoning. Only the transcript keeps them.
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
   // True when the server sent no usage and the numbers are estimates.
   estimated?: boolean;
 }
 
 export type SessionLine =
   | { t: 'meta'; id: string; role: string; model: string; provider: string; at: string }
-  | { t: 'msg'; at: string; message: ChatMessage; usage?: UsageRecord; model?: string }
+  // `tier` is the tier that served the call and `requestId` the id the server logs it under, when it said.
+  | { t: 'msg'; at: string; message: ChatMessage; usage?: UsageRecord; model?: string; tier?: string; requestId?: string }
   | { t: 'resume'; at: string; role: string }
   // The call moved to another model of the pool: not a message, so it never reaches the history.
   | { t: 'switch'; at: string; from: string; to: string; reason: string; until: number | null; activity: string }

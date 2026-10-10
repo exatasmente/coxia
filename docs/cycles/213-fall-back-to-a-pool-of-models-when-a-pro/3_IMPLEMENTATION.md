@@ -201,3 +201,16 @@ Com a sugestão, as listas de `shell` e `edit` trazem os mesmos modelos da lista
   - Sem captura de tela da interface (a conferência visual fica para a etapa de teste), como no commit 8: os testes renderizam as telas com `renderToStaticMarkup`.
   - O reparo de um modo de etapa em `devCycle.flows` entrou no commit 10 (a etapa de um fluxo de squad, de release ou de documentação usa o mesmo esquema).
 - **Testes.** `team-pool-mode-ui` (novo: o passo Modelos com os três modos e o padrão marcado, o que o arquivo guarda marcado, PT; o editor do agente com herdar + três, a dica, o aviso com a chave desligada para quem escreve e para quem lê, o navegador pareado, PT; o painel da etapa só em etapa de trabalho; `patchStage`/`applyFlows`), `wizard-i18n` (a família nova), `ui-i18n` (catálogos ordenados, mesmas chaves e campos), `team-agent-edit` (commit 10).
+
+# Parte 3: o que o provedor oferece
+
+## Commit 15: `feat: read the real cost and cache writes from the server`
+
+- **Feito.**
+  - `open/types.ts`, `open/client.ts`: `foldUsage` lê `usage.cost` e, na falta dele, `usage.estimated_cost` (o que o servidor diz vale; valor negativo ou que não é número é ignorado), `prompt_tokens_details.cache_write_tokens` (número, ou nulo quando o servidor não cobra) e `completion_tokens_details.reasoning_tokens`. `ChunkFolder` guarda o `service_tier` da raiz (em stream e em corpo JSON) e `complete()` lê o cabeçalho `x-request-id`; `Completion.usage` ganha `cacheWriteTokens` e `reasoningTokens`, `Completion.meta` ganha `{ requestId, tier }`.
+  - `open/session.ts`, `open/loop.ts`: a linha `msg` do `.jsonl` guarda `usage.cacheWriteTokens`, `usage.reasoningTokens`, `tier` e `requestId` quando o servidor os mandou. Os totais da sessão (`usageOf`) e do resultado do laço seguem os três números de antes.
+  - `agents.ts`: o `onUsage` do motor aberto passa `costEstimated: false` quando há custo do servidor (antes a falta da marca já valia "cobrado"; agora é explícito).
+  - `test/helpers/fakeOpenAI.ts`: `usage()` aceita `estimated_cost`, cache lido/gravado e tokens de raciocínio; `textStep`/`toolStep` aceitam `tier`, `requestId`, `extras` e `cost`; os passos de stream e de JSON aceitam `headers`.
+  - `docs/runner.md` (PT e EN) e CHANGELOG › Changed.
+- **Desvios.** Nenhum. O formato do run não muda (`RUN_VERSION` 6): o cache gravado, o raciocínio e a camada ficam só no `.jsonl`, como o plano diz.
+- **Testes.** `engine-open-client` (`cost` vence `estimated_cost`; `estimated_cost`; nenhum; valor inválido ignorado; `cache_write_tokens` nulo e número; tokens de raciocínio; cabeçalho e camada em stream e em JSON), `engine-open-loop` (a linha do `.jsonl`), `runner-agent-open` (`onUsage` com `estimated_cost`, sem estimativa, e a soma da etapa fica cobrada), `runner-lifecycle` (a etapa soma `costUsd` e não fica estimada).

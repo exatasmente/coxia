@@ -121,6 +121,46 @@ describe('streaming', () => {
   });
 });
 
+describe('what the server says about a call', () => {
+  const extras = { cached: 3840, cacheWrite: null, reasoning: 12 };
+
+  it('takes the cost the server reports: `cost` first, then `estimated_cost`, else none', async () => {
+    fake = await fakeOpenAI([
+      textStep('a', { usageTokens: [10, 2], cost: 0.5, extras: { estimatedCost: 0.9 } }),
+      textStep('b', { usageTokens: [10, 2], extras: { estimatedCost: 0.00123 } }),
+      textStep('c', { usageTokens: [10, 2] }),
+    ]);
+    const c = client(fake.url);
+    expect((await c.complete({ messages: user })).usage?.costUsd).toBe(0.5);
+    expect((await c.complete({ messages: user })).usage?.costUsd).toBe(0.00123);
+    expect((await c.complete({ messages: user })).usage).toEqual({ promptTokens: 10, completionTokens: 2, cachedTokens: 0 });
+  });
+
+  it('ignores a cost that is not a number or is negative', async () => {
+    fake = await fakeOpenAI([{ completion: { choices: [{ finish_reason: 'stop', message: { content: 'ok' } }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: -1, estimated_cost: 'free' } } }]);
+    expect((await client(fake.url, { stream: false }).complete({ messages: user })).usage?.costUsd).toBeUndefined();
+  });
+
+  it('reads cache writes (a number, or null when the server does not bill them) and reasoning tokens', async () => {
+    fake = await fakeOpenAI([textStep('a', { usageTokens: [4013, 40], extras }), textStep('b', { usageTokens: [4013, 40], extras: { cached: 0, cacheWrite: 512 } })]);
+    const c = client(fake.url);
+    expect((await c.complete({ messages: user })).usage).toEqual({ promptTokens: 4013, completionTokens: 40, cachedTokens: 3840, reasoningTokens: 12 });
+    expect((await c.complete({ messages: user })).usage).toEqual({ promptTokens: 4013, completionTokens: 40, cachedTokens: 0, cacheWriteTokens: 512 });
+  });
+
+  it('reads the request id header and the tier that served the call, streamed or as plain JSON', async () => {
+    fake = await fakeOpenAI([
+      textStep('a', { usageTokens: [1, 1], tier: 'flex', requestId: 'req-1' }),
+      { completion: { service_tier: 'default', choices: [{ finish_reason: 'stop', message: { content: 'ok' } }] }, headers: { 'x-request-id': 'req-2' } },
+      textStep('c'),
+    ]);
+    const c = client(fake.url);
+    expect((await c.complete({ messages: user })).meta).toEqual({ tier: 'flex', requestId: 'req-1' });
+    expect((await c.complete({ messages: user })).meta).toEqual({ tier: 'default', requestId: 'req-2' });
+    expect((await c.complete({ messages: user })).meta).toBeUndefined();
+  });
+});
+
 describe('request building', () => {
   it('sends tools, tool_choice, response_format and the output cap', async () => {
     fake = await fakeOpenAI([textStep('{}')]);

@@ -275,7 +275,7 @@ describe('a stage that goes wrong', () => {
       return never();
     }, (call) => {
       call.onUsage?.({ promptTokens: 300, completionTokens: 30, cachedTokens: 0 });
-      call.onUsage?.({ promptTokens: 200, completionTokens: 20, cachedTokens: 0, costUsd: 0.001 });
+      call.onUsage?.({ promptTokens: 200, completionTokens: 20, cachedTokens: 0, costUsd: 0.001, costEstimated: false });
       return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
     });
     let run = await b.runner.start('app#101');

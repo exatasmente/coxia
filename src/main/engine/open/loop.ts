@@ -319,9 +319,9 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   const sessionId = prior && p.resume ? p.resume : randomUUID();
   const messages: ChatMessage[] = prior ? messagesOf(prior) : [];
   const usage: UsageRecord = { promptTokens: 0, completionTokens: 0, cachedTokens: 0 };
-  const write = (message: ChatMessage, u?: UsageRecord, model?: string): void => {
+  const write = (message: ChatMessage, u?: UsageRecord, model?: string, meta?: Completion['meta']): void => {
     messages.push(message);
-    if (persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'msg', at: now().toISOString(), message, ...(u ? { usage: u, model: model ?? client.cfg.model } : {}) }]);
+    if (persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'msg', at: now().toISOString(), message, ...(u ? { usage: u, model: model ?? client.cfg.model } : {}), ...(meta?.tier ? { tier: meta.tier } : {}), ...(meta?.requestId ? { requestId: meta.requestId } : {}) }]);
   };
   // The models of the pool, the one that answers each turn; a lone model is the pool of one.
   const primary: PoolMember = {
@@ -488,7 +488,14 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       try {
         const { completion: c, member } = await pool.complete({ messages, tools: o.tools?.length ? o.tools : undefined, toolChoice: o.toolChoice, responseFormat: o.responseFormat, signal: p.signal, onText: events.onText, onReasoning: events.onReasoning }, need());
         const u: UsageRecord = c.usage
-          ? { promptTokens: c.usage.promptTokens, completionTokens: c.usage.completionTokens, cachedTokens: c.usage.cachedTokens, ...(c.usage.costUsd !== undefined ? { costUsd: c.usage.costUsd } : {}) }
+          ? {
+              promptTokens: c.usage.promptTokens,
+              completionTokens: c.usage.completionTokens,
+              cachedTokens: c.usage.cachedTokens,
+              ...(c.usage.costUsd !== undefined ? { costUsd: c.usage.costUsd } : {}),
+              ...(c.usage.cacheWriteTokens !== undefined ? { cacheWriteTokens: c.usage.cacheWriteTokens } : {}),
+              ...(c.usage.reasoningTokens !== undefined ? { reasoningTokens: c.usage.reasoningTokens } : {}),
+            }
           : {
               promptTokens: estimateTokens(messages) + estimateTokens(o.tools ?? []),
               completionTokens: estimateTokens(c.text) + estimateTokens(c.toolCalls),
@@ -503,7 +510,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         if (c.toolCalls.length) msg.tool_calls = c.toolCalls;
         if (c.reasoning) msg.reasoning_content = c.reasoning;
         pool.stamp(msg, member);
-        write(msg, u, member.client.cfg.model);
+        write(msg, u, member.client.cfg.model, c.meta);
         return c;
       } catch (e) {
         if (e instanceof EngineError && e.kind === 'context' && !compacted && compact(messages, 1, 600)) {

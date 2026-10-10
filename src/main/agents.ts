@@ -604,7 +604,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
       onToolResult: () => req.beat?.(),
       onUsage: (u) => {
         req.beat?.();
-        req.onUsage?.({ promptTokens: u.promptTokens, completionTokens: u.completionTokens, cachedTokens: u.cachedTokens, ...(u.costUsd !== undefined ? { costUsd: u.costUsd } : {}), ...(u.estimated ? { estimated: true } : {}) });
+        req.onUsage?.({ promptTokens: u.promptTokens, completionTokens: u.completionTokens, cachedTokens: u.cachedTokens, ...(u.costUsd !== undefined ? { costUsd: u.costUsd, costEstimated: false } : {}), ...(u.estimated ? { estimated: true } : {}) });
       },
       onText: () => req.beat?.(),
       onReasoning: () => req.beat?.(),

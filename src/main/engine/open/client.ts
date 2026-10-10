@@ -84,6 +84,7 @@ export class ChunkFolder {
   private finish: string | null = null;
   private usage: Completion['usage'] = null;
   private field: Completion['reasoningField'] = null;
+  private tier: string | undefined;
   private split = new ThinkSplitter();
   error: unknown = null;
 
@@ -106,6 +107,7 @@ export class ChunkFolder {
       return;
     }
     if (chunk.usage) this.usage = foldUsage(chunk.usage);
+    if (typeof chunk.service_tier === 'string' && chunk.service_tier) this.tier = chunk.service_tier;
     const choice = chunk.choices?.find((c) => (c.index ?? 0) === 0);
     if (!choice) return;
     const d = choice.delta ?? {};
@@ -153,6 +155,7 @@ export class ChunkFolder {
       return;
     }
     if (res.usage) this.usage = foldUsage(res.usage);
+    if (typeof res.service_tier === 'string' && res.service_tier) this.tier = res.service_tier;
     const choice = res.choices?.[0];
     const m = choice?.message;
     if (!m) return;
@@ -174,13 +177,26 @@ export class ChunkFolder {
     const toolCalls: ToolCall[] = this.tools
       .filter((t) => t.name)
       .map((t) => ({ id: t.id, type: 'function', function: { name: t.name, arguments: t.args } }));
-    return { text: this.text, reasoning: this.reasoning, toolCalls, finishReason: this.finish, usage: this.usage, reasoningField: this.field };
+    return { text: this.text, reasoning: this.reasoning, toolCalls, finishReason: this.finish, usage: this.usage, reasoningField: this.field, ...(this.tier ? { meta: { tier: this.tier } } : {}) };
   }
 }
 
+const count = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+
 function foldUsage(u: Usage): NonNullable<Completion['usage']> {
   const cached = u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? 0;
-  return { promptTokens: u.prompt_tokens ?? 0, completionTokens: u.completion_tokens ?? 0, cachedTokens: cached, ...(typeof u.cost === 'number' && u.cost >= 0 ? { costUsd: u.cost } : {}) };
+  // What the server says it charged beats any estimate; `cost` first, then `estimated_cost`.
+  const cost = count(u.cost) ? u.cost : count(u.estimated_cost) ? u.estimated_cost : undefined;
+  const written = u.prompt_tokens_details?.cache_write_tokens;
+  const reasoning = u.completion_tokens_details?.reasoning_tokens;
+  return {
+    promptTokens: u.prompt_tokens ?? 0,
+    completionTokens: u.completion_tokens ?? 0,
+    cachedTokens: cached,
+    ...(cost !== undefined ? { costUsd: cost } : {}),
+    ...(count(written) ? { cacheWriteTokens: written } : {}),
+    ...(count(reasoning) ? { reasoningTokens: reasoning } : {}),
+  };
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -285,6 +301,8 @@ export class ChatClient {
         else folder.fromResponse(JSON.parse(await res.text()) as ChatResponse);
         if (folder.error !== null) throw this.streamError(folder.error, ctx);
         const done = folder.result();
+        const requestId = res.headers.get('x-request-id');
+        if (requestId) done.meta = { ...done.meta, requestId };
         if (done.reasoningField === 'reasoning_content' && !this.learned.echoRefused) this.learned.echoReasoning = true;
         return done;
       } catch (e) {

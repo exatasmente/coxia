@@ -124,9 +124,35 @@ describe('runAgent on the open engine', () => {
       const reports: unknown[] = [];
       await runAgent({ agent: reader, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'reviewer', maxTurns: 4, onUsage: (u) => void reports.push(u) });
       expect(reports).toEqual([
-        { promptTokens: 1000, completionTokens: 200, cachedTokens: 0, costUsd: 0.0004 },
-        { promptTokens: 1500, completionTokens: 50, cachedTokens: 0, costUsd: 0.0006 },
+        { promptTokens: 1000, completionTokens: 200, cachedTokens: 0, costUsd: 0.0004, costEstimated: false },
+        { promptTokens: 1500, completionTokens: 50, cachedTokens: 0, costUsd: 0.0006, costEstimated: false },
       ]);
+    } finally {
+      await metered.close();
+    }
+  });
+
+  it('counts the server\'s estimated_cost as charged, and a call with no cost as none', async () => {
+    const metered = await fakeOpenAI((req) =>
+      req.n === 1 ? toolStep([{ id: 'g', name: 'Glob', args: { pattern: '*' } }], { usageTokens: [1000, 200], extras: { estimatedCost: 0.0003 } }) : toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }], { usageTokens: [1500, 50] }),
+    );
+    try {
+      const { updateConfig } = await import('../src/main/workspaceConfig');
+      updateConfig((c) => {
+        c.llm.providers.push(newProvider({ id: 'local5', kind: 'openai-compatible', baseUrl: metered.url, structured: 'tool' }));
+        return c;
+      });
+      const reader = newAgent({ id: 'reviewer', permission: 'read', model: { role: null, provider: 'local5', model: 'qwen3:8b' } });
+      const reports: unknown[] = [];
+      await runAgent({ agent: reader, prompt: 'p', schema: obj({ fala: str }), system: 'sys', cwd: root, label: 'reviewer', maxTurns: 4, onUsage: (u) => void reports.push(u) });
+      expect(reports).toEqual([
+        { promptTokens: 1000, completionTokens: 200, cachedTokens: 0, costUsd: 0.0003, costEstimated: false },
+        { promptTokens: 1500, completionTokens: 50, cachedTokens: 0 },
+      ]);
+      // what a stage adds up from those reports: charged, never marked as an estimate
+      const { addReport, emptyUsage } = await import('../src/shared/runs/usage');
+      const total = (reports as Parameters<typeof addReport>[1][]).reduce(addReport, emptyUsage());
+      expect(total).toMatchObject({ costUsd: 0.0003, costEstimated: false });
     } finally {
       await metered.close();
     }
