@@ -188,6 +188,31 @@ describe('a stage that uses its last turn', () => {
     await until(() => finished);
   });
 
+  it('keeps the question for the sub-agents in the round that asks for a document left out, while the round\'s own limit stays quiet', async () => {
+    const turnAsks = store();
+    const b = await boot({ turnAsks });
+    easy(b);
+    let seen: AgentCall['turnLimit'];
+    let decision: TurnDecision | undefined;
+    b.engine.script(
+      'refiner',
+      () => work('Spec.', { handoff: 'Plan it.' }),
+      async (c) => {
+        seen = c.turnLimit;
+        decision = await c.turnLimit!.ask(stageStop({ of: 'sub', role: 'refiner:explore', kind: 'explore', task: 'find the file', used: 12, round: 12 }), c.abort?.signal);
+        return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+      },
+    );
+    const run = await b.runner.start('app#101');
+    await until(() => turnAsks.list().length === 1);
+    expect(seen?.own).toBe(false);
+    expect(turnAsks.list()[0]).toMatchObject({ of: 'sub', run: run.id, stage: 'refine', agent: 'refiner', task: 'find the file' });
+    turnAsks.answer(turnAsks.list()[0].id, 'continue', 'window');
+    await b.settle();
+    expect(decision).toBe('continue');
+    expect(b.runner.get(run.id)).toMatchObject({ status: 'gate', stage: 'gate1', error: null });
+  });
+
   it('asks for a sub-agent of a mention answered in the run\'s thread, with the run and the thread named', async () => {
     const turnAsks = store();
     const b = await boot({ turnAsks });

@@ -710,10 +710,10 @@ type Answered = { sessionId: string | null; engine: ResolvedRole['engine'] };
 /**
  * Asks the agent of a stage once more, in its own stage and with its own tools and sandbox: the call continues the session of the answer it is about, on the
  * engine that opened that session, so the round sees what the agent read. Without a session the stage's prompt goes first, so the round still knows the task.
- * `incoming` is left out: a message of the person is not what the round waits for. Null when the round fails: the answer before it then stands.
+ * `incoming` is left out: a message of the person is not what the round waits for. The round's own limit stays quiet (it ends as before), but the sub-agents it starts ask. Null when the round fails: the answer before it then stands.
  */
 async function askAgain(d: ExecutorDeps, call: AgentCall, commands: string[], watch: Watchdog, text: string, first: Answered): Promise<{ data: unknown; answered: Answered } | null> {
-  const round: AgentCall = { ...call, prompt: first.sessionId ? text : `${call.prompt}\n\n${text}`, ...(first.sessionId ? { resume: { session: first.sessionId, engine: first.engine } } : {}), incoming: undefined, turnLimit: undefined };
+  const round: AgentCall = { ...call, prompt: first.sessionId ? text : `${call.prompt}\n\n${text}`, ...(first.sessionId ? { resume: { session: first.sessionId, engine: first.engine } } : {}), incoming: undefined, turnLimit: call.turnLimit && { ...call.turnLimit, own: false } };
   try {
     // One link, one idle clock: the round runs inside the caller's `guard`, as the first call did, so the attempt's cap of wall-clock counts once.
     const r = await watch.guard(d.engine(round, commands));
