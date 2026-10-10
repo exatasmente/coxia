@@ -9,7 +9,7 @@ export const FAIL_FAST_REST_MS = 60_000;
 export const MAX_REST_MS = 15 * 60_000;
 
 /**
- * What identifies the thing that refuses: the server, the model and the key (two keys on one server have their own limits). The same care as the client cache of the bridge.
+ * What identifies the thing that refuses: the server, the model and the key (two keys on one server have their own limits). The key is the reference of the secret here, a digest of its value in the client cache of the bridge: both tell two keys apart.
  */
 export function restKey(p: { baseUrl: string; model: string; secretRef?: string | null }): string {
   return `${p.baseUrl.replace(/\/+$/, '')}|${p.model}|${p.secretRef ?? ''}`;

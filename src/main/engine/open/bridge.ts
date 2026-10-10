@@ -1,6 +1,7 @@
 // The seam between agents.ts and the open engine. agents.ts builds the SDK options as always; when an engine other than Claude is
 // selected, it hands them here and gets back what runOnce returns. The selection itself is a test hook for now (env flags); the
 // configuration layer will replace `openEngineFromEnv` with provider -> engine selection.
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
@@ -62,11 +63,13 @@ export function openEngineFromEnv(env: NodeJS.ProcessEnv = process.env): OpenEng
   };
 }
 
-// One client per provider and model for the life of the process, so what a server taught it (rejected parameters, reasoning echo) sticks.
+// One client per server, model and key for the life of the process, so what a server taught it (rejected parameters, reasoning echo) sticks. The key is part of the
+// identity (two providers on one server with different keys have their own client), held as a digest so the cache keys carry no secret.
 const clients = new Map<string, ChatClient>();
+const digest = (secret: string | undefined): string => (secret ? createHash('sha256').update(secret).digest('hex').slice(0, 16) : '');
 
 export function clientFor(provider: ProviderConfig): ChatClient {
-  const key = `${provider.baseUrl}|${provider.model}|${provider.apiKey ? 'k' : ''}|${provider.echoReasoning ? 'e' : ''}`;
+  const key = `${provider.baseUrl}|${provider.model}|${digest(provider.apiKey)}|${provider.echoReasoning ? 'e' : ''}`;
   let c = clients.get(key);
   if (!c) {
     c = new ChatClient(provider);
