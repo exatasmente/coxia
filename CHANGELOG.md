@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.14] - 2026-10-09
+
 ### Added
 
 - **A pool of models per role: a busy provider no longer fails the stage.** Each role (the five of the ceremonies) and each team agent with a model of its own can keep an ordered list of reserve models, and a list of its own for each kind of work (reading and searching, writing code, command output, the virtual screen, the start of a stage and documents); an agent that borrows a role's model uses the role's pool. When the model in use refuses for a rate limit, overload or a server error, the open engine moves the call to the next one **in the same session**, with the whole history, and the stage goes on without a click; the model that refused rests across the whole app for the time the server asked (at most 15 minutes) or 5 minutes, and the run's conversation says which model was busy, which took over and until when. The stage fails only when the whole pool is busy, naming the pool. A Claude SDK model in a pool is only chosen at the start of a stage, never in the middle of a session. In the setup wizard's Models step, after the connection test, **Suggested pool** reads the provider's model listing (price, context and capabilities, where the provider publishes them) and proposes a pool: models with tools and structured output and at least 32,000 tokens of context, ordered by the estimated cost of a typical stage among those that reach a quality floor per kind of work (for reading and writing, which have no floor, the models with a score for any kind of work come first and the ones nobody measured after, each group by cost), with the price, the score and its source beside each model. The scores come from a small table the app ships and are mostly reported by the vendors of the models themselves, so they set a floor and break ties, and you can change any floor or score; "Test this model" checks one model's tools, schema, images and reasoning. "Use the suggestion" makes the first model of the list the role's model and keeps the current one in the pool at its place by cost; it only fills the draft, and nothing is saved until you save. A reasoning model that needs its own reasoning sent back now gets it from the first call, and the reasoning one model wrote is never sent to another. A paired browser sees an agent's reserve models and can take one out or reorder them, but never add one, and cannot touch a role's pool. A workspace without a pool behaves as before (schema 26 changes nothing else).
@@ -471,7 +473,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.13...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.14...HEAD
+[0.9.0-beta.14]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.13...v0.9.0-beta.14
 [0.9.0-beta.13]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.12...v0.9.0-beta.13
 [0.9.0-beta.12]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.11...v0.9.0-beta.12
 [0.9.0-beta.11]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.10...v0.9.0-beta.11
