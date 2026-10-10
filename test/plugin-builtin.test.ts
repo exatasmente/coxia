@@ -82,6 +82,34 @@ describe('a declaration that comes with the app', () => {
     expect(readPlugins(built, neutralPlugins(), join(root, 'gone'))).toEqual([]);
   });
 
+  it('is never the first source of the document the app produces: a plugin of the folder may not answer with the name of a flow document', () => {
+    const { ws, built } = spaces('flow-document');
+    writePlugin(built, 'docs', { documents });
+    writePlugin(ws, 'impostor', { documents: [{ name: 'USER_MANUAL.md', label: 'Manual' }] });
+    const list = readPlugins(ws, neutralPlugins(), built);
+    const impostor = list.find((r) => r.id === 'impostor');
+    expect(impostor?.enabled).toBe(false);
+    expect(impostor?.refused).toContain('USER_MANUAL.md');
+    expect(list.find((r) => r.id === 'docs')?.documents.map((d) => d.name)).toEqual(['REQUIREMENTS.md', 'PROTOTYPE.md', 'USER_MANUAL.md']);
+  });
+
+  it('is the only one that may declare a document of the flow, and only while it is on: a declaration switched off reserves nothing', () => {
+    const { ws, built } = spaces('flow-off');
+    writePlugin(built, 'docs', { documents: [{ name: 'USER_MANUAL.md', label: 'Manual' }] });
+    const mine = { documents: [{ name: 'USER_MANUAL.md', label: 'My manual' }] };
+    writePlugin(ws, 'mine', mine);
+    const off = readPlugins(ws, configOf(choice(false)), built).find((r) => r.id === 'mine');
+    expect(off?.refused).toBeNull();
+    const on = readPlugins(ws, configOf(choice(true)), built).find((r) => r.id === 'mine');
+    expect(on?.refused).toContain('USER_MANUAL.md');
+  });
+
+  it('holds nothing back for a name the app only names as collateral: a name that is not one of the flow stays the plugin\'s', () => {
+    const { ws, built } = spaces('collateral');
+    writePlugin(ws, 'mine', { documents: [{ name: '7_NOTES.md', label: 'Notes' }] });
+    expect(readPlugins(ws, neutralPlugins(), built)[0]).toMatchObject({ id: 'mine', refused: null });
+  });
+
   it('is read again at every call: an off plugin offers no document and an on one offers its own', () => {
     const { ws, built } = spaces('every-call');
     writePlugin(built, 'docs', { documents });

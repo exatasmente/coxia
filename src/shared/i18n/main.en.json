@@ -1193,6 +1193,7 @@
   "main.plugins.event.gateDecided": "a gate was decided",
   "main.plugins.event.runFinished": "the run finished",
   "main.plugins.refusal.noRun": "There is no run to write the document of the plugin {plugin} into.",
+  "main.plugins.refused.flowDocument": "The document {name} is one of the flow, which the app keeps for itself: this declaration cannot offer it.",
   "main.plugins.network.allowed": "Reached",
   "main.plugins.network.refused.method": "Refused: the request was not a CONNECT",
   "main.plugins.network.refused.host": "Refused: the destination was not allowed",

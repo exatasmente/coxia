@@ -2,6 +2,7 @@ import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from '
 import { createHash } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import type { PluginAllow, PluginConfig, PluginsConfig } from '../../shared/config/types';
+import { t } from '../../shared/i18n';
 import { readPluginDeclaration } from '../../shared/plugins/declaration';
 import type { PluginRecord, PluginView } from './types';
 
@@ -110,7 +111,7 @@ function readFolder(dir: string, choices: Map<string, PluginConfig>, seen: Set<s
       enabled: choice?.enabled ?? builtIn,
       // "Always" was given for what the plugin declared then; a declaration that reaches somewhere else is asked again.
       allow: choice && choice.allowedFor === reach ? choice.allow : NONE,
-      documents: d.offers.documents,
+      documents: builtIn ? d.offers.documents.map((x) => ({ ...x, chain: true as const })) : d.offers.documents,
       events: [...d.offers.events],
       network: d.offers.network,
       write: d.offers.write,
@@ -133,17 +134,25 @@ function readFolder(dir: string, choices: Map<string, PluginConfig>, seen: Set<s
  * code and nothing to reach is taken — it only names documents, so a plugin dropped in there with a script, a network, a write, a setting or a note for the
  * agents is never treated as built in — and an unreadable or missing folder there brings nothing to the list instead of failing the read. A plugin dropped in
  * the workspace's folder starts off, as it always did.
+ *
+ * The documents the app's folder declares, and only those its declarations carry, cannot be answered by a plugin of the workspace's folder: a plugin that
+ * declares one of those names gets the reason and offers nothing, so no plugin is ever the first document source of the file the flow writes. The hold
+ * lasts while the app's own declaration is read and switched on; with no app folder, or with its declaration switched off, nothing is held back, so a
+ * workspace is never left unable to read its own folders.
  */
 export function readPlugins(dir: string, config: PluginsConfig, builtInDir?: string): PluginRecord[] {
   const choices = choicesOf(config);
   const out = readFolder(dir, choices, new Set(), false);
   if (!builtInDir) return out;
   const seen = new Set(out.map((r) => r.id).filter(Boolean));
-  for (const r of readFolder(builtInDir, choices, seen, true)) {
-    if (r.refused || r.entry || r.events.length || r.network.length || r.write || r.settings.length || r.requests.length || r.agents) continue;
-    out.push(r);
-  }
-  return out;
+  const theirs = readFolder(builtInDir, choices, seen, true);
+  const builtIn = (r: PluginRecord): boolean => !r.refused && !r.entry && !r.events.length && !r.network.length && !r.write && !r.settings.length && !r.requests.length && !r.agents;
+  const own = new Set(theirs.filter((r) => builtIn(r) && r.enabled).flatMap((r) => r.documents).filter((d) => d.chain === true).map((d) => d.name));
+  const answersTheApp = (r: PluginRecord): boolean => !r.refused && !!own.size && r.documents.some((d) => own.has(d.name));
+  return [
+    ...out.map((r) => (answersTheApp(r) ? { ...r, enabled: false, refused: t('main.plugins.refused.flowDocument', { name: r.documents.find((d) => own.has(d.name))?.name ?? '' }) } : r)),
+    ...theirs.filter(builtIn),
+  ];
 }
 
 /** Resolves the plugins folder of a workspace: what the config lists (with "~/" expanded), or the default under the data folder. */

@@ -32,6 +32,8 @@ export interface PluginDocumentType {
   label: string;
   /** Where the document stands in the flow, when it does; without it the document is collateral. */
   flow?: PluginDocumentFlow;
+  /** Document of a declaration that comes with the app: the flow's own file, which no plugin of a workspace folder may answer in place of. */
+  chain?: true;
 }
 
 /**

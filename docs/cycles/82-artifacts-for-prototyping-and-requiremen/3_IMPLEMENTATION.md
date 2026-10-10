@@ -1,16 +1,17 @@
 # O que foi implementado dos documentos de requisitos, protótipo e manual
 
 Este registro é o da implementação do que está em `2_PLAN.md`: o que mudou em cada área, como
-cada comportamento está coberto por teste e o que foi de fato conferido nesta etapa.
+cada comportamento está coberto por teste e o que foi de fato conferido nesta etapa. A última
+tentativa corrigiu o achado bloqueante da revisão (ver "A correção desta tentativa").
 
 ## A mudança, por área
 
 1. **Declaração de documento com `flow`** (`src/shared/plugins/declaration.ts`).
-   `PluginDocumentType` passou a ser `{ name, label, flow? }`, com
+   `PluginDocumentType` passou a ser `{ name, label, flow?, chain? }`, com
    `flow: { gate?: 1|2; phase?: { label?: string; before: string } }`. A leitura valida: `gate` só 1
    ou 2, `phase.before` só um nome de arquivo simples da pasta do ciclo, e `flow` presente precisa
    trazer um dos dois; a recusa tem motivo próprio (`flow`). Sem `flow` nada muda: o tipo continua
-   colateral (portão 2, fora da fase).
+   colateral (portão 2, fora da fase). `chain` é do que vem com o aplicativo (ver a correção, abaixo).
 
 2. **Junção de fase, função pura** (`src/shared/plugins/phase.ts`, novo).
    `withPhaseDocuments(core, documents)` devolve a lista de fase com cada documento ancorado inserido
@@ -69,8 +70,29 @@ cada comportamento está coberto por teste e o que foi de fato conferido nesta e
     `## [Unreleased]`). A documentação de cycles diz que o ciclo de agentes produz os três arquivos,
     que o gate 1 lê a spec e os requisitos, o gate 2 lê o plano e o protótipo e que o manual sai junto
     da nota de lançamento; a documentação de plugins diz o que é documento de fluxo e o que é
-    colateral e que declarações sem código vêm do aplicativo, ligadas por padrão. `AGENTS.md` não
-    precisou mudar.
+    colateral, que declarações sem código vêm do aplicativo, ligadas por padrão, e que os nomes de
+    documento do próprio aplicativo ficam com ele. `AGENTS.md` não precisou mudar.
+
+## A correção desta tentativa (bloqueante da revisão)
+
+A revisão achou que o plugin embutido vencia o rótulo, não a escrita: um plugin de terceiro que
+declaresse `USER_MANUAL.md` gravava, pela primeira fonte de documento do registro, por cima do manual
+que o aplicativo acabara de produzir na pasta do ciclo. O que fecha o buraco:
+
+- **`chain` no tipo de documento** (`src/shared/plugins/declaration.ts`): `true` num documento lido da
+  pasta do aplicativo; é o que marca o nome como sendo do fluxo.
+- **A recusa na leitura da pasta do workspace** (`src/main/plugins/read.ts`): depois de ler as duas
+  pastas, os nomes dos documentos `chain` das declarações do aplicativo que são **sem código, sem
+  alcance e estão ligadas** formam o conjunto que o fluxo possui; uma declaração da pasta do workspace
+  que ofereça um desses nomes volta com `enabled: false`, `refused` preenchido (chave
+  `main.plugins.refused.flowDocument`, nos dois idiomas) e nada oferecido — o registro, e assim a
+  escrita, não a inclui. Com a pasta do aplicativo ausente, ou com a declaração dela desligada, nada é
+  retido: um espaço de trabalho nunca fica sem ler as próprias pastas.
+- **A guarda da escrita** (`src/main/plugins/runtime.ts`): `writePluginDocument` devolve `null` para um
+  documento `chain`, seja qual for o caminho que o chamou; é a segunda barreira, para que a primeira
+  fonte do registro nunca seja um plugin num arquivo do fluxo.
+- **Tipos** (`src/main/plugins/types.ts`): `PluginRecord.documents` passou de `{ name, label }[]` para
+  `PluginDocumentType[]` (`flow` entra na fase e no portão pelo registro, como antes).
 
 ## Testes: um por comportamento
 
@@ -81,7 +103,9 @@ cada comportamento está coberto por teste e o que foi de fato conferido nesta e
 | A fase lê os tipos novos com o registro ligado e é a de hoje sem ele; âncora desconhecida não entra | `test/config-getters.test.ts` |
 | Tipo novo cai no portão declarado; pasta só com requisitos abre o gate 1; manual não é artefato de portão; colateral segue no portão 2 | `test/gate-plugin-documents.test.ts` |
 | O portão abre o artefato do botão e recusa arquivo fora do cartão | `test/gate-plugin-documents.test.ts` (`pickGateOption`) |
-| Plugin embutido ligado por padrão, escolha guardada nos dois sentidos, cópia da pessoa vence, código/alcance não vira embutido, pasta ausente não derruba | `test/plugin-builtin.test.ts` (arquivo novo) |
+| Plugin embutido ligado por padrão, escolha guardada nos dois sentidos, cópia da pessoa vence, código/alcance não vira embutido, pasta ausente não derruba | `test/plugin-builtin.test.ts` |
+| **Um plugin da pasta do workspace não responde por um documento do fluxo** | `test/plugin-builtin.test.ts` (recusa com o nome no motivo; a declaração do aplicativo é a única fonte; com ela desligada nada é retido; nome colateral segue do plugin) |
+| **Um documento `chain` nunca é escrito por um plugin** | `test/plugin-runtime.test.ts` (o arquivo que a etapa escreveu fica intacto) |
 | O leitor de documentos relê a cada chamada (desligar tira os tipos) | `test/plugin-builtin.test.ts` (`enabledDocuments`) |
 | O plugin embutido declara exatamente os três tipos, com portões e âncoras | `test/plugin-builtin.test.ts` (lê o `plugin.json`) |
 | O fluxo produz os três onde a especificação coloca, nos dois modelos | `test/cycle-templates.test.ts` |
@@ -89,27 +113,22 @@ cada comportamento está coberto por teste e o que foi de fato conferido nesta e
 | Produção de ponta a ponta com respostas falsas grava os documentos na pasta do ciclo | roteiros falsos de `test/runner-*.test.ts` (o churn mecânico que a mudança exige) e `test/runner-golden.test.ts` (traços regravados) |
 | Etapa sem um dos documentos: um pedido nomeando o que falta, depois falha | `test/runner-missing-documents.test.ts`, incluindo o caso de lista de dois documentos com um faltando |
 | Espaço existente ganha os arquivos; lista editada não muda; segunda passagem não mexe; versão 26 recusada | `test/config-migrations.test.ts` |
-| Portões da mudança: tipos, tema, i18n, área pública | `config-schema.test.ts` (sem mudança de formato), `scripts/theme-audit.mjs`, `npm run i18n:lint`, `scripts/public-audit.mjs` |
+| Portões da mudança: tipos, tema, i18n, área pública, compilação | `npx tsc --noEmit`, `scripts/theme-audit.mjs`, `npm run i18n:lint`, `scripts/public-audit.mjs`, `npx electron-vite build` |
 
-## O que foi verificado nesta etapa
+## O que foi verificado nesta etapa (2026-10-10)
 
-Tudo abaixo rodou nesta etapa, com o resultado registrado:
+Tudo abaixo rodou nesta tentativa, com o resultado registrado:
 
 | Comando | Resultado |
 |---|---|
-| `npx tsc --noEmit` | sem erros |
-| `npx vitest run` sobre os 37 arquivos de teste que a mudança toca | 36 arquivos verdes, 433 testes; a única falha foi um timeout de 5 s por carga da máquina, verde ao rodar o arquivo sozinho em seguida (13 testes) |
-| lote de 12 arquivos do núcleo da mudança (fase, portão, declaração, plugin embutido, templates, migração, roteiros de documentos ausentes, goldens) | 340 testes verdes |
-| `test/runner-golden.test.ts` com `UPDATE_GOLDEN=1` e depois sem ele | 6/6 nas duas passagens; os traços novos trazem os documentos novos |
-| `node scripts/theme-audit.mjs` | verde (comprovação ev-3) |
-| `npm run i18n:lint` | 5482 chaves nos dois idiomas, 12 catálogos, nenhum problema |
-| `node scripts/public-audit.mjs` | verde em 1589 arquivos (comprovação ev-4) |
-
-A suíte completa foi lida e classificada em duas passagens nesta etapa: as falhas reais deste campo
-de trabalho (uma lista fixada, um caso novo, os goldens) foram corrigidas, e as demais eram timeouts
-de 5 s em arquivos que a mudança não toca, sob a carga de outro trabalho pesado rodando na mesma
-máquina. Uma terceira passagem de classificação da suíte completa foi iniciada ao fim da etapa e o
-seu resultado não pôde ser lido.
+| `npx tsc --noEmit` | sem erros (exit 0) |
+| `npx vitest run` (suíte completa) | 416 arquivos verdes, 1 pulado; 6952 testes verdes, 3 pulados |
+| `npx vitest run` dos arquivos tocados (plugin-builtin, plugin-runtime, plugins-core) | 47 testes verdes |
+| `npx vitest run` de gate-plugin-documents, config-getters, phase-flow-documents e vizinhos | 44 testes verdes |
+| `node scripts/theme-audit.mjs` | verde |
+| `npm run i18n:lint` | 5483 chaves nos dois idiomas, 12 catálogos, nenhum problema |
+| `node scripts/public-audit.mjs` | verde em 1591 arquivos, 0 achados |
+| `npx electron-vite build` | construído, exit 0 |
 
 ## O que não foi verificado
 
@@ -121,4 +140,6 @@ seu resultado não pôde ser lido.
 - **Um quarto tipo instalado e aberto numa tela** (o mecanismo está coberto por teste; a demonstração é
   manual).
 - **Um espaço de trabalho real aberto depois da migração** (a migração está testada com objetos).
-- **O clique nos botões do portão** e **`electron-vite build`** (o que a CI roda além dos portões acima).
+- **O clique nos botões do portão** na janela: o mecanismo tem teste, a tela não.
+- **A recusa de um plugin do espaço de trabalho vista na tela de plugins**: o registro e o motivo estão
+  testados; a linha na lista é verificação de QA.

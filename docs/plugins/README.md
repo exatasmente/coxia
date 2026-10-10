@@ -46,7 +46,9 @@ espaço não tem simplesmente não entra na fase.
 **Nota.** Declarações **sem código e sem nada a alcançar** vêm da pasta de plugins do próprio aplicativo e já
 vêm **ligadas por padrão** (uma cópia do mesmo `id` na pasta do workspace vence a do aplicativo). Um plugin
 colado nessa pasta com script, rede, escrita, configuração ou nota para os agentes não é tratado como embutido:
-continua desligado até a pessoa ligar.
+continua desligado até a pessoa ligar. Os nomes de documento que o próprio aplicativo declara são do fluxo e
+ficam com ele: um plugin da pasta do espaço de trabalho que declare um deles é recusado, com o motivo, e não
+oferece nada — enquanto a declaração do aplicativo estiver ligada, ela é a única fonte daquele documento.
 
 A leitura é uma função pura: o mesmo caminho roda no Linux, no macOS e no Windows, e nada no plugin depende de
 um carregador de biblioteca nativa.
@@ -184,7 +186,9 @@ cycle does not have simply does not enter the phase.
 **Note.** Declarations with **no code and nothing to reach** come from the app's own plugins folder and come
 **on by default** (a copy of the same `id` in the workspace's folder wins over the app's). A plugin dropped in
 there with a script, a network, a write, settings or a note for the agents is never treated as built in: it stays
-off until the person turns it on.
+off until the person turns it on. The document names the app itself declares belong to the flow: a plugin of the
+workspace's folder that declares one of them is refused, with the reason, and offers nothing — while the app's
+declaration is on, it is the only source of that document.
 
 The reading is a pure function: the same path runs on Linux, macOS and Windows, and nothing in the plugin
 depends on a native library loader.

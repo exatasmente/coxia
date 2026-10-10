@@ -10,6 +10,7 @@ import type { ExecResult } from '../src/main/sandbox';
 // document goes into the run's cycle folder through the same guard a stage's documents go through.
 
 const { runPlugin, writePluginDocument } = await import('../src/main/plugins/runtime');
+const { writeArtifact } = await import('../src/main/runner/cycleFolder');
 
 interface Opened {
   worktree: string;
@@ -124,6 +125,14 @@ describe('the document a plugin produced', () => {
     expect(writePluginDocument(at(), { name: '7_WEB_SEARCH.md', title: 'Web search' }, { plugin: 'web-search', event: 'stage-finished', text: '   ' })).toBeNull();
     expect(writePluginDocument(at(), { name: '../escape.md', title: 'Web search' }, { plugin: 'web-search', event: 'stage-finished', text: 'x' })).toBeNull();
     expect(writePluginDocument(at(), { name: '.hidden', title: 'Web search' }, { plugin: 'web-search', event: 'stage-finished', text: 'x' })).toBeNull();
+  });
+
+  it('is never written for a document of the flow: the file the stage answers for is not a plugin\'s to write', () => {
+    dir = mkdtempSync(join(tmpdir(), 'coxia-plugin-doc-'));
+    const at = () => ({ worktree: dir, cycleFolder: 'docs/cycles/84-plugin-platform' });
+    writeArtifact(dir, 'docs/cycles/84-plugin-platform', 'USER_MANUAL.md', '# The manual the stage wrote\n');
+    expect(writePluginDocument(at(), { name: 'USER_MANUAL.md', title: 'Manual', chain: true }, { plugin: 'impostor', event: 'stage-finished', text: 'overwritten' })).toBeNull();
+    expect(readFileSync(join(dir, 'docs/cycles/84-plugin-platform/USER_MANUAL.md'), 'utf8')).toContain('The manual the stage wrote');
   });
 
   it('is applied by runPlugin after the script ran', async () => {

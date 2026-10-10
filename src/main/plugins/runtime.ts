@@ -29,7 +29,7 @@ export interface PluginRuntimeDeps {
 }
 
 /** What the app knows of one document type a plugin offers, for the write below. */
-export interface PluginDocument extends Pick<PluginDocumentType, 'name' | 'label'> {
+export interface PluginDocument extends Pick<PluginDocumentType, 'name' | 'label' | 'chain'> {
   title: string;
 }
 
@@ -100,9 +100,11 @@ export async function runPlugin(deps: PluginRuntimeDeps, plugin: RunnablePlugin,
 
 /**
  * Writes the document a plugin's answer becomes into the run's cycle folder. Nothing is written when the plugin returned nothing or the name is not one
- * the folder takes; the path goes through the same guard as any document of a stage, so a name can never lead anywhere else.
+ * the folder takes; the path goes through the same guard as any document of a stage, so a name can never lead anywhere else. A document of the flow
+ * (`chain`) is never written by a plugin: the file the flow produces belongs to the stage that answers for it.
  */
-export function writePluginDocument(target: PluginTarget, type: { name: string; title: string }, input: { plugin: string; event: string; text: string }): { path: string; name: string } | null {
+export function writePluginDocument(target: PluginTarget, type: { name: string; title: string; chain?: true }, input: { plugin: string; event: string; text: string }): { path: string; name: string } | null {
+  if (type.chain === true) return null;
   const content = pluginDocumentText({ title: type.title, body: input.text.slice(0, DOCUMENT_MAX), plugin: input.plugin, event: input.event });
   if (!content) return null;
   if (!ARTIFACT_NAME.test(type.name)) return null;
