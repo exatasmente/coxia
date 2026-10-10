@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- The Windows package builds again: the activity tree's model and its component had names that differ only by case, and the Windows build loaded the wrong one. A test now refuses two modules of a folder whose names differ only by case or extension.
+
 ## [0.9.0-beta.17] - 2026-10-10
 
 ### Added
