@@ -34,3 +34,27 @@ Deviations from the plan:
   new members.
 - `activity.kind.thought`, `activity.kind.answer` and `activity.thought` are the only catalog keys added; the others of the plan's list (`activity.node.*`, `activity.callRefused.*`,
   the entry titles) come with the commits that use them, so no key sits unused.
+
+## Commit 3: each sub-agent as a node of its own, in both engines
+
+The open loop tells the caller about each sub-agent (`onSubAgent`, a `SubAgentHandle`) before it runs, synchronously and in the order of the tool calls; the sub-agent's own
+`onToolUse` and `onInterim` go to the handle, and the model-switch notice, usage and the sign of life stay the parent's. A kind that changes things (`edit`, `shell`, `screen`) is
+`queued` while another of them is open and `started` when its turn comes; the node ends in the existing `try`/`catch` (`finished`, or `failed` with the reason, a sub-agent out of
+turns included). The agents module (`openSubAgent`) makes the node with `RunActivity.child`, and the Claude SDK loop routes each message by `parent_tool_use_id` to the node that
+the `Agent`/`Task` tool use opened, ends it on the matching `tool_result` (`failed` when `is_error`, never with the result's text), closes what is left open at the `result` message
+and, as `failed`, in a `finally`. `lineOf` words the `Agent` line as `Agent <kind>: <task>`; `source()` is untouched.
+
+Deviations from the plan:
+
+- `SubAgentStart` carries `{ role, kind, name, description, prompt }` instead of `{ kind, name, task }`: the role is the string the open engine already gives the sub-agent's usage
+  (`<role>:<kind or definition name>`, and the node needs it), and the words that head the node (kind or definition, then the task or the first words of the prompt, clipped) are
+  made in one place in the agents module (`subAgentWords`) for both engines.
+- `SubAgentHandle.events` is `Pick<RunEvents, 'onToolUse' | 'onInterim'>`; `onThought` joins it in commit 5, where the engine first calls it.
+- The loop's `runAgent` takes a fourth argument (`about`: the model's `description` and `subagent_type`), because the principal's `Agent` tool has both and the callback needs them.
+- The handle is told `queued` or `started` by the loop itself, synchronously, right after it is created, instead of the agents module emitting a first status: the module cannot
+  know whether another sub-agent is ahead. The node's order under its parent is that of the first line, so it is also the order of the tool calls.
+- The tests are split in two files, `test/activity-subagents.test.ts` (open engine, through `askAgent`) and `test/activity-subagents-sdk.test.ts` (scripted `query`), because the
+  SDK module is replaced for a whole file. The held/queued cases and the handle's own contract are in `test/engine-open-subagent.test.ts`, with a recording caller as the harness.
+  "The usage unchanged" is not asserted separately: the existing usage tests of that file (`used`, `adds the sub-agent's use ...`) run unchanged and pass.
+- `Task`, the older name of the SDK's sub-agent tool, is accepted beside `Agent`; the plan allowed it. A sub-agent of the SDK is headed by its `subagent_type` (or `agent`): the SDK
+  has no kind. The live order and the `parent_tool_use_id` of parallel SDK sub-agents were read in the declarations and are not seen working (risk 3 of the plan).

@@ -11,7 +11,8 @@ import { toolsForAgent } from '../shared/config/team';
 import type { AttachmentRef } from '../shared/attachments';
 import type { ModelRole } from '../shared/settings';
 import { getLanguage, t } from '../shared/i18n';
-import { type RunActivity, beginActivity } from './activity';
+import { ACTIVITY_NODE_MAX } from '../shared/activity';
+import { type RunActivity, beginActivity, withActivityParent } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
 import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
@@ -22,7 +23,7 @@ import { redact } from './errorlog-core';
 import { credentialNames } from './engine/guard';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { scrubShellHooks } from './engine/scrubShell';
-import { type DocSources, type OpenEngineSelection, type PoolMemberSpec, type SelectionPool, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
+import { type DocSources, type OpenEngineSelection, type PoolMemberSpec, type SelectionPool, type SubAgentHandle, type SubAgentStart, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
 import { memberKey, withPool, withoutPool } from './modelPick';
 import { ACTIVITIES, type Activity } from '../shared/config/types';
 import { canEffort, canFailFast, canFlex, effortFor } from '../shared/config/offer';
@@ -391,6 +392,48 @@ function source(name: string, input: Record<string, unknown>): string {
   return `${name.replace(/^mcp__[^_]+(?:-[^_]+)*__/, '')} ${String(detail)}`.trim();
 }
 
+const words = (text: string, max: number): string => {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1).trimEnd()}…` : flat;
+};
+
+/**
+ * The words that head a sub-agent, here and in the tool line that starts it: its kind (or the name of the agent definition it named) and its task, clipped.
+ * The kind and the definition come from the model's own arguments, so the whole line still passes through the log's masking.
+ */
+function subAgentWords(a: { kind?: unknown; name?: unknown; description?: unknown; prompt?: unknown }): string {
+  const text = (v: unknown): string => (typeof v === 'string' ? v.trim() : '');
+  const head = text(a.kind) || text(a.name) || 'agent';
+  const task = words(text(a.description) || text(a.prompt), ACTIVITY_NODE_MAX);
+  return task ? `${head}: ${task}` : head;
+}
+
+/**
+ * The line the live activity shows for a tool call. `source()` is kept as it is because it also feeds the list of sources a call returns, which is shown and not masked;
+ * the activity says more for the tools that start another agent.
+ */
+function lineOf(name: string, input: Record<string, unknown>): string {
+  if (name === 'Agent' || name === 'Task') return `Agent ${subAgentWords({ kind: input.kind, name: input.subagent_type, description: input.description, prompt: input.prompt })}`;
+  return source(name, input);
+}
+
+// A sub-agent of the open engine as a node of its own under the agent that started it: its steps go there, and what it calls hangs under it.
+function openSubAgent(parent: RunActivity, req: EngineRequest, s: SubAgentStart): SubAgentHandle {
+  const child = parent.child({ type: 'sub', label: subAgentWords({ kind: s.kind, name: s.name, description: s.description, prompt: s.prompt }) }, s.role);
+  return {
+    events: {
+      onToolUse: (name, input) => {
+        req.beat?.();
+        child.tool(lineOf(name, input));
+      },
+      onInterim: (text) => child.text(text),
+    },
+    within: (fn) => withActivityParent(child.id, fn),
+    state: (state) => child.status(state),
+    end: (failure) => (failure === undefined ? child.status('finished') : child.status('failed', failure)),
+  };
+}
+
 // The prompt of an agent call: the role preamble (or the workspace's override), the persona, the VCS hints and the extra instructions of the config.
 function systemPrompt(role: ModelRole): string {
   const agents = getConfig().agents;
@@ -645,8 +688,9 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
       },
       onToolUse: (name, input) => {
         req.beat?.();
-        req.activity?.tool(source(name, input));
+        req.activity?.tool(lineOf(name, input));
       },
+      onSubAgent: (s) => (req.activity ? openSubAgent(req.activity, req, s) : undefined),
       onToolResult: () => req.beat?.(),
       onUsage: (u) => {
         req.beat?.();
@@ -798,62 +842,92 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const assistantText: string[] = [];
   // Whether the model used a tool: a busy refusal after that cannot be handed to another model, since what the tools did is not undone.
   let toolUsed = false;
-  for await (const m of q) {
-    req.beat?.();
-    if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt, req.resume !== undefined);
-    if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
-    if (m.type === 'assistant') {
-      // Each content block of one response is a message of its own with the same id: its use is counted once.
-      const used = (m.message as { id?: string; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }).usage;
-      const id = (m.message as { id?: string }).id;
-      if (used && (!id || !counted.has(id))) {
-        if (id) counted.add(id);
-        const cached = used.cache_read_input_tokens ?? 0;
-        req.onUsage?.({ promptTokens: (used.input_tokens ?? 0) + cached + (used.cache_creation_input_tokens ?? 0), completionTokens: used.output_tokens ?? 0, cachedTokens: cached });
-      }
-      for (const block of m.message.content) {
-        if (block.type === 'text') {
-          assistantText.push(block.text);
-          req.activity?.text(block.text);
+  // The sub-agents of this call by the id of the tool use that started them: the SDK marks what a sub-agent produces with that id, so two that run at once never share a line.
+  const nodes = new Map<string, RunActivity>();
+  const closeNodes = (state: 'finished' | 'failed'): void => {
+    for (const node of nodes.values()) node.status(state);
+    nodes.clear();
+  };
+  try {
+    for await (const m of q) {
+      req.beat?.();
+      if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt, req.resume !== undefined);
+      if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
+      if (m.type === 'assistant') {
+        // Each content block of one response is a message of its own with the same id: its use is counted once.
+        const used = (m.message as { id?: string; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }).usage;
+        const id = (m.message as { id?: string }).id;
+        if (used && (!id || !counted.has(id))) {
+          if (id) counted.add(id);
+          const cached = used.cache_read_input_tokens ?? 0;
+          req.onUsage?.({ promptTokens: (used.input_tokens ?? 0) + cached + (used.cache_creation_input_tokens ?? 0), completionTokens: used.output_tokens ?? 0, cachedTokens: cached });
         }
-        if (block.type !== 'tool_use') continue;
-        if (block.name !== 'StructuredOutput') toolUsed = true;
-        sources.push(source(block.name, block.input as Record<string, unknown>));
-        if (block.name !== 'StructuredOutput') req.activity?.tool(sources[sources.length - 1]);
-        if (process.env.CERIMONIAS_DEBUG) console.error('[tool]', block.name, JSON.stringify(block.input).slice(0, 300));
+        // What a sub-agent of this call produced goes to its node; anything else (the agent's own turn, or a sub-agent the call has no node for) to the call's activity.
+        const parentId = (m as { parent_tool_use_id?: string | null }).parent_tool_use_id;
+        const owner = (parentId ? nodes.get(parentId) : undefined) ?? req.activity;
+        for (const block of m.message.content) {
+          if (block.type === 'text') {
+            if (owner === req.activity) assistantText.push(block.text);
+            owner?.text(block.text);
+          }
+          if (block.type !== 'tool_use') continue;
+          if (block.name !== 'StructuredOutput') toolUsed = true;
+          const input = block.input as Record<string, unknown>;
+          sources.push(source(block.name, input));
+          if (block.name !== 'StructuredOutput') owner?.tool(lineOf(block.name, input));
+          // A sub-agent starts: its node hangs under whoever started it, in the order the tool uses came.
+          if (owner && (block.name === 'Agent' || block.name === 'Task') && typeof block.id === 'string') {
+            const type = typeof input.subagent_type === 'string' ? input.subagent_type.trim() : '';
+            const node = owner.child({ type: 'sub', label: subAgentWords({ name: type, description: input.description, prompt: input.prompt }) }, `${req.role}:${type || 'agent'}`);
+            node.status('started');
+            nodes.set(block.id, node);
+          }
+          if (process.env.CERIMONIAS_DEBUG) console.error('[tool]', block.name, JSON.stringify(block.input).slice(0, 300));
+        }
+      }
+      if (m.type === 'user' && Array.isArray(m.message.content)) {
+        for (const block of m.message.content) {
+          if (block.type !== 'tool_result') continue;
+          if (process.env.CERIMONIAS_DEBUG && block.is_error) console.error('[tool error]', JSON.stringify(block.content).slice(0, 300));
+          // The result of the tool use that started a sub-agent ends its node; what the result says is never shown.
+          const node = nodes.get(block.tool_use_id);
+          if (node) {
+            node.status(block.is_error ? 'failed' : 'finished');
+            nodes.delete(block.tool_use_id);
+          }
+        }
+      }
+      if (m.type === 'result') {
+        closeNodes('finished');
+        sessionId = m.session_id;
+        // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
+        if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd, ...(isAnthropicApi(req.target) ? {} : { costEstimated: true }) });
+        if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
+        // The turn ended: the door is asked now, whatever the turn produced. A message that is waiting goes into the same session and the stage goes on; with none,
+        // the closing call asks for the final answer with what the session already has.
+        if (await throughDoor()) continue;
+        if (m.subtype !== 'success' || m.structured_output == null) {
+          // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.
+          const said = clipProviderText([...assistantText, typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : ''].filter(Boolean).join('\n'));
+          // A refusal by budget is a wait, not a failure of the stage; the SDK prefixes the gateway's message with "Failed to authenticate", so the body decides.
+          if (budgetText(said)) throw new ProviderBudgetError(req.target.providerId, 'claude-sdk', redact(said));
+          // i18n-ignore: developer error from the SDK result
+          const failure = `agent failed: ${redact(said || `agent ended with ${m.subtype}`)}`;
+          // A busy model says so in the same text: the pool of the role may hand the start of the call to its next model (same message otherwise).
+          const busy = busyText(said);
+          if (busy) throw new EngineBusyError(failure, busy, toolUsed);
+          throw new Error(failure);
+        }
+        stream?.end();
+        return { data: m.structured_output as T, sessionId, sources };
       }
     }
-    if (process.env.CERIMONIAS_DEBUG && m.type === 'user' && Array.isArray(m.message.content)) {
-      for (const block of m.message.content) {
-        if (block.type === 'tool_result' && block.is_error) console.error('[tool error]', JSON.stringify(block.content).slice(0, 300));
-      }
-    }
-    if (m.type === 'result') {
-      sessionId = m.session_id;
-      // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
-      if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd, ...(isAnthropicApi(req.target) ? {} : { costEstimated: true }) });
-      if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
-      // The turn ended: the door is asked now, whatever the turn produced. A message that is waiting goes into the same session and the stage goes on; with none,
-      // the closing call asks for the final answer with what the session already has.
-      if (await throughDoor()) continue;
-      if (m.subtype !== 'success' || m.structured_output == null) {
-        // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.
-        const said = clipProviderText([...assistantText, typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : ''].filter(Boolean).join('\n'));
-        // A refusal by budget is a wait, not a failure of the stage; the SDK prefixes the gateway's message with "Failed to authenticate", so the body decides.
-        if (budgetText(said)) throw new ProviderBudgetError(req.target.providerId, 'claude-sdk', redact(said));
-        // i18n-ignore: developer error from the SDK result
-        const failure = `agent failed: ${redact(said || `agent ended with ${m.subtype}`)}`;
-        // A busy model says so in the same text: the pool of the role may hand the start of the call to its next model (same message otherwise).
-        const busy = busyText(said);
-        if (busy) throw new EngineBusyError(failure, busy, toolUsed);
-        throw new Error(failure);
-      }
-      stream?.end();
-      return { data: m.structured_output as T, sessionId, sources };
-    }
+    // i18n-ignore: developer error from the SDK result
+    throw new Error('agent ended without a result');
+  } finally {
+    // A call that ends by an error, an abort or a refusal leaves no sub-agent shown as working.
+    closeNodes('failed');
   }
-  // i18n-ignore: developer error from the SDK result
-  throw new Error('agent ended without a result');
 }
 
 registerEngine('claude-sdk', runClaudeSdk);
