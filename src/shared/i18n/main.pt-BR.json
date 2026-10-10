@@ -18,6 +18,7 @@
   "main.config.exportTitle": "Exportar a configuração do workspace",
   "main.config.importTitle": "Importar uma configuração",
   "main.config.fileFilter": "Configuração Coxia",
+  "main.agents.spareSkipped": "Um modelo de reserva ficou fora do conjunto: {model} ({reason})",
   "main.llm.keyMissing": "Chave do provedor não configurada ({ref}): {reason}. Abra Configurações e defina a chave, um comando ou uma variável de ambiente.",
   "main.llm.noOpenRouter": "Este workspace não usa o OpenRouter.",
   "main.llm.openRouterNoKey": "O provedor OpenRouter está sem chave configurada.",

@@ -534,9 +534,22 @@ export function delegatesWork(picked: ResolvedRole, mode: PoolMode): boolean {
  * What the open engine needs to reach the provider a role is mapped to, and the models its pool may move the call to. Only models of the open engine are in the pool:
  * an entry that belongs to the Claude engine is chosen at the start of a stage, never in the middle of an open session.
  */
-export function openSelection(t: ResolvedRole, cwd: string, isolated = false, bare = false, mode?: PoolMode): OpenEngineSelection {
+export function openSelection(t: ResolvedRole, cwd: string, isolated = false, bare = false, mode?: PoolMode, onSkipped?: (label: string, reason: string) => void): OpenEngineSelection {
   const first = openMember(t);
-  const open = (list: ResolvedRole[] | undefined): PoolMemberSpec[] => (list ?? []).filter((r) => r.engine === 'open').map(openMember);
+  // A spare whose key cannot be read is left out and said so, once: it must not fail a call that never needs it.
+  const told = new Set<string>();
+  const spare = (r: ResolvedRole): PoolMemberSpec[] => {
+    try {
+      return [openMember(r)];
+    } catch (e) {
+      if (!told.has(memberKey(r))) {
+        told.add(memberKey(r));
+        onSkipped?.(r.model, e instanceof Error ? e.message : String(e));
+      }
+      return [];
+    }
+  };
+  const open = (list: ResolvedRole[] | undefined): PoolMemberSpec[] => (list ?? []).filter((r) => r.engine === 'open').flatMap(spare);
   const activities = Object.fromEntries(
     ACTIVITIES.flatMap((a) => {
       const list = open(t.pool?.activities[a]);
@@ -589,7 +602,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const hook = openEngineFromEnv();
   // A bare call gets empty lists the same way, on either path; so does a call that has only the procedure tools.
   const noDocs = !!(req.bare || req.procedureOnly);
-  const selection = hook ? (req.isolated || noDocs ? { ...hook, docs: openDocs(req.cwd, req.target.role, true, noDocs) } : hook) : openSelection(req.target, req.cwd, req.isolated, noDocs, req.poolMode);
+  const selection = hook ? (req.isolated || noDocs ? { ...hook, docs: openDocs(req.cwd, req.target.role, true, noDocs) } : hook) : openSelection(req.target, req.cwd, req.isolated, noDocs, req.poolMode, (model, reason) => req.activity?.tool(t('main.agents.spareSkipped', { model, reason })));
   const tool = wantsVcsTool(req);
   // One `ViewImage`, the sandbox's: a stage that keeps evidence gets it with evidence ids added.
   const looks = offersViewImage(req.exec, req.evidence);

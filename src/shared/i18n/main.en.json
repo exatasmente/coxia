@@ -18,6 +18,7 @@
   "main.config.exportTitle": "Export the workspace configuration",
   "main.config.importTitle": "Import a configuration",
   "main.config.fileFilter": "Coxia configuration",
+  "main.agents.spareSkipped": "A spare model was left out of the pool: {model} ({reason})",
   "main.llm.keyMissing": "Provider key not configured ({ref}): {reason}. Open Settings and set the key, a command or an environment variable.",
   "main.llm.noOpenRouter": "This workspace does not use OpenRouter.",
   "main.llm.openRouterNoKey": "The OpenRouter provider has no key configured.",

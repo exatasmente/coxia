@@ -110,6 +110,36 @@ describe('a role mapped to an openai-compatible provider', () => {
     }
   });
 
+  it('leaves out a spare whose provider has no key, says so once, and still runs the call on the primary', async () => {
+    const { engineFor } = await import('../src/main/engine/registry');
+    cfg.updateConfig((c) => {
+      c.llm.providers.push(newProvider({ id: 'spare', kind: 'openai-compatible', baseUrl: fake.url, secretRef: 'llm.nokey', structured: 'tool' }));
+      c.llm.roles.deep = {
+        provider: 'local',
+        model: 'qwen3:8b',
+        fallbacks: [{ provider: 'spare', model: 'model-s' }, { provider: 'local', model: 'model-b' }],
+        activities: { screen: [{ provider: 'spare', model: 'model-s', images: true }] },
+      };
+      return c;
+    });
+    try {
+      const skipped: string[] = [];
+      const sel = agents.openSelection(engineFor('deep'), '/tmp', false, false, undefined, (label) => skipped.push(label));
+      expect(sel.pool?.fallbacks.map((m) => m.label)).toEqual(['model-b']);
+      expect(sel.pool?.activities ?? {}).toEqual({});
+      // in the list of the role and in the one of an activity, but said once
+      expect(skipped).toEqual(['model-s']);
+      const r = await agents.askAgent<{ fala: string }>('deep', 'Pergunta', schema(), { maxTurns: 2 });
+      expect(r.data).toEqual({ fala: 'do motor aberto' });
+    } finally {
+      cfg.updateConfig((c) => {
+        c.llm.roles.deep = { provider: 'local', model: 'qwen3:8b' };
+        c.llm.providers = c.llm.providers.filter((p) => p.id !== 'spare');
+        return c;
+      });
+    }
+  });
+
   it('fails with a clear message when the key has no source on this machine', async () => {
     cfg.updateConfig((c) => {
       c.llm.providers.find((p) => p.id === 'local')!.secretRef = 'llm.missing';
