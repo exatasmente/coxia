@@ -246,6 +246,17 @@ describe('a sub-agent of a kind', () => {
     expect(answer).toContain(String(KIND_TURNS.explore));
   });
 
+  it('a refusal by budget or by key of the sub-agent\'s model ends the call like the principal\'s own: it is not a tool error the principal reads', async () => {
+    for (const [status, kind] of [[402, 'budget'], [401, 'auth']] as const) {
+      restRegistry.clear();
+      const a = await server([delegating('shell'), textStep('principal went on', { usageTokens: [10, 2] })]);
+      const b = await server([errorStep(status, 'no credits left')]);
+      await expect(run({ primary: member(a, 'a'), activities: { shell: [member(b, 'b')] }, tools: [tool('Sh', 'shell')], write: true }), kind).rejects.toMatchObject({ kind });
+      // the principal never heard of it: it was not asked again
+      expect(a.chats(), kind).toHaveLength(1);
+    }
+  });
+
   it('runs edit and shell sub-agents one at a time and explore ones together', async () => {
     const both = (kinds: SubKind[]) => toolStep(kinds.map((k) => ({ id: `call_${k}_${Math.random()}`, name: 'Agent', args: { description: 'go', prompt: `task ${k}`, kind: k } })), { usageTokens: [10, 2] });
     const sub = (name: string) => (req: FakeRequest): Step => (req.body?.messages.at(-1).role === 'tool' ? textStep('sub done', { usageTokens: [10, 2] }) : toolStep([{ id: 'c', name, args: {} }], { usageTokens: [10, 2] }));

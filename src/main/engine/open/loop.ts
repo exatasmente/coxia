@@ -557,6 +557,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       return { text: r.render(rewritten ?? r.response), ...(r.images?.length ? { images: r.images } : {}) };
     } catch (e) {
       if (e instanceof EngineError && e.kind === 'aborted') throw e;
+      // A sub-agent's model that refuses by budget or by key ends the call as the principal's own would (a budget is a wait for the stage), not a tool error to read.
+      if (e instanceof EngineError && (e.kind === 'budget' || e.kind === 'auth')) throw e;
       return fail(e instanceof ToolError ? e.message : `${(e as Error).message}`);
     }
   };
