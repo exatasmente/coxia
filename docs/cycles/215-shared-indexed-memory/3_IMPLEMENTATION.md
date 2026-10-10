@@ -197,3 +197,11 @@ Deviations and additions:
 switch on; commit 8 left that as a known gap ("a workspace that turns the switch on later reads `not read yet` on its first ceremony turn"). Turning it off, or saving with the switch
 unchanged, warms nothing. Test: the `warms the version …` case of `test/memory-ceremony.test.ts`, on freshly imported modules so the listeners of the other tests do not count. No user-visible
 change, so no `CHANGELOG.md` line.
+
+## Fix after commit 8: point a working agent to the memory only when its session opened
+
+Divergence 5 (commit 7) chose the sentence of a message to the working agent by `memoryOn(config)`. A switch that is on does not mean the stage's session opened (the port answers null when
+the folder or the index cannot be made), and then the sentence would name tools the agent does not have. `StageInbox` gains `memory` (set by `openInbox` from the stage's session, `sharedIdx !== null`
+in `executor.ts`), and `service.ts` picks `sharedMovedMemory` only when `inbox.memory` is true; the `memoryOn` import left `service.ts`. The only place that sentence is posted is the working
+stage's inbox, so a mention has nothing to follow: it is answered by its own call with its own session. Test: the case of `test/memory-surfaces.test.ts` now has three worlds (on and opened, off, on and
+not opened); the second and third keep the old sentence byte for byte. No user-visible line for the `CHANGELOG.md`.

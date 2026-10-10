@@ -132,7 +132,6 @@ import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
 import type { MemoryPort } from '../memory/port';
 import type { MemorySession } from '../memory/session';
-import { memoryOn } from '../../shared/memory';
 import type { ProceduresPort } from '../procedures/port';
 import type { ProcedureOffers } from '../procedures/offers';
 import { runDocsAsk, stageOfRun } from '../harness/deliver';
@@ -1354,7 +1353,7 @@ export function createRunner(deps: RunnerDeps): Runner {
           if (id !== working || toStage >= 1) continue;
           const queued = inbox.post(text, message.waitsForAnswer);
           // The agent is told that the record of the activities moved only when the message really entered the session: a message handed back in the closing line keeps the person's words.
-          if (queued) inbox.post(`\n${memoryOn(deps.config()) ? prompt('runner.section.sharedMovedMemory') : prompt('runner.section.sharedMoved')}`, false);
+          if (queued) inbox.post(`\n${inbox.memory ? prompt('runner.section.sharedMovedMemory') : prompt('runner.section.sharedMoved')}`, false);
           toStage++;
           // The mailbox writes the closing line itself when the stage is already finishing; here only a message that went in is announced.
           if (queued) deps.forum.append(message.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.message.waiting', params: { agent: id, text: text.slice(0, 600) }, stage: run.stage });

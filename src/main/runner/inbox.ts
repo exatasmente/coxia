@@ -8,6 +8,8 @@ import type { ForumStore } from '../forum-core';
 export interface StageInbox {
   /** The agent whose stage this mailbox belongs to: what a message of another agent is routed by. */
   readonly agent: string;
+  /** Whether the stage's session opened the shared memory: what the sentence after a message about the activities may name (the tools exist only then). */
+  readonly memory: boolean;
   /**
    * The next message to hand over, or null when none is queued: never waits. The engines ask it when the model finished a step, and null is what lets them ask
    * for the final answer; a door that waited for a message would hold a stage that has nothing more to hear until its idle limit.
@@ -37,9 +39,10 @@ export function inboxOf(runId: string): StageInbox | null {
 }
 
 /**
- * Opens the mailbox of one attempt at a stage. `forum` is where the delivery and the closing lines are written; `now` gives the time they carry.
+ * Opens the mailbox of one attempt at a stage. `forum` is where the delivery and the closing lines are written; `now` gives the time they carry; `memory`: the stage
+ * has the shared memory's session.
  */
-export function openInbox(runId: string, stage: string, agent: string, forum: ForumStore, now: () => string): StageInbox {
+export function openInbox(runId: string, stage: string, agent: string, forum: ForumStore, now: () => string, memory = false): StageInbox {
   const thread = runThreadId(runId);
   const queued: string[] = [];
   let closed = false;
@@ -57,6 +60,7 @@ export function openInbox(runId: string, stage: string, agent: string, forum: Fo
   };
   const inbox: StageInbox = {
     agent,
+    memory,
     take() {
       return closed || closing ? null : (queued.shift() ?? null);
     },

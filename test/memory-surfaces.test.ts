@@ -124,13 +124,20 @@ describe('a stage', () => {
     expect(call.prompt).toContain(cycleWords('runner.section.shared', { text: '' }).split('\n')[0]);
   });
 
-  it('is told the memory moved in the sentence that names the tools, when a message reaches the working agent', async () => {
-    for (const on of [true, false]) {
+  it('is told the memory moved in the sentence that names the tools only when the stage\'s session opened, when a message reaches the working agent', async () => {
+    // The sentence names the tools, so it follows the session of the stage and not the switch: a memory that could not be opened under a switch that is on keeps the old words.
+    const cases = [
+      { name: 'on, opened', on: true, port: undefined, named: true },
+      { name: 'off', on: false, port: undefined, named: false },
+      { name: 'on, could not be opened', on: true, port: { open: async () => null }, named: false },
+    ];
+    for (const c of cases) {
       // A world of its own for each: one run per activity at a time.
       dir = mkdtempSync(join(tmpdir(), 'memory-surfaces-moved-'));
       w = memoryWorld({ ws: dir });
-      const b = await start({ configure: (c) => void (c.runner.sharedMemory = on) });
-      let words: string[] = [];
+      w.config.runner.sharedMemory = c.on;
+      const b = await start({ configure: (cfg) => void (cfg.runner.sharedMemory = c.on), ...(c.port ? { memoryPort: c.port } : {}) });
+      const words: string[] = [];
       b.engine.script('refiner', async (call) => {
         const run = b.runner.list()[0];
         const [m] = b.forum.append(runThreadId(run.id), { kind: 'post', author: { type: 'person' }, text: 'also check the fixtures', mentions: ['refiner'] });
@@ -144,9 +151,8 @@ describe('a stage', () => {
       b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
       await b.runner.start('app#101');
       await b.settle();
-      expect(words[0]).toBe('also check the fixtures');
-      expect(words[1]?.trim()).toBe(cycleWords(on ? 'runner.section.sharedMovedMemory' : 'runner.section.sharedMoved'));
-      words = [];
+      expect(words[0], c.name).toBe('also check the fixtures');
+      expect(words[1]?.trim(), c.name).toBe(cycleWords(c.named ? 'runner.section.sharedMovedMemory' : 'runner.section.sharedMoved'));
     }
   });
 });

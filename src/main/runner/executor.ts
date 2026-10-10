@@ -1043,7 +1043,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   };
   // The mailbox of the stage: a message addressed to this agent while it works enters the session between two steps. It is opened with the attempt and closed
   // before the sandbox, so nothing the stage hands over outlives it.
-  const inbox = openInbox(run.id, stage.id, agent.id, d.forum, () => new Date().toISOString());
+  const inbox = openInbox(run.id, stage.id, agent.id, d.forum, () => new Date().toISOString(), sharedIdx !== null);
   call.incoming = async (delivered) => {
     const message = inbox.take();
     if (message !== null) delivered(message);
