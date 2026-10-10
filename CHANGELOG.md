@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Dependencies updated: Electron and its toolchain, `playwright-core`, the Claude Agent SDK (0.3.292) and the CI's Node and artifact actions. The setup wizard follows the SDK's version range.
+
 ## [0.9.0-beta.18] - 2026-10-10
 
 ### Fixed
