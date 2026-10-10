@@ -128,14 +128,16 @@ function modelFor(p: LlmProvider, requested: string | undefined): string {
   return used ?? p.models[0] ?? '';
 }
 
-async function testOpen(p: LlmProvider, model: string, started: number): Promise<ProviderTestResult> {
+async function testOpen(p: LlmProvider, model: string, started: number, rich: boolean): Promise<ProviderTestResult> {
   let key = '';
   try {
     key = providerSecret(p.secretRef) ?? '';
   } catch (e) {
     return failure('open', 'no-key', e instanceof Error ? e.message : String(e), started);
   }
-  const r = await probeOpenAIProvider(p.baseUrl, key, model, { lang: getLanguage() });
+  // The richer listing (flex, retirement) is read by the test of the provider, not by the test of one more model; it is the provider's own address, already of its origin.
+  const catalogUrl = rich ? p.features?.catalogUrl : undefined;
+  const r = await probeOpenAIProvider(p.baseUrl, key, model, { lang: getLanguage(), ...(catalogUrl ? { catalogUrl } : {}) });
   const caps = r.capabilities;
   return {
     ok: r.ok,
@@ -146,6 +148,7 @@ async function testOpen(p: LlmProvider, model: string, started: number): Promise
     capabilities: r.ok ? { chat: caps.chat, tools: caps.tools, jsonSchema: caps.jsonSchema, streaming: caps.streaming, reasoning: caps.reasoning, contextWindow: caps.contextWindow ?? null, ...(caps.images !== undefined ? { images: caps.images } : {}) } : null,
     models: r.models.ids.slice(0, 300),
     catalog: r.catalog,
+    ...(Object.keys(r.deprecations).length ? { deprecations: r.deprecations } : {}),
     answered: r.chat.ok,
     ms: Date.now() - started,
   };
@@ -192,7 +195,7 @@ async function testProvider(providerId: string, requestedModel?: string): Promis
   const p = getConfig().llm.providers.find((x) => x.id === providerId);
   if (!p) return failure('open', 'unknown-provider', providerId, started);
   const model = modelFor(p, requestedModel);
-  return p.engine === 'open' ? testOpen(p, model, started) : testSdk(p, model, started);
+  return p.engine === 'open' ? testOpen(p, model, started, requestedModel === undefined) : testSdk(p, model, started);
 }
 
 // ---- SDK installation -----------------------------------------------------------------------------------------------------------------

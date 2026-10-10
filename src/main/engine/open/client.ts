@@ -371,6 +371,32 @@ export class ChatClient {
     feed(parser.flush());
   }
 
+  /**
+   * The provider's richer model listing, an address of its own (`features.catalogUrl`). The key goes along, so it is read only from the origin of `baseUrl`; the app
+   * calls it from the connection test only, never while a run works.
+   */
+  async listRich(url: string, signal?: AbortSignal): Promise<Json[]> {
+    const ctx = { lang: this.lang, model: this.cfg.model, host: this.host };
+    let sameOrigin = false;
+    try {
+      sameOrigin = new URL(url).origin === new URL(this.baseUrl).origin;
+    } catch {
+      sameOrigin = false;
+    }
+    // i18n-ignore: developer error, the address was validated against the origin when it was saved
+    if (!sameOrigin) throw new EngineError('the listing is not at the provider\'s origin', 'bad_request');
+    let res: Response;
+    try {
+      res = await this.fetchImpl(url, { headers: this.headers(false), signal: signal ?? AbortSignal.timeout(10_000) });
+    } catch (e) {
+      throw this.aborted(e, signal, ctx) ?? mapNetworkError(e, ctx);
+    }
+    if (!res.ok) throw mapHttpError(res.status, await res.text().catch(() => ''), res.headers, ctx);
+    const json = (await res.json()) as unknown;
+    const list = Array.isArray(json) ? json : (json as { data?: unknown; models?: unknown } | null)?.data ?? (json as { models?: unknown } | null)?.models;
+    return Array.isArray(list) ? (list as Json[]) : [];
+  }
+
   async listModels(signal?: AbortSignal): Promise<{ ids: string[]; raw: Json[] }> {
     const ctx = { lang: this.lang, model: this.cfg.model, host: this.host };
     let res: Response;

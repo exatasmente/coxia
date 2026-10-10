@@ -8,6 +8,7 @@ import type { CatalogModel } from '../src/shared/modelCatalog';
 import { suggestPools } from '../src/shared/modelPools';
 import {
   addEntry,
+  applyCatalogOffer,
   applySuggestion,
   entryFacts,
   listOf,
@@ -47,6 +48,10 @@ const model = (id: string, input: number | null, over: Partial<CatalogModel> = {
   structured: true,
   reasoning: false,
   cache: false,
+  effort: null,
+  flex: null,
+  deprecated: null,
+  replacedBy: null,
   ...over,
 });
 const provider = (id: string, list: string[] = []): LlmProvider => ({ id, kind: 'openai-compatible', engine: 'open', baseUrl: 'https://example.com/v1', options: {}, secretRef: null, envFile: null, models: list, capabilities: null, structured: 'auto', headers: {}, maxOutputTokens: null, temperature: null, timeoutMs: null, legacyCustomEndpoint: false });
@@ -272,7 +277,7 @@ describe('the suggestion panel', () => {
 
   it('says there is nothing to suggest from a listing without facts, and from one where nothing qualifies', () => {
     setLanguage('en');
-    const bare: CatalogModel = { id: 'model-a', contextWindow: null, price: null, vision: null, tools: null, structured: null, reasoning: null, cache: null };
+    const bare: CatalogModel = { id: 'model-a', contextWindow: null, price: null, vision: null, tools: null, structured: null, reasoning: null, cache: null, effort: null, flex: null, deprecated: null, replacedBy: null };
     expect(panel([bare])).toContain('carries no price or capabilities');
     expect(panel([model('small', 0.1, { contextWindow: 4000 })])).toContain('No model in the listing qualifies');
   });
@@ -305,5 +310,59 @@ describe('the models step', () => {
     const plain = step(withProviders('p1'));
     expect(plain).not.toContain('<details class="wz-details" open="">');
     expect(plain).toContain('No reserves: the model above is the only one.');
+  });
+});
+
+describe('what the catalog says of the models, written on the draft', () => {
+  const cat = (id: string, over: Partial<CatalogModel> = {}): CatalogModel => ({ id, contextWindow: 64000, price: null, vision: null, tools: null, structured: null, reasoning: null, cache: null, effort: null, flex: null, deprecated: null, replacedBy: null, ...over });
+  const config = (): WorkspaceConfig => {
+    const c = withProviders('p1', 'p2');
+    c.llm.roles.deep = { provider: 'p1', model: 'model-a', fallbacks: [ref('model-b'), ref('model-a', 'p2')], activities: { shell: [ref('model-b'), ref('model-c')] } };
+    c.agents.team.push({ id: 'own', name: 'Own', job: '', model: { role: null, provider: 'p1', model: 'model-b', fallbacks: [ref('model-a')] }, stages: [], permission: 'read', tracker: 'none', shell: 'none', autonomous: false, turnsTo: null, instructions: '', system: false });
+    return c;
+  };
+  const catalog = [cat('model-a', { flex: true, effort: true }), cat('model-b', { flex: false, effort: true, deprecated: 1790000000, replacedBy: 'model-c' })];
+
+  it('writes the offer on every entry of that provider: the role\'s model, its reserves, the lists of an activity and the agents with a model of their own', () => {
+    const next = applyCatalogOffer(config(), 'p1', catalog);
+    const deep = next.llm.roles.deep;
+    expect(deep.offer).toEqual({ flex: true, effort: true });
+    expect(deep.fallbacks?.[0].offer).toEqual({ effort: true, deprecated: 1790000000, replacedBy: 'model-c' });
+    expect(deep.activities?.shell?.[0].offer).toEqual({ effort: true, deprecated: 1790000000, replacedBy: 'model-c' });
+    const own = next.agents.team.find((a) => a.id === 'own')!.model;
+    expect(own.offer).toEqual({ effort: true, deprecated: 1790000000, replacedBy: 'model-c' });
+    expect(own.fallbacks?.[0].offer).toEqual({ flex: true, effort: true });
+  });
+
+  it('leaves another provider\'s entries, a model the catalog does not know and an agent on a role alone, and never changes a model', () => {
+    const before = config();
+    const next = applyCatalogOffer(before, 'p1', catalog);
+    expect(next.llm.roles.deep.fallbacks?.[1]).toEqual(ref('model-a', 'p2'));
+    expect(next.llm.roles.deep.activities?.shell?.[1]).toEqual(ref('model-c'));
+    expect(next.llm.roles.turn).toEqual(before.llm.roles.turn);
+    expect(next.agents.team.find((a) => a.id === 'developer')).toEqual(before.agents.team.find((a) => a.id === 'developer'));
+    expect(next.llm.roles.deep.model).toBe('model-a');
+    expect(next.llm.roles.deep.fallbacks?.map((r) => r.model)).toEqual(['model-b', 'model-a']);
+    // the configuration it was given is not touched
+    expect(before.llm.roles.deep.offer).toBeUndefined();
+  });
+
+  it('a test writes it again: what the catalog no longer says leaves the entry, and a model with nothing to say has no offer', () => {
+    const first = applyCatalogOffer(config(), 'p1', catalog);
+    const again = applyCatalogOffer(first, 'p1', [cat('model-a'), cat('model-b')]);
+    expect(again.llm.roles.deep).not.toHaveProperty('offer');
+    expect(again.llm.roles.deep.fallbacks?.[0]).toEqual(ref('model-b'));
+  });
+
+  it('a model the standard listing no longer shows still gets its retirement from the richer one, and keeps what it had otherwise', () => {
+    const c = config();
+    c.llm.roles.deep.fallbacks = [{ ...ref('model-old'), offer: { flex: true } }];
+    const next = applyCatalogOffer(c, 'p1', catalog, { 'model-old': { at: 1781217521, replacedBy: null } });
+    expect(next.llm.roles.deep.fallbacks?.[0].offer).toEqual({ flex: true, deprecated: 1781217521 });
+  });
+
+  it('is what a suggestion starts with: an entry suggested from a listing with the offer carries it', () => {
+    const s = suggestPools([cat('model-a', { tools: true, structured: true, flex: true, effort: true, price: { input: 0.1, output: 0.2, cacheRead: null } })], { provider: 'p1', roles: rolesOnProvider(config(), 'p1') });
+    expect(s.write[0].ref.offer).toEqual({ flex: true, effort: true });
   });
 });

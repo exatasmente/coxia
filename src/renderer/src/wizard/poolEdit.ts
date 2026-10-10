@@ -1,6 +1,6 @@
 import { poolFieldsOf } from '../../../shared/config/pool';
 import { ACTIVITIES, LLM_ROLES, MAX_POOL_ENTRIES, type Activity, type LlmRole, type ModelPool, type ModelRef, type ScoredActivity, type ScoreOverrides, type WorkspaceConfig } from '../../../shared/config/types';
-import { type CatalogModel, estimateStageCost } from '../../../shared/modelCatalog';
+import { type CatalogModel, type Retirement, estimateStageCost, offerOf } from '../../../shared/modelCatalog';
 import { type PoolSuggestion } from '../../../shared/modelPools';
 import { type FoundScore, normalizeModelId, scoreFor } from '../../../shared/modelScores';
 
@@ -97,6 +97,39 @@ export function withModelFacts(cfg: WorkspaceConfig, provider: string, model: st
     roles[role] = { ...(hit(rm) ? withFacts(rm, facts) : rm), ...(rm.fallbacks ? { fallbacks: fix(rm.fallbacks) } : {}), ...(activities ? { activities } : {}) };
   }
   return { ...cfg, llm: { ...cfg.llm, roles } };
+}
+
+/**
+ * What the provider's catalog says of its models, written on every entry of that provider in the draft: the role models, the reserves, the lists of an activity and
+ * the agents with a model of their own. A test regrows it, so what the person corrected by hand lasts until the next one. A model the catalog does not know keeps its
+ * entry; a retirement the richer listing gives for a model the standard one no longer shows is written too. Only the draft changes, and nothing is ever swapped.
+ */
+export function applyCatalogOffer(cfg: WorkspaceConfig, providerId: string, catalog: readonly CatalogModel[], retired: Record<string, Retirement> = {}): WorkspaceConfig {
+  const byId = new Map(catalog.map((m) => [m.id, m]));
+  const mark = <R extends Pick<ModelRef, 'provider' | 'model' | 'offer'>>(r: R): R => {
+    if (r.provider !== providerId) return r;
+    const known = byId.get(r.model);
+    const gone = retired[r.model];
+    if (!known && !gone) return r;
+    const base = known ? offerOf(known) : r.offer && Object.fromEntries(Object.entries(r.offer).filter(([k]) => k !== 'deprecated' && k !== 'replacedBy'));
+    const offer = { ...(base ?? {}), ...(gone ? { deprecated: gone.at, ...(gone.replacedBy ? { replacedBy: gone.replacedBy } : {}) } : {}) };
+    const { offer: _old, ...rest } = r;
+    return { ...rest, ...(Object.keys(offer).length ? { offer } : {}) } as R;
+  };
+  const list = (l: ModelRef[] | undefined) => l?.map(mark);
+  const roles = { ...cfg.llm.roles };
+  for (const role of LLM_ROLES) {
+    const rm = mark(roles[role]);
+    const activities = rm.activities ? Object.fromEntries(Object.entries(rm.activities).map(([a, l]) => [a, list(l)!])) : undefined;
+    roles[role] = { ...rm, ...(rm.fallbacks ? { fallbacks: list(rm.fallbacks) } : {}), ...(activities ? { activities } : {}) };
+  }
+  const team = cfg.agents.team.map((a) => {
+    if (a.model.role !== null) return a;
+    const m = mark(a.model);
+    const activities = m.activities ? Object.fromEntries(Object.entries(m.activities).map(([k, l]) => [k, list(l)!])) : undefined;
+    return { ...a, model: { ...m, ...(m.fallbacks ? { fallbacks: list(m.fallbacks) } : {}), ...(activities ? { activities } : {}) } };
+  });
+  return { ...cfg, llm: { ...cfg.llm, roles }, agents: { ...cfg.agents, team } };
 }
 
 /** The listing's entry for the tested model with what the test found written over it; the other models are left as they are. */

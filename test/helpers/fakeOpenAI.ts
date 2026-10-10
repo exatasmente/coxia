@@ -19,6 +19,8 @@ export type Step =
 
 export interface Fake {
   url: string;
+  /** The richer listing (`opts.rich`), on the same origin. */
+  richUrl: string;
   requests: FakeRequest[];
   chats: () => FakeRequest[];
   close: () => Promise<void>;
@@ -88,7 +90,7 @@ export const errorStep = (status: number, message: string, extra: Record<string,
 export const busyStep = (): Step => errorStep(429, 'Model is busy, retry later', { type: 'engine_overloaded', code: 'engine_overloaded' });
 
 // Serves /v1/chat/completions and /v1/models. `script` returns the step for each chat call; a function sees the request.
-export async function fakeOpenAI(script: Step[] | ((req: FakeRequest) => Step), opts: { models?: object[]; auth?: string; modelsStatus?: number } = {}): Promise<Fake> {
+export async function fakeOpenAI(script: Step[] | ((req: FakeRequest) => Step), opts: { models?: object[]; auth?: string; modelsStatus?: number; rich?: object[]; richStatus?: number } = {}): Promise<Fake> {
   const requests: FakeRequest[] = [];
   let n = 0;
   const server = createServer((req: IncomingMessage, res: ServerResponse) => {
@@ -101,6 +103,11 @@ export async function fakeOpenAI(script: Step[] | ((req: FakeRequest) => Step), 
       if (opts.auth && req.headers.authorization !== `Bearer ${opts.auth}`) {
         res.writeHead(401, { 'content-type': 'application/json' });
         return res.end(JSON.stringify({ error: { message: 'Incorrect API key provided', type: 'invalid_request_error', code: 'invalid_api_key' } }));
+      }
+      // The provider's richer listing, outside the protocol: at the origin, not under /v1.
+      if (req.method === 'GET' && req.url?.endsWith('/models/list')) {
+        res.writeHead(opts.richStatus ?? 200, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify(opts.richStatus && opts.richStatus >= 400 ? { error: { message: 'nope' } } : (opts.rich ?? [])));
       }
       if (req.method === 'GET' && req.url?.endsWith('/models')) {
         res.writeHead(opts.modelsStatus ?? 200, { 'content-type': 'application/json' });
@@ -131,6 +138,7 @@ export async function fakeOpenAI(script: Step[] | ((req: FakeRequest) => Step), 
   const port = (server.address() as AddressInfo).port;
   return {
     url: `http://127.0.0.1:${port}/v1`,
+    richUrl: `http://127.0.0.1:${port}/models/list`,
     requests,
     chats: () => requests.filter((r) => r.method === 'POST' && r.url.endsWith('/chat/completions')),
     close: () => new Promise((resolve) => (server.closeAllConnections(), server.close(() => resolve()))),

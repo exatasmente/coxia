@@ -25,7 +25,7 @@ import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import type { StepProps } from '../SetupWizard';
 import { PoolEditor } from '../PoolEditor';
-import { poolListCount, withModelFacts, withProbed, withRolePool, withoutLead } from '../poolEdit';
+import { applyCatalogOffer, poolListCount, withModelFacts, withProbed, withRolePool, withoutLead } from '../poolEdit';
 import { SuggestedPool } from '../SuggestedPool';
 import { Chip, ExternalLink, Field, Notice, SecretFields, secretProblemKey } from '../ui';
 import { wizardApi } from '../wizardApi';
@@ -134,10 +134,18 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
       setTests((all) => ({ ...all, [p.id]: { running: false, result } }));
       if (result.ok && result.engine === 'open') {
         setCatalogs((all) => ({ ...all, [p.id]: result.catalog }));
-        setCfg((c) => ({
-          ...c,
-          llm: { ...c.llm, providers: c.llm.providers.map((x) => (x.id === p.id ? { ...x, capabilities: result.capabilities, models: [...new Set([...x.models, ...result.models])].slice(0, 200) } : x)) },
-        }));
+        // What the catalog says of each model (flex, effort, retirement) is written on the provider's entries in the draft; nothing is swapped and nothing is saved here.
+        setCfg((c) =>
+          applyCatalogOffer(
+            {
+              ...c,
+              llm: { ...c.llm, providers: c.llm.providers.map((x) => (x.id === p.id ? { ...x, capabilities: result.capabilities, models: [...new Set([...x.models, ...result.models])].slice(0, 200) } : x)) },
+            },
+            p.id,
+            result.catalog,
+            result.deprecations,
+          ),
+        );
       }
     } catch (e) {
       setTests((all) => ({ ...all, [p.id]: { running: false, result: { ok: false, engine: p.engine, code: 'failed', detail: errorText(e), messages: [], capabilities: null, models: [], catalog: [], answered: false, ms: 0 } } }));

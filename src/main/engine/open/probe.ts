@@ -7,7 +7,7 @@ import { validate } from './schema';
 import { parseToolArguments } from './text';
 import type { Json } from './types';
 import { t } from '../../../shared/i18n';
-import { type CatalogModel, MAX_CATALOG_MODELS, parseCatalog } from '../../../shared/modelCatalog';
+import { type CatalogModel, type Retirement, MAX_CATALOG_MODELS, mergeRich, parseCatalog, parseRichCatalog, retirementsOf } from '../../../shared/modelCatalog';
 
 export interface ProbeStep {
   ok: boolean;
@@ -40,6 +40,8 @@ export interface ProbeResult {
   // What the listing says of each model (price, window, capabilities), up to MAX_CATALOG_MODELS. The probe's own findings are written over the tested model's
   // entry; every other model keeps null for what the listing did not say.
   catalog: CatalogModel[];
+  // The models the provider's richer listing marks as retired, with the date and the substitute it names (including the ones the standard listing no longer shows). Empty without a `catalogUrl`.
+  deprecations: Record<string, Retirement>;
   // Human readable lines for the wizard, in the requested language.
   messages: string[];
   ms: number;
@@ -51,6 +53,8 @@ export interface ProbeOptions {
   signal?: AbortSignal;
   // Per call; a local model may need minutes to load.
   timeoutMs?: number;
+  // The provider's richer listing (`features.catalogUrl`, already of the provider's origin): read once, here, for flex, the tool and schema tags and the retirement dates.
+  catalogUrl?: string;
 }
 
 const ECHO_TOOL = {
@@ -101,6 +105,7 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
     images: { ok: false },
     capabilities: { chat: false, tools: false, jsonSchema: false, streaming: false, reasoning: false },
     catalog: [],
+    deprecations: {},
     messages,
     ms: 0,
   };
@@ -117,6 +122,22 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
     return result;
   };
 
+  // The richer listing: a failure of it never fails the test, it is a line that says what was not updated.
+  const readRich = async (catalogUrl: string): Promise<void> => {
+    try {
+      const rich = parseRichCatalog(await client.listRich(catalogUrl, opts.signal));
+      result.catalog = mergeRich(result.catalog, rich);
+      result.deprecations = retirementsOf(rich);
+      const gone = result.deprecations[model];
+      if (gone) {
+        const date = new Date(gone.at * 1000).toISOString().slice(0, 10);
+        messages.push(gone.replacedBy ? msg(lang, 'probeDeprecated', { model, date, replacement: gone.replacedBy }) : msg(lang, 'probeDeprecatedNoSub', { model, date }));
+      }
+    } catch (e) {
+      messages.push(msg(lang, 'probeRichFail', { detail: e instanceof Error ? e.message : String(e) }));
+    }
+  };
+
   // 1. reachability and model list
   try {
     const startedAt = Date.now();
@@ -127,6 +148,7 @@ export async function probeOpenAIProvider(baseUrl: string, key: string, model: s
     messages.push(msg(lang, 'probeModelsOk', { count: ids.length }));
     if (!ids.includes(model) && ids.length) messages.push(msg(lang, 'probeModelMissing', { model, hint: ids.slice(0, 3).join(', ') }));
     const ctx = contextOf(raw, model);
+    if (opts.catalogUrl) await readRich(opts.catalogUrl);
     if (ctx) {
       result.capabilities.contextWindow = ctx;
       messages.push(msg(lang, 'probeContext', { tokens: ctx }));

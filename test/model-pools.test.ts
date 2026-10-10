@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ScoreOverrides } from '../src/shared/config/types';
-import type { CatalogModel } from '../src/shared/modelCatalog';
+import { type CatalogModel, mergeRich, parseRichCatalog } from '../src/shared/modelCatalog';
 import { MIN_SUGGESTED_CONTEXT, rankForActivity, suggestPools } from '../src/shared/modelPools';
 import { FLOORS, SCORE_ENTRIES, SCORE_TABLE_VERSION, floorFor, normalizeModelId, scoreFor } from '../src/shared/modelScores';
 
@@ -14,6 +14,10 @@ const model = (id: string, input: number | null, over: Partial<CatalogModel> = {
   structured: true,
   reasoning: false,
   cache: false,
+  effort: null,
+  flex: null,
+  deprecated: null,
+  replacedBy: null,
   ...over,
 });
 const ids = (list: { ref: { model: string } }[]) => list.map((r) => r.ref.model);
@@ -77,6 +81,19 @@ describe('rankForActivity', () => {
     expect(rankForActivity([model('model-a', 0.1)], 'write', opts)[0].unverified).toEqual([]);
   });
 
+  it('the tool and schema tags of the richer listing clear the unverified mark of a model the standard listing said nothing of', () => {
+    const base = [model('model-a', 0.1, { tools: null, structured: null }), model('model-b', 0.2, { tools: null, structured: null })];
+    const merged = mergeRich(base, parseRichCatalog([{ model_name: 'model-a', tags: ['tools', 'structured-output'] }, { model_name: 'model-b', tags: ['tools'] }]));
+    const ranked = rankForActivity(merged, 'write', opts);
+    expect(ranked.map((r) => [r.ref.model, r.unverified])).toEqual([['model-a', []], ['model-b', ['structured']]]);
+  });
+
+  it('carries the offer of the catalog into the entry: only what is true, and a retirement with its substitute', () => {
+    const [r] = rankForActivity([model('model-a', 0.1, { flex: true, effort: false, deprecated: 1790000000, replacedBy: 'model-b' })], 'write', opts);
+    expect(r.ref.offer).toEqual({ flex: true, deprecated: 1790000000, replacedBy: 'model-b' });
+    expect(rankForActivity([model('model-a', 0.1, { flex: false, effort: null })], 'write', opts)[0].ref).not.toHaveProperty('offer');
+  });
+
   it('carries what the listing said into the entry', () => {
     const [r] = rankForActivity([model('model-a', 0.1, { vision: true, reasoning: true, contextWindow: 64000 })], 'write', opts);
     expect(r.ref).toEqual({ provider: 'p1', model: 'model-a', images: true, contextWindow: 64000, echoReasoning: true });
@@ -121,7 +138,7 @@ describe('suggestPools', () => {
   });
 
   it('is empty for a listing that says nothing, and never exceeds the size', () => {
-    const bare = suggestPools([{ id: 'model-a', contextWindow: null, price: null, vision: null, tools: null, structured: null, reasoning: null, cache: null }], opts);
+    const bare = suggestPools([{ id: 'model-a', contextWindow: null, price: null, vision: null, tools: null, structured: null, reasoning: null, cache: null, effort: null, flex: null, deprecated: null, replacedBy: null }], opts);
     expect(bare.write).toEqual([]);
     const many = Array.from({ length: 12 }, (_, i) => model(`m-${String(i).padStart(2, '0')}`, 0.1 + i / 100));
     const s = suggestPools(many, { ...opts, roles: { turn: { provider: 'p1', model: 'own' } } });

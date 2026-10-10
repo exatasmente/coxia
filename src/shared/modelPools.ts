@@ -1,5 +1,5 @@
 import { ACTIVITIES, LLM_ROLES, MAX_POOL_ENTRIES, type Activity, type LlmRole, type ModelPool, type ModelRef, type ScoreOverrides } from './config/types';
-import { type CatalogModel, type StageProfile, STAGE_PROFILE, estimateStageCost } from './modelCatalog';
+import { type CatalogModel, type StageProfile, STAGE_PROFILE, estimateStageCost, offerOf } from './modelCatalog';
 import { type ScoreSource, floorFor, scoreFor } from './modelScores';
 
 // Suggests the models of a pool from what a provider's listing says: only models that can do the job, ordered by the price of a typical stage among the ones
@@ -49,6 +49,7 @@ export function refOf(m: CatalogModel, provider: string): ModelRef {
     ...(m.vision !== null ? { images: m.vision } : {}),
     ...(m.contextWindow !== null ? { contextWindow: m.contextWindow } : {}),
     ...(m.reasoning === true ? { echoReasoning: true } : {}),
+    ...(offerOf(m) ? { offer: offerOf(m) } : {}),
   };
 }
 
