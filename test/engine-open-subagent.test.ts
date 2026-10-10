@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -329,6 +329,58 @@ describe('a sub-agent of a kind', () => {
     expect(handoffs).toBe(1);
     const refused = usageOf(b.chats()[3]).filter((m) => m.role === 'tool').at(-1)!.content as string;
     expect(refused).toContain(HANDOFF_HELD_TEXT);
+  });
+});
+
+// What a sub-agent may write is exactly what the run may: it inherits the principal's fence (`writeRoot`, the reserved names, the lift of the fence of an unconfined
+// run) and nothing else, whichever kind it is.
+describe('the fence of the run, under a sub-agent', () => {
+  let outside: string;
+  beforeEach(() => {
+    outside = mkdtempSync(join(tmpdir(), 'open-sub-out-'));
+  });
+  afterEach(() => rmSync(outside, { recursive: true, force: true }));
+
+  // The sub-agent of kind edit tries each path in turn, then answers.
+  async function writes(paths: string[], s: Partial<Setup> & { over?: Partial<OpenRunParams> }): Promise<void> {
+    const a = await server([delegating('edit'), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server((req) => (req.n <= paths.length ? toolStep([{ id: `w${req.n}`, name: 'Write', args: { file_path: paths[req.n - 1], content: 'x' } }], { usageTokens: [10, 2] }) : textStep('sub done', { usageTokens: [10, 2] })));
+    await run({ primary: member(a, 'a'), activities: { edit: [member(b, 'b')] }, write: true, ...s, over: { allowedTools: ['Agent', 'Write', 'Edit'], ...s.over } });
+    expect(b.chats()).toHaveLength(paths.length + 1);
+  }
+
+  it('under a narrow write folder: inside it only, the reserved names refused, and the lift of the fence never applies', async () => {
+    mkdirSync(join(dir, 'work'));
+    const paths = [join(dir, 'work', 'in.txt'), join(dir, 'beside.txt'), join(outside, 'far.txt'), join(dir, 'work', '.kept', 'x.txt')];
+    await writes(paths, { over: { writeRoot: join(dir, 'work'), writeReserved: ['.kept'], writeAnywhere: true } });
+    expect(existsSync(paths[0])).toBe(true);
+    expect(existsSync(paths[1])).toBe(false);
+    expect(existsSync(paths[2])).toBe(false);
+    expect(existsSync(paths[3])).toBe(false);
+  });
+
+  it('under a run that is not unconfined: nothing outside the run\'s folder', async () => {
+    const paths = [join(dir, 'in.txt'), join(outside, 'far.txt')];
+    await writes(paths, {});
+    expect(existsSync(paths[0])).toBe(true);
+    expect(existsSync(paths[1])).toBe(false);
+  });
+
+  it('under an unconfined run: anywhere, and still not `.git`', async () => {
+    mkdirSync(join(dir, '.git'));
+    const paths = [join(dir, 'in.txt'), join(outside, 'far.txt'), join(dir, '.git', 'config')];
+    await writes(paths, { over: { writeAnywhere: true } });
+    expect(existsSync(paths[0])).toBe(true);
+    expect(existsSync(paths[1])).toBe(true);
+    expect(existsSync(paths[2])).toBe(false);
+  });
+
+  it('under a read-only run: no kind that writes is offered, and a sub-agent that reads has no writing tool', async () => {
+    const a = await server([delegating('explore'), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server([textStep('sub done', { usageTokens: [10, 2] })]);
+    await run({ primary: member(a, 'a'), activities: { edit: [member(b, 'b')], explore: [member(b, 'b')] }, tools: [tool('look', 'explore')], over: { allowedTools: ['Agent', 'Read', 'Write', 'Edit', 'look'] } });
+    expect(agentTool(a.chats()[0])!.parameters.properties.kind.enum).toEqual(['explore']);
+    expect(names(b.chats()[0])).toEqual(['Read', 'look']);
   });
 });
 
