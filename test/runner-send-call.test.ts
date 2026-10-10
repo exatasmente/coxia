@@ -4,8 +4,9 @@
 import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setLanguage } from '../src/shared/i18n';
+import { setLanguage, t } from '../src/shared/i18n';
 import type { ToolImpl } from '../src/main/engine/open/tools/types';
+import type { ActivityEntry } from '../src/shared/activity';
 import { type Boot, boot, doc, fakeSandbox, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -15,6 +16,10 @@ const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
 const { callRefusal } = await import('../src/main/runner/conversation');
+const { activityLog, beginActivity, withActivityParent } = await import('../src/main/activity');
+const { getConfig } = await import('../src/main/workspaceConfig');
+/** What the team calls an agent. */
+const nameOf = (id: string): string => t(getConfig().agents.team.find((a) => a.id === id)?.name ?? id);
 const { SEND_MESSAGE_TOOL, CALL_AGENT_TOOL, resolveMessageTo, sendMessageTool } = await import('../src/main/runner/tools');
 const { runThreadId } = await import('../src/shared/forum');
 
@@ -113,6 +118,49 @@ describe('a conversation started by a stage', () => {
     const linked = b.thread(run).find((m) => m.code === 'runner.conversation.linked');
     expect(linked).toBeDefined();
     expect(linked?.params.thread).toContain(runThreadId(run.id));
+  });
+
+  it('hangs the called agent under the node of the stage agent, with an excerpt of its answer, and says a refused call on the caller line without a node', async () => {
+    const b = await boot({
+      configure: (c) => {
+        c.runner.conversations = { roundsPerConversation: 1, perStage: 1 };
+      },
+    });
+    easy(b);
+    const pushed: ActivityEntry[] = [];
+    activityLog.clear();
+    activityLog.setSink((e) => pushed.push(e));
+    let stageNode = '';
+    // The engine of the app puts the tools of a call under the call's node; this script does the same by hand.
+    b.engine.script('refiner', async (call) => {
+      const open = toolOf(call, CALL_AGENT_TOOL)!;
+      const node = beginActivity('refiner');
+      node.status('started');
+      stageNode = node.id;
+      await withActivityParent(node.id, async () => {
+        node.tool('CallAgent qa');
+        await open.run({ to: 'qa', topic: 'How do I reproduce the failing scenario?', place: 'new' }, {} as never);
+        // the limit of one conversation per stage is reached; a call back to the caller itself is a cycle
+        await open.run({ to: 'planner', topic: 'one more', place: 'new' }, {} as never);
+        await open.run({ to: 'refiner', topic: 'myself', place: 'new' }, {} as never);
+      });
+      node.status('finished');
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+    });
+    b.engine.script('qa', () => ({ texto: 'Run the test with an empty folder.' }));
+    await b.runner.start('app#101');
+    await b.settle();
+    await vi.waitFor(() => expect(pushed.some((e) => e.kind === 'answer')).toBe(true));
+    const callee = pushed.find((e) => e.node?.type === 'call');
+    // one node, under the stage agent's, for the callee; none for the refused calls
+    expect(callee).toMatchObject({ role: 'qa', parent: stageNode, node: { type: 'call', label: 'How do I reproduce the failing scenario?' } });
+    expect(new Set(pushed.filter((e) => e.node?.type === 'call').map((e) => e.runId)).size).toBe(1);
+    const own = pushed.filter((e) => e.runId === callee?.runId);
+    expect(own.map((e) => [e.kind, e.state ?? null])).toEqual([['status', 'started'], ['answer', null], ['status', 'finished']]);
+    expect(own.find((e) => e.kind === 'answer')?.label).toBe('Run the test with an empty folder.');
+    // the refusals are lines of the caller's node, after the line of the call it refused
+    const caller = pushed.filter((e) => e.runId === stageNode && e.kind === 'tool').map((e) => e.label);
+    expect(caller).toEqual(['CallAgent qa', t('activity.callRefused.cap', { called: nameOf('planner'), cap: 1 }), t('activity.callRefused.cycle', { called: nameOf('refiner') })]);
   });
 
   it('lets a called agent that writes change a file and run a command, committed with the calling stage', async () => {

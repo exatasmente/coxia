@@ -12,6 +12,12 @@ const ID_RE = new RegExp(ID);
 
 export const isSystemId = (id: string): boolean => (LLM_ROLES as readonly string[]).includes(id);
 
+/** What the team calls an agent (its name is a catalog key or a literal), or the id when the agent is no longer in the team. */
+export const agentLabel = (team: readonly Pick<AgentDef, 'id' | 'name'>[], id: string): string => {
+  const a = team.find((x) => x.id === id);
+  return a ? t(a.name) || id : id;
+};
+
 /** The built-in agent of an LLM role. It is what the ceremonies call, so it takes the role's model and extra instructions as they are. */
 export function systemAgent(role: LlmRole, seed: RoleSeed = {}): AgentDef {
   const modelRole = (LLM_ROLES as readonly string[]).includes(seed.modelRole as string) ? (seed.modelRole as LlmRole) : role;

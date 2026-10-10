@@ -30,15 +30,17 @@ const config = () => {
 
 const place: MentionPlace = { thread: 'squads', kind: 'channel', squad: null, repos: [], ref: 'app#7', title: 'The thing' };
 
-function line(id: string): RunActivity & { states: string[] } {
+function line(id: string): RunActivity & { states: string[]; answers: string[] } {
   const states: string[] = [];
-  const made: RunActivity & { states: string[] } = {
+  const answers: string[] = [];
+  const made: RunActivity & { states: string[]; answers: string[] } = {
     id,
     states,
+    answers,
     tool: () => undefined,
     text: () => undefined,
     thought: () => undefined,
-    answer: () => undefined,
+    answer: (text) => void answers.push(text),
     blocked: () => undefined,
     status: (s) => void states.push(s),
     child: () => line(`${id}-child`),
@@ -71,6 +73,8 @@ describe('the call line of a mention', () => {
     });
     expect(engine.calls[0].activity).toBe(made);
     expect(made.states).toEqual(['started']);
+    // The excerpt is the text the thread shows for the answer, posted by this code and not by the engine.
+    expect(made.answers).toEqual(['Here.']);
     // The agent that is not of the team is let go at once; the one that answered, after its answer.
     expect(order).toEqual(['release:nobody', 'engine', 'release:turn']);
     expect(released).toEqual(['nobody', 'turn']);
@@ -86,6 +90,7 @@ describe('the call line of a mention', () => {
     const [m] = forum.append('squads', { kind: 'post', author: { type: 'person' }, text: '@turn look', mentions: ['turn'] });
     await answerMentions(place, m, { forum, config, engine, env: () => ({ fallbackCwd: root }), callOf: () => ({ activity: made, queued: false }), release: (id) => released.push(id) });
     expect(made.states).toEqual([]);
+    expect(made.answers).toEqual([]);
     expect(released).toEqual(['turn']);
     expect(forum.read('squads', 0, 50)?.messages.some((x) => x.code === 'runner.mentionFailed')).toBe(true);
   });

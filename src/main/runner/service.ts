@@ -1478,7 +1478,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
       if (!team.some((a) => a.id === id) || calls.has(callKey(runId, message.seq, id))) continue;
       const queued = (liveCalls.get(runId) ?? 0) > 0;
-      const activity = beginCallActivity(id, { jobId: `run:${runId}`, call: { agent: id, thread: message.thread, message: message.seq }, isSecretPath: (p) => secretPath(p, cwd) });
+      const activity = beginCallActivity(id, { jobId: `run:${runId}`, call: { agent: id, thread: message.thread, message: message.seq }, node: { type: 'call', label: message.text }, isSecretPath: (p) => secretPath(p, cwd) });
       activity.status(queued ? 'queued' : 'started');
       calls.set(callKey(runId, message.seq, id), { activity, queued });
       liveCalls.set(runId, (liveCalls.get(runId) ?? 0) + 1);

@@ -270,7 +270,9 @@ export function createActivityLog(options: ActivityLogOptions = {}) {
       return [...picked].flatMap((rid) => (runs.get(rid) as Run).entries).sort((a, b) => a.seq - b.seq);
     }
     const call = id ? latestCall.get(id) : undefined;
-    const picked = [...runs.values()].filter((r) => (id ? r.jobId === id && (!call || r.callId === call || !isDone(r)) : r.jobId === null));
+    // A run of a tree that still has work in it stays whatever call it was made in: an `@` call's line has none, and the agents it calls hang under it.
+    const live = new Set(trees().filter((tree) => !treeDone(tree)).flatMap((tree) => tree.map((r) => r.id)));
+    const picked = [...runs.values()].filter((r) => (id ? r.jobId === id && (!call || r.callId === call || live.has(r.id)) : r.jobId === null));
     return picked.flatMap((r) => r.entries).sort((a, b) => a.seq - b.seq);
   }
 
@@ -320,6 +322,15 @@ export function withActivityContext<T>(jobId: string | null, fn: () => T): T {
 /** Runs `fn` as the work of the node `runId`: every run started inside it (an agent it calls) hangs under that node. */
 export function withActivityParent<T>(runId: string, fn: () => T): T {
   return als.run({ ...(als.getStore() ?? { jobId: null, callId: randomUUID() }), parent: runId }, fn);
+}
+
+/**
+ * Captures the job and the call that are current now. The function it returns runs work under a node of that job even from a chain that lost the async context
+ * (an in-process tool server answering from the engine's own callbacks): a tool that starts another agent must not start the job's call over.
+ */
+export function bindActivityParent(): <T>(runId: string, fn: () => T) => T {
+  const base = als.getStore();
+  return (runId, fn) => als.run({ ...(als.getStore() ?? base ?? { jobId: null, callId: randomUUID() }), parent: runId }, fn);
 }
 
 export function currentJobId(): string | null {

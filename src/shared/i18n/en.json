@@ -222,6 +222,8 @@
   "activity.call.title": "What {agent} is doing",
   "activity.call.working": "Working…",
   "activity.call.entry": "{agent} · {run}",
+  "activity.callRefused.cycle": "Not called: {called} is already in the chain of calls",
+  "activity.callRefused.cap": "Not called: {called}, the limit of {cap} calls was reached",
   "notify.preDaily.body": "The agents are ready for the call. Click to join.",
   "notify.preDaily.body.novoice": "The agents are ready for the chat. Click to join.",
   "notify.reentry.hint": "Click for the re-entry call.",

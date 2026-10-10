@@ -11,6 +11,8 @@ import { runThreadId } from '../src/shared/forum';
 import { runConversation } from '../src/main/runner/conversation';
 import { ASK_CONVERSATION_TOOL } from '../src/main/runner/tools';
 import type { AgentCall } from '../src/main/agents';
+import type { ActivityEntry } from '../src/shared/activity';
+import { activityLog, beginActivity, withActivityParent } from '../src/main/activity';
 
 let dir!: string;
 let forum: ForumStore;
@@ -177,6 +179,48 @@ describe('a conversation between two agents', () => {
     expect(committed[0]).toContain('developer');
     expect(committed[0]).toContain('qa');
     expect(r.head).toBe('abc123');
+  });
+
+  it('is one node under the calling agent: lent to each round, closed once, with an excerpt of each round that answered', async () => {
+    const config = neutralConfig();
+    config.runner.conversations = { roundsPerConversation: 2, perStage: 3 };
+    const seen: AgentCall[] = [];
+    const engine = async (call: AgentCall) => {
+      seen.push(call);
+      // a round that ends its own activity: on a lent node that closes nothing
+      call.activity?.status('finished');
+      return { data: { texto: `answer ${seen.length}` } };
+    };
+    const pushed: ActivityEntry[] = [];
+    activityLog.setSink((e) => pushed.push(e));
+    const caller = beginActivity('developer');
+    caller.status('started');
+    await withActivityParent(caller.id, () =>
+      runConversation({ run, stage: { id: 'implement' } as never, caller: agent('developer'), called: agent('qa'), forum, config: () => config, engine, commands: [], abort: new AbortController(), chain: ['developer'], place: 'run', title: 'talk' }, exchange(['how do I reproduce it?', 'and now?']).ex),
+    );
+    activityLog.setSink(null);
+    const node = pushed.filter((e) => e.runId !== caller.id);
+    expect(node.every((e) => e.parent === caller.id && e.role === 'qa' && e.node?.type === 'call' && e.node.label === 'how do I reproduce it?' && !e.call)).toBe(true);
+    expect(node.map((e) => [e.kind, e.state ?? e.label])).toEqual([['status', 'started'], ['answer', 'answer 1'], ['answer', 'answer 2'], ['status', 'finished']]);
+    // both rounds ran on the same lent node, which is not the one that was closed by the round
+    expect(seen).toHaveLength(2);
+    expect(seen[0].activity?.id).toBe(seen[1].activity?.id);
+  });
+
+  it('closes the node as failed, with the reason, when a round throws', async () => {
+    const engine = async (): Promise<never> => {
+      throw new Error('model unavailable');
+    };
+    const pushed: ActivityEntry[] = [];
+    activityLog.setSink((e) => pushed.push(e));
+    await expect(
+      runConversation({ run, stage: { id: 'implement' } as never, caller: agent('developer'), called: agent('qa'), forum, config: () => neutralConfig(), engine, commands: [], abort: new AbortController(), chain: ['developer'], place: 'run', title: 'talk' }, exchange(['first']).ex),
+    ).rejects.toThrow('model unavailable');
+    activityLog.setSink(null);
+    // with no node to hang under, the callee is a root of its job
+    expect(pushed.map((e) => e.state ?? e.kind)).toEqual(['started', 'failed']);
+    expect(pushed[1].label).toContain('model unavailable');
+    expect(pushed[0].parent).toBeUndefined();
   });
 
   it('counts the model use of a conversation on the calling stage', async () => {

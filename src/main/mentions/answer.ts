@@ -1,13 +1,13 @@
 import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { workingTeam } from '../../shared/config/team';
+import { agentLabel, workingTeam } from '../../shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, MAX_MENTIONS } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import type { Run } from '../../shared/runs';
 import { mentionJob } from '../../shared/activity';
-import { type RunActivity, withActivityContext } from '../activity';
+import { type RunActivity, beginActivity, currentActivity, withActivityContext } from '../activity';
 import type { AgentCall } from '../agents';
 import { type ReadConfinement, ProviderBusyError, poolBusyParams, poolNoticeLine } from '../engine/contract';
 import { callKey } from '../../shared/browser';
@@ -361,12 +361,31 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
             team: workingTeam(config.agents.team).map((a) => a.id),
             chain,
             cap: config.runner.conversations.perStage,
+            label: (to) => agentLabel(config.agents.team, to),
             ask: async (to, topic) => {
               const [asked] = deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text: topic, mentions: [to], stage, public: false });
+              // The agent asked is a node under the one that asks (the context names it); its line is the door a mention's already is, so the engine reports only how it ends.
+              const parent = currentActivity();
+              const opened = parent ? parent.child({ type: 'call', label: topic }, to) : beginActivity(to, undefined, { node: { type: 'call', label: topic } });
+              let failed = false;
+              const node: RunActivity = {
+                ...opened,
+                status: (state, detail) => {
+                  if (state === 'failed') failed = true;
+                  opened.status(state, detail);
+                },
+              };
+              node.status('started');
               const resume = watch.pause();
               try {
-                const answers = await answerMentions(place, asked, { ...deps, calls: [to], chain, callOf: undefined, release: undefined });
-                return answers.find((a) => a.agent === to)?.text ?? null;
+                const answers = await answerMentions(place, asked, { ...deps, calls: [to], chain, callOf: () => ({ activity: node, queued: false }), release: undefined });
+                const said = answers.find((a) => a.agent === to)?.text ?? null;
+                // The agent left the team, or gave no answer the conversation could post: the node says it did not answer, whatever the engine reported.
+                if (said === null && !failed) node.status('failed');
+                return said;
+              } catch (e) {
+                if (!failed) node.status('failed', e instanceof Error ? e.message : String(e));
+                throw e;
               } finally {
                 resume();
               }
@@ -382,6 +401,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       const text = answerText((r.data as { text?: unknown })?.text);
       if (!text) throw new Error(t('main.runner.error.empty-answer'));
       deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
+      // What the thread shows of the answer is what the call's node shows of it, here and not in the engine, which never reports a closing answer as a step.
+      made?.activity.answer(text);
       // The answer is out: the work may have earned one last turn, which runs beside the thread and not in front of its next message.
       if (procedures && deps.offers && !deps.chain?.length) {
         const session = procedures;

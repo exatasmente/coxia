@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ACTIVITY_ANSWER_MAX, ACTIVITY_NODE_MAX, ACTIVITY_RING, ACTIVITY_TEXT_MAX, ACTIVITY_THOUGHT_MAX, runActive, takeContext, tagArgs, type ActivityEntry } from '../src/shared/activity';
-import { activityLog, beginActivity, createActivityLog, currentActivity, currentJobId, safeText, setThoughtsGate, withActivityContext, withActivityParent } from '../src/main/activity';
+import { activityLog, beginActivity, bindActivityParent, createActivityLog, currentActivity, currentJobId, safeText, setThoughtsGate, withActivityContext, withActivityParent } from '../src/main/activity';
 import { handle, invoke } from '../src/main/rpc';
 
 const clock = () => {
@@ -440,6 +440,45 @@ describe('what a label may carry', () => {
 
   it('keeps a plain label as it is', () => {
     expect(safeText('Grep needle', 240)).toBe('Grep needle');
+  });
+});
+
+describe('a tree started by an `@` call', () => {
+  it('keeps the whole tree in the backfill of its job while any node of it works, whatever call each was made in, and lets it go when all ended', () => {
+    const log = createActivityLog();
+    // The `@` call's line has no call id of its own; the agents it calls copy it.
+    const line = log.begin('dev', { jobId: 'mention:t1', call: { agent: 'dev', thread: 't1', message: 1 } });
+    line.status('started');
+    log.startCall('mention:t1', 'later-call');
+    const callee = line.child({ type: 'call', label: 'help' }, 'qa');
+    callee.status('started');
+    callee.status('finished');
+    // the callee ended and the caller still works: both stay
+    expect(new Set(log.get('mention:t1').map((e) => e.runId))).toEqual(new Set([line.id, callee.id]));
+    line.status('finished');
+    expect(log.get('mention:t1')).toEqual([]);
+  });
+});
+
+describe('a parent bound where the job is known', () => {
+  it('runs work under a node of the same job even from a chain that lost the async context', async () => {
+    const log = activityLog;
+    const bound = await withActivityContext('bind:#1', async () => {
+      const root = beginActivity('dev');
+      root.status('started');
+      return { root, under: bindActivityParent() };
+    });
+    // outside the context, as an in-process tool server answering from the engine's own callbacks is
+    expect(currentJobId()).toBeNull();
+    const child = bound.under(bound.root.id, () => {
+      expect(currentJobId()).toBe('bind:#1');
+      expect(currentActivity()?.id).toBe(bound.root.id);
+      // a context of the same job joins instead of starting the call over
+      return withActivityContext('bind:#1', () => beginActivity('qa'));
+    });
+    child.status('started');
+    expect(log.get(child.id)[0]).toMatchObject({ jobId: 'bind:#1', parent: bound.root.id });
+    expect(currentJobId()).toBeNull();
   });
 });
 

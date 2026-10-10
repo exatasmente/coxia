@@ -58,3 +58,29 @@ Deviations from the plan:
   "The usage unchanged" is not asserted separately: the existing usage tests of that file (`used`, `adds the sub-agent's use ...`) run unchanged and pass.
 - `Task`, the older name of the SDK's sub-agent tool, is accepted beside `Agent`; the plan allowed it. A sub-agent of the SDK is headed by its `subagent_type` (or `agent`): the SDK
   has no kind. The live order and the `parent_tool_use_id` of parallel SDK sub-agents were read in the declarations and are not seen working (risk 3 of the plan).
+
+## Commit 4: called agents linked under the agent that called them
+
+`askAgent` runs the engine under its call's node (`withActivityParent`) and hands the engine its app tools wrapped to run under that node as well (`bindActivityParent`, which keeps
+the job even from a chain that lost the async context); `lineOf` words `CallAgent` as `CallAgent <callee>: <topic>`. Path A: the call's line carries `node` (the message text) at both
+call sites. Path B: `ask` makes the callee a node under the caller and hands it to `answerMentions` through `callOf`. Path C: `runConversation` makes one node for the whole
+conversation, lends it to each round and closes it in its `finally`. The excerpt line is emitted by the code that posts the reply (`answerMentions` for A and B, the round loop for C), never
+by an engine. A refused call adds a line to the caller's node (`activity.callRefused.cycle|cap`) in `converse.ts` and in the executor's `callAgent`.
+
+Deviations from the plan:
+
+- `bindActivityParent` (a new export of the log) is used by the wrapper instead of `withActivityParent` alone: it captures the job and the call that are current where the tool list is
+  wrapped, so an in-process tool server that lost the async context (risk 2) still runs the tool in the same job and a nested `withActivityContext` joins instead of starting a call.
+- `agentLabel(team, id)` (name as the team writes it, the id when the agent is gone) lives in `src/shared/config/team.ts`, pure, because `converse.ts` and `answer.ts` cannot import the
+  agents module (it imports the mentions). `ConversationCall` gained an optional `label` for it.
+- Path B and path C make their node with `currentActivity().child(...)` (the caller's secret-path check is inherited) and fall back to `beginActivity` only when no node is current. The node
+  `ask` hands over is a thin wrapper that remembers whether anything said `failed`, so an agent that gave no answer after the engine said `finished` ends `failed` once, and one the engine
+  already failed (held, stopped) is not failed twice.
+- `get(job)` kept a run only when its call was the job's latest or it was still working; the lines of an `@` call have no call id, and the agents they call copy it, so a callee that
+  had ended was dropped from the backfill while its caller still worked (rule 5). It now keeps every run of a tree that still has work in it (`treeDone`), a fix to commit 2's code
+  found by the path-A test.
+- The cap refusal line reads "the limit of N calls was reached" (not "this answer"), because the same key serves an answer and a stage.
+- The unknown-agent refusal is left alone, as the plan says. The CHANGELOG line waits for commit 7, as the plan's order says.
+- Tests: `test/activity-calls.test.ts` (A, B and C over the real `askAgent` and the fake server; path C there uses a hand-made `callAgent` that calls `runConversation`, as the executor's
+  does); the executor's own refusal lines are in `test/runner-send-call.test.ts`, with the stage's node made by hand (its engine there is the fake one, which does not set the parent).
+  `agent-activity-core.test.ts` gains the `get` case and `bindActivityParent`; the SDK file one `CallAgent` line case.

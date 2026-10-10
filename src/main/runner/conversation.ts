@@ -6,6 +6,7 @@ import type { FlowStage, Run } from '../../shared/runs';
 import { callKey } from '../../shared/browser';
 import { type CallScreen, type ScreenPorts, modelSeesImages, openCallScreen, promptFor } from '../browser/callScreen';
 import { grantsFor } from '../browser/guard';
+import { type RunActivity, beginActivity, currentActivity } from '../activity';
 import type { AgentCall } from '../agents';
 import { poolNoticeLine } from '../engine/contract';
 import type { ForumStore } from '../forum-core';
@@ -152,6 +153,9 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
   let held: HeldScreen | undefined;
   let screenGone = false;
   let unhook = (): void => undefined;
+  // The called agent as a node under the agent that called it: one for the whole conversation, whatever the rounds, closed where the conversation ends.
+  let node: RunActivity | null = null;
+  let failure: string | null = null;
   const screenStopped = (): void => {
     if (screenGone) return;
     screenGone = true;
@@ -175,6 +179,9 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
     const first = await nextFromCaller();
     if (first !== null) {
       say({ kind: 'post', author: { type: 'agent', id: deps.caller.id }, text: clipped(first), stage, public: false });
+      const parent = currentActivity();
+      node = parent ? parent.child({ type: 'call', label: first }, deps.called.id) : beginActivity(deps.called.id, undefined, { node: { type: 'call', label: first } });
+      node.status('started');
       if (deps.screens) {
         screen = await openCallScreen(deps.screens, { key: callKey(thread, deps.called.id), agent: deps.called, thread, place: 'conversation', stage, issue: deps.run.issue.iid, display: null, seesImages: modelSeesImages(deps.called), pause: clock.pause, signal: deps.abort.signal }).catch((e: unknown) => {
           console.error('[runner] could not open the screen of a called agent', deps.run.id, e instanceof Error ? e.message : e);
@@ -210,16 +217,25 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
         }
         rounds++;
         // A turn the screen's closing cut short ends the conversation, not the run.
-        const turn = await turnOf(deps, thread, session, clock, nextFromCaller, say, held).catch((e: unknown) => {
+        const turn = await turnOf(deps, thread, session, clock, nextFromCaller, say, held, node.lend()).catch((e: unknown) => {
           if (screenGone) return null;
           throw e;
         });
         if (turn === null) break;
         ex.answered(turn);
+        // The excerpt is the text the conversation shows for this round; a round's own end is ignored on the lent node.
+        node.answer(turn);
         if (closed || screenGone) break;
       }
     }
+  } catch (e) {
+    failure = e instanceof Error ? e.message : String(e);
+    throw e;
   } finally {
+    if (node) {
+      if (failure === null) node.status('finished');
+      else node.status('failed', failure);
+    }
     // The screen is let go, not closed: it stays open and counting down for the next call of the agent in this thread.
     unhook();
     screen?.release();
@@ -253,6 +269,7 @@ async function turnOf(
   nextFromCaller: () => Promise<string | null>,
   say: (m: Parameters<ForumStore['append']>[1]) => void,
   held?: HeldScreen,
+  activity?: RunActivity,
 ): Promise<string | null> {
   // The messages the called agent says through the tool, and what it answers as its final text.
   const spoken: string[] = [];
@@ -310,6 +327,7 @@ async function turnOf(
     confine: writes ? { root: deps.run.worktree, anywhere: unconfinedOf(deps.config().runner), hooks: confinedHooks({ root: deps.run.worktree, commands: deps.commands, onDenied: denied, anywhere: unconfinedOf(deps.config().runner) }) } : undefined,
     exec: session ?? undefined,
     label: deps.called.id,
+    ...(activity ? { activity } : {}),
     background: true,
     maxTurns: 12,
     abort: held?.abort ?? deps.abort,

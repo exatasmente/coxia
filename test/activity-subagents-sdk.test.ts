@@ -21,6 +21,8 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
 import { activityLog, withActivityContext } from '../src/main/activity';
 import { askAgent, obj, str } from '../src/main/agents';
 import type { ActivityEntry } from '../src/shared/activity';
+import { t } from '../src/shared/i18n';
+import { getConfig } from '../src/main/workspaceConfig';
 import { installEnvSecret, installLegacyConfig } from './helpers/config';
 
 await installLegacyConfig();
@@ -153,5 +155,15 @@ describe('sub-agents of the Claude SDK', () => {
     expect(entries.find((e) => e.runId === outer)?.parent).toBe(rootOf(entries));
     expect(ownLines(entries, outer).map((l) => l[2])).toEqual(['Agente iniciado', 'Outer narration.', 'Agent agent: inner', 'Terminou']);
     expect(ownLines(entries, inner).map((l) => l[2])).toEqual(['Agente iniciado', 'Read /p/deep.ts', 'Terminou']);
+  });
+
+  it('words a CallAgent line with the callee as the team names it and the topic, masked, and the id when the name is gone', async () => {
+    const known = getConfig().agents.team.find((a) => a.id === 'deep');
+    scripts = [[init('s1'), use('c1', 'mcp__runner__CallAgent', { to: 'deep', topic: 'about the plan\nwith   two lines' }), use('c2', 'CallAgent', { to: 'gone-agent', topic: 'token=abcdefghijklmnop1234567890 please' }), result('s1')]];
+    await ask();
+    const lines = ownLines(activityLog.get(JOB), rootOf(activityLog.get(JOB))).filter((l) => l[0] === 'tool').map((l) => l[2]);
+    expect(lines[0]).toBe(`CallAgent ${t(known?.name ?? 'deep')}: about the plan with two lines`);
+    expect(lines[1].startsWith('CallAgent gone-agent: ')).toBe(true);
+    expect(lines[1]).not.toContain('abcdefghijklmnop1234567890');
   });
 });

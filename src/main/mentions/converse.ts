@@ -1,4 +1,5 @@
 import { t } from '../../shared/i18n';
+import { currentActivity } from '../activity';
 import type { Json } from '../engine/open/types';
 import { type ToolImpl, ToolError } from '../engine/open/tools/types';
 import { CALL_AGENT_TOOL } from '../runner/tools';
@@ -15,6 +16,8 @@ export interface ConversationCall {
   chain: readonly string[];
   /** The calls one answer may make. */
   cap: number;
+  /** What the team calls an agent, for the line of a refused call. Absent: the id. */
+  label?: (id: string) => string;
   /** Asks `to` about `topic` in the conversation; the text it answered, or null when it could not answer (the conversation says why). */
   ask(to: string, topic: string): Promise<string | null>;
 }
@@ -42,8 +45,15 @@ export function conversationCallTool(o: ConversationCall): ToolImpl {
       const topic = String(input.topic ?? '').trim();
       if (!topic) throw new ToolError(t('main.runner.tools.emptyTopic'));
       if (!o.team.includes(to)) throw new ToolError(t('main.runner.tools.unknownAgent', { to: to || '—', list: o.team.join(', ') }));
-      if (o.chain.includes(to)) return { response: t('main.mentions.call.refusedCycle', { called: to }), render: String };
-      if (made >= o.cap) return { response: t('main.mentions.call.refusedCap', { cap: o.cap }), render: String };
+      // A refused call says so on the caller's line and makes no node.
+      if (o.chain.includes(to)) {
+        currentActivity()?.tool(t('activity.callRefused.cycle', { called: o.label?.(to) ?? to }));
+        return { response: t('main.mentions.call.refusedCycle', { called: to }), render: String };
+      }
+      if (made >= o.cap) {
+        currentActivity()?.tool(t('activity.callRefused.cap', { called: o.label?.(to) ?? to, cap: o.cap }));
+        return { response: t('main.mentions.call.refusedCap', { cap: o.cap }), render: String };
+      }
       made++;
       const answer = await o.ask(to, topic);
       return { response: answer ? t('main.mentions.call.answered', { called: to, text: answer }) : t('main.mentions.call.noAnswer', { called: to }), render: String };

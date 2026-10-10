@@ -7,12 +7,12 @@ import type { UsageReport } from '../shared/runs/usage';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult, TurnOptions } from '../shared/types';
 import type { AgentDef, AgentToolsConfig, PoolMode } from '../shared/config/types';
 import { effectivePoolMode, resolvePoolMode } from '../shared/config/poolMode';
-import { toolsForAgent } from '../shared/config/team';
+import { agentLabel, toolsForAgent } from '../shared/config/team';
 import type { AttachmentRef } from '../shared/attachments';
 import type { ModelRole } from '../shared/settings';
 import { getLanguage, t } from '../shared/i18n';
 import { ACTIVITY_NODE_MAX } from '../shared/activity';
-import { type RunActivity, beginActivity, withActivityParent } from './activity';
+import { type RunActivity, beginActivity, bindActivityParent, currentActivity, withActivityParent } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
 import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
@@ -44,7 +44,7 @@ import { answerCeremonyMentions } from './mentions/ceremony';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
 import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
-import { runnerMcpServer, runnerMcpToolName } from './runner/tools';
+import { CALL_AGENT_TOOL, runnerMcpServer, runnerMcpToolName } from './runner/tools';
 import type { MemberParams, Tuning } from './engine/open/pool';
 import type { ToolImpl } from './engine/open/tools/types';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
@@ -413,6 +413,13 @@ function subAgentWords(a: { kind?: unknown; name?: unknown; description?: unknow
  * the activity says more for the tools that start another agent.
  */
 function lineOf(name: string, input: Record<string, unknown>): string {
+  // The callee as the team names it and the topic, clipped; the SDK names an app tool with a prefix.
+  if (name.replace(/^mcp__[^_]+(?:-[^_]+)*__/, '') === CALL_AGENT_TOOL) {
+    const to = typeof input.to === 'string' ? input.to.trim() : '';
+    const topic = typeof input.topic === 'string' ? words(input.topic, ACTIVITY_NODE_MAX) : '';
+    const callee = to ? agentLabel(getConfig().agents.team, to) : '';
+    return `${CALL_AGENT_TOOL}${callee ? ` ${callee}` : ''}${topic ? `: ${topic}` : ''}`;
+  }
   if (name === 'Agent' || name === 'Task') return `Agent ${subAgentWords({ kind: input.kind, name: input.subagent_type, description: input.description, prompt: input.prompt })}`;
   return source(name, input);
 }
@@ -1506,6 +1513,10 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
   const activity = call.activity ?? beginActivity(call.label, (p) => secretPath(p, call.cwd));
   // A call that was opened when the message arrived already said it was working (or waiting): the engine only reports the end.
   if (!call.activity) activity.status('started');
+  // An app tool that calls another agent runs under the node of the agent that called it: closing over the node does not depend on the async context reaching a tool
+  // server the SDK answers from. A sub-agent of the open engine runs its tools in its own node's context, and keeps it.
+  const under = bindActivityParent();
+  const underNode = (list?: ToolImpl[]): ToolImpl[] | undefined => list?.map((x) => ({ ...x, run: (input, ctx) => under(currentActivity()?.id ?? activity.id, () => x.run(input, ctx)) }));
   try {
     const { allowedTools, shell, tracker, tools } = toolsOf(call);
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
@@ -1563,19 +1574,22 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           poolMode,
           ...(call.background ? { background: true } : {}),
           incoming: only ? undefined : call.incoming,
-          runnerTools: only ? undefined : call.runnerTools,
+          runnerTools: only ? undefined : underNode(call.runnerTools),
           procedures: call.procedures,
           // The last turn of procedures keeps the procedure tools and nothing else, the memory's included.
           memoryTools: only ? undefined : call.memoryTools,
           screen: only ? undefined : call.screen,
           ...(only ? { procedureOnly: true } : {}),
         };
-        try {
-          return await runnerFor(picked)<T>(request);
-        } catch (e) {
-          if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
-          return wrapUpAnswer<T>(request, e, activity);
-        }
+        // What the engine starts (an agent it calls) hangs under this call's node.
+        return withActivityParent(activity.id, async () => {
+          try {
+            return await runnerFor(picked)<T>(request);
+          } catch (e) {
+            if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
+            return wrapUpAnswer<T>(request, e, activity);
+          }
+        });
       },
     );
     // The engine reports the session it opened or resumed: what a later round of the same stage continues from.
