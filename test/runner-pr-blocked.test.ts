@@ -96,8 +96,8 @@ const autonomy = (on: string[]) => (c: WorkspaceConfig): void => {
 
 /** Every agent does its stage at once (the engineering team); a test overrides the ones it is about. */
 function easy(b: Boot): void {
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   b.engine.script('developer', async (_c, tools) => {
     await tools.write('src/feature.ts', 'export const feature = 1;\n');
     return work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')], comment: PR, pr: PR });

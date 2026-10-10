@@ -46,8 +46,8 @@ describe('the boundary of a conversation commit (QA)', () => {
       },
     });
     // The earlier read-only stages finish by writing their document; the run reaches the implement stage.
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
-    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
+    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
     // The developer writes its own file, then calls the QA (which writes another file); both land before the stage's own commit.
     b.engine.script('developer', async (call, tools) => {
       await tools.write('src/caller.ts', 'export const caller = 1;\n');

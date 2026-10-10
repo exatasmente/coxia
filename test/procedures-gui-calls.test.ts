@@ -283,7 +283,7 @@ describe('a working stage', () => {
         Object.assign(c.agents.team.find((a) => a.id === 'planner')!, { screen: true, shell: 'none', allowedHosts: ['docs.example.com'] });
       },
     });
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
     let drafted = '';
     let saved = '';
     b.engine.script('planner', async (call) => {
@@ -291,7 +291,7 @@ describe('a working stage', () => {
       call.screen!.typed!.add([SECRET]);
       drafted = text(await call.procedures?.draft?.({}));
       saved = text(await call.procedures?.save({ kind: 'gui', draft: 'd-1', key: 'docs.example.com', title: 'Open the plan' }));
-      return work('Plan.', { artifacts: [doc('2_PLAN.md')] });
+      return work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] });
     });
     b.engine.script('developer', () => work('Done.', { artifacts: [doc('3_IMPLEMENTATION.md')] }));
     let run = await b.runner.start('app#101');

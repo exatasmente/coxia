@@ -13,12 +13,25 @@ export const PLUGIN_CONTRACT = 1;
 
 export const PLUGIN_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
+/**
+ * How a document takes part in the flow of a cycle. Absent means a by-product of a stage (a search result, say): it stays out of the card's phase and is
+ * offered at gate 2, as every plugin document was. Declared, the document names its gate and where it lands in the phase order.
+ */
+export interface PluginDocumentFlow {
+  /** The gate the document is offered at. Left out when no gate reads it (a document written after the last one). */
+  gate?: 1 | 2;
+  /** Where the document enters the phase: just above this file of the cycle (more advanced than it), with the phase label shown for it. */
+  phase?: { label?: string; before: string };
+}
+
 /** A document type a plugin adds to the cycle folder: a base name and the label it appears under. */
 export interface PluginDocumentType {
   /** Base name of the document, as the cycle folder takes it (no folder, nothing starting with a dot). */
   name: string;
   /** Label shown where the type is listed (a catalog key or a literal). */
   label: string;
+  /** Where the document stands in the flow, when it does; without it the document is collateral. */
+  flow?: PluginDocumentFlow;
 }
 
 /**
@@ -109,6 +122,7 @@ const REASONS = {
   contract: 'the contract version is not one this app understands',
   event: 'the declaration observes an event outside the fixed catalog',
   document: 'a document name is not one the cycle folder takes',
+  flow: 'a document flow has no gate of 1 or 2 and no phase anchor that is a file name of the cycle',
   write: 'the write destination is not a plain name',
   entry: 'the entry script is not a plain file name inside the plugin folder',
   network: 'a network destination is not a host name',
@@ -162,7 +176,8 @@ const HOST = /^[a-z0-9][a-z0-9.-]*[a-z0-9]$/;
 /**
  * Reads a plugin declaration. `folder` is the plugin's own folder; nothing in the declaration may lead outside it.
  * Refusals, each with its own reason: no name, no identity, a contract version this app does not know, an event
- * outside the catalog, a document name the cycle folder would not take, a write destination or an entry script
+ * outside the catalog, a document name the cycle folder would not take, a document flow with no gate of 1 or 2 and no
+ * phase anchor the cycle takes, a write destination or an entry script
  * that escapes the folder, and a network destination that is not a host name.
  */
 export function readPluginDeclaration(text: string, folder: string): PluginReading {
@@ -199,7 +214,24 @@ export function readPluginDeclaration(text: string, folder: string): PluginReadi
     const o = asObject(d);
     const docName = o ? str(o.name) : '';
     if (!docName || !ARTIFACT_NAME.test(docName)) return refuse(REASONS.document);
-    documents.push({ name: docName, label: o ? str(o.label) || docName : docName });
+    // The flow says where the document stands in the cycle: which gate reads it and, above which file of the cycle it enters the phase. Anything else is
+    // a by-product of a stage (out of the phase, gate 2), and a flow that brings neither place is refused.
+    const rawFlow = o?.flow;
+    if (rawFlow === undefined) {
+      documents.push({ name: docName, label: str(o?.label) || docName });
+      continue;
+    }
+    const flowObj = asObject(rawFlow);
+    if (!flowObj) return refuse(REASONS.flow);
+    const gate = flowObj.gate === 1 || flowObj.gate === 2 ? flowObj.gate : undefined;
+    if (flowObj.gate !== undefined && gate === undefined) return refuse(REASONS.flow);
+    const rawPhase = flowObj.phase === undefined ? null : asObject(flowObj.phase);
+    if (flowObj.phase !== undefined && !rawPhase) return refuse(REASONS.flow);
+    const before = rawPhase ? str(rawPhase.before) : '';
+    if (rawPhase && (!before || !ARTIFACT_NAME.test(before))) return refuse(REASONS.flow);
+    if (gate === undefined && !rawPhase) return refuse(REASONS.flow);
+    const phase = rawPhase ? { ...(str(rawPhase.label) ? { label: str(rawPhase.label) } : {}), before } : undefined;
+    documents.push({ name: docName, label: str(o?.label) || docName, flow: { ...(gate !== undefined ? { gate } : {}), ...(phase ? { phase } : {}) } });
   }
 
   const network: string[] = [];

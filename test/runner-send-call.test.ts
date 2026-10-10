@@ -26,8 +26,8 @@ beforeEach(() => {
 });
 
 function easy(b: Boot): void {
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
 }
 
 /** The tool of a call by its name, as the engine would offer it. */
@@ -43,7 +43,7 @@ describe('the message tools of a working stage', () => {
     easy(b);
     b.engine.script('refiner', (call) => {
       const send = toolOf(call, SEND_MESSAGE_TOOL)!;
-      return send.run({ to: '', text: 'Found the helper, going on with it.' }, {} as never).then(() => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
+      return send.run({ to: '', text: 'Found the helper, going on with it.' }, {} as never).then(() => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
     });
     const run = await b.runner.start('app#101');
     await b.settle();
@@ -65,7 +65,7 @@ describe('the message tools of a working stage', () => {
       const bad = await send.run({ to: 'nobody', text: 'hello?' }, {} as never).catch((e: Error) => e.message);
       seen.push(String(bad));
       await send.run({ to: '', text: 'note for the person' }, {} as never);
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] });
     });
     await b.runner.start('app#101');
     await b.settle();
@@ -99,7 +99,7 @@ describe('a conversation started by a stage', () => {
     b.engine.script('refiner', async (call) => {
       const open = toolOf(call, CALL_AGENT_TOOL)!;
       const said = await open.run({ to: 'qa', topic: 'How do I reproduce the failing scenario?', place: 'new' }, {} as never);
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')], text: String(said) });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], text: String(said) });
     });
     b.engine.script('qa', () => ({ texto: 'Run the test with an empty folder.' }));
     const run = await b.runner.start('app#101');
@@ -130,7 +130,7 @@ describe('a conversation started by a stage', () => {
     b.engine.script('refiner', async (call) => {
       const open = toolOf(call, CALL_AGENT_TOOL)!;
       await open.run({ to: 'qa', topic: 'Reproduce the failing scenario?', place: 'run' }, {} as never);
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' });
     });
     b.engine.script('qa', async (call, tools) => {
       await tools.write('src/app.ts', 'export const app = 2;\n');

@@ -404,8 +404,50 @@ describe('the agent cycle template: the business team', () => {
     expect(c.devCycle.stages.map((s) => [s.id, s.type])).toEqual([['triage', 'work'], ['refine', 'work'], ['gate1', 'gate'], ['plan', 'work'], ['gate2', 'gate'], ['implement', 'work'], ['review', 'work'], ['qa', 'work'], ['ready', 'wait'], ['communicate', 'work']]);
     expect(c.devCycle.stages.find((s) => s.id === 'ready')).toMatchObject({ waitsFor: { kind: 'pr-merged' }, kind: 'reviewApproved' });
     expect(c.devCycle.stages.filter((s) => s.agentId).map((s) => [s.id, s.agentId])).toEqual([['triage', 'support'], ['refine', 'product-owner'], ['plan', 'tech-lead'], ['implement', 'developer'], ['review', 'tech-lead'], ['qa', 'qa'], ['communicate', 'customer-success']]);
-    expect(c.devCycle.stages.flatMap((s) => s.produces ?? [])).toEqual(['0_TRIAGE.md', '1_SPEC.md', '2_PLAN.md', '3_IMPLEMENTATION.md', '4_REVIEW.md', '5_TEST_PLAN.md', '6_RELEASE_NOTE.md']);
+    expect(c.devCycle.stages.flatMap((s) => s.produces ?? [])).toEqual(['0_TRIAGE.md', '1_SPEC.md', 'REQUIREMENTS.md', '2_PLAN.md', 'PROTOTYPE.md', '3_IMPLEMENTATION.md', '4_REVIEW.md', '5_TEST_PLAN.md', '6_RELEASE_NOTE.md', 'USER_MANUAL.md']);
     expect(c.devCycle.stages.filter((s) => s.returnsTo).map((s) => [s.id, s.returnsTo, s.roundLimit])).toEqual([['review', 'implement', 2], ['qa', 'implement', 2]]);
+  });
+
+  it('has each stage produce the documents the flow writes: the requirements in refine, the prototype in plan, the manual beside the release note', () => {
+    const c = applied();
+    expect(c.devCycle.stages.map((s) => [s.id, s.produces ?? []])).toEqual([
+      ['triage', ['0_TRIAGE.md']],
+      ['refine', ['1_SPEC.md', 'REQUIREMENTS.md']],
+      ['gate1', []],
+      ['plan', ['2_PLAN.md', 'PROTOTYPE.md']],
+      ['gate2', []],
+      ['implement', ['3_IMPLEMENTATION.md']],
+      ['review', ['4_REVIEW.md']],
+      ['qa', ['5_TEST_PLAN.md']],
+      ['ready', []],
+      ['communicate', ['6_RELEASE_NOTE.md', 'USER_MANUAL.md']],
+    ]);
+  });
+
+  it('produces the requirements and the prototype in the engineering cycle too, but no manual: there is no stage that closes the run there', () => {
+    const c = applyTemplate(neutralConfig(), builtInTemplate('agent-flow-engineering')!);
+    expect(c.devCycle.stages.filter((s) => (s.produces ?? []).length).map((s) => [s.id, s.produces])).toEqual([
+      ['refine', ['1_SPEC.md', 'REQUIREMENTS.md']],
+      ['plan', ['2_PLAN.md', 'PROTOTYPE.md']],
+      ['implement', ['3_IMPLEMENTATION.md']],
+      ['review', ['4_REVIEW.md']],
+      ['qa', ['5_TEST_PLAN.md']],
+    ]);
+  });
+
+  it('names the three documents in both languages, at the phase and at the gate', () => {
+    const keys: [string, string, string][] = [
+      ['cycle.agentFlow.phase.requirements', 'requisitos escritos', 'requirements written'],
+      ['cycle.agentFlow.phase.prototype', 'protótipo escrito', 'prototype written'],
+      ['cycle.agentFlow.phase.userManual', 'manual do usuário escrito', 'user manual written'],
+      ['cycle.agentFlow.gate.requirements', 'Requisitos', 'Requirements'],
+      ['cycle.agentFlow.gate.prototype', 'Protótipo', 'Prototype'],
+      ['cycle.agentFlow.gate.userManual', 'Manual do usuário', 'User manual'],
+    ];
+    for (const [key, pt, en] of keys) {
+      expect(CATALOGS['pt-BR'][key], `pt-BR ${key}`).toBe(pt);
+      expect(CATALOGS.en[key], `en ${key}`).toBe(en);
+    }
   });
 
   it('has the team of a product: only the developer writes, and each turns to the one it needs before it asks the person', () => {

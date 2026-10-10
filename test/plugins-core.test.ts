@@ -73,6 +73,30 @@ describe('the plugin declaration', () => {
     }
   });
 
+  it('reads where a document stands in the flow: its gate and its phase anchor', () => {
+    const r = readPluginDeclaration(
+      declaration({ offers: { documents: [{ name: 'REQUIREMENTS.md', label: 'Requirements', flow: { gate: 1, phase: { label: 'cycle.agentFlow.phase.requirements', before: '1_SPEC.md' } } }] } }),
+      '/p',
+    );
+    expect(r.refused).toBeNull();
+    expect(r.declaration?.offers.documents).toEqual([{ name: 'REQUIREMENTS.md', label: 'Requirements', flow: { gate: 1, phase: { label: 'cycle.agentFlow.phase.requirements', before: '1_SPEC.md' } } }]);
+  });
+
+  it('accepts a flow of only a gate or only a phase, and keeps a document with no flow as the by-product it always was', () => {
+    const gateOnly = readPluginDeclaration(declaration({ offers: { documents: [{ name: 'A.md', label: 'A', flow: { gate: 2 } }] } }), '/p');
+    expect(gateOnly.declaration?.offers.documents).toEqual([{ name: 'A.md', label: 'A', flow: { gate: 2 } }]);
+    const phaseOnly = readPluginDeclaration(declaration({ offers: { documents: [{ name: 'B.md', label: 'B', flow: { phase: { before: '2_PLAN.md' } } }] } }), '/p');
+    expect(phaseOnly.declaration?.offers.documents).toEqual([{ name: 'B.md', label: 'B', flow: { phase: { before: '2_PLAN.md' } } }]);
+    const collateral = readPluginDeclaration(declaration({ offers: { documents: [{ name: '7_WEB_SEARCH.md', label: 'Web search' }] } }), '/p');
+    expect(collateral.declaration?.offers.documents).toEqual([{ name: '7_WEB_SEARCH.md', label: 'Web search' }]);
+  });
+
+  it('refuses a flow that names no gate of 1 or 2 and no phase anchor the cycle takes', () => {
+    for (const flow of [{}, { gate: 3 }, { gate: '1' }, { gate: 2, phase: { before: '' } }, { gate: 2, phase: { before: 'a/b.md' } }, { phase: { before: '.hidden' } }, 'gate 2', { phase: 'spec' }]) {
+      expect(readPluginDeclaration(declaration({ offers: { documents: [{ name: 'A.md', label: 'A', flow }] } }), '/p').refused, JSON.stringify(flow)).toBeTruthy();
+    }
+  });
+
   it('refuses a write destination that is not a plain name, and an entry script that escapes the plugin folder', () => {
     expect(readPluginDeclaration(declaration({ offers: { write: '../out' } }), '/p').refused).toBeTruthy();
     expect(readPluginDeclaration(declaration({ offers: { write: '/etc/passwd' } }), '/p').refused).toBeTruthy();

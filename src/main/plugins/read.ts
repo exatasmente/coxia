@@ -62,12 +62,12 @@ function refusedRecord(folder: string, reason: string): PluginRecord {
 }
 
 /**
- * Reads every plugin under `dir`. Returns one record per plugin, in the order the folders are listed. A plugin the person turned off
+ * Reads every plugin of one folder. Returns one record per plugin, in the order the folders are listed. A plugin the person turned off
  * still comes back, with `enabled: false` and nothing offered. A declaration refused comes back with its reason. A folder that
- * cannot be read returns a single record carrying the reason.
+ * cannot be read returns a single record carrying the reason. `builtIn` is how a plugin of the app's own folder starts: on, because it only
+ * names documents the flow produces; the person's saved choice, which is the only thing stored, wins in both directions.
  */
-export function readPlugins(dir: string, config: PluginsConfig): PluginRecord[] {
-  const choices = choicesOf(config);
+function readFolder(dir: string, choices: Map<string, PluginConfig>, seen: Set<string>, builtIn: boolean): PluginRecord[] {
   let entries: string[];
   try {
     if (!existsSync(dir)) return [];
@@ -77,7 +77,6 @@ export function readPlugins(dir: string, config: PluginsConfig): PluginRecord[] 
   }
 
   const out: PluginRecord[] = [];
-  const seen = new Set<string>();
   for (const entry of entries) {
     if (entry.startsWith('.')) continue;
     const folder = join(dir, entry);
@@ -108,7 +107,7 @@ export function readPlugins(dir: string, config: PluginsConfig): PluginRecord[] 
       id: d.id,
       name: d.name,
       dir: folder,
-      enabled: choice?.enabled ?? false,
+      enabled: choice?.enabled ?? builtIn,
       // "Always" was given for what the plugin declared then; a declaration that reaches somewhere else is asked again.
       allow: choice && choice.allowedFor === reach ? choice.allow : NONE,
       documents: d.offers.documents,
@@ -124,6 +123,25 @@ export function readPlugins(dir: string, config: PluginsConfig): PluginRecord[] 
       reach,
       refused: null,
     });
+  }
+  return out;
+}
+
+/**
+ * Reads every plugin under `dir`, and under `builtInDir` (the app's own folder of declarations) what ships with the app. The workspace's folder is read first,
+ * byte for byte as it always was: a plugin of the person's with the same identity is the one that counts. From the app's folder only a declaration with no
+ * code and nothing to reach is taken — it only names documents, so a plugin dropped in there with a script, a network, a write, a setting or a note for the
+ * agents is never treated as built in — and an unreadable or missing folder there brings nothing to the list instead of failing the read. A plugin dropped in
+ * the workspace's folder starts off, as it always did.
+ */
+export function readPlugins(dir: string, config: PluginsConfig, builtInDir?: string): PluginRecord[] {
+  const choices = choicesOf(config);
+  const out = readFolder(dir, choices, new Set(), false);
+  if (!builtInDir) return out;
+  const seen = new Set(out.map((r) => r.id).filter(Boolean));
+  for (const r of readFolder(builtInDir, choices, seen, true)) {
+    if (r.refused || r.entry || r.events.length || r.network.length || r.write || r.settings.length || r.requests.length || r.agents) continue;
+    out.push(r);
   }
   return out;
 }

@@ -209,7 +209,7 @@ function handlers(): void {
   handle('conflict:reopen', (id: string) => conflictReopen(id));
   handle('conflict:discard', (id: string) => conflictDiscard(id));
   handle('gate:options', (card: Card) => gateOptions(card));
-  handle('gate:start', (card: Card, gate: 1 | 2) => startGate(card, gate));
+  handle('gate:start', (card: Card, gate: 1 | 2, file?: string) => startGate(card, gate, typeof file === 'string' ? file : undefined));
   handle('gate:get', (id: string) => getGate(id));
   handle('gate:answer', (id: string, q: number, input: { choice?: number; text?: string }) => answerGate(id, q, input));
   handle('gate:explain', (id: string, question: string) => explainGate(id, question));

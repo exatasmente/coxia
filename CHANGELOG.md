@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The cycle folder now carries the requirements, the prototype and the user manual.** The agent cycle writes `REQUIREMENTS.md` at refinement, `PROTOTYPE.md` at the plan stage and `USER_MANUAL.md` at the stage that closes the run, beside the release note: every document of one piece of work in the folder the person already opens. The three document types ship with the app in a declaration-only plugin that is **on by default** (switching it off in the plugin list takes the types out of every reading again, with no restart; a copy of the same identity in the workspace's own plugins folder wins over the app's). The card's phase counts them at the point of the flow each one declares, so a folder holding only one of them shows that point instead of no phase, and the gate screen offers the requirements at gate 1 and the prototype at gate 2, one button per document, each opening the document its button named; the user manual is no gate's artifact. A document type a plugin declares with no `flow` stays a stage's by-product: gate 2, out of the phase, as before. A workspace that already exists gains the three in its flow's production lists automatically when they are still the app's defaults (schema 25); a list the person changed keeps its shape.
+
 ## [0.9.0-beta.12] - 2026-10-09
 
 ### Added
