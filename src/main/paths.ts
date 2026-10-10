@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { app } from 'electron';
 
-// Packaged: electron-builder copies resources/ and sidecar/ next to app.asar (extraResources).
+// Packaged: electron-builder copies resources/, sidecar/ and plugins/ next to app.asar (extraResources).
 // Dev: they live in the repository, two levels above out/main.
 // Outside Electron (tests, scripts) there is no app: treat as development.
 export const PACKAGED = app?.isPackaged ?? false;
@@ -9,6 +9,8 @@ const BASE = PACKAGED ? process.resourcesPath : join(import.meta.dirname, '../..
 
 export const RESOURCES = join(BASE, 'resources');
 export const SIDECAR_DIR = join(BASE, 'sidecar');
+// The plugin declarations that come with the app: read-only, no code, and the person's own plugins folder is read first.
+export const PLUGINS_BUILT_IN_DIR = join(BASE, 'plugins');
 
 // The SDK's native Claude Code binary cannot run from inside app.asar, so it ships unpacked.
 export const CLAUDE_BIN = PACKAGED

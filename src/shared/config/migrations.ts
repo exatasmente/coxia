@@ -43,6 +43,10 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v22 `runner.procedures`: the learned procedures of the agents, off for a workspace that existed and on for a new one. Nothing else moves.
 //   v23 `testEnvironment`: the workspace's test environment (variables and secret references delivered to the stages that allow it), empty by default. Nothing else moves.
 //   v24 `mcpState`: the opt-in of the local read-only state server a terminal session adds over stdio, off for every workspace. Nothing else moves.
+//   v25 the requirements, prototype and user manual documents the app ships declarations for (REQUIREMENTS.md in refine, PROTOTYPE.md in plan,
+//       USER_MANUAL.md beside the release note in communicate) are added to what the stages produce, when the list is still exactly what the app delivered.
+//       A list the person changed is left alone, with its own note. Nothing of the format changes and no run in progress is touched: each keeps the flow it
+//       started with.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -376,7 +380,40 @@ function v23ToV24(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 24, mcpState: old.mcpState ?? { enabled: false } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24 };
+// The documents the app ships declarations for (requirements in refine, the prototype in plan, the user manual beside the release note in communicate) are
+// added to what the stages produce. Only a list that is still exactly what the app delivered moves: what the person wrote is the flow of that workspace and
+// keeps its shape, said in a note of its own. The document carries no format change, and a run in progress keeps the flow it started with.
+const FLOW_PRODUCES: Record<string, { was: string[]; now: string[] }> = {
+  refine: { was: ['1_SPEC.md'], now: ['1_SPEC.md', 'REQUIREMENTS.md'] },
+  plan: { was: ['2_PLAN.md'], now: ['2_PLAN.md', 'PROTOTYPE.md'] },
+  communicate: { was: ['6_RELEASE_NOTE.md'], now: ['6_RELEASE_NOTE.md', 'USER_MANUAL.md'] },
+};
+
+function v24ToV25(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const cycle = pick(old.devCycle);
+  const raw = Array.isArray(cycle.stages) ? (cycle.stages as unknown[]) : null;
+  if (!raw) return { ...old, schemaVersion: 25 };
+  let added = 0;
+  let left = 0;
+  const stages = raw.map((s) => {
+    const stage = isObject(s) ? s : null;
+    const change = stage ? FLOW_PRODUCES[String(stage.id ?? '')] : null;
+    if (!stage || !change || !Array.isArray(stage.produces)) return s;
+    const list = (stage.produces as unknown[]).map(String);
+    const same = (other: string[]): boolean => list.length === other.length && list.every((x, i) => x === other[i]);
+    if (same(change.now) || !same(change.was)) {
+      if (!same(change.now)) left++;
+      return s;
+    }
+    added++;
+    return { ...stage, produces: [...change.now] };
+  });
+  if (added) notes.push('the flow now also produces the requirements, prototype and user manual documents (REQUIREMENTS.md, PROTOTYPE.md, USER_MANUAL.md), which the app ships declarations for');
+  if (left) notes.push('a stage keeps the documents you set for it: the new requirements, prototype and user manual documents were not added to that list');
+  return { ...old, schemaVersion: 25, devCycle: { ...cycle, stages } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

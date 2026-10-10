@@ -17,6 +17,16 @@ import { runStore } from './runs';
 import { type TrackedRead, linkedHere, mirrorTracked, readTracked } from './vcs/boardRead';
 import { vcsReady } from './vcs';
 import { getConfig, rc } from './workspaceConfig';
+import type { PluginDocumentType } from '../shared/plugins/declaration';
+import { withPhaseDocuments } from '../shared/plugins/phase';
+
+/**
+ * The document types the plugins that are on carry in the flow of the cycle: where each enters the phase order. Set once by the plugins module; empty when
+ * none is registered, so a workspace with no plugins reads the phase exactly as before.
+ */
+export const phasePluginDocuments: { files: () => PluginDocumentType[] } = {
+  files: () => [],
+};
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -35,7 +45,8 @@ export function specInfo(iid: string): SpecInfo | null {
   const folder = join(specs, name);
   const files = walk(folder);
   const has = (base: string) => files.find((f) => f.endsWith(`/${base}`)) ?? null;
-  const phase = cycleWord(layout.phaseFiles.find(({ file }) => has(file))?.label ?? 'cycle.sdd.phase.none');
+  // The phase list with the plugin documents that declare their place in it: a document of the flow counts like one of the cycle's own, at its anchor.
+  const phase = cycleWord(withPhaseDocuments(layout.phaseFiles, phasePluginDocuments.files()).find(({ file }) => has(file))?.label ?? 'cycle.sdd.phase.none');
   return { folder, phase, planFile: layout.planFiles.map(has).find((f) => f !== null) ?? null };
 }
 

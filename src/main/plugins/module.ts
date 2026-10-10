@@ -6,6 +6,7 @@ import { neutralPlugins } from '../../shared/config/defaults';
 import { t } from '../../shared/i18n';
 import { isPluginAnswer, isPluginNeed, mayReachNetwork, pluginAnswers, pluginNetworkSandbox, pluginWriteStep, type PluginAnswer, type PluginNeed, type PluginPermission } from '../../shared/plugins/grants';
 import type { PluginEvent } from '../../shared/plugins/events';
+import type { PluginDocumentType } from '../../shared/plugins/declaration';
 import type { Run } from '../../shared/runs';
 import type { ReleaseAction } from '../../shared/types';
 import { DATA_ROOT, HOME, WORKSPACE_ID } from '../env';
@@ -17,6 +18,8 @@ import { recordWrite } from '../auditoria';
 import { getConfig, updateConfig } from '../workspaceConfig';
 import { announcePluginWrite, auditPluginRequest, onActionSkipped, pendingPluginAsks, pendingPluginWrites, proposePluginAsk, rearmPluginWrite, releasePluginAsks as releaseAsks, sendDuePluginWrite, settlePluginAsk, withdrawPluginWrite, writePluginNow, type PluginAskUnit, type PluginWriteInput } from '../actions';
 import { gatePluginDocuments } from '../gate';
+import { phasePluginDocuments } from '../cards';
+import { PLUGINS_BUILT_IN_DIR } from '../paths';
 import { workspaceDir } from '../workspaces-core';
 import { allowOf, pluginsDirOf, pluginViews, readPlugins, withChoice } from './read';
 import { JS_FILES_MAX_BYTES, runJsPlugin, runPlugin, type JsAnswer, type JsCall, type JsPlugin, type JsPluginRun, type PluginRun, type PluginTarget, type RunnablePlugin } from './runtime';
@@ -140,7 +143,7 @@ const targetOf = (runId: string): PluginTarget | null => {
 export const pluginsDeps: PluginsDeps = {
   dir: pluginsDir,
   config: pluginConfig,
-  read: (dir, config) => readPlugins(dir, config),
+  read: (dir, config) => readPlugins(dir, config, PLUGINS_BUILT_IN_DIR),
   save: (change) => updateConfig((c) => ({ ...c, plugins: { ...neutralPlugins(), ...c.plugins, list: change(c.plugins?.list ?? []) } })),
   settings: (values) => updateConfig((c) => ({ ...c, plugins: { ...neutralPlugins(), ...c.plugins, ...values } })),
   target: targetOf,
@@ -647,6 +650,14 @@ export function liveContext(run: Run, context: { stage?: string } = {}): PluginC
   return { issue: run.issue.iid, issueTitle: run.issue.title, stage: context.stage ?? run.stage, runId: run.id };
 }
 
+/**
+ * The document types the plugins that are on offer, read at the moment of use: the folder is read again at every call (the built-in declarations of the app
+ * included), so a plugin switched on or off is in force from the next reading of the phase or the gate, with no restart.
+ */
+export function enabledDocuments(d: PluginsDeps = pluginsDeps): PluginDocumentType[] {
+  return d.read(d.dir(), d.config()).filter((r) => r.enabled && !r.refused).flatMap((r) => r.documents);
+}
+
 export const pluginsModule: Module = (ctx: ModuleContext) => {
   ctx.handle('plugins:list', () => listPlugins());
   // Only the computer switches a plugin, answers its requests or takes a permission back: desktop-only (webPolicy.ts), like the other boundary decisions.
@@ -661,8 +672,10 @@ export const pluginsModule: Module = (ctx: ModuleContext) => {
     return revokePluginAllow(String(id), need);
   });
   ctx.handle('plugins:revoke-write', (actionId: string) => revokePluginWrite(String(actionId)));
-  // The document types the plugins that are on add enter the list the gate already walks: read at the moment of use, so switching a plugin off retires them.
-  gatePluginDocuments.files = () => pluginsDeps.read(pluginsDeps.dir(), pluginsDeps.config()).filter((r) => r.enabled && !r.refused).flatMap((r) => r.documents.map((x): [string, string] => [x.name, x.label]));
+  // The document types the plugins that are on add enter the lists the gate and the phase already walk: read at the moment of use, so switching a plugin
+  // off (or on) is in force from the next reading, with no restart.
+  gatePluginDocuments.files = () => enabledDocuments();
+  phasePluginDocuments.files = () => enabledDocuments();
   // A request set aside from the list (a paired browser may refuse) lets its run go on; a blocked write is never sent.
   onActionSkipped((a) => {
     if (a.kind === 'plugin-write') disarm(a.id);

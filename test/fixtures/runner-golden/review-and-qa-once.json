@@ -8,7 +8,8 @@
    "done",
    [
     "MEMORY.md",
-    "1_SPEC.md"
+    "1_SPEC.md",
+    "REQUIREMENTS.md"
    ],
    1,
    true
@@ -27,7 +28,8 @@
    "done",
    [
     "MEMORY.md",
-    "2_PLAN.md"
+    "2_PLAN.md",
+    "PROTOTYPE.md"
    ],
    1,
    true
@@ -488,6 +490,9 @@
     },
     {
      "path": "1_SPEC.md"
+    },
+    {
+     "path": "REQUIREMENTS.md"
     }
    ],
    "issue"
@@ -610,6 +615,9 @@
     },
     {
      "path": "2_PLAN.md"
+    },
+    {
+     "path": "PROTOTYPE.md"
     }
    ],
    "issue"

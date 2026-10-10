@@ -141,9 +141,9 @@ describe('from a stage that read a procedure to its record', () => {
     const b = await start();
     b.engine.script('refiner', async (call) => {
       await call.procedures?.get({ id: record.id });
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' });
     });
-    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
     const run = await b.runner.start('app#101');
     await b.settle();
     const done = b.runs.get(run.id)!;
@@ -164,9 +164,9 @@ describe('from a stage that read a procedure to its record', () => {
       await call.procedures?.stale({ id: failing.id, step: 1 });
       await call.procedures?.get({ id: other.record.id });
       await call.procedures?.save({ id: other.record.id, revision: 1, kind: 'repo', key: 'app', title: 'Run the linter, fixed', steps: [{ text: 'Run it with the flag' }] });
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' });
     });
-    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
     const run = await b.runner.start('app#101');
     await b.settle();
     const refine = b.runs.get(run.id)!.stages.find((s) => s.stage === 'refine')!;

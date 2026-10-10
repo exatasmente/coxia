@@ -194,7 +194,7 @@ export function Gate({
             {options?.length === 0 && <p className="small faint">{t('ui.gate.empty')}</p>}
             <div className="row">
               {options?.map((o) => (
-                <button key={o.gate} type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act(`start:${o.gate}`, t('ui.gate.job.start', { gate: o.gate, iid: card.iid }), t('ui.gate.busy.start'), () => api.startGate(card, o.gate))}>
+                <button key={o.file} type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act(`start:${o.file}`, t('ui.gate.job.start', { gate: o.gate, iid: card.iid }), t('ui.gate.busy.start'), () => api.startGate(card, o.gate, o.file))}>
                   {t('ui.gate.pick.option', { gate: o.gate, label: o.label })}
                 </button>
               ))}

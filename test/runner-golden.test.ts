@@ -50,8 +50,8 @@ const built = (n = 1) => async (_c: unknown, tools: { write(p: string, c: string
 
 /** Every agent does its stage at once; a scenario overrides the ones it is about. */
 function script(b: Boot): void {
-  b.engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.', comment: comment([['What is asked', '> The thing must do X.'], ['Acceptance', 'X happens.']]) }));
-  b.engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md')], comment: PLAN }));
+  b.engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.', comment: comment([['What is asked', '> The thing must do X.'], ['Acceptance', 'X happens.']]) }));
+  b.engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: PLAN }));
   b.engine.script('developer', built());
   b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Beyond the lines of the code', 'None.']]) }));
   b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '' }], comment: comment([['Scenarios verified and their result', 'The thing does X: passed.']]) }));
@@ -161,8 +161,8 @@ describe('the agent cycle, as before the flow was generalized', () => {
 
   it('a gate rejected, a gate skipped, and an agent that asks the person', async () => {
     const b = await scenario();
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], comment: comment([['What is asked', 'X.']]) }), () => work('Spec again.', { artifacts: [doc('1_SPEC.md')], comment: comment([['What is asked', 'X, and Y.']]) }));
-    b.engine.script('planner', () => work('One thing is missing.', { question: 'Should it also handle Y?' }), () => work('Plan written.', { artifacts: [doc('2_PLAN.md')], comment: PLAN }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: comment([['What is asked', 'X.']]) }), () => work('Spec again.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: comment([['What is asked', 'X, and Y.']]) }));
+    b.engine.script('planner', () => work('One thing is missing.', { question: 'Should it also handle Y?' }), () => work('Plan written.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: PLAN }));
     const run = await start(b);
     b.runner.gate(run.id, 'reject', 'Say what happens with Y.');
     await b.settle();

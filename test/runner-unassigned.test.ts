@@ -6,8 +6,8 @@ import { type Boot, boot, doc, fakeIssues, issue, work } from './helpers/runner'
 // apart the way the real one does: `triggered` (what the scan reads) is only this person's own issues, and an unassigned issue of another author never gets there.
 
 function easy(b: Boot): void {
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
 }
 
 describe('the unassigned list of the runs screen', () => {

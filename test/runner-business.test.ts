@@ -42,14 +42,14 @@ const configure = (extra: (c: WorkspaceConfig) => void = () => undefined) => (c:
 
 function script(b: Boot): void {
   b.engine.script('support', () => work('The issue is clear except for one thing.', { reporterQuestion: 'Which browser do you use?' }), () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')], comment: comment([['How it was understood', 'A request to do X.'], ['What is missing', 'Nothing now.']]) }));
-  b.engine.script('product-owner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], priority: 'P1', milestone: 'v2', comment: comment([['What is asked', '> The thing must do X and not Y.'], ['Acceptance', 'X happens.']]) }));
-  b.engine.script('tech-lead', () => work('Plan.', { artifacts: [doc('2_PLAN.md')], comment: comment([['Approach', 'One place.']]) }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
+  b.engine.script('product-owner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], priority: 'P1', milestone: 'v2', comment: comment([['What is asked', '> The thing must do X and not Y.'], ['Acceptance', 'X happens.']]) }));
+  b.engine.script('tech-lead', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: comment([['Approach', 'One place.']]) }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [], comment: comment([['Suggestions that do not block', 'None.']]) }));
   b.engine.script('developer', async (_c, tools) => {
     await tools.write('src/feature.ts', 'export const feature = 1;\n');
     return work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')], comment: comment([['What changed for the person using it', 'The feature exists.']]), pr: { title: 'Add the thing', ...comment([['What changes for the person using it', 'The thing does X.']]) } });
   });
   b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '' }], comment: comment([['Scenarios verified and their result', 'Passed.']]) }));
-  b.engine.script('customer-success', () => work('Told the reporter.', { artifacts: [doc('6_RELEASE_NOTE.md', '# Release note\n\nThe thing now does X.\n')], comment: comment([['What changed', 'The thing now does X.'], ['How to use it', 'Open it and press the button.']]) }));
+  b.engine.script('customer-success', () => work('Told the reporter.', { artifacts: [doc('6_RELEASE_NOTE.md', '# Release note\n\nThe thing now does X.\n'), doc('USER_MANUAL.md')], comment: comment([['What changed', 'The thing now does X.'], ['How to use it', 'Open it and press the button.']]) }));
 }
 
 /** Approves gates until the run is at something that is not a gate. */
@@ -150,8 +150,8 @@ describe('an issue through the agent cycle', () => {
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     b.engine.script('support', () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')] }));
     b.engine.script('developer', () => work('Stuck.', { question: 'Should archived items be covered?' }));
-    b.engine.script('tech-lead', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }), () => ({ verdict: 'pass', text: '', reason: 'Scope.' }));
-    b.engine.script('product-owner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }), () => ({ verdict: 'needs-person', text: '', reason: 'The person decides scope.' }));
+    b.engine.script('tech-lead', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }), () => ({ verdict: 'pass', text: '', reason: 'Scope.' }));
+    b.engine.script('product-owner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }), () => ({ verdict: 'needs-person', text: '', reason: 'The person decides scope.' }));
     const started = await b.runner.start('app#101');
     const run = await through(b, started);
     expect(run).toMatchObject({ status: 'question', question: { holder: null } });

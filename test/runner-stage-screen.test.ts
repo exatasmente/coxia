@@ -20,8 +20,8 @@ function easy(b: Boot, seen: Record<string, AgentCall> = {}, during: Record<stri
     seen[id] = call;
     during[id]?.();
   };
-  b.engine.script('refiner', (c) => (note('refiner', c), work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' })));
-  b.engine.script('planner', (c) => (note('planner', c), work('Plan.', { artifacts: [doc('2_PLAN.md')] })));
+  b.engine.script('refiner', (c) => (note('refiner', c), work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' })));
+  b.engine.script('planner', (c) => (note('planner', c), work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] })));
   b.engine.script('developer', async (c, tools) => {
     note('developer', c);
     await tools.write('src/feature.ts', 'export const feature = 1;\n');
@@ -493,7 +493,7 @@ describe('the hand-off of a stage', () => {
       waiting = call.screen!.handoff!.request({ what: 'Log in to the site' });
       during = handoff.paused;
       card = handoff.asks.list().filter((a) => a.kind === 'handoff').length;
-      return work('Plan.', { artifacts: [doc('2_PLAN.md')] });
+      return work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] });
     });
     let run = await b.runner.start('app#101');
     run = await reach(b, run, 'ready');

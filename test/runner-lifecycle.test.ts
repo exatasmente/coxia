@@ -17,8 +17,8 @@ const finding = (body = 'Wrong.') => ({ path: 'src/feature.ts', line: 1, endLine
 
 /** Scripts every agent of the cycle to do its stage at once, so a test only overrides what it is about. */
 function easy(b: Boot): void {
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   b.engine.script('developer', async (_c, tools) => {
     await tools.write('src/feature.ts', 'export const feature = 1;\n');
     return work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
@@ -130,7 +130,7 @@ describe('a stage that goes wrong', () => {
     easy(b);
     b.engine.script('refiner', () => {
       throw new Error('provider said no: Bearer abc.def.ghi');
-    }, () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    }, () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     let run = await b.runner.start('app#101');
     await b.settle();
     run = b.runner.get(run.id)!;
@@ -202,7 +202,7 @@ describe('a stage that goes wrong', () => {
       const policy = policyFromHooks(call.readRoot?.hooks, 'fake');
       const reason = await policy.pre('Read', { file_path: '/etc/passwd' }, call.cwd);
       expect(reason).toBeTruthy();
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' });
     });
     const run = await reach(b, await b.runner.start('app#101'), 'ready');
     const line = b.thread(run).find((m) => m.code === 'runner.denied');
@@ -218,7 +218,7 @@ describe('a stage that goes wrong', () => {
     }, (call) => {
       call.onUsage?.({ promptTokens: 300, completionTokens: 30, cachedTokens: 0 });
       call.onUsage?.({ promptTokens: 200, completionTokens: 20, cachedTokens: 0, costUsd: 0.001 });
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] });
     });
     let run = await b.runner.start('app#101');
     await b.settle();
@@ -241,7 +241,7 @@ describe('a stage that goes wrong', () => {
       return never();
     }, (call) => {
       call.onUsage?.({ promptTokens: 300, completionTokens: 30, cachedTokens: 0, costUsd: 0.001, costEstimated: true });
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] });
     });
     let run = await b.runner.start('app#101');
     await b.settle();
@@ -349,7 +349,7 @@ describe('a stage that goes wrong', () => {
   it('writes the documents of a stage without the head of the issue record, and asks the agent not to repeat it', async () => {
     const b = await boot({ configure: (c) => (c.language = 'en') });
     easy(b);
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md', '# Functional specification — app#101 Add the thing 101\n\n- Address: https://example.com/group/project/issues/101\n- Author: ana\n\n## What is asked\n\nX.\n')], handoff: 'Plan it.' }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md', '# Functional specification — app#101 Add the thing 101\n\n- Address: https://example.com/group/project/issues/101\n- Author: ana\n\n## What is asked\n\nX.\n'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
     let run = await b.runner.start('app#101');
     run = await reach(b, run, 'gate1');
     expect(readFileSync(join(run.worktree, run.cycleFolder, '1_SPEC.md'), 'utf8')).toBe('# Functional specification\n\n## What is asked\n\nX.\n');
@@ -360,7 +360,7 @@ describe('a stage that goes wrong', () => {
   it('stops at a question for the person when an agent marks a decision as theirs and writes no question, instead of taking the stage for done', async () => {
     const b = await boot({ configure: (c) => (c.language = 'en') });
     easy(b);
-    b.engine.script('refiner', () => work('The scope is unclear: it could mean A or B.', { artifacts: [doc('1_SPEC.md')], question: null, needsPerson: true }));
+    b.engine.script('refiner', () => work('The scope is unclear: it could mean A or B.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], question: null, needsPerson: true }));
     const run = await b.runner.start('app#101');
     await b.settle();
     const now = b.runner.get(run.id)!;
@@ -380,7 +380,7 @@ describe('a stage that goes wrong', () => {
         await new Promise((r) => setTimeout(r, 40));
         call.beat?.();
       }
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] });
     });
     const run = await b.runner.start('app#101');
     await b.settle();
@@ -444,7 +444,7 @@ describe('a stage that goes wrong', () => {
   it('ignores a document the stage does not produce and says so in the thread', async () => {
     const b = await boot();
     easy(b);
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('9_EXTRA.md')] }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md'), doc('9_EXTRA.md')] }));
     const run = await b.runner.start('app#101');
     await b.settle();
     expect(existsSync(join(run.worktree, run.cycleFolder, '9_EXTRA.md'))).toBe(false);
@@ -463,7 +463,7 @@ describe('a stage that goes wrong', () => {
       writeFileSync(join(call.cwd, '1_SPEC.md'), '# Spec\n');
       mkdirSync(join(call.cwd, 'notes'));
       writeFileSync(join(call.cwd, 'notes/0_ISSUE.md'), '# Issue\n');
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] });
     });
     const run = await b.runner.start('app#101');
     await b.settle();
@@ -664,7 +664,7 @@ describe('the review limit and QA', () => {
     });
     // the readers describe what they read, in Portuguese or not: their commits hold documents, so the agent's text is not used
     b.engine.script('reviewer', () => work('Fine.', { commit: 'aprova a revisão do código', artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
-    b.engine.script('refiner', () => work('Spec.', { commit: 'feat: write the spec', artifacts: [doc('1_SPEC.md')] }));
+    b.engine.script('refiner', () => work('Spec.', { commit: 'feat: write the spec', artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     let run = await b.runner.start('app#101');
     run = await reach(b, run, 'ready');
     const subjects = git(run.worktree, 'log', '--format=%s').split('\n');
@@ -734,7 +734,7 @@ describe('after the app is reopened', () => {
 
     // a second process on the same folders: a new runner, a new engine that answers
     const engine = fakeEngine();
-    engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
+    engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
     const second = await boot({ repo: first.repo, dir: first.dir, engine, issues: first.issues });
     second.runner.resume();
     await second.settle();
@@ -759,7 +759,7 @@ describe('after the app is reopened', () => {
     await first.settle();
     expect(first.runner.get(run.id)!.status).toBe('question');
     const engine = fakeEngine();
-    engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     const second = await boot({ repo: first.repo, dir: first.dir, engine, issues: first.issues });
     second.runner.resume();
     second.runner.answer(run.id, 'The first.');
@@ -834,7 +834,7 @@ describe('the thread', () => {
     const b = await boot();
     easy(b);
     b.engine.script('developer', (call) => (call.confine ? work('done', { artifacts: [doc('3_IMPLEMENTATION.md')] }) : { text: 'The scope is the Y case only.' }));
-    b.engine.script('refiner', (call) => (call.prompt.includes('mention-text') ? { text: 'The scope is the X case.' } : work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' })), (call) => ({ text: `Answer to: ${call.prompt.includes('What is the scope?')}` }));
+    b.engine.script('refiner', (call) => (call.prompt.includes('mention-text') ? { text: 'The scope is the X case.' } : work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' })), (call) => ({ text: `Answer to: ${call.prompt.includes('What is the scope?')}` }));
     const run = await b.runner.start('app#101');
     await b.settle();
     const thread = `run-${run.id}`;
@@ -923,7 +923,7 @@ describe('the thread', () => {
   it('takes a post that answers the question of the run as the answer, but not one that names an agent, nor one when nothing is asked', async () => {
     const b = await boot();
     easy(b);
-    b.engine.script('refiner', () => work('Hm.', { question: 'Which one?' }), () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    b.engine.script('refiner', () => work('Hm.', { question: 'Which one?' }), () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     const run = await b.runner.start('app#101');
     await b.settle();
     const thread = `run-${run.id}`;
@@ -954,7 +954,7 @@ describe('a run that hits the budget of the provider key', () => {
   it('waits with the reason instead of failing, offers no retry, and says so in the thread', async () => {
     const b = await boot();
     easy(b);
-    b.engine.script('refiner', () => budgetRefusal('anthropic'), () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    b.engine.script('refiner', () => budgetRefusal('anthropic'), () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     const run = await b.runner.start('app#101');
     await b.settle();
     const waited = b.runner.get(run.id)!;
@@ -1030,7 +1030,7 @@ describe('a run that hits the budget of the provider key', () => {
     });
     easy(b);
     // The first attempt hits the budget; once the provider answers again (the probe says so), the stage is retried and finishes.
-    b.engine.script('refiner', () => budgetRefusal('anthropic'), () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    b.engine.script('refiner', () => budgetRefusal('anthropic'), () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     b.deps.updateConfig((c) => ({ ...c, runner: { ...c.runner, enabled: true, maxConcurrentRuns: 5 } }));
     const started = await b.runner.scan();
     await b.settle();

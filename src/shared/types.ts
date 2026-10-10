@@ -514,7 +514,7 @@ export interface Api {
   conflictReopen(id: string): Promise<ReleaseAction>;
   conflictDiscard(id: string): Promise<ReleaseAction>;
   gateOptions(card: Card): Promise<GateOption[]>;
-  startGate(card: Card, gate: 1 | 2): Promise<GateView>;
+  startGate(card: Card, gate: 1 | 2, file?: string): Promise<GateView>;
   getGate(id: string): Promise<GateView | null>;
   answerGate(id: string, question: number, input: { choice?: number; text?: string }): Promise<GateView>;
   explainGate(id: string, question: string): Promise<GateView>;

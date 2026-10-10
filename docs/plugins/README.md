@@ -29,11 +29,24 @@ Um plugin publica `plugin.json`:
 | `name` | nome mostrado à pessoa |
 | `contract` | versão de contrato que o plugin segue (esta entrega entende a `1`) |
 | `offers.events` | acontecimentos observados, da lista fixa |
-| `offers.documents` | tipos de documento novos do ciclo (`name`, `label`) |
+| `offers.documents` | tipos de documento novos do ciclo (`name`, `label`, `flow`) |
 | `offers.network` | destinos que o plugin declara precisar, por nome de host |
 | `offers.write` | a escrita externa: `{ "to": "<nome>", "reversible": true\|false }`, para a caixa de saída do plugin neste espaço de trabalho (um destino neutro, nunca um serviço de terceiro). Sem `reversible`, conta como irreversível |
 | `offers.agents` | uma nota curta (até 1000 caracteres) que entra no contexto de todas as etapas enquanto o plugin está ligado, marcada como a palavra do plugin: o que ele oferece aos agentes |
 | `offers.entry` | script de shell da pasta do plugin, rodado quando um acontecimento observado acontece; o aplicativo lê o texto dele e o entrega à sandbox como o próprio comando (a pasta não é montada), com o acontecimento em `$1`; o que ele imprime é o resultado |
+
+**Os documentos.** Um tipo sem `flow` é **colateral** — o efeito de uma etapa, como o resultado de uma busca —:
+fica fora da fase do cartão e continua sendo oferecido no portão 2, como todo documento de plugin era. Um tipo
+com `flow` é **documento do fluxo** e diz onde entra: `gate` (1 ou 2) é o portão que o lê, `phase.before` é o
+arquivo do ciclo logo abaixo do qual ele entra na ordem de fase (mais avançado que esse arquivo) e `phase.label`
+é o rótulo da fase que ele mostra (sem ele, o `label` do documento). Um `flow` sem `gate` não é artefato de
+portão nenhum (é o caso do manual do usuário, escrito depois do último portão), e um `before` que o ciclo daquele
+espaço não tem simplesmente não entra na fase.
+
+**Nota.** Declarações **sem código e sem nada a alcançar** vêm da pasta de plugins do próprio aplicativo e já
+vêm **ligadas por padrão** (uma cópia do mesmo `id` na pasta do workspace vence a do aplicativo). Um plugin
+colado nessa pasta com script, rede, escrita, configuração ou nota para os agentes não é tratado como embutido:
+continua desligado até a pessoa ligar.
 
 A leitura é uma função pura: o mesmo caminho roda no Linux, no macOS e no Windows, e nada no plugin depende de
 um carregador de biblioteca nativa.
@@ -154,11 +167,24 @@ A plugin publishes `plugin.json`:
 | `name` | name shown to the person |
 | `contract` | contract version the plugin follows (this delivery understands `1`) |
 | `offers.events` | events it observes, from the fixed list |
-| `offers.documents` | new cycle document types (`name`, `label`) |
+| `offers.documents` | new cycle document types (`name`, `label`, `flow`) |
 | `offers.network` | destinations the plugin declares it needs, by host name |
 | `offers.write` | the external write: `{ "to": "<name>", "reversible": true\|false }`, to the plugin's outbox in this workspace (a neutral destination, never a third-party service). Without `reversible`, it counts as irreversible |
 | `offers.agents` | a short note (up to 1000 characters) added to every stage's context while the plugin is on, marked as the plugin's words: what it offers the agents |
 | `offers.entry` | a shell script of the plugin folder, run when an observed event happens; the app reads its text and hands it to the sandbox as the command itself (the folder is not mounted), with the event as `$1`; what it prints is its result |
+
+**The documents.** A type with no `flow` is **collateral** — the by-product of a stage, like a search result: it
+stays out of the card's phase and is still offered at gate 2, where every plugin document landed before. A type
+with a `flow` is a **document of the flow** and says where it lands: `gate` (1 or 2) is the gate that reads it,
+`phase.before` is the cycle file it enters the phase order just above (more advanced than that file) and
+`phase.label` is the phase label it shows (without it, the document's own `label`). A `flow` with no `gate` is
+no gate's artifact (the user manual is the case: written after the last gate), and a `before` the workspace's
+cycle does not have simply does not enter the phase.
+
+**Note.** Declarations with **no code and nothing to reach** come from the app's own plugins folder and come
+**on by default** (a copy of the same `id` in the workspace's folder wins over the app's). A plugin dropped in
+there with a script, a network, a write, settings or a note for the agents is never treated as built in: it stays
+off until the person turns it on.
 
 The reading is a pure function: the same path runs on Linux, macOS and Windows, and nothing in the plugin
 depends on a native library loader.
