@@ -34,6 +34,11 @@ A checagem de línguas lê o nome das fontes e esse link: uma página cujo texto
 par dela mesma, e um link que leve a outra página reprova o pedido de merge. Uma página que tem o par ao lado e não
 desenha nenhum link passa — a navegação é que leva até ele.
 
+As páginas de referência não são julgadas pelo arquivo que a construção escreveu: elas são julgadas pelo documento de
+que vieram, contra as línguas que o índice de `docs/` declara para aquele documento. Um documento bilíngue que perca a
+metade em português passa a ser escrito como uma página de uma língua só — indistinguível, no arquivo gerado, de um
+documento que sempre teve uma língua —, e é a declaração do índice que faz a checagem continuar exigindo o par.
+
 ### Construir, prévia e checagem
 
 ```bash
@@ -89,6 +94,11 @@ the foot; a page that comes from a document written in one language only has no 
 The language check reads the name of the sources and that link: a page whose text draws the other language has to draw
 its own pair, and a link that leads elsewhere fails the pull request. A page that has its pair beside it and draws no
 link passes — the navigation is what leads there.
+
+The reference pages are not judged by the file the build wrote: they are judged by the document they came from, against
+the languages the index of `docs/` declares for that document. A bilingual document that loses its Portuguese half is
+written as a one-language page — in the generated file, indistinguishable from a document that always had one language
+—, and it is the index's declaration that keeps the check requiring the pair.
 
 ### Building, preview and checks
 

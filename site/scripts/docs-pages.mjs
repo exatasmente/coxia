@@ -152,6 +152,11 @@ export function otherLanguageLink(text) {
   for (const m of text.matchAll(/<a\b[^>]*\bhref="([^"]+)"[^>]*\btitle="([^"]*)"/g)) {
     if (langOfWord(m[2])) return { href: m[1], lang: langOfWord(m[2]), label: m[2] };
   }
+  // A generated page writes the link as Markdown — `[Português](/reference/x.pt-br "Português")` — which is the form
+  // the build itself lays down; a page written by hand carries the HTML one above. Both name the other language.
+  for (const m of text.matchAll(/\[([^\]]+)\]\(([^)\s]+)\s+"([^"]*)"\)/g)) {
+    if (langOfWord(m[1])) return { href: m[2], lang: langOfWord(m[1]), label: m[1] };
+  }
   return null;
 }
 

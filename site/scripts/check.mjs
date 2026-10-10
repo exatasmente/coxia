@@ -3,7 +3,7 @@
 // provoke each failure without a browser.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { otherLanguageLink, referenceRoute } from './docs-pages.mjs';
+import { otherLanguageLink, pageFor, pagePath, referencePages, referenceRoute } from './docs-pages.mjs';
 
 const LINK = /\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
 const HREF = /\bhref="([^"]+)"/g;
@@ -119,27 +119,14 @@ export function checkAssets(dir, base = baseOf(dir)) {
  * the one the site serves it next to.
  *
  * The pages built from `docs/` are not written beside the documents: the build writes them, one source per language,
- * under `generated/reference/`. Those sources are read here, so a document the site publishes without one of its two
- * languages is a page this check reports, like a page written by hand.
+ * under `generated/reference/`. Those are not read as the files they were written into — a page judged on its own
+ * drops the half it lost — but by the document each one comes from, `generatedPages` below.
  */
 export function checkLanguages(root) {
-  const pages = [];
-  const walk = (dir) => {
-    for (const name of readdirSync(dir).sort()) {
-      const full = join(dir, name);
-      if (statSync(full).isDirectory()) walk(full);
-      else if (name.endsWith('.md')) pages.push(relative(root, full).split(sep).join('/'));
-    }
-  };
-  walk(root);
-  // `README.md` is the note that explains this folder to whoever opens the repository; it is not a page of the site.
-  // The pages the build wrote under `generated/` are not read as the files they were written into: `generatedPages`
-  // judges them by the document each one comes from, which is where the site's own folder paths stop naming them.
-  const kept = pages.filter((page) => page !== 'README.md' && page !== 'site/README.md');
+  const kept = languagePages(root);
   const present = new Set(kept);
   const missing = [];
   for (const page of kept) {
-    if (page.startsWith('generated/') || page.startsWith('site/generated/')) continue;
     const text = readFileSync(join(root, page), 'utf8');
     if (text.includes('site: one-language')) continue;
     const candidates = candidatesOf(page);
@@ -161,49 +148,112 @@ export function checkLanguages(root) {
     // uses, never one written by hand, so it is never the name the page is told to add.
     missing.push({ page, missing: pair ? `no page is served at ${pair.href}` : candidates[candidates.length - 1] });
   }
-  return [...missing, ...generatedPages(root, present)];
+  return [...missing, ...generatedPages(root)];
+}
+
+/** The `docs/` folder of the repository a folder of the site belongs to: the sibling of its own folder. */
+const docsOf = (root) => (/(^|\/)site\/?$/.test(root) ? join(root, '..', 'docs') : join(root, 'docs'));
+
+/** Every page of the site's sources, as paths relative to `root`: what the check reads. */
+function languagePages(root) {
+  const pages = [];
+  const walk = (dir) => {
+    for (const name of readdirSync(dir).sort()) {
+      const full = join(dir, name);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (name.endsWith('.md')) pages.push(relative(root, full).split(sep).join('/'));
+    }
+  };
+  walk(root);
+  // `README.md` is the note that explains the site's folder to whoever opens the repository; it is not a page of it.
+  // The pages of the reference are the ones the build writes under `generated/reference/`: they are judged by the
+  // document each one comes from, in `generatedPages` below, never as the files they were written into.
+  return pages.filter((page) => page !== 'README.md' && page !== 'site/README.md' && !/^(site\/)?generated\//.test(page));
 }
 
 /**
- * The reference pages of the sources the build wrote, judged by the document each one comes from. A generated source
- * is not read on its own: `generated/reference/<document>` is the page of `docs/<document>` in its language, the
- * `.pt-br` mark on the name is its Portuguese half, and a document whose pages carry only one language is exactly
- * the page the check is about. One document whose pages the build kept in one language is not a failure when it says
- * so, and neither is a document the repository writes in one language only; a page whose text draws a link to a
- * language it does not have beside it is one, and it is named by that missing half — the address the site serves.
+ * The reference pages the build wrote, judged by the document each one comes from. A generated source is not a page
+ * on its own: `generated/reference/<document>` is the page of that document in its language and the `.pt-br` mark is
+ * its Portuguese half, so the two halves of one document are a pair whatever the sources say. The document is where
+ * the truth is: a document the repository writes in two languages whose pages carry one is a page that lost a
+ * language — the very failure this check is for, and one the mark `<!-- site: one-language -->` cannot tell apart,
+ * since a bilingual document with a half gone is written exactly like a document that never had it.
  *
- * A document that keeps one half and still names the other is the shape the generator leaves behind when a language
- * of the document is gone: the link it wrote against the pair survives the half it led to. So the link is what says
- * the document carries two languages, even when the half it names was taken away; the address the page is named by
- * is the one the site serves, and the missing half is named by the address the link leads to when there is one.
+ * A document the repository writes in one language only has one page and is no failure; a page whose text names the
+ * language beside it when the pair is there, names another page, or names a half the build did not write, is one, and
+ * it is named by the address the site serves.
  */
-function generatedPages(root, present) {
-  const generated = [...present].filter((p) => /^(site\/)?generated\/reference\//.test(p));
-  if (!generated.length) return [];
-  const prefix = generated[0].startsWith('site/') ? 'site/generated/reference/' : 'generated/reference/';
+function generatedPages(root) {
+  const docs = docsOf(root);
+  const manifest = join(docs, '..', 'package.json');
+  if (!existsSync(manifest)) {
+    // Nothing to judge the reference pages against: what is written under `generated/` stays out of the walk above,
+    // so a folder of the site with no repository around it reports the pages written by hand and nothing else.
+    return [];
+  }
+  // The pages are written under the site's own `generated/`: when the check is handed the folder they were written
+  // into and the repository's site folder lies elsewhere, that folder is where to read them.
+  const here = join(root, 'site', 'generated', 'reference');
+  const written = join(root, 'generated', 'reference');
+  const inside = existsSync(here) ? here : existsSync(written) ? written : null;
+  if (!inside) return [];
+  // The repository states the languages of each reference document in the index of `docs/`, whose last column names
+  // them (`pt-BR, en`). That statement is what the check judges the build against, and it survives a half the document
+  // lost: a bilingual document that lost its Portuguese text is still listed as one of the two languages, while the
+  // page the build wrote for it is a page of one. Reading the document alone cannot tell the two apart — a document
+  // with a half gone is written exactly like a document that never had it — so the index is the source of truth here.
+  const declared = declaredLanguages(docs);
+  const pairsOf = (path) => (declared.has(path) ? declared.get(path).includes('pt-BR') : pageFor(docs, path).body['pt-BR'] !== null);
   const missing = [];
-  for (const page of generated) {
-    const path = page.replace(/^(site\/)?generated\/reference\//, '');
-    const text = readFileSync(join(root, page), 'utf8');
-    if (text.includes('site: one-language')) continue;
-    const at = `/reference/${path.replace(/\.md$/, '')}`;
+  for (const path of referencePages(docs)) {
+    const page = pageFor(docs, path);
+    const pairs = pairsOf(path);
+    const bare = referenceRoute(path).replace(/^\/reference\//, '');
+    const at = pagePath(path, 'en');
+    // The page this check reads is the one the site serves in the language the repository writes first, which is the
+    // half the build writes the pair link against.
+    const file = join(inside, `${bare}.md`);
+    const text = existsSync(file) ? readFileSync(file, 'utf8') : null;
+    if (text === null) {
+      missing.push({ page: at, missing: `no page is served at ${pagePath(path, 'en')}` });
+      continue;
+    }
     const pair = otherLanguageLink(text);
-    // A page that names a language it does not have beside it: the pair of the half that stayed is gone, and the
-    // half the link names is what it is told to bring back.
-    if (pair && !present.has(`${prefix}${withinBase(pair.href, '/').replace(/^\/reference\//, '')}.md`)) {
-      missing.push({ page: at, missing: `no page is served at ${pair.href}` });
+    if (pairs && (text.includes('site: one-language') || !pair)) {
+      missing.push({ page: at, missing: `no page is served at ${pagePath(path, 'pt-BR')}` });
       continue;
     }
-    const otherAt = `${at.replace(/\.pt-br$/, '')}${at.endsWith('.pt-br') ? '' : '.pt-br'}`;
-    const other = `${prefix}${otherAt.replace(/^\/reference\//, '')}.md`;
-    if (pair && !pairAddressesOf(pair).includes(otherAt)) {
-      missing.push({ page: at, missing: `the link to the other language points at ${pair.href}, not at ${otherAt}` });
+    const expected = pagePath(path, pairs ? 'pt-BR' : page.lang);
+    if (pair && !pairAddressesOf(pair).includes(expected)) {
+      missing.push({ page: at, missing: `the link to the other language points at ${pair.href}, not at ${expected}` });
       continue;
     }
-    if (present.has(other)) continue;
-    missing.push({ page: at, missing: `no page is served at ${otherAt}` });
+    if (pairs && !existsSync(join(inside, `${bare}.pt-br.md`))) {
+      missing.push({ page: at, missing: `no page is served at ${pagePath(path, 'pt-BR')}` });
+    }
   }
   return missing;
+}
+
+/**
+ * The languages the repository declares for each reference document, read from the index of `docs/`: a row of its
+ * table links a document and its last column names the languages it is written in (`pt-BR, en`, or `en` alone). A
+ * document the index does not mention is not judged by a statement the repository never made.
+ */
+function declaredLanguages(docs) {
+  const index = join(docs, 'README.md');
+  const declared = new Map();
+  if (!existsSync(index)) return declared;
+  for (const line of readFileSync(index, 'utf8').split('\n')) {
+    const row = /^\|\s*\[[^\]]*\]\(([^)]+\.md)\)\s*\|[^|]*\|\s*([^|]+?)\s*\|\s*$/.exec(line.trim());
+    if (!row) continue;
+    const langs = row[2]
+      .split(/[,\s]+/)
+      .filter(Boolean)
+      .map((word) => (/^pt(-br)?$/i.test(word) ? 'pt-BR' : 'en'));
+    if (langs.length) declared.set(row[1].replace(/^\.\//, ''), [...new Set(langs)]);
+  }
+  return declared;
 }
 
 /** Both checks at once: what the site's CI step runs. */

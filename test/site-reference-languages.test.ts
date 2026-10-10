@@ -39,30 +39,30 @@ describe('the reference pages the build writes', () => {
 
   it('fails, and names the half, when a document loses the language that other pages already carry', () => {
     const at = repository();
-    const bilingual = referencePages(join(at, 'docs')).find((path) => readFileSync(join(at, 'docs', path), 'utf8').includes('\n## Português'));
+    const bilingual = referencePages(join(at, 'docs')).find((path: string) => readFileSync(join(at, 'docs', path), 'utf8').includes('\n## Português'));
     expect(bilingual).toBeTruthy();
     const source = join(at, 'docs', bilingual as string);
     const text = readFileSync(source, 'utf8');
+    // The Portuguese half goes, and the build then writes the document the way it writes one the repository keeps in
+    // a single language: the page the check reads is no longer a page of a pair, and only the document says it was.
     writeFileSync(source, text.slice(text.indexOf('\n## English')));
     writeSources(at);
     const served = pagePath(bilingual as string, 'en');
+    expect(readFileSync(join(at, 'site/generated', 'reference', `${served.replace('/reference/', '')}.md`), 'utf8')).toContain('site: one-language');
     expect(checkLanguages(join(at, 'site'))).toContainEqual({ page: served, missing: `no page is served at ${served}.pt-br` });
   });
 
   it('fails, and names the half, when a page keeps the link to a language it no longer has beside it', () => {
     const at = repository();
     writeSources(at);
-    const half = join(at, 'site/generated/reference/runner.pt-br.md');
-    expect(readFileSync(half, 'utf8')).toBeTruthy();
-    // The Portuguese half stays, and the English half it names is taken away: the page points at a page that the
-    // build did not write, which is the shape a document reaches the site in when only one of its halves is there.
     const english = join(at, 'site/generated/reference/runner.md');
-    const kept = readFileSync(english, 'utf8').replace(/\[Português\]\((\/reference\/runner\.pt-br)[^)]*\)/, '[$1]');
+    // The language of the link is put into a code span, which is text the check ignores: the page still draws at the
+    // Portuguese half, but a link to it is gone, so the page names the language it lost and leads nowhere.
+    const kept = readFileSync(english, 'utf8').replace(/\[Português\]\((\/reference\/runner\.pt-br)[^)]*\)/, '`[$1]`');
     writeFileSync(english, kept);
-    void half;
     expect(checkLanguages(join(at, 'site'))).toContainEqual({
       page: '/reference/runner',
-      missing: 'the link to the other language points at $1, not at /reference/runner.pt-br',
+      missing: 'no page is served at /reference/runner.pt-br',
     });
   });
 });
