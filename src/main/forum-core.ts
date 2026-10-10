@@ -19,6 +19,7 @@ import {
   type ThreadSummary,
 } from '../shared/forum';
 import { t } from '../shared/i18n';
+import { parseTarget, type PushTarget } from '../shared/push';
 
 // The forum store: one append-only JSONL file per thread in <workspace>/forum/<thread>.jsonl. Line 1 is the thread header, then messages, plus
 // `published` annotation lines (a message cannot be edited in place, so mirroring it to the tracker is recorded as a later line that reading folds in).
@@ -108,6 +109,14 @@ const HEADER: JsonSchema = {
   required: ['v', 'type', 'id', 'kind', 'runId', 'title', 'createdAt'],
   additionalProperties: false,
 };
+/** At most this many buttons on a persona's answer. */
+export const MAX_BUTTONS = 4;
+const BUTTON: JsonSchema = {
+  type: 'object',
+  properties: { to: { type: 'string', maxLength: 24 }, ref: { type: 'string', maxLength: 80 }, id: { type: 'string', maxLength: 80 }, mr: { type: 'string', maxLength: 80 } },
+  required: ['to'],
+  additionalProperties: false,
+};
 const MESSAGE: JsonSchema = {
   type: 'object',
   properties: {
@@ -134,6 +143,8 @@ const MESSAGE: JsonSchema = {
     replyTo: { type: ['integer', 'null'] },
     public: { type: 'boolean' },
     waitsForAnswer: { type: 'boolean' },
+    answersTo: { type: 'integer', minimum: 1 },
+    buttons: { type: 'array', maxItems: MAX_BUTTONS, items: BUTTON },
     published: { ...publishedSchema, type: ['object', 'null'] },
   },
   required: ['v', 'type', 'seq', 'thread', 'at', 'kind', 'author', 'text', 'code', 'params', 'mentions', 'refs', 'stage', 'to', 'replyTo', 'public', 'published'],
@@ -183,6 +194,12 @@ function parse(text: string): Parsed {
     if (kind === 'thread' && !header && !validateSchema(raw, HEADER).length) header = raw as ThreadHeader;
     else if (kind === 'message' && !validateSchema(raw, MESSAGE).length) {
       const m = raw as ForumMessage;
+      // A button the vocabulary no longer parses (a screen that went away) is dropped on reading; the message stays.
+      if (m.buttons) {
+        const kept = m.buttons.flatMap((b) => parseTarget(b) ?? []);
+        if (kept.length) m.buttons = kept;
+        else delete m.buttons;
+      }
       if (!messages.has(m.seq)) messages.set(m.seq, m);
     } else if (kind === 'published' && !validateSchema(raw, ANNOTATION).length) {
       const a = raw as { seq: number; published: PublishedRef };
@@ -309,6 +326,8 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       .slice(0, 10)
       .map((a) => ({ id: a.id, name: a.name.slice(0, 200), media: a.media.slice(0, 100), bytes: a.bytes }));
 
+  const buttonsOf = (list: PushTarget[] | undefined): PushTarget[] => (Array.isArray(list) ? list : []).flatMap((b) => parseTarget(b) ?? []).slice(0, MAX_BUTTONS);
+
   function build(state: State, d: ForumDraft, seq: number): ForumMessage {
     const a = d.author;
     if (!a || (a.type !== 'agent' && a.type !== 'person' && a.type !== 'app') || (a.type === 'agent' && !AGENT_ID.test(a.id))) throw new ForumError('bad-author');
@@ -342,6 +361,10 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       public: d.public === true,
       // Only the person's own words are read for it (the guard does not touch them): a message that asks something and is not seen is told so in the thread.
       waitsForAnswer: a.type === 'person' && d.kind === 'post' && /\?\s*$/.test(text.trim()),
+      // A persona's answer says which message it answers and where it offers to go; only an agent's post carries either, and a button the notification vocabulary cannot
+      // parse is dropped, never stored.
+      ...(a.type === 'agent' && d.kind === 'post' && Number.isInteger(d.answersTo) && (d.answersTo as number) >= 1 ? { answersTo: d.answersTo as number } : {}),
+      ...(a.type === 'agent' && d.kind === 'post' && buttonsOf(d.buttons).length ? { buttons: buttonsOf(d.buttons) } : {}),
       published: d.published ?? null,
     };
   }

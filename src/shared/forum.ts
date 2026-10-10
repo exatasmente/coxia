@@ -3,6 +3,7 @@ import type { AgentDef } from './config/types';
 import { isDraft, isPersona, outOfCycle } from './config/team';
 import type { AttachmentRef } from './attachments';
 import { t } from './i18n';
+import type { PushTarget } from './push';
 
 // The forum: one thread per run plus general threads. Messages are what agents and people say about an activity; the stores are in
 // main/forum-core.ts (JSONL, append only) and main/runs-core.ts (the run each thread belongs to).
@@ -74,6 +75,13 @@ export interface ForumDraft {
   public?: boolean;
   /** The person's own message asks something and waits for an answer: what the thread says when the stage ends before the message reaches the agent. */
   waitsForAnswer?: boolean;
+  /**
+   * A persona's answer: the `seq` of the message of the person it answers (`replyTo` is not used: the store keeps it only for `answer` messages). The chat finds the work
+   * of the call that answered by it. Kept only for the post of an agent.
+   */
+  answersTo?: number | null;
+  /** Where a persona's answer offers to take the person: targets of the notification vocabulary, checked again by the store. The app words the button. Only for the post of an agent. */
+  buttons?: PushTarget[];
   published?: PublishedRef | null;
 }
 
@@ -106,6 +114,10 @@ export interface ForumMessage {
   public: boolean;
   /** The message asks something of the agent it names and waits for an answer (a question mark in the person's own words). */
   waitsForAnswer: boolean;
+  /** A persona's answer: the `seq` of the message it answers; absent on every other message and on a message stored before the field existed. */
+  answersTo?: number;
+  /** The buttons a persona's answer offers; absent on every other message. */
+  buttons?: PushTarget[];
   /** Set once the message was mirrored to the tracker. */
   published: PublishedRef | null;
 }
@@ -191,6 +203,9 @@ export function mentionableIds(team: readonly Pick<AgentDef, 'id' | 'draft' | 'k
   const owner = thread ? team.find((a) => isDraft(a) && !isPersona(a) && agentThreadId(a.id) === thread) : undefined;
   return owner ? [...ids, owner.id] : ids;
 }
+
+/** Whether the thread is the conversation of the persona (the real one or its test copy): there a `@name` is plain text, and no note says it is unknown. */
+export const isPersonaThread = (team: readonly Pick<AgentDef, 'id' | 'kind'>[], thread: unknown): boolean => typeof thread === 'string' && team.some((a) => isPersona(a) && agentThreadId(a.id) === thread);
 
 /**
  * The agents a person addressed: `@developer` names the agent with that id (case does not matter). Only ids the team has count, so an unknown

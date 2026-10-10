@@ -6,6 +6,10 @@ export function targetToScreen(t: PushTarget, hasCards: boolean): Screen | null 
   switch (t.to) {
     case 'call':
       return hasCards ? { name: 'call' } : { name: 'today' };
+    // The home and the Overview are Today until the chat exists as a screen.
+    case 'chat':
+    case 'overview':
+      return { name: 'today' };
     case 'deep':
       return t.ref ? { name: 'deep', ref: t.ref, back: 'today' } : null;
     case 'gate':

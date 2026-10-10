@@ -24,7 +24,8 @@ export interface PushStatus {
   notificationsOn: boolean;
 }
 
-export const PUSH_SCREENS = ['today', 'call', 'deep', 'ata', 'history', 'settings', 'actions', 'conflict', 'gate', 'qa', 'retro', 'custo', 'quick', 'reentry', 'discussions', 'radar', 'saude', 'auditoria', 'help', 'glossario', 'run', 'runs', 'forum'];
+// `chat` (the home) and `overview` (what Today held) join the older names, which stay valid; `board`, `procedures` and `memory` are plain screens the persona offers a button for.
+export const PUSH_SCREENS = ['chat', 'overview', 'board', 'procedures', 'memory', 'today', 'call', 'deep', 'ata', 'history', 'settings', 'actions', 'conflict', 'gate', 'qa', 'retro', 'custo', 'quick', 'reentry', 'discussions', 'radar', 'saude', 'auditoria', 'help', 'glossario', 'run', 'runs', 'forum'];
 const NEEDS_REF = new Set(['deep', 'gate', 'qa', 'quick', 'reentry', 'discussions']);
 const FIELD = /^[\w#.:/-]{1,80}$/;
 

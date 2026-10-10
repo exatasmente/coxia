@@ -19,6 +19,7 @@ import { answerMentions, type MentionDeps } from './answer';
 import { placeOfThread } from './place';
 import { proposeMention } from './propose';
 import { createSharedMemory } from '../runner/activities';
+import { personaLive, personaScreens } from '../persona/runtime';
 import { handoffService, screenAsks, screenSessions } from '../runner/module';
 
 // Mentions answered outside a run's thread: a squad channel, the channel the squads talk in, a conversation a person opened, and the direct conversation of an agent
@@ -81,6 +82,8 @@ export const mentionsModule: Module = () => {
     memoryPort: memoryPort(),
     // What the message names, for the ranking of the memory's list.
     named: (place, message) => ({ refs: refsInMessage(message), agents: callsOf(message, ownerOfThread(forum.summary(place.thread))) }),
+    // The persona's chat: the live text of its answers, and what its button tool checks a target against.
+    persona: { live: personaLive(), screens: personaScreens() },
     // The last turn of an answer that had trial and error and kept nothing, and the card it may leave (#187).
     offers: procedureOffers(),
     // What the answer is told of the activities of the workspace, read from the record of the running workspace and cut by what the message named.
