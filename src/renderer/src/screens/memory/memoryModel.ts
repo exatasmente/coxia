@@ -95,6 +95,11 @@ export const BADGE_LABEL: Record<Badge, string> = {
 };
 export const NOTE_KIND_LIST: readonly NoteKind[] = NOTE_KINDS;
 
+/** The catalog key of what a refusal says to fix, by its code; the app's English sentence is the fallback for a code this version does not map. */
+export const REFUSAL_KEY: Record<string, string> = {
+  control: 'ui.memory.refusal.control',
+};
+
 /** The catalog key of the reason a write did not happen. */
 export const ERROR_KEY: Record<string, string> = {
   revision: 'ui.memory.error.revision',

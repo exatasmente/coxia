@@ -90,6 +90,11 @@ describe('the file of a note', () => {
     expect(problemsOf({ ...claims, title: 'x'.repeat(80) }, 'ok')).toEqual([]);
     expect(problemsOf(claims, '   ')).toEqual(['text']);
     expect(problemsOf(claims, 'x'.repeat(8001))).toEqual(['text']);
+    // what a reader of the file would not see: zero width, bidi override, a tag character
+    expect(problemsOf({ ...claims, title: 'T\u200b' }, 'ok')).toEqual(['title']);
+    expect(problemsOf(claims, 'a\u202eb')).toEqual(['text']);
+    expect(problemsOf(claims, 'a\u{E0041}b')).toEqual(['text']);
+    expect(problemsOf(claims, 'line\n\tindented, accents \u00e9 and emoji \u{1F600}')).toEqual([]);
     expect(problemsOf(claims, 'x'.repeat(8000))).toEqual([]);
     expect(problemsOf({ ...claims, kind: 'x', title: '' }, '')).toEqual(['kind', 'title', 'text']);
   });

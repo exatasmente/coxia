@@ -65,6 +65,7 @@
   "ui.memory.panel.missing": "Esta nota não está mais aqui.",
   "ui.memory.panel.noText": "(sem texto)",
   "ui.memory.person": "você",
+  "ui.memory.refusal.control": "tem um caractere invisível ou que muda a direção do texto; remova-o, o texto precisa ser legível como está escrito",
   "ui.memory.remove.button": "Remover",
   "ui.memory.remove.confirm": "Remover \"{title}\"? O próximo agente que ler a memória não a encontrará.",
   "ui.memory.remove.no": "Manter",

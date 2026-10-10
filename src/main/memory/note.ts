@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { MEMORY_LIMITS, NOTE_ID, isNoteKind, type NoteKind } from '../../shared/memory';
+import { hasInvisible } from '../procedures/record';
 
 // The file of a note: plain text with a short header, so the person edits it comfortably. Pure: no disk, no Electron.
 //
@@ -85,13 +86,14 @@ export const shortLine = (v: string | undefined): string | undefined => (v !== u
 
 /**
  * What is wrong with a note the header and the text can be seen to have, as codes (no values): the kind is not one of the kinds, the title is empty or too long, the text
- * is empty or too long. A person's edit outside the app can cause any of them; the note is then left out of what the agents read.
+ * is empty or too long, either holds an invisible or direction-changing character (the person who reviews the file would not see it). A person's edit outside the app can cause
+ * any of them; the note is then left out of what the agents read.
  */
 export function problemsOf(claims: HeaderClaims, body: string): string[] {
   const out: string[] = [];
   if (!isNoteKind(claims.kind)) out.push('kind');
   const title = claims.title ?? '';
-  if (!title || title.length > MEMORY_LIMITS.title) out.push('title');
-  if (!body.trim() || body.length > MEMORY_LIMITS.note) out.push('text');
+  if (!title || title.length > MEMORY_LIMITS.title || hasInvisible(title)) out.push('title');
+  if (!body.trim() || body.length > MEMORY_LIMITS.note || hasInvisible(body)) out.push('text');
   return out;
 }

@@ -17,7 +17,7 @@ import {
   type NoteSummary,
 } from '../../shared/memory';
 import { redact } from '../errorlog-core';
-import { checkProse, describeRefusals, type Refusal } from '../procedures/record';
+import { checkProse, describeRefusals, hasInvisible, type Refusal } from '../procedures/record';
 import { MEMORY_DIR } from '../runner/activities';
 import { parseNote, problemsOf, renderNote, shaOf, shortLine, type HeaderClaims } from './note';
 import { createStateFile } from './state';
@@ -550,8 +550,10 @@ export function createMemoryStore(workspaceDir: string, deps: MemoryStoreDeps = 
     if (!isNoteKind(kind)) refusals.push({ field: 'kind', code: 'type', text: 'kind must be one of decision, finding, note' });
     const title = maskOf((req.title ?? facts.claims.title ?? '').trim());
     if (!title || title.length > MEMORY_LIMITS.title || /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(title)) refusals.push({ field: 'title', code: 'type', text: `title must be one line of 1 to ${MEMORY_LIMITS.title} characters` });
+    if (hasInvisible(title)) refusals.push({ field: 'title', code: 'control', text: 'title holds an invisible or direction-changing character' });
     const body = maskOf((req.text ?? facts.body).replace(/\r\n/g, '\n').trim());
     if (!body || body.length > MEMORY_LIMITS.note) refusals.push({ field: 'text', code: 'type', text: `text must be 1 to ${MEMORY_LIMITS.note} characters` });
+    if (hasInvisible(body)) refusals.push({ field: 'text', code: 'control', text: 'text holds an invisible or direction-changing character' });
     if (refusals.length || !isNoteKind(kind)) return { ok: false, code: 'invalid', text: describeRefusals(refusals), refusals };
     const claimedRevision = Number(facts.claims.revision);
     const revision = (st?.revision ?? (Number.isInteger(claimedRevision) && claimedRevision >= 1 ? claimedRevision : 0)) + 1;

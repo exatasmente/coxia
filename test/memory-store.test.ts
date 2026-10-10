@@ -302,6 +302,22 @@ describe('the person\'s edit', () => {
     expect(store.edit({ scope: dev, id: 'm-deadbeef', text: 'x' })).toMatchObject({ ok: false, code: 'not-found' });
   });
 
+  it('refuses an invisible or direction-changing character in the title or the text, by field, and writes nothing', () => {
+    const store = make();
+    const note = created(store);
+    const before = readFileSync(fileOf(dev, note.id), 'utf8');
+    for (const hidden of ['\u200b', '\u202e', '\u2066', '\u{E0041}']) {
+      const title = store.edit({ scope: dev, id: note.id, title: `Use the queue${hidden}` });
+      expect(title).toMatchObject({ ok: false, code: 'invalid', refusals: [{ field: 'title', code: 'control' }] });
+      const text = store.edit({ scope: dev, id: note.id, text: `Retries go${hidden} through the queue` });
+      expect(text).toMatchObject({ ok: false, code: 'invalid', refusals: [{ field: 'text', code: 'control' }] });
+      expect(!text.ok && text.text).not.toContain(hidden);
+    }
+    expect(readFileSync(fileOf(dev, note.id), 'utf8')).toBe(before);
+    // the rest of the person's latitude stays: line breaks, accents, emoji and an address that is masked
+    expect(store.edit({ scope: dev, id: note.id, title: 'Fila e reentrada', text: 'Linha um\n\n\tlinha dois, ação \u{1F600} dev@example.com' })).toMatchObject({ ok: true, note: { person: true, unsafe: false } });
+  });
+
   it('refuses an edit from an editor that opened an older revision', () => {
     const store = make();
     const note = created(store);
@@ -374,6 +390,25 @@ describe('the header is untrusted: the state decides', () => {
     expect(listed.every((n) => n.unsafe && n.person)).toBe(true);
     for (const n of listed) expect(store.read(dev, n.id, 'agent')).toEqual({ status: 'hidden', reason: 'unsafe' });
     for (const n of listed) expect(store.read(dev, n.id, 'person')).toMatchObject({ status: 'ok' });
+  });
+
+  it('leaves out of what the agents read a note whose file was edited to hold an invisible character, until the person fixes it', () => {
+    const store = make();
+    const inText = created(store, { title: 'In the text' });
+    const inTitle = created(store, { title: 'In the title' });
+    rewrite(dev, inText.id, (raw) => raw.replace('never inline.', 'never inline.\u202e'));
+    rewrite(dev, inTitle.id, (raw) => raw.replace('title: In the title', 'title: In the title\u200b'));
+    const listed = store.list().notes;
+    expect(listed.every((n) => n.unsafe && n.person)).toBe(true);
+    for (const n of listed) {
+      expect(store.read(dev, n.id, 'agent')).toEqual({ status: 'hidden', reason: 'unsafe' });
+      expect(store.read(dev, n.id, 'person')).toMatchObject({ status: 'ok' });
+      expect(store.review(dev, n.id)).toMatchObject({ ok: false, code: 'unsafe' });
+    }
+    // the screen cannot save the hidden text back; the person's clean text releases the note
+    expect(store.edit({ scope: dev, id: inText.id, title: 'In the text' })).toMatchObject({ ok: false, code: 'invalid' });
+    expect(store.edit({ scope: dev, id: inText.id, text: 'Retries go through the queue.' })).toMatchObject({ ok: true, note: { unsafe: false } });
+    expect(store.read(dev, inText.id, 'agent')).toMatchObject({ status: 'ok' });
   });
 
   it('holds a note an agent wrote to the prose validator again on every list: a text the validator refuses is unsafe even when nobody edited it as the person', () => {

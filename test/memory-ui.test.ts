@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { isOldNote, OLD_AFTER_MS, type MemoryFolder, type NoteItem } from '../src/shared/memoryView';
-import { BADGE_LABEL, ERROR_KEY, KIND_LABEL, NO_FILTERS, badgesOf, distinct, filterNotes, groupNotes, isFiltering, needsReview, sortNotes } from '../src/renderer/src/screens/memory/memoryModel';
+import { BADGE_LABEL, ERROR_KEY, KIND_LABEL, NO_FILTERS, REFUSAL_KEY, badgesOf, distinct, filterNotes, groupNotes, isFiltering, needsReview, sortNotes } from '../src/renderer/src/screens/memory/memoryModel';
 import { CATALOGS } from '../src/shared/i18n';
 
 // The Memory view without React: filter, group, sort and the badges of a note, and that every word it uses is in both catalogs.
@@ -122,7 +122,7 @@ describe('the badges', () => {
 
 describe('the words', () => {
   it('are in both catalogs, every one the view names', () => {
-    const keys = [...Object.values(KIND_LABEL), ...Object.values(BADGE_LABEL), ...Object.values(ERROR_KEY), 'ui.memory.nav', 'ui.memory.title', 'ui.memory.person', 'ui.audit.kind.memory'];
+    const keys = [...Object.values(KIND_LABEL), ...Object.values(BADGE_LABEL), ...Object.values(ERROR_KEY), ...Object.values(REFUSAL_KEY), 'ui.memory.nav', 'ui.memory.title', 'ui.memory.person', 'ui.audit.kind.memory'];
     for (const key of keys) {
       expect(CATALOGS['pt-BR'][key], `pt-BR ${key}`).toBeTruthy();
       expect(CATALOGS.en[key], `en ${key}`).toBeTruthy();

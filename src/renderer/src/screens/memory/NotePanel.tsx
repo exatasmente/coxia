@@ -3,7 +3,7 @@ import { MEMORY_LIMITS } from '../../../../shared/memory';
 import type { NoteGet, NoteItem, NoteWrite } from '../../../../shared/memoryView';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
-import { ERROR_KEY, KIND_LABEL, NOTE_KIND_LIST, needsReview } from './memoryModel';
+import { ERROR_KEY, KIND_LABEL, NOTE_KIND_LIST, REFUSAL_KEY, needsReview } from './memoryModel';
 import { memoryApi } from './memoryApi';
 
 // The open note of the list: read from the app when it opens. The person reads who wrote it and when, edits it, marks it reviewed or removes it; the same from the window and
@@ -25,7 +25,7 @@ export function Refusals({ failure }: { failure: Failure }) {
       <div className="error" role="alert">
         <p>{t('ui.memory.edit.notSaved')}</p>
         <ul className="me-list">
-          {failure.refusals.map((r, i) => <li key={i}>{FIELD_KEY[r.field] ? t(FIELD_KEY[r.field]) : r.field}: {r.text}</li>)}
+          {failure.refusals.map((r, i) => <li key={i}>{FIELD_KEY[r.field] ? t(FIELD_KEY[r.field]) : r.field}: {REFUSAL_KEY[r.code] ? t(REFUSAL_KEY[r.code]) : r.text}</li>)}
         </ul>
       </div>
     );

@@ -78,10 +78,17 @@ const REASON: Record<RefusalCode, string> = {
   size: `is more than ${LIMITS.content} characters in all`,
 };
 
-// C0, C1, the line separators, every format character (zero width, bidi overrides, joiners) and the tag block: all of them can hide text from the person who reviews it.
-const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\p{Cf}\u{E0000}-\u{E007F}]/u;
+// Every format character (zero width, bidi overrides, joiners) and the tag block: they hide text from the person who reviews it.
+const INVISIBLE_CLASS = '\\p{Cf}\\u{E0000}-\\u{E007F}';
+const INVISIBLE = new RegExp(`[${INVISIBLE_CLASS}]`, 'u');
+// Those, C0, C1 and the line separators.
+const CONTROL = new RegExp(`[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029${INVISIBLE_CLASS}]`, 'u');
 // The same for prose (a note): a line break and a tab are text there, and a lone carriage return is not (a CRLF is read as a line break first).
-const PROSE_CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u2028\u2029\p{Cf}\u{E0000}-\u{E007F}]/u;
+const PROSE_CONTROL = new RegExp(`[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u2028\\u2029${INVISIBLE_CLASS}]`, 'u');
+
+/** Whether a text holds an invisible or direction-changing character: the one check of a person's note that does not depend on who wrote it. */
+export const hasInvisible = (s: string): boolean => INVISIBLE.test(s);
+
 const TITLE_CHARS = /^[\p{L}\p{N} .,\-/()']+$/u;
 const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
 const DIGIT_RUN = /\d(?:[\s.-]?\d){5,}/;
