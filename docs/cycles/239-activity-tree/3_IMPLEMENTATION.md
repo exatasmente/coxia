@@ -163,4 +163,23 @@ and `npx electron-vite build`, all clean when commit 6 was made. No prompt text 
 - **The paired phone** was not driven: the stream, the masking before it and the backfill are tested; the policy of the channel and the switch's editability are pinned by
   `test/activity-policy.test.ts` and `test/config-web-scope.test.ts`, not by a browser.
 - **The schema number.** 28 was free when commit 1 was made; the plan names an open pull request that also takes a step in the chain. Look again at the rebase.
-- **Memory and rendering cost** of a large fan-out (a live tree is never trimmed; every line rebuilds its bucket's tree) was not measured.
+- **Memory and rendering cost** of a large fan-out (a live tree is never trimmed) was not measured; the tree of a bucket is built once per change (review fix 2).
+
+## Review fixes
+
+Five findings of `4_REVIEW.md`, one commit each, after the seven above:
+
+1. **Thoughts stay off until the switch is read.** The log's gate defaulted to on; it now defaults to off, and `setThoughtsGate(null)` closes it again. `index.ts` still points it at the
+   workspace's configuration at startup, and the tests that need thoughts open it themselves (`createActivityLog({ thoughts: () => true })` or `setThoughtsGate(() => true)`). A new test
+   pins that a log with a sink and no gate emits no thought.
+2. **The tree of a bucket is built once per change.** `buildTreeOnce` in `activityTree.ts` remembers the tree by the identity of the entries array (a `WeakMap`), which the store keeps
+   for a bucket that did not change; `topEntries` uses it, so a line arriving in one bucket no longer rebuilds the others. The nodes are shared between calls and nothing changes them.
+3. **A sub-agent node always ends.** In `loop.ts` the first `state` and the model-switch notice now run in a guard that ends the node as failed with the error's message and rethrows;
+   `finish` is defined before it. Tested with an `onSwitch` that throws (the node ends once, failed, and the sub-agent never runs).
+4. **A called agent with no answer ends failed on both paths.** In `runConversation`, a turn with nothing to show that the caller did not cause (`closed` is false), and a run that was
+   aborted, end the node failed; the caller ending the conversation still ends it finished. The failure carries no reason text, as the other path's does not.
+5. **The expanded state speaks for itself.** The rows no longer carry the `sr-only` "Open/Close {name}" and "Show/Hide the thought" text that contradicted `aria-expanded`; the four keys
+   (`activity.node.show|hide`, `activity.thought.show|hide`) are out of both catalogs (none was in the `main` snapshot, so `REMOVED` did not need them). On the thought row the icon is
+   decorative (`KindIcon` takes `decorative`), because the button already says "Thought".
+
+Deviation: fix 4 took the screen closing under a turn (a turn cut short, `closed` false) as a no answer too, so that node ends failed as well.

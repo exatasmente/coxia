@@ -17,7 +17,8 @@ export function useTreeOpen(id: string, def: boolean): [boolean, () => void] {
   return [treeView.open(id, def), () => treeView.toggle(id, def)];
 }
 
-export function KindIcon({ entry }: { entry: ActivityEntry }) {
+/** `decorative` for a row whose own text already names the kind: the icon then says nothing a second time. */
+export function KindIcon({ entry, decorative = false }: { entry: ActivityEntry; decorative?: boolean }) {
   const t = useT();
   const bad = entry.state === 'failed' || entry.state === 'blocked';
   const d =
@@ -35,7 +36,7 @@ export function KindIcon({ entry }: { entry: ActivityEntry }) {
                 ? 'M12 7v6m0 3.5v.5'
                 : 'M12 8v4l3 2';
   return (
-    <svg className={`act-icon ${bad ? 'act-icon-bad' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" role="img" aria-label={t(`activity.kind.${entry.kind}`)}>
+    <svg className={`act-icon ${bad ? 'act-icon-bad' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...(decorative ? { 'aria-hidden': true } : { role: 'img', 'aria-label': t(`activity.kind.${entry.kind}`) })}>
       <path d={d} />
     </svg>
   );
@@ -62,12 +63,11 @@ function ThoughtRow({ entry, origin }: { entry: ActivityEntry; origin: number })
   return (
     <li className="act-step act-thought">
       <time className="act-time">{formatElapsed(entry.at - origin)}</time>
-      <KindIcon entry={entry} />
+      <KindIcon entry={entry} decorative />
       <div className="act-label">
         <button type="button" className="act-thought-toggle" aria-expanded={open} onClick={toggle}>
           <Chevron open={open} />
           {t('activity.thought')}
-          <span className="sr-only">{open ? t('activity.thought.hide') : t('activity.thought.show')}</span>
         </button>
         {open && <p className="act-thought-text">{entry.label}</p>}
       </div>
@@ -100,7 +100,6 @@ function NodeRow({ node, shared }: { node: TreeNode; shared: Shared }) {
         <span className="act-node-title">{title}</span>
         <span className="act-node-state">{t(`activity.node.state.${node.state}`)}</span>
         {!open && node.latest && <span className="act-node-now">{stepText(node.latest, t('activity.thought'))}</span>}
-        <span className="sr-only">{open ? t('activity.node.hide', { name: title }) : t('activity.node.show', { name: title })}</span>
       </button>
       {open && <Items items={node.items} shared={shared} className="act-node-body" />}
     </li>
