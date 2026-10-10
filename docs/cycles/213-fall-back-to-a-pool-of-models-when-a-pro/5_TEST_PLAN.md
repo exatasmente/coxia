@@ -44,7 +44,7 @@ A chave veio do comando de chave do mantenedor, configurado como segredo do tipo
 
 ### 5. A sugestão ordena com piso e não põe modelo minúsculo em primeiro
 
-- **Primeira rodada:** ❌ A lista padrão saiu MiMo, `granite-4.2-3b`, `Ling-3.0-flash`… e "Usar a sugestão" faria de um modelo de 3B o modelo das cerimônias. Corrigido em `cf090e32`: nas atividades sem piso, os modelos com nota vêm antes dos sem nota. É proposta, pendente do mantenedor.
+- **Primeira rodada:** ❌ A lista padrão saiu MiMo, `granite-4.2-3b`, `Ling-3.0-flash`… e "Usar a sugestão" faria de um modelo de 3B o modelo das cerimônias. Corrigido em `cf090e32`: nas atividades sem piso, os modelos com nota vêm antes dos sem nota. Confirmado pelo mantenedor.
 - **Segunda rodada:** ✅
   - **Lista padrão:** MiMo, DeepSeek, GLM e depois os sem nota.
   - **Edição e shell:** DeepSeek primeiro; MiMo e GLM marcados "abaixo do piso" (90 e 70).
