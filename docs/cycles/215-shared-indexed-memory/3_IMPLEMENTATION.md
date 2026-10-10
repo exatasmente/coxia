@@ -234,3 +234,47 @@ Deviations and additions:
 - `StageInbox.delivered` still has no caller, as the plan found; the hub and the mailbox write their own lines. The marker of a notice handed through the mailbox is written by the mailbox at the handover.
 - **Not verified:** that the Claude SDK's stream and the open engine hand the notice over in the last step of a stage (the mailbox is tested directly and through the fake engine's `incoming`, as the plan
   says); that a plain sub-agent of the open engine does not take the notice meant for its principal (it inherits `incoming`); a real stage that reads the notice and changes course.
+
+## Commit 10: document the shared memory
+
+`docs/memory.md` (Portuguese and English in the one file, as `docs/procedures.md`): where the notes live, the note and its caps, who changes what, the list and its ranking and caps, the four tools, where each agent
+gets it, the version and the roadmap, the notice, the Memory view and the paired phone, the switch, what protects the rest, what is on disk, what was not verified. `docs/runner.md` gets a section in both languages
+("A memória compartilhada" / "The shared memory") between the activities record and the autonomy section, one sentence on how the short list of the other activities is now reached, and a bullet in both "not verified"
+lists. `docs/README.md` has the row. `CHANGELOG.md` under `## [Unreleased]`: the first entry loses "(first part)" and points at the document, the second says the version is read also when the switch is turned on and that
+a message to the working agent names the tools when the stage's memory opened, and says the log line exists; the notice has its own entry (commit 9). The configuration document was done in commit 1.
+
+Deviations and additions: none in the code. `docs/memory.md` describes the delivery as built, so where it differs from the plan it follows this file (the `seqs` marker, the document trigger at the accepted attempt, the
+five notices per stage, the refusal of a full commit hash, the `kept` denial).
+
+## The delivery, in short
+
+Commits 1 to 10 on top of the spec and the plan, with two fixes between commits 8 and 9 (the notice is commit 9):
+
+- The switch `runner.sharedMemory` (schema 27, migration 26 → 27, off for an existing workspace, on for a new one, changed from the computer and from a paired browser) and `docs.roadmapFile`.
+- Notes as files under `memory/conversations/<conversation>/<agent>/`, with a state file the app owns, one writer per file, the person's edit winning, the review wait after a hand-off, a prose validator that refuses a whole
+  note with the field and the reason, and fixed caps.
+- The app's `memory/` folder out of reach of every agent's file tools, even in an unconfined run.
+- The Memory screen (computer and paired phone), six channels named in the policy, the audit kind `memory`, and the discard of an agent draft taking its folder.
+- The index built at read time (notes, activities, documents of the cycle folders, version, roadmap), ranked by one fixed key and cut to fixed caps; `memory_list`, `memory_read`, `memory_save`, `memory_remove` in both
+  engines, read for sub-agents and write for the principal only.
+- The list and the tools in a stage, a mention, an agent called by another or by a stage, the question chain, the squad request and the ceremonies (read only, cache only for the version); divergences 1, 2, 3, 5 and 7
+  closed with the switch on.
+- The notice to a run: one thread line, the working stage's mailbox, the first section of the next stage, the read marker at the handover or at the accepted attempt.
+- Two fixes found after commit 8: the version cache is warmed when the switch is turned on, and the sentence of divergence 5 follows the stage's session, not the switch.
+
+What the gates showed at the end: `npx tsc --noEmit` clean; `npx vitest run` 452 files passed, 7,629 tests passed and 3 skipped (the three slow files, `agent-assist-prompts`, `host-terms-leak` and `agent-pool-start`, can
+cross the 5 s timeout under the full run on a loaded machine and pass alone); `node scripts/theme-audit.mjs`, `npm run i18n:lint` (5,738 keys in both languages) and `node scripts/public-audit.mjs` clean;
+`npx electron-vite build` builds. No golden was regenerated: `test/golden/*`, `test/prompts-screen.test.ts` and `test/cycle-prompts.test.ts` ran unchanged in every commit.
+
+### What was not verified
+
+- Nothing ran with a real model, host or network. The tools, the list, the notice and the screen were exercised with fake engines, fake hosts and temporary folders only.
+- The Claude SDK: that its built-in sub-agent inherits the in-process memory server, and that the `PreToolUse` hook that refuses the write tools fires for such a call (only the hook's callback is tested); its reading
+  outside the working directory under `dontAsk`; the stream's delivery of a notice in the last step of a stage.
+- A plain sub-agent of the open engine inherits the stage's mailbox and could take a notice meant for its principal (the marker is written at the handover, so the stage would at worst not see it in that attempt).
+- The Memory screen in a running app (there is no React renderer test in the project; the logic is in `memoryModel.ts` and tested), the paired phone against a real paired browser, and the roadmap file and the version
+  against real repositories.
+- The cost in tokens of the list and of an excerpt (the log line makes it readable), and the first list of a process on a large workspace (measured at about 160 ms with 500 notes and 200 runs, then 33 to 37 ms).
+- Two app instances on one data folder; the long id of a stage-opened side conversation as a folder name (an id past 64 characters makes the session a reader); the effect of tagging the two reads `explore` on a pool in
+  `switch` mode.
+- Whether a note a model writes passes the prose validator in ordinary use (a full commit hash is refused with the short form asked for; a URL with a query string is refused); the plan's fallback is a maintainer decision.
