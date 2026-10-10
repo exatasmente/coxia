@@ -285,3 +285,7 @@ Com a sugestão, as listas de `shell` e `edit` trazem os mesmos modelos da lista
   - Sem captura de tela da interface (a conferência visual fica para a etapa de teste), como nos commits 8 e 14: os testes renderizam as telas com `renderToStaticMarkup`.
 - **Gates deste commit.** typecheck; vitest em 17 arquivos (344 testes: as telas do assistente e do time, os catálogos de texto, esquema e migração, o escopo do celular); theme-audit; i18n:lint; public-audit.
 - **Testes.** `provider-offer-ui` (novo: as edições puras; os recursos do provedor desligados, ligados e com o endereço errado nos dois idiomas; o cartão só no provedor do motor aberto; os cinco seletores e o que cada um mostra; marcas e aviso por linha, do modelo do papel, sem recurso e com data passada e futura), `team-pool-ui` (as marcas e o aviso no editor do agente), `team-agent-edit` (`agentModelOffer`), `team-runner-edit` (`flex` do computador e do navegador pareado), `wizard-i18n` (as famílias novas), `ui-i18n` (ordem e campos dos catálogos).
+
+## Corrida única da suíte inteira, depois do commit 20
+
+Por pedido do coordenador, a suíte inteira só rodou uma vez, depois do commit 20 (`npx vitest run --maxWorkers=4 --testTimeout=20000`): 433 arquivos, 7269 testes, **1 falha**: `runner-config` ("is off by default…") comparava `neutralConfig().runner` com um objeto que não tinha o `flex: true` que o commit 17 pôs no neutro. Corrigido num commit `fix:` à parte (sem rebase), com a repetição só do arquivo e depois da suíte inteira de novo.
