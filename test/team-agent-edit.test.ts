@@ -4,7 +4,7 @@ import { newSquad, addSquad } from '../src/shared/config/squads';
 import { addAgent, newAgent, workingTeam } from '../src/shared/config/team';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { agentFlow, applyTemplate } from '../src/shared/cycles';
-import { agentModelPool, agentModelWith, agentProblems, applyAgent, blankAgent, draftOf, promoteDraft, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId } from '../src/renderer/src/screens/team/agentEdit';
+import { agentModelOffer, agentModelPool, agentModelWith, agentProblems, applyAgent, blankAgent, draftOf, promoteDraft, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId } from '../src/renderer/src/screens/team/agentEdit';
 
 const flow = (): WorkspaceConfig => applyTemplate(neutralConfig(), agentFlow);
 // A squad with members needs a liaison; the squad is not what this test is about, so the checked copy has none.
@@ -348,6 +348,14 @@ describe('the pool of an agent with a model of its own, in the editor', () => {
     expect(renamed.fallbacks).toEqual(offered.fallbacks);
     expect(newAgent({ id: 'x', model: offered }).model.offer).toEqual({ flex: true, effort: true });
     expect(newAgent({ id: 'x', model: { role: null, provider: 'local', model: 'model-a' } }).model).not.toHaveProperty('offer');
+  });
+
+  it('sets the marks of the agent\'s own model by hand, leaving no empty offer and the pool as it was', () => {
+    const marked = agentModelOffer(own, { effort: true });
+    expect(marked.offer).toEqual({ effort: true });
+    expect(marked.fallbacks).toEqual(own.fallbacks);
+    expect(agentModelOffer(marked, undefined)).not.toHaveProperty('offer');
+    expect(own).not.toHaveProperty('offer');
   });
 
   it('takes a reserve out of the list when it becomes the agent\'s own model', () => {

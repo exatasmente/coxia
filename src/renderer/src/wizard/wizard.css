@@ -111,6 +111,10 @@ div.wz-cards { margin: 0; }
 .wz-pool-floors { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .wz-mini { min-height: 32px; min-width: 32px; padding: 0 10px; font-size: 13px; }
 .wz-score-input { width: 88px; min-height: 32px; padding: 0 8px; }
+.wz-chip-btn { border: 0; cursor: pointer; font-family: inherit; }
+.wz-chip-btn:disabled { cursor: default; }
+.wz-chip-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.wz-pool-offer { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .wz-chip-unverified { background: var(--amber-soft); color: var(--amber-ink); }
 .wz-suggest { gap: 12px; }
 

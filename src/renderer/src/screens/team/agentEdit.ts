@@ -5,7 +5,7 @@ import { poolFieldsOf } from '../../../../shared/config/pool';
 import { withoutLead } from '../../wizard/poolEdit';
 import { addAgent, isDraft, isSystemId, modelPoolOf, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
 import { t } from '../../../../shared/i18n';
-import { MAX_POOL_ENTRIES, type AgentDef, type AgentModel, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type ModelPool, type ModelRef, type PoolMode, type StageDef, type WorkspaceConfig } from '../../../../shared/config/types';
+import { MAX_POOL_ENTRIES, type AgentDef, type AgentModel, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type ModelOffer, type ModelPool, type ModelRef, type PoolMode, type StageDef, type WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
 import { shown } from './text';
@@ -87,6 +87,12 @@ export function agentModelWith(model: AgentModel, next: { role: LlmRole } | { pr
   const same = model.provider === next.provider && model.model === next.model;
   const marks = same ? { ...(model.images !== undefined ? { images: model.images } : {}), ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}), ...(model.echoReasoning !== undefined ? { echoReasoning: model.echoReasoning } : {}), ...(model.offer ? { offer: model.offer } : {}) } : {};
   return { role: null, provider: next.provider, model: next.model, ...marks, ...poolFieldsOf(withoutLead(lists, next)) };
+}
+
+/** The model of a draft with the marks of its own model set by hand (served in the flex tier, takes the effort); the rest of the model stays. */
+export function agentModelOffer(model: AgentModel, offer: ModelOffer | undefined): AgentModel {
+  const { offer: _old, ...rest } = model;
+  return { ...rest, ...(offer ? { offer } : {}) };
 }
 
 /** The model of a draft with its pool replaced; the rest of the model stays. */

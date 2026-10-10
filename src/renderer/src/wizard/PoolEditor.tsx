@@ -1,8 +1,9 @@
 import { useId, useState } from 'react';
 import { ACTIVITIES, MAX_POOL_ENTRIES, type Activity, type LlmProvider, type ModelPool, type ModelRef, type ScoreOverrides } from '../../../shared/config/types';
+import { deprecationOf } from '../../../shared/config/offer';
 import type { CatalogModel } from '../../../shared/modelCatalog';
 import { intlLocale, useT } from '../i18n';
-import { type AddProblem, type EntryFacts, type PoolListKey, addEntry, entryFacts, listOf, moveEntry, removeEntry, withList } from './poolEdit';
+import { type AddProblem, type EntryFacts, type PoolListKey, addEntry, entryFacts, listOf, moveEntry, removeEntry, withList, withMark } from './poolEdit';
 
 /** US dollars of one typical stage, for the lines of a pool. */
 export function usd(n: number): string {
@@ -27,6 +28,42 @@ export function PoolFacts({ facts }: { facts: EntryFacts }) {
   );
 }
 
+/** When the provider retires a model, in the reader's own format. */
+export const retiredDate = (seconds: number): string => new Date(seconds * 1000).toLocaleDateString(intlLocale(), { year: 'numeric', month: 'short', day: 'numeric' });
+
+/** "Obsolete since <date>; substitute: <model>", in words that fit a date already past or still to come. Only a warning: nothing is swapped. */
+export function obsoleteText(t: ReturnType<typeof useT>, offer: ModelRef['offer']): string | null {
+  const d = deprecationOf(offer);
+  if (!d) return null;
+  const key = d.past ? (d.replacedBy ? 'wizard.pool.deprecated.past' : 'wizard.pool.deprecated.pastNoSub') : d.replacedBy ? 'wizard.pool.deprecated.future' : 'wizard.pool.deprecated.futureNoSub';
+  return t(key, { date: retiredDate(d.at), model: d.replacedBy ?? '' });
+}
+
+export function ObsoleteNote({ offer }: { offer: ModelRef['offer'] }) {
+  const t = useT();
+  const text = obsoleteText(t, offer);
+  return text ? <span className="small wz-chip wz-chip-unverified wz-wrap-anywhere" role="note">{text}</span> : null;
+}
+
+/** The marks the catalog gave an entry (served in the flex tier, takes the effort), which the person corrects on the row, and the warning of an obsolete model. */
+function EntryOffer({ entry, provider, name, onMark }: { entry: ModelRef; provider?: LlmProvider; name: string; onMark?: (mark: 'flex' | 'effort', on: boolean) => void }) {
+  const t = useT();
+  const marks = (['flex', 'effort'] as const).filter((m) => (m === 'flex' ? provider?.features?.serviceTier : provider?.features?.reasoningEffort));
+  return (
+    <span className="wz-pool-offer">
+      {marks.map((m) => {
+        const on = entry.offer?.[m] === true;
+        return (
+          <button key={m} type="button" className={`wz-chip wz-chip-btn ${on ? 'wz-chip-ok' : ''}`} aria-pressed={on} disabled={!onMark} title={t(`wizard.pool.offer.${m}.title`)} aria-label={t(`wizard.pool.offer.${m}.aria`, { model: name })} onClick={() => onMark?.(m, !on)}>
+            {t(`wizard.pool.offer.${m}`)}
+          </button>
+        );
+      })}
+      <ObsoleteNote offer={entry.offer} />
+    </span>
+  );
+}
+
 interface ListProps {
   list: PoolListKey;
   title: string;
@@ -40,9 +77,10 @@ interface ListProps {
   overrides?: ScoreOverrides;
   onTest?: (ref: ModelRef) => void;
   testing?: string | null;
+  onPrimary?: (next: ModelRef) => void;
 }
 
-function PoolList({ list, title, hint, empty, pool, onChange, providers, primary, catalogs, overrides, onTest, testing }: ListProps) {
+function PoolList({ list, title, hint, empty, pool, onChange, providers, primary, catalogs, overrides, onTest, testing, onPrimary }: ListProps) {
   const t = useT();
   const id = useId();
   const entries = listOf(pool, list);
@@ -71,6 +109,7 @@ function PoolList({ list, title, hint, empty, pool, onChange, providers, primary
         <div className="wz-pool-row wz-pool-own">
           <span className="wz-pool-model mono wz-wrap-anywhere">{primary.provider} · {primary.model}</span>
           <PoolFacts facts={facts(primary)} />
+          <EntryOffer entry={primary} provider={providers.find((p) => p.id === primary.provider)} name={`${primary.provider} · ${primary.model}`} onMark={onPrimary && ((m, on) => onPrimary(withMark(primary, m, on)))} />
           <span className="badge badge-quiet">{t('wizard.pool.own')}</span>
         </div>
       )}
@@ -83,6 +122,7 @@ function PoolList({ list, title, hint, empty, pool, onChange, providers, primary
               <li key={`${r.provider}\n${r.model}`} className="wz-pool-row">
                 <span className="wz-pool-model mono wz-wrap-anywhere">{name}</span>
                 <PoolFacts facts={facts(r)} />
+                <EntryOffer entry={r} provider={providers.find((p) => p.id === r.provider)} name={name} onMark={(m, on) => set(entries.map((x, j) => (j === i ? withMark(x, m, on) : x)))} />
                 <span className="wz-pool-actions">
                   <button type="button" className="btn wz-mini" aria-label={t('wizard.pool.up', { model: name })} disabled={i === 0} onClick={() => set(moveEntry(entries, i, -1))}>↑</button>
                   <button type="button" className="btn wz-mini" aria-label={t('wizard.pool.down', { model: name })} disabled={i === entries.length - 1} onClick={() => set(moveEntry(entries, i, 1))}>↓</button>
@@ -129,13 +169,15 @@ export interface PoolEditorProps {
   onTest?: (ref: ModelRef) => void;
   /** `provider\nmodel` of the entry being tested. */
   testing?: string | null;
+  /** The marks of the model the pool belongs to are corrected here (it is not one of the lists). Absent: they are shown and not edited. */
+  onPrimary?: (next: ModelRef) => void;
 }
 
 /** The reserves of a model, from the cheapest to the most expensive, and, folded, a list for each kind of work. Only edits the value it is given. */
-export function PoolEditor({ providers, primary, value, onChange, catalogs, overrides, onTest, testing }: PoolEditorProps) {
+export function PoolEditor({ providers, primary, value, onChange, catalogs, overrides, onTest, testing, onPrimary }: PoolEditorProps) {
   const t = useT();
   const own = ACTIVITIES.filter((a) => listOf(value, a).length > 0).length;
-  const shared = { pool: value, onChange, providers, primary, catalogs, overrides, onTest, testing };
+  const shared = { pool: value, onChange, providers, primary, catalogs, overrides, onTest, testing, onPrimary };
   return (
     <div className="wz-pool">
       <PoolList {...shared} list="fallbacks" title={t('wizard.pool.reserves')} hint={t('wizard.pool.hint')} empty={t('wizard.pool.empty')} />

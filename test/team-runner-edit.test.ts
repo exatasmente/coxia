@@ -9,7 +9,7 @@ const keys = (d: RunnerDraft, flow = true) => runnerProblems(d, flow).map((p) =>
 describe('the runner draft', () => {
   it('round trips the defaults and a configured runner', () => {
     expect(runnerOf(base())).toEqual(neutralConfig().runner);
-    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40 }, identity: { name: 'Bot', email: 'bot@example.com' }, sandbox: neutralConfig().runner.sandbox, autonomy: neutralConfig().runner.autonomy, evidence: 'app', procedures: true, commitMessage: 'fix: {summary} {iid}', prTitle: '#{iid} {title}', linkDependencies: true, release: { soleMaintainer: true }, conversations: { roundsPerConversation: 8, perStage: 2 } };
+    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40 }, identity: { name: 'Bot', email: 'bot@example.com' }, sandbox: neutralConfig().runner.sandbox, autonomy: neutralConfig().runner.autonomy, evidence: 'app', procedures: true, flex: false, commitMessage: 'fix: {summary} {iid}', prTitle: '#{iid} {title}', linkDependencies: true, release: { soleMaintainer: true }, conversations: { roundsPerConversation: 8, perStage: 2 } };
     expect(runnerOf(draftOfRunner(r))).toEqual(r);
     expect(draftOfRunner(r)).toMatchObject({ commandsMode: 'custom', idleMinutes: 15, maxMinutes: 90, turnsRead: 12, turnsWrite: 40 });
   });
@@ -39,6 +39,17 @@ describe('the runner draft', () => {
     expect(runnerOfWeb({ ...base(), procedures: false }, neutralConfig().runner).procedures).toBe(true);
     expect(runnerOfWeb({ ...base(), procedures: true }, { ...old, procedures: false }).procedures).toBe(false);
     expect(runnerOfWeb({ ...base(), procedures: true }, old).procedures).toBeUndefined();
+  });
+
+  it('carries the flex switch from the computer, reads a config stored without it as on, and keeps the stored one from a paired browser', () => {
+    expect(base().flex).toBe(true);
+    expect(runnerOf({ ...base(), flex: false }).flex).toBe(false);
+    const { flex: _gone, ...old } = neutralConfig().runner;
+    expect(draftOfRunner(old).flex).toBe(true);
+    // a paired browser can neither turn it off nor give a config that never had it one (runner.flex is not a path it may change)
+    expect(runnerOfWeb({ ...base(), flex: false }, neutralConfig().runner).flex).toBe(true);
+    expect(runnerOfWeb({ ...base(), flex: true }, { ...neutralConfig().runner, flex: false }).flex).toBe(false);
+    expect(runnerOfWeb({ ...base(), flex: false }, old).flex).toBeUndefined();
   });
 
   it('no commands list means the repository\'s own scripts, and an empty list means none', () => {

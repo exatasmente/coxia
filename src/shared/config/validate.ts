@@ -9,6 +9,7 @@ import { catalogText } from '../cycles/text';
 import { effectiveCardScope } from '../cardScope';
 import { isVerifyProject } from '../verifyCommands';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../sandboxPaths';
+import { catalogUrlProblem } from './offer';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA, ID } from './schema';
@@ -37,16 +38,6 @@ function duplicates(ids: string[]): string[] {
 const MAX_SCORE_MODELS = 200;
 const ANTHROPIC_HOST = /^https:\/\/api\.anthropic\.com\/?$/;
 
-/** The origin of an http(s) address, or null when it is not one. */
-const originOf = (url: string): string | null => {
-  try {
-    const u = new URL(url);
-    return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin : null;
-  } catch {
-    return null;
-  }
-};
-
 function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
   const at = (field: string) => `llm.providers.${p.id}.${field}`;
   if (p.engine === 'claude-sdk' && p.kind === 'openai-compatible') errors.push({ path: at('engine'), message: 'the Claude Agent SDK cannot serve an openai-compatible provider; use the open engine' });
@@ -59,10 +50,9 @@ function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIs
   const f = p.features;
   if (f?.catalogUrl !== undefined) {
     // The connection test sends the key to this address: it has to be the provider's own origin.
-    const own = originOf(p.baseUrl);
-    const there = originOf(f.catalogUrl);
-    if (there === null) errors.push({ path: at('features.catalogUrl'), message: 'must be an http:// or https:// address' });
-    else if (own === null || there !== own) errors.push({ path: at('features.catalogUrl'), message: 'must have the same origin as the provider\'s baseUrl: the key is never sent anywhere else' });
+    const why = catalogUrlProblem(p.baseUrl, f.catalogUrl);
+    if (why === 'scheme' || f.catalogUrl === '') errors.push({ path: at('features.catalogUrl'), message: 'must be an http:// or https:// address' });
+    else if (why === 'origin') errors.push({ path: at('features.catalogUrl'), message: 'must have the same origin as the provider\'s baseUrl: the key is never sent anywhere else' });
   }
   if (f && p.engine === 'claude-sdk' && (f.serviceTier || f.failFast || f.reasoningEffort)) warnings.push({ path: at('features'), message: 'only the open engine sends these parameters; the Claude Agent SDK ignores them' });
   if (p.kind === 'anthropic' && !p.secretRef) warnings.push({ path: at('secretRef'), message: 'no API key configured for the anthropic provider' });

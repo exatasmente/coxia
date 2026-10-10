@@ -52,6 +52,20 @@ describe('the pool of an agent in the editor', () => {
     expect(html).not.toContain('Test this model');
   });
 
+  it('shows the marks of the agent\'s own model and of its reserves where the provider has the features, and the obsolete warning', () => {
+    const c = world();
+    c.llm.providers.find((p) => p.id === 'local')!.features = { serviceTier: true, reasoningEffort: true };
+    const dev = c.agents.team.find((a) => a.id === 'developer')!;
+    dev.model = { role: null, provider: 'local', model: 'own', offer: { effort: true }, fallbacks: [{ ...ref('model-b'), offer: { flex: true, deprecated: 1790000000, replacedBy: 'model-c' } }] };
+    const html = panel(c, 'developer');
+    expect(html).toContain('local · own: takes the reasoning effort');
+    expect(html).toContain('local · model-b: served in the flex tier');
+    expect(html).toMatch(/obsolete since [^;]+; substitute: model-c/);
+    // without the features on the provider there is nothing to mark
+    c.llm.providers.find((p) => p.id === 'local')!.features = undefined;
+    expect(panel(c, 'developer')).not.toContain('served in the flex tier');
+  });
+
   it('says that an agent on a role\'s model uses the role\'s pool, with how many reserves it has, and offers no editor', () => {
     const html = panel(world(), 'qa');
     expect(html).toContain('Uses the pool of the role');

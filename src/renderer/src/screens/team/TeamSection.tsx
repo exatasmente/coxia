@@ -10,7 +10,7 @@ import { forgetNow, reloadThreads } from '../cycle/forumApi';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { AgentAssist } from './AgentAssist';
-import { applyAgent, agentModelPool, agentModelWith, agentProblems, blankAgent, draftOf, promoteDraft, shellAfterPermission, slugOf, stagesLosingAgent, stagesOfAgent, subagentsOff, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
+import { applyAgent, agentModelOffer, agentModelPool, agentModelWith, agentProblems, blankAgent, draftOf, promoteDraft, shellAfterPermission, slugOf, stagesLosingAgent, stagesOfAgent, subagentsOff, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
 import { editorOf, startAssist, type AssistState } from './assistEdit';
 import { PERMISSION_HINT, POOL_MODE_HINT, POOL_MODE_LABEL, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL, SHELL_HINT, SHELL_LABEL, TRACKER_HINT, TRACKER_LABEL } from './labels';
 import { PoolEditor } from '../../wizard/PoolEditor';
@@ -576,9 +576,10 @@ function OwnPool({ config, draft, set }: { config: WorkspaceConfig; draft: Agent
   return (
     <PoolEditor
       providers={config.llm.providers}
-      primary={{ provider: draft.model.provider, model: draft.model.model }}
+      primary={{ provider: draft.model.provider, model: draft.model.model, ...(draft.model.offer ? { offer: draft.model.offer } : {}) }}
       value={draft.model}
       onChange={(pool) => set({ model: agentModelPool(draft.model, pool) })}
+      onPrimary={(next) => set({ model: agentModelOffer(draft.model, next.offer) })}
       overrides={config.llm.scoreOverrides}
     />
   );

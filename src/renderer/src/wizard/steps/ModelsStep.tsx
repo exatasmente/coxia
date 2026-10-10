@@ -24,8 +24,9 @@ import {
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import type { StepProps } from '../SetupWizard';
-import { PoolEditor } from '../PoolEditor';
-import { applyCatalogOffer, poolListCount, withModelFacts, withProbed, withRolePool, withoutLead } from '../poolEdit';
+import { PoolEditor, obsoleteText } from '../PoolEditor';
+import { EffortFields, ObsoleteList, ProviderFeaturesBox } from '../ProviderFeatures';
+import { applyCatalogOffer, obsoleteIn, withRoleOffer, poolListCount, withModelFacts, withProbed, withRolePool, withoutLead } from '../poolEdit';
 import { SuggestedPool } from '../SuggestedPool';
 import { Chip, ExternalLink, Field, Notice, SecretFields, secretProblemKey } from '../ui';
 import { wizardApi } from '../wizardApi';
@@ -327,8 +328,10 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
                   </div>
                 )}
                 {state && <TestResultView p={p} state={state} />}
+                {p.engine === 'open' && <ProviderFeaturesBox provider={p} cfg={cfg} setCfg={setCfg} />}
                 {state && !state.running && state.result.ok && state.result.engine === 'open' && (
                   <>
+                    <ObsoleteList items={obsoleteIn(cfg, p.id)} text={(o) => obsoleteText(t, { deprecated: o.at, ...(o.replacedBy ? { replacedBy: o.replacedBy } : {}) }) ?? ''} />
                     <SuggestedPool provider={p} catalog={catalogs[p.id] ?? state.result.catalog} cfg={cfg} setCfg={setCfg} onTest={(ref) => void testModel(ref, 'panel')} testing={testing} />
                     {modelTestView('panel', p.id)}
                   </>
@@ -453,13 +456,15 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
               </div>
               {rec && rec !== rm.model && <button type="button" className="btn wz-linkbtn" onClick={() => setRole(role, { model: rec })}>{t('wizard.models.useRecommended', { model: rec })}</button>}
               {roleWarnings(role).map((k) => <Notice key={k} tone="warn">{t(k)}</Notice>)}
+              {obsoleteText(t, rm.offer) && <Notice tone="warn">{t('wizard.obsolete.title')} {obsoleteText(t, rm.offer)}</Notice>}
               <details className="wz-details" open={poolListCount(rm) > 0 || undefined}>
                 <summary>{t('wizard.pool.summary', { count: poolListCount(rm) })}</summary>
                 <PoolEditor
                   providers={providers}
-                  primary={{ provider: rm.provider, model: rm.model, ...(rm.contextWindow !== undefined ? { contextWindow: rm.contextWindow } : {}) }}
+                  primary={{ provider: rm.provider, model: rm.model, ...(rm.contextWindow !== undefined ? { contextWindow: rm.contextWindow } : {}), ...(rm.offer ? { offer: rm.offer } : {}) }}
                   value={rm}
                   onChange={(pool) => setCfg((c) => withRolePool(c, role, pool))}
+                  onPrimary={(next) => setCfg((c) => withRoleOffer(c, role, next.offer))}
                   catalogs={catalogs}
                   overrides={cfg.llm.scoreOverrides}
                   onTest={(ref) => void testModel(ref, 'roles')}
@@ -487,6 +492,8 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
           );
         })}
       </fieldset>
+
+      <EffortFields cfg={cfg} setCfg={setCfg} />
     </div>
   );
 }

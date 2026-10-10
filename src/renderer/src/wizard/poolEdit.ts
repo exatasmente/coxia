@@ -1,5 +1,6 @@
 import { poolFieldsOf } from '../../../shared/config/pool';
-import { ACTIVITIES, LLM_ROLES, MAX_POOL_ENTRIES, type Activity, type LlmRole, type ModelPool, type ModelRef, type ScoredActivity, type ScoreOverrides, type WorkspaceConfig } from '../../../shared/config/types';
+import { presetFeaturesOf } from '../../../shared/wizard';
+import { ACTIVITIES, DEFAULT_EFFORT, LLM_ROLES, MAX_POOL_ENTRIES, type Activity, type EffortSetting, type LlmRole, type ModelOffer, type ModelPool, type ModelRef, type ProviderFeatures, type ScoredActivity, type ScoreOverrides, type WorkspaceConfig } from '../../../shared/config/types';
 import { type CatalogModel, type Retirement, estimateStageCost, offerOf } from '../../../shared/modelCatalog';
 import { type PoolSuggestion } from '../../../shared/modelPools';
 import { type FoundScore, normalizeModelId, scoreFor } from '../../../shared/modelScores';
@@ -211,3 +212,87 @@ export function withOverrides(cfg: WorkspaceConfig, overrides: ScoreOverrides | 
 
 /** How many lists a pool holds (the reserves, and each activity with a list of its own), for the summary of a folded editor. */
 export const poolListCount = (pool: ModelPool): number => POOL_LIST_KEYS.filter((k) => listOf(pool, k).length > 0).length;
+
+// ---- what the provider offers: the features of a provider, the effort per activity, the marks of an entry --------------------------------------
+
+/** The provider's features with one changed; a switch off leaves the field, and no feature at all leaves `features` out (absent = nothing is sent). */
+export function withFeatures(cfg: WorkspaceConfig, providerId: string, patch: Partial<ProviderFeatures>): WorkspaceConfig {
+  return {
+    ...cfg,
+    llm: {
+      ...cfg.llm,
+      providers: cfg.llm.providers.map((p) => {
+        if (p.id !== providerId) return p;
+        const merged: ProviderFeatures = { ...(p.features ?? {}), ...patch };
+        const kept: ProviderFeatures = {
+          ...(merged.serviceTier ? { serviceTier: true } : {}),
+          ...(merged.failFast ? { failFast: true } : {}),
+          ...(merged.reasoningEffort ? { reasoningEffort: true } : {}),
+          ...(merged.catalogUrl?.trim() ? { catalogUrl: merged.catalogUrl.trim() } : {}),
+        };
+        const { features: _old, ...rest } = p;
+        return Object.keys(kept).length ? { ...rest, features: kept } : rest;
+      }),
+    },
+  };
+}
+
+/** The provider's features replaced by the ones of its preset, which the person asked for with the button. Nothing else uses it. */
+export function withPresetFeatures(cfg: WorkspaceConfig, providerId: string): WorkspaceConfig {
+  const p = cfg.llm.providers.find((x) => x.id === providerId);
+  const preset = p ? presetFeaturesOf(p.baseUrl) : null;
+  if (!p || !preset) return cfg;
+  return withFeatures({ ...cfg, llm: { ...cfg.llm, providers: cfg.llm.providers.map((x) => (x.id === providerId ? { ...x, features: undefined } : x)) } }, providerId, preset);
+}
+
+/** What the screen shows for an activity: the workspace's choice, else the proposal, else "the model's own". */
+export const effortSetting = (cfg: WorkspaceConfig, activity: Activity): EffortSetting => cfg.llm.effort?.[activity] ?? DEFAULT_EFFORT[activity] ?? 'default';
+
+/** The effort of an activity set by the person; the proposal leaves nothing in the file (absent = the proposal). */
+export function withEffort(cfg: WorkspaceConfig, activity: Activity, value: EffortSetting): WorkspaceConfig {
+  const effort = { ...(cfg.llm.effort ?? {}) };
+  if (value === (DEFAULT_EFFORT[activity] ?? 'default')) delete effort[activity];
+  else effort[activity] = value;
+  const { effort: _old, ...llm } = cfg.llm;
+  return { ...cfg, llm: { ...llm, ...(Object.keys(effort).length ? { effort } : {}) } };
+}
+
+/** One mark of an entry set by hand (the catalog's word is corrected on the row); a mark off leaves the field, and no mark leaves `offer` out. */
+export function withMark<R extends { offer?: ModelOffer }>(entry: R, mark: 'flex' | 'effort', on: boolean): R {
+  const offer: ModelOffer = { ...(entry.offer ?? {}) };
+  if (on) offer[mark] = true;
+  else delete offer[mark];
+  const { offer: _old, ...rest } = entry;
+  return (Object.keys(offer).length ? { ...rest, offer } : rest) as R;
+}
+
+export interface Obsolete {
+  /** `provider · model`, as the row shows it. */
+  where: string;
+  model: string;
+  at: number;
+  replacedBy: string | null;
+}
+
+/** The models of a provider that the draft uses and the catalog marks obsolete: the role models, their reserves and lists, and the agents with a model of their own. */
+export function obsoleteIn(cfg: WorkspaceConfig, providerId: string): Obsolete[] {
+  const seen = new Map<string, Obsolete>();
+  const note = (r: Pick<ModelRef, 'provider' | 'model' | 'offer'>) => {
+    if (r.provider !== providerId || r.offer?.deprecated === undefined || seen.has(r.model)) return;
+    seen.set(r.model, { where: `${r.provider} · ${r.model}`, model: r.model, at: r.offer.deprecated, replacedBy: r.offer.replacedBy ?? null });
+  };
+  const walk = (m: ModelPool & Pick<ModelRef, 'provider' | 'model' | 'offer'>) => {
+    note(m);
+    (m.fallbacks ?? []).forEach(note);
+    Object.values(m.activities ?? {}).forEach((l) => (l ?? []).forEach(note));
+  };
+  for (const role of LLM_ROLES) walk(cfg.llm.roles[role]);
+  for (const a of cfg.agents.team) if (a.model.role === null) walk(a.model);
+  return [...seen.values()];
+}
+
+/** The marks of a role's own model set by hand; the pool of the role stays. */
+export function withRoleOffer(cfg: WorkspaceConfig, role: LlmRole, offer: ModelOffer | undefined): WorkspaceConfig {
+  const { offer: _old, ...rm } = cfg.llm.roles[role];
+  return { ...cfg, llm: { ...cfg.llm, roles: { ...cfg.llm.roles, [role]: { ...rm, ...(offer ? { offer } : {}) } } } };
+}

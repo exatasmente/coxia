@@ -37,3 +37,24 @@ export function deprecationOf(offer: ModelOffer | undefined, nowMs: number = Dat
   if (offer?.deprecated === undefined) return null;
   return { at: offer.deprecated, past: offer.deprecated * 1000 <= nowMs, ...(offer.replacedBy ? { replacedBy: offer.replacedBy } : {}) };
 }
+
+/** The origin of an http(s) address, or null when it is not one. */
+const originOf = (url: string): string | null => {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * What is wrong with the address of a provider's richer listing: the test sends the provider's key to it, so it has to be an http(s) address of the provider's own origin.
+ * Null when it is fine (or empty: no listing).
+ */
+export function catalogUrlProblem(baseUrl: string, catalogUrl: string | undefined): 'scheme' | 'origin' | null {
+  if (catalogUrl === undefined || catalogUrl === '') return null;
+  const there = originOf(catalogUrl);
+  if (there === null) return 'scheme';
+  return there === originOf(baseUrl) ? null : 'origin';
+}
