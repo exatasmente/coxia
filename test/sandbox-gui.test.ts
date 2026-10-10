@@ -2,7 +2,7 @@
 // virtual display started by the supervisor inside the sandbox, the agent looks at a screenshot only through ViewImage, which reads the stage's output folder alone,
 // and what is missing is said in Settings, in the thread and in the prompt. Nothing changes for a workspace that sets neither. No test needs a real browser.
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,6 +18,7 @@ import { readOutputImage } from '../src/main/sandbox/session';
 import { offersViewImage } from '../src/main/sandbox/tool';
 import { probeSandbox } from '../src/main/sandbox/probe';
 import { redact } from '../src/main/errorlog-core';
+import { connectX11 } from '../src/main/screen/x11';
 import { type Boot, boot, doc, fakeSandbox, keepQaEvidence, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
@@ -60,6 +61,17 @@ describe('the environment and the supervisor', () => {
     expect(SUPERVISOR_SH).toContain('"$COXIA_XVFB" :99 -screen 0 1280x800x24 -nolisten tcp');
     expect(SUPERVISOR_SH).toMatch(/prlimit --data="\$COXIA_DATA" --nproc="\$COXIA_PROCS" --fsize="\$COXIA_FSIZE" --core=0 -- "\$COXIA_XVFB"/);
     expect(SUPERVISOR_SH).toContain('unset DISPLAY; echo ready-nodisplay');
+  });
+
+  it('keeps the socket of the display where the app can dial it: a folder of the stage folder over /tmp/.X11-unix, with no TCP and no file for the framebuffer', () => {
+    const args = bwrapArgs(spec({ gui: { browsers: null, xvfb: '/usr/bin/Xvfb' } }));
+    const at = args.findIndex((a, i) => a === '--bind' && args[i + 2] === '/tmp/.X11-unix');
+    expect(args[at + 1]).toBe('/s/x11');
+    expect(args).toContain('--unshare-net');
+    expect(SUPERVISOR_SH).toContain('-nolisten tcp');
+    expect(SUPERVISOR_SH).not.toContain('-fbdir');
+    // Without a display program, nothing is bound for it.
+    expect(bwrapArgs(spec({ gui: { browsers: '/b/ms-playwright', xvfb: null } })).join(' ')).not.toContain('.X11-unix');
   });
 });
 
@@ -172,10 +184,19 @@ describe('the status of a sandbox for testing an interface', () => {
     mkdirSync(browsers, { recursive: true });
     const service = createSandboxService({ dir: join(root, 'sandbox'), home, protect: [join(root, 'data')] });
     const config = (over: Partial<ReturnType<typeof neutralSandbox>>) => ({ ...neutralSandbox(), ...over });
-    expect(service.guiStatus(config({}))).toEqual({ browsers: 'unset', display: 'off' });
+    expect(service.guiStatus(config({}))).toEqual({ browsers: 'unset', display: 'off', chromium: 'unset' });
     expect(service.guiStatus(config({ browsersPath: '~/.cache/ms-playwright' })).browsers).toBe('empty');
     mkdirSync(join(browsers, 'chromium-1234'));
     expect(service.guiStatus(config({ browsersPath: '~/.cache/ms-playwright' })).browsers).toBe('ready');
+    // A build folder with nothing to run, or only a headless shell, offers no browser for a display; a full Chromium with its executable does.
+    expect(service.guiStatus(config({ browsersPath: '~/.cache/ms-playwright' })).chromium).toBe('none');
+    mkdirSync(join(browsers, 'chromium_headless_shell-1234', 'chrome-linux'), { recursive: true });
+    writeFileSync(join(browsers, 'chromium_headless_shell-1234', 'chrome-linux', 'headless_shell'), '#!/bin/sh\n', { mode: 0o755 });
+    expect(service.guiStatus(config({ browsersPath: '~/.cache/ms-playwright' })).chromium).toBe('none');
+    mkdirSync(join(browsers, 'chromium-1234', 'chrome-linux64'), { recursive: true });
+    writeFileSync(join(browsers, 'chromium-1234', 'chrome-linux64', 'chrome'), '#!/bin/sh\n', { mode: 0o755 });
+    expect(service.guiStatus(config({ browsersPath: '~/.cache/ms-playwright' })).chromium).toBe('ready');
+    expect(service.guiStatus(config({ browsersPath: '~/gone' })).chromium).toBe('none');
     expect(service.guiStatus(config({ browsersPath: '~/gone' })).browsers).toBe('missing');
     expect(service.guiStatus(config({ browsersPath: '~/' + '.ssh' })).browsers).toMatch(/missing|refused/);
     expect(['ready', 'missing']).toContain(service.guiStatus(config({ display: true })).display);
@@ -236,6 +257,35 @@ describe('a QA stage', () => {
     expect(qa.system).toContain('PLAYWRIGHT_BROWSERS_PATH is set to /b/ms-playwright');
     expect(qa.system).toContain('virtual display the person switched on is not available');
     expect(b.thread(run).some((m) => m.code === 'runner.sandbox.noDisplay')).toBe(true);
+    // No display to draw on: the headed-browser text would send the agent after a screen that is not there.
+    expect(qa.system).not.toContain('Run the browser headed');
+  });
+
+  it.each([
+    ['en', 'Run the browser headed', 'headless: false'],
+    ['pt-BR', 'Rode o navegador com janela', 'headless: false'],
+  ] as const)('tells the agent to run its browser headed when the display is on, in %s', async (language, headed, option) => {
+    const sandbox = fakeSandbox({ gui: { browsers: '/b/ms-playwright', display: 'on' } });
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'qa', 'sandbox'); c.language = language; } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    expect(run.status).toBe('done');
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.system).toContain(headed);
+    expect(qa.system).toContain(option);
+    expect(qa.system).not.toMatch(/\{\w+\}/);
+  });
+
+  it.each(['missing', 'failed'] as const)('does not mention a headed browser when the display is %s', async (display) => {
+    const sandbox = fakeSandbox({ gui: { browsers: '/b/ms-playwright', display } });
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'qa', 'sandbox'); c.language = 'en'; } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.system).toContain('virtual display the person switched on is not available');
+    expect(qa.system).not.toContain('headed');
   });
 });
 
@@ -280,13 +330,30 @@ maybeDisplay('a real sandbox with a virtual display', () => {
       const r = await asked.exec('echo "display=$DISPLAY"; ls /tmp/.X11-unix');
       expect(r.output).toContain(`display=${DISPLAY}`);
       expect(r.output).toContain('X99');
+      // The socket is in the folder of the stage folder that is bound over /tmp/.X11-unix: the app dials it from here, with the sandbox's network still unshared.
+      expect(asked.screen).toEqual({ socket: join(asked.stageDir as string, 'x11', 'X99'), kind: 'sandbox' });
+      expect(existsSync((asked.screen as { socket: string }).socket)).toBe(true);
+      const x = await connectX11((asked.screen as { socket: string }).socket);
+      try {
+        expect(x.size).toEqual({ width: 1280, height: 800 });
+        const frame = await x.grab();
+        expect([frame?.width, frame?.height, frame?.data.length]).toEqual([1280, 800, 1280 * 800 * 4]);
+        expect(x.canInput).toBe(true);
+      } finally {
+        x.close();
+      }
+      // Only the sandbox's own loopback: dialling the socket from outside did not give it a network.
+      expect((await asked.exec("grep -c ':' /proc/net/dev")).output.trim()).toBe('1');
     } finally {
       await asked.close();
     }
+    expect(existsSync(asked.stageDir as string)).toBe(false);
     // A sandbox that did not ask (a mention call, a stage of another kind) starts nothing, even with the switch on.
     const other = await service.open({ worktree: wt, reader: false, config });
     try {
       expect(other.gui).toBeUndefined();
+      expect(other.screen).toBeUndefined();
+      expect(existsSync(join(other.stageDir as string, 'x11'))).toBe(false);
       expect((await other.exec('echo "display=$DISPLAY"')).output).toMatch(/display=\s*$/);
     } finally {
       await other.close();

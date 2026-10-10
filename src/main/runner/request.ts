@@ -23,6 +23,10 @@ export interface RequestInput {
   thread: ForumMessage[];
   /** Where the holder reads: the repository of its squad. */
   cwd: string;
+  /** The shared memory, as in a stage's input: a string means the call has a read-only session, and the string is the list its prompt carries. Absent: the memory is off. */
+  index?: string;
+  /** The activity the request is made from, whole, for a call that has the memory (the other activities are lines of the index). */
+  shared?: string;
 }
 
 export const REQUEST_VERDICTS = ['answer', 'decline', 'issue', 'needs-person'] as const;
@@ -44,6 +48,7 @@ export function requestCall(i: RequestInput): AgentCall {
     cp('runner.request.system', { agent: cycleWord(i.holder.name), job: cycleWord(i.holder.job), squad: cycleWord(i.to.name), mission: i.to.mission.trim() ? cycleWord(i.to.mission) : '—', asker: i.asker, from: cycleWord(i.from.name) }),
     cp('runner.rules.data'),
     cp('runner.rules.claims'),
+    i.index !== undefined ? cp('runner.rules.sharedMemory') : '',
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.holder.instructions).trim(),
@@ -53,7 +58,14 @@ export function requestCall(i: RequestInput): AgentCall {
   const thread = threadText(i.thread.slice(-20));
   return {
     agent: { ...i.holder, permission: 'read' },
-    prompt: cp('runner.request.main', { kind: cp(`runner.request.kind.${i.kind}`), request: fence(i.text), ref: i.run.issue.ref, title: i.run.issue.title, thread: thread ? cp('runner.section.thread', { text: fence(thread) }) : '' }),
+    // The sections the request is read with: the activity it is made from, the memory's index and the squads channel's recent thread.
+    prompt: cp('runner.request.main', {
+      kind: cp(`runner.request.kind.${i.kind}`),
+      request: fence(i.text),
+      ref: i.run.issue.ref,
+      title: i.run.issue.title,
+      thread: [i.shared ? cp('runner.section.sharedOne', { text: fence(i.shared) }) : '', i.index ? cp('runner.section.sharedIndex', { text: fence(i.index) }) : '', thread ? cp('runner.section.thread', { text: fence(thread) }) : ''].filter(Boolean).join('\n\n'),
+    }),
     schema: {
       type: 'object',
       properties: { verdict: { enum: [...REQUEST_VERDICTS] }, text: { type: 'string' }, reason: { type: 'string' }, title: { type: 'string' } },
@@ -65,6 +77,7 @@ export function requestCall(i: RequestInput): AgentCall {
     label: i.holder.id,
     maxTurns: i.config.runner.turns.read,
     wrapUp: true,
+    background: true,
   };
 }
 

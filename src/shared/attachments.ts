@@ -2,7 +2,9 @@
 // (main/attachments.ts); this module is the wire shape and the pure content recognizer, shared by the main process, the renderer and the tests.
 // The kind is decided by the content, never by the name the person gave the file: a name is data, shown to the person and never a path.
 
-export const ATTACHMENT_KINDS = ['image', 'text', 'pdf', 'json', 'csv'] as const;
+// `video` is the app's own: the recording of an agent's screen in a conversation. It is never recognised from a person's file (`detectAttachmentKind` knows no video, so a WebM a
+// person attaches is refused as before) and it is stored only through the app's own door (`putVideo` of main/attachments.ts).
+export const ATTACHMENT_KINDS = ['image', 'text', 'pdf', 'json', 'csv', 'video'] as const;
 export type AttachmentKind = (typeof ATTACHMENT_KINDS)[number];
 
 /** One file of a message: an id inside its conversation, the name the person gave it, the kind the content revealed and its size. */
@@ -11,6 +13,8 @@ export interface AttachmentRef {
   name: string;
   kind: AttachmentKind;
   bytes: number;
+  /** The retention sweep took the file away: the message keeps the ref, to say so, and nothing opens it. */
+  removed?: true;
 }
 
 /** The limits of a workspace; a fresh install gets these, and the workspace may change them (config `attachments`). */
@@ -57,7 +61,7 @@ const IMAGE_EXT: Record<string, string> = { image: '.img' };
 
 /** The extension of the file on disk, from the kind the content revealed: the name the person gave it never reaches the path. */
 export const attachmentExt = (kind: AttachmentKind): string =>
-  kind === 'image' ? '.img' : kind === 'pdf' ? '.pdf' : kind === 'json' ? '.json' : kind === 'csv' ? '.csv' : '.txt';
+  kind === 'image' ? '.img' : kind === 'pdf' ? '.pdf' : kind === 'json' ? '.json' : kind === 'csv' ? '.csv' : kind === 'video' ? '.webm' : '.txt';
 
 /** The catalog key of the kind's label. */
 export const kindLabelKey = (kind: AttachmentKind): string => `main.attachment.kind.${kind}`;

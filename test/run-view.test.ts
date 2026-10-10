@@ -66,6 +66,14 @@ describe('what the person can do about a run, by state', () => {
     expect(ids({ status: 'question', question: { by: 'support', kind: 'squad', text: '', askedAt: '', stage: 'triage' } })).toEqual(['chooseSquad', 'cancel']);
   });
 
+  it('offers only the base choice for a pull request that has to be opened again, and no text box', () => {
+    const question = { by: 'app', kind: 'pr-retry', text: 'The base is gone.', askedAt: '', stage: 'review', bases: ['release/0.8.0', 'main'], targetBranch: 'release/0.8.0' };
+    const actions = runActions({ status: 'question', question } as Pick<Run, 'status' | 'question'>);
+    expect(actions.map((a) => [a.id, a.input])).toEqual([['retryPr', 'none'], ['sendBack', 'optional'], ['cancel', 'none']]);
+    // nothing is required of the person in words: no action asks for a text
+    expect(actions.some((a) => a.id !== 'sendBack' && a.input !== 'none')).toBe(false);
+  });
+
   it('offers a retry for a failed stage and a way out of a wait', () => {
     const d = until('plan');
     d.do((r, when) => stageFailed(r, 'boom', when));

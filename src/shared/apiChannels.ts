@@ -27,6 +27,7 @@ export const API_CHANNELS = {
   detectRelease: 'actions:detect',
   previewAction: 'actions:preview',
   approveAction: 'actions:approve',
+  freeReleaseCheckout: 'actions:freeBranch',
   skipAction: 'actions:skip',
   conflictAsk: 'actions:conflict',
   conflictFromMr: 'conflict:fromMr',

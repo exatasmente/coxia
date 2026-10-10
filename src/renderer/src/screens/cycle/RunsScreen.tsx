@@ -7,7 +7,7 @@ import { intlLocale, useT } from '../../i18n';
 import { BackIcon } from '../icons';
 import { RunBadge } from './RunBadge';
 import { agentName, squadName } from './names';
-import { patchRun, runsApi, useRunConfig, useRuns } from './runsApi';
+import { type ActivityFrontView, patchRun, runsApi, useRunConfig, useRuns } from './runsApi';
 import './cycle.css';
 
 const FILTER_KEY: Record<RunFilter, string> = {
@@ -138,6 +138,64 @@ function UnassignedList({ go }: { go: (s: Screen) => void }) {
   );
 }
 
+/** One activity of the shared record: reference, title, stage, agent and where it stopped. The person corrects it here, without a model call. */
+function ActivityRow({ front }: { front: ActivityFrontView }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState((front.correction.length ? front.correction : front.decisions).join('\n'));
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    setBusy(true);
+    try {
+      const saved = await runsApi.saveActivity(front.ref, text);
+      if (saved) setText((saved.correction.length ? saved.correction : saved.decisions).join('\n'));
+      setOpen(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <li>
+      <button type="button" className="cy-run-row" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <span className="cy-run-main">
+          <span className="cy-run-title"><span className="mono">{front.ref}</span> {front.title}</span>
+          <span className="faint small">
+            {[front.stage?.label ?? t('ui.runs.activities.noStage'), front.agent ?? front.lastAgent, front.bare ? t('ui.runs.activities.bare') : null].filter(Boolean).join(' · ')}
+          </span>
+          {front.stoppedAt && <span className="small cy-run-note">{front.stoppedAt.text}</span>}
+        </span>
+      </button>
+      {open && (
+        <div className="cy-activity-sheet">
+          <p className="small muted">{t('ui.runs.activities.edit')}</p>
+          <textarea className="text-input cy-memory-edit" rows={6} value={text} onChange={(e) => setText(e.target.value)} />
+          <div className="row">
+            <button type="button" className="btn" disabled={busy} onClick={() => void save()}>{t('ui.runs.activities.save')}</button>
+            <button type="button" className="btn" disabled={busy} onClick={() => setOpen(false)}>{t('ui.runs.activities.cancel')}</button>
+          </div>
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** The shared record of the activities, below the filters: read and corrected without a model call. */
+function ActivitiesSection() {
+  const t = useT();
+  const [fronts, setFronts] = useState<ActivityFrontView[] | null>(null);
+  useEffect(() => {
+    void runsApi.activities().then(setFronts, () => setFronts([]));
+  }, []);
+  if (!fronts || !fronts.length) return null;
+  return (
+    <section className="panel cy-activities">
+      <h2 className="cy-release-title">{t('ui.runs.activities.title')}</h2>
+      <p className="small muted">{t('ui.runs.activities.lead')}</p>
+      <ul className="cy-run-list">{fronts.map((f) => <ActivityRow key={f.ref} front={f} />)}</ul>
+    </section>
+  );
+}
+
 /** Every run of the workspace, filtered by what it waits for and by squad: what waits for the person first. */
 export function RunsScreen({ go }: { go: (s: Screen) => void }) {
   const t = useT();
@@ -181,6 +239,7 @@ export function RunsScreen({ go }: { go: (s: Screen) => void }) {
         {!runs && <span className="spinner" aria-label={t('ui.runs.loading')} />}
         {runs && !shown.length && <p className="dash-calm">{t(runs.length ? 'ui.runs.emptyFilter' : 'ui.runs.empty')}</p>}
         <ul className="cy-run-list">{shown.map((r) => <Row key={r.id} run={r} go={go} />)}</ul>
+        <ActivitiesSection />
       </div>
     </div>
   );

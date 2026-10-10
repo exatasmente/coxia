@@ -23,6 +23,9 @@ import { BoardScreen } from './screens/cycle/BoardScreen';
 import { ForumScreen } from './screens/cycle/ForumScreen';
 import { RunScreen } from './screens/cycle/RunScreen';
 import { RunsScreen } from './screens/cycle/RunsScreen';
+import { MemoryScreen } from './screens/memory/MemoryScreen';
+import { ProceduresScreen } from './screens/procedures/ProceduresScreen';
+import { PromptsScreen, usePromptsShortcut } from './screens/prompts/PromptsScreen';
 import { QaHandoff } from './screens/QaHandoff';
 import { QuickActions } from './screens/QuickActions';
 import { Reentry } from './screens/Reentry';
@@ -68,6 +71,9 @@ export type Screen =
   | { name: 'runs' }
   | { name: 'board' }
   | { name: 'forum'; thread?: string }
+  | { name: 'procedures' }
+  | { name: 'memory' }
+  | { name: 'prompts' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -104,6 +110,7 @@ export function App() {
   }, [away]);
 
   useHelpShortcut(screen.name, go);
+  usePromptsShortcut(screen.name, go);
 
   useEffect(() => {
     startCycle();
@@ -121,7 +128,11 @@ export function App() {
     () =>
       api.onEvent((ev) => {
         if (ev.type === 'status') mergeStatus(ev.result, ev.checkedAt);
-        else if (ev.type === 'actions') setActions(ev.actions);
+        else if (ev.type === 'actions') {
+          setActions(ev.actions);
+          // The board follows what became of its proposals (approved, skipped, failed) without asking Actions itself.
+          moduleEvents.dispatchEvent(new CustomEvent('actions:changed'));
+        }
         else if (ev.type === 'deep') go({ name: 'deep', ref: ev.card.ref, back: 'today', card: ev.card });
         else if (ev.type === 'conflict') go({ name: 'conflict', id: ev.id });
         else if (ev.type === 'open') go(ev.screen as unknown as Screen);
@@ -204,6 +215,12 @@ export function App() {
       return <RunsScreen go={go} />;
     case 'board':
       return <BoardScreen go={go} />;
+    case 'procedures':
+      return <ProceduresScreen go={go} />;
+    case 'memory':
+      return <MemoryScreen go={go} />;
+    case 'prompts':
+      return <PromptsScreen go={go} />;
     case 'run':
       return <RunScreen id={screen.id} go={go} ceremony={ceremony} actions={actions} tab={screen.tab} back={screen.from === 'runs' ? { name: 'runs' } : undefined} />;
     case 'auditoria':

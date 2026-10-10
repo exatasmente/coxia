@@ -128,11 +128,15 @@ describe('the prompt catalogs', () => {
     const direct = new Set(['rules.speech', 'rules.speechExamples', 'rules.chat', 'options.rule']);
     // The effect check kinds are read by a computed id (efeitos.ts: `effects.kind.${kind}`), and so is the squad request of a front door (`runner.output.squad.${why}`).
     const computed = /^(effects\.kind|runner\.denied|runner\.output\.squad|runner\.request\.kind)\./;
+    // The rules of a stage's evidence are picked at the call between the text of a sandbox and the one of a stage that runs on this computer
+    // (`runner.rules.evidence` / `runner.rules.evidence.host`): the id is written there, but never as the plain argument of one call.
+    const picked = new Set(['runner.rules.evidence']);
     // A ".novoice" text is the same prompt worded for a conversation without voice: it is read through its base id.
-    // A host or cycle variant (".on-github", ".off-sdd") is read through its base id, which must exist.
-    const variant = /\.(on-(github|gitlab|bitbucket)|off-sdd|own-(ceremony|target|retro))$/;
+    // A host or cycle variant (".on-github", ".off-sdd") is read through its base id, which must exist. A text the code picks between two variants of the same
+    // base (".host": the stage runs its commands on the computer and names a real folder) is read the same way: the base id it falls back to must exist.
+    const variant = /\.(on-(github|gitlab|bitbucket)|off-sdd|own-(ceremony|target|retro)|host)$/;
     for (const id of fam[BASE_FAMILY].filter((x) => variant.test(x))) expect(fam[BASE_FAMILY], id).toContain(id.replace(variant, ''));
-    const unused = fam[BASE_FAMILY].filter((id) => !id.endsWith('.novoice') && !variant.test(id) && !used.has(id) && !direct.has(id) && !computed.test(id));
+    const unused = fam[BASE_FAMILY].filter((id) => !id.endsWith('.novoice') && !variant.test(id) && !used.has(id) && !direct.has(id) && !computed.test(id) && !picked.has(id));
     for (const id of fam[BASE_FAMILY].filter((x) => x.endsWith('.novoice'))) expect(fam[BASE_FAMILY], id).toContain(id.replace(/\.novoice$/, ''));
     expect(unused).toEqual([]);
   });

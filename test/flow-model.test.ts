@@ -5,7 +5,7 @@ import { migrateConfig } from '../src/shared/config/migrations';
 import { engineeringTeam } from '../src/shared/cycles';
 import { AGENT_FLOW_STAGES, ENGINEERING_FLOW_STAGES } from '../src/shared/cycles/templates/agentFlow';
 import { applyTemplate, parseTemplate } from '../src/shared/cycles';
-import type { StageDef, WorkspaceConfig } from '../src/shared/config/types';
+import { CONFIG_SCHEMA_VERSION, type StageDef, type WorkspaceConfig } from '../src/shared/config/types';
 import { checkFlow, flowHash, flowOf, flowOfRun, isFlowCycle, snapshotOf, startRun } from '../src/shared/runs';
 import { agentFlowConfig, agentFlowStages, startInput, AT } from './helpers/runs';
 
@@ -40,7 +40,7 @@ describe('migrating the stages of an agent cycle to a flow (schema 8)', () => {
   it('turns what the runner did by itself into fields, so a run behaves as it did', () => {
     const r = migrateConfig(v7Doc(customized()), { legacyInstall: false });
     expect(r.fromVersion).toBe(7);
-    expect(r.config.schemaVersion).toBe(18);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(validateConfig(r.config).ok).toBe(true);
     // the same stages the engineering cycle template has now: gates are typed, the review and QA return to the developer's stage after two rounds
     // (the labels a stored file has are literals and stay as they were written: only the template's own are catalog keys)

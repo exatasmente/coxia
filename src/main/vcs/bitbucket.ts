@@ -486,6 +486,8 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
           return [call('DELETE', `${repo(op.project)}/${op.target === 'issue' ? 'issues' : 'pullrequests'}/${checkIid(op.iid)}/comments/${checkIid(Number(op.noteId))}`)];
         case 'closeIssue':
           return [call('PUT', `${repo(op.project)}/issues/${checkIid(op.iid)}`, { state: 'closed' })];
+        case 'reopenIssue':
+          return [call('PUT', `${repo(op.project)}/issues/${checkIid(op.iid)}`, { state: 'open' })];
         case 'createIssue':
           // Bitbucket's issues have no labels: the squad's label is left out (the request is linked in the run and in the description).
           return [call('POST', `${repo(op.project)}/issues`, { title: checkTitle(op.title), content: { raw: op.body } })];
@@ -515,8 +517,6 @@ export function createBitbucketProvider(o: BitbucketOptions): VcsProvider {
     },
 
     validateCommand: validateBitbucketCommand,
-    // Bitbucket's upload carries the same Basic credential the client already sends on every call.
-    uploadToken: async () => null,
   };
   return provider;
 }

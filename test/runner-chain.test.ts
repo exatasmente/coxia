@@ -46,6 +46,18 @@ const trail = (b: Boot, run: Run): [string, string, string | null, boolean][] =>
     .map((m) => [m.kind, m.author.type === 'agent' ? m.author.id : m.author.type, m.to, m.public]);
 const asked = (text: string) => () => work('Stuck.', { question: text });
 
+/** Waits until the run is where the test needs it, approving gates along the way. A timeout fails the test instead of letting a slow machine skip the wait. */
+async function until(b: Boot, run: Run, match: (r: Run) => boolean, ms = 10_000): Promise<Run> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const now = b.runner.get(run.id)!;
+    if (match(now)) return now;
+    if (now.status === 'gate') b.runner.gate(run.id, 'approve');
+    if (Date.now() > end) throw new Error(`the run never reached the state the test waits for (status ${now.status})`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
 describe('a question between agents', () => {
   it('goes to the tech lead, who answers it from what it has: the developer goes on with the answer and the person is not asked', async () => {
     const b = await build();
@@ -73,6 +85,9 @@ describe('a question between agents', () => {
     // the one who answered read only, whatever its own permission
     const call = b.engine.calls[4];
     expect(call.confine).toBeUndefined();
+    // nobody waits for either call (a stage, and a question between agents): the engine may use the cheaper tier
+    expect(call.background).toBe(true);
+    expect(b.engine.calls[3].background).toBe(true);
     // and its reading stays inside the run's worktree
     expect(call.readRoot?.root).toBe(run.worktree);
     expect(call.readRoot?.hooks).toBeTruthy();
@@ -200,11 +215,9 @@ describe('a question between agents', () => {
       return work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
     }], techLead: [() => late, () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] })] });
     const run = await b.runner.start('app#101');
-    for (let i = 0; i < 80 && b.engine.calls.filter((c) => c.agent.id === 'tech-lead').length < 2; i++) {
-      await new Promise((r) => setTimeout(r, 10));
-      if (b.runner.get(run.id)!.status === 'gate') b.runner.gate(run.id, 'approve');
-    }
-    expect(b.runner.get(run.id)).toMatchObject({ status: 'question', question: { holder: 'tech-lead' } });
+    // the tech-lead is silent while the chain holds the question: what raced a fixed number of waits here is now waited for, with a timeout
+    const held = await until(b, run, (r) => r.status === 'question' && r.question?.holder === 'tech-lead');
+    expect(held.question?.text).toBe('Where?');
     b.runner.answer(run.id, 'Use the helper.');
     release({ verdict: 'answer', text: 'Somewhere else.', reason: '' });
     const end = await through(b, run);

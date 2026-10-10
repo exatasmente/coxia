@@ -16,3 +16,15 @@ export function withDocsSources(current: WorkspaceConfig, lists: Pick<DocsConfig
   const own = Object.fromEntries(DOCS_KEYS.map((k) => [k, [...lists[k]]]));
   return { ...current, docs: { ...current.docs, ...own } };
 }
+
+/**
+ * `current` with only the roadmap pointer replaced; blank clears it (the agents are then told there is no roadmap). Built on the configuration as it is at that moment,
+ * for the same reason as `withDocsSources`.
+ */
+export function withRoadmapFile(current: WorkspaceConfig, value: string): WorkspaceConfig {
+  const file = value.trim();
+  const docs = { ...current.docs };
+  if (file) docs.roadmapFile = file;
+  else delete docs.roadmapFile;
+  return { ...current, docs };
+}

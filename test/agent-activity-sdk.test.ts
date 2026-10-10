@@ -75,6 +75,8 @@ describe('activity from the Claude SDK message loop', () => {
     ]);
     expect(new Set(entries.map((e) => e.runId)).size).toBe(1);
     expect(entries.every((e) => e.role === 'deep' && e.jobId === 'deep:#1:ask')).toBe(true);
+    // a root run: none of the optional fields of a tree appears on its lines
+    expect(entries.every((e) => !('parent' in e) && !('node' in e) && e.kind !== 'thought' && e.kind !== 'answer')).toBe(true);
     expect(pushed).toEqual(entries);
   });
 

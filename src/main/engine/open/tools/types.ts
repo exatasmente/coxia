@@ -1,4 +1,5 @@
 import type { Json } from '../types';
+import type { Activity } from '../../../../shared/config/types';
 import { t } from '../../../../shared/i18n';
 
 export interface ToolContext {
@@ -16,6 +17,10 @@ export interface ToolContext {
   writeReserved?: readonly string[];
   // Exact relative file paths a single-output task may change.
   writeAllow?: readonly string[];
+  // The workspace lifted the fence of its runs: a write outside writeRoot passes the guard (never with a narrow writeRoot).
+  writeAnywhere?: boolean;
+  // Absolute folders the app keeps for itself (the workspace's memory): Write and Edit refuse them even with the fence lifted.
+  writeKeep?: readonly string[];
   outputMax: number;
   env: Record<string, string>;
   // Bash(<prefix>:*) rules from the allowed tools; empty means the hook policy alone decides.
@@ -54,6 +59,16 @@ export interface ToolImpl {
    * final answer: a model that keeps announcing the end with notes would otherwise never end its step.
    */
   note?: boolean;
+  /**
+   * What the next turn is for when this tool's result is what it answers (see `activityOf`): the pool of a role may carry a list of models per activity. A tool
+   * without one (an MCP tool, the evidence, release and attachment tools) leaves the turn to the role's own list.
+   */
+  activity?: Activity;
+  /**
+   * A tool only the principal agent calls: a sub-agent of the session never gets it, whatever its kind. The memory's write tools are these, so a sub-agent cannot write
+   * into the principal's folder.
+   */
+  principalOnly?: true;
 }
 
 // A failure the model should read and recover from, not a crash.

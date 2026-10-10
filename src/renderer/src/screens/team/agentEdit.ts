@@ -1,12 +1,19 @@
 import { ID } from '../../../../shared/config/schema';
+import { MAX_REGISTRY_HOSTS, isRegistryHost } from '../../../../shared/sandboxPaths';
 import { flowStagesOf, setAgentSquad } from '../../../../shared/config/squads';
-import { addAgent, isSystemId, removeAgent, stageAgent, updateAgent } from '../../../../shared/config/team';
-import type { AgentDef, AgentModel, AgentPermission, AgentShell, AgentToolsConfig, AgentTracker, StageDef, WorkspaceConfig } from '../../../../shared/config/types';
+import { poolFieldsOf } from '../../../../shared/config/pool';
+import { withoutLead } from '../../wizard/poolEdit';
+import { addAgent, isDraft, isSystemId, modelPoolOf, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
+import { t } from '../../../../shared/i18n';
+import { MAX_POOL_ENTRIES, type AgentDef, type AgentModel, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type ModelOffer, type ModelPool, type ModelRef, type PoolMode, type StageDef, type WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
 import { shown } from './text';
 
 // The agent editor, as pure functions: the draft a person types into, the checks shown while typing, and the config the draft makes.
+
+// The id helpers live in shared/ so the main process derives the id of an assistant's draft the same way; the editor and its tests keep importing them from here.
+export { slugOf, uniqueId } from '../../../../shared/config/team';
 
 const ID_RE = new RegExp(ID);
 
@@ -26,11 +33,19 @@ export interface AgentDraft {
   autonomous: boolean;
   squad: string | null;
   turnsTo: string | null;
+  /** The agent has a virtual screen and the app's browser. */
+  screen: boolean;
+  /** The hosts the agent may reach through the proxy (not used on `shell: host`). */
+  allowedHosts: string[];
+  /** The agent's browser keeps its logins between uses. */
+  browserProfile: boolean;
+  /** How the agent's pool is used; null: the stage's, then the workspace's. */
+  poolMode: PoolMode | null;
   /** The stage ids the agent lists (the flow editor keeps them in step with the stages that name it). */
   stages: string[];
 }
 
-export type AgentField = 'id' | 'name' | 'model' | 'turnsTo' | 'shell';
+export type AgentField = 'id' | 'name' | 'model' | 'turnsTo' | 'shell' | 'allowedHosts';
 
 export interface AgentProblem {
   field: AgentField;
@@ -54,30 +69,67 @@ export function draftOf(a: AgentDef): AgentDraft {
     autonomous: a.autonomous,
     squad: a.squad ?? null,
     turnsTo: a.turnsTo,
+    screen: a.screen === true,
+    allowedHosts: [...(a.allowedHosts ?? [])],
+    browserProfile: a.browserProfile === true,
+    poolMode: a.poolMode ?? null,
     stages: [...a.stages],
   };
 }
 
+/**
+ * The model of a draft after the person picks a role, or a provider and a model. The pool stays with the draft (it is only written while the agent has a model of its
+ * own), a reserve that became the model itself leaves the list, and what was known of the old model (images, window, reasoning echo) is kept only for the same model.
+ */
+export function agentModelWith(model: AgentModel, next: { role: LlmRole } | { provider: string; model: string }): AgentModel {
+  const lists = poolFieldsOf(model);
+  if ('role' in next) return { role: next.role, provider: '', model: '', ...lists };
+  const same = model.provider === next.provider && model.model === next.model;
+  const marks = same ? { ...(model.images !== undefined ? { images: model.images } : {}), ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}), ...(model.echoReasoning !== undefined ? { echoReasoning: model.echoReasoning } : {}), ...(model.offer ? { offer: model.offer } : {}) } : {};
+  return { role: null, provider: next.provider, model: next.model, ...marks, ...poolFieldsOf(withoutLead(lists, next)) };
+}
+
+/** The model of a draft with the marks of its own model set by hand (served in the flex tier, takes the effort); the rest of the model stays. */
+export function agentModelOffer(model: AgentModel, offer: ModelOffer | undefined): AgentModel {
+  const { offer: _old, ...rest } = model;
+  return { ...rest, ...(offer ? { offer } : {}) };
+}
+
+/** The model of a draft with its pool replaced; the rest of the model stays. */
+export function agentModelPool(model: AgentModel, pool: ModelPool): AgentModel {
+  const { fallbacks: _f, activities: _a, ...rest } = model;
+  return { ...rest, ...poolFieldsOf(pool) };
+}
+
+/** The problems of the pool of an agent's own model: a provider that is gone, a model twice in a list, a list that is too long. */
+function poolProblems(config: WorkspaceConfig, model: AgentModel): AgentProblem[] {
+  const out: AgentProblem[] = [];
+  const check = (list: ModelRef[] | undefined, lead: ModelRef | null) => {
+    const seen = new Set<string>(lead ? [`${lead.provider}\n${lead.model}`] : []);
+    for (const r of list ?? []) {
+      if (!config.llm.providers.some((p) => p.id === r.provider)) out.push({ field: 'model', key: 'ui.team.err.poolProvider', params: { provider: r.provider } });
+      const k = `${r.provider}\n${r.model}`;
+      if (seen.has(k)) out.push({ field: 'model', key: 'ui.team.err.poolDuplicate', params: { model: r.model } });
+      seen.add(k);
+    }
+    if ((list?.length ?? 0) > MAX_POOL_ENTRIES) out.push({ field: 'model', key: 'ui.team.err.poolMax', params: { max: String(MAX_POOL_ENTRIES) } });
+  };
+  check(model.fallbacks, { provider: model.provider, model: model.model.trim() });
+  for (const list of Object.values(model.activities ?? {})) check(list, null);
+  return out;
+}
+
+/**
+ * Whether the switch of sub-agents is off for what the draft's agent runs as: an agent that writes works its stages under the workspace's tools, any other call under the
+ * agent's own when it names them. With it off, delegation hands no work out and the pool is a reserve only.
+ */
+export function subagentsOff(config: WorkspaceConfig, draft: Pick<AgentDraft, 'permission' | 'tools'>): boolean {
+  const tools = draft.permission === 'worktree' ? config.agents.tools : (draft.tools ?? config.agents.tools);
+  return tools.subagents === false;
+}
+
 export function blankAgent(): AgentDraft {
-  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, stages: [] };
-}
-
-/** A lowercase id from a name: letters and digits kept (accents folded), anything else a dash. */
-export function slugOf(text: string): string {
-  const folded = text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-  const slug = folded.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '');
-  return slug;
-}
-
-/** `base`, or `base-2`, `base-3`... the first one `taken` does not hold. */
-export function uniqueId(base: string, taken: Iterable<string>): string {
-  const used = new Set(taken);
-  const root = base || 'item';
-  if (!used.has(root)) return root;
-  for (let n = 2; ; n++) {
-    const candidate = `${root.slice(0, 44)}-${n}`;
-    if (!used.has(candidate)) return candidate;
-  }
+  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, screen: false, allowedHosts: [], browserProfile: false, poolMode: null, stages: [] };
 }
 
 /** What is wrong with the draft on its own (the checks that need the whole team come from `teamIssues`). */
@@ -92,22 +144,34 @@ export function agentProblems(config: WorkspaceConfig, draft: AgentDraft, isNew:
   if (draft.model.role === null) {
     if (!config.llm.providers.some((p) => p.id === draft.model.provider)) out.push({ field: 'model', key: 'ui.team.err.provider' });
     else if (!draft.model.model.trim()) out.push({ field: 'model', key: 'ui.team.err.modelName' });
+    out.push(...poolProblems(config, draft.model));
   }
   // Commands in the real worktree could leave files that the app then commits for an agent that promised only to read: a reader runs commands in a sandbox.
   if (draft.shell === 'allowlist' && draft.permission !== 'worktree') out.push({ field: 'shell', key: 'ui.team.err.allowlist' });
+  // The same rules the file is checked with (validate.ts): one message for the list, one per host that is not a plain host name.
+  const hosts = draft.allowedHosts.map((h) => h.trim().toLowerCase()).filter(Boolean);
+  const bad = hosts.find((h) => !isRegistryHost(h));
+  if (bad !== undefined) out.push({ field: 'allowedHosts', key: 'ui.team.err.allowedHost', params: { host: bad } });
+  else if (hosts.length > MAX_REGISTRY_HOSTS) out.push({ field: 'allowedHosts', key: 'ui.team.err.allowedHostsMax', params: { max: String(MAX_REGISTRY_HOSTS) } });
   return out;
 }
 
 /** The shell a draft has after its permission changes: `allowlist` needs the permission to write, so a reader falls to `none`. */
 export const shellAfterPermission = (shell: AgentShell, permission: AgentPermission): AgentShell => (shell === 'allowlist' && permission !== 'worktree' ? 'none' : shell);
 
-/** The config the draft makes: the agent added or edited, and its squad. Throws what the pure edits throw (a taken id). */
-export function applyAgent(config: WorkspaceConfig, draft: AgentDraft, isNew: boolean): WorkspaceConfig {
-  const fields = {
+/** The hosts of the form as the config keeps them: trimmed, lowercase, once each; null when there are none. */
+function hostsOf(draft: AgentDraft): string[] | null {
+  const hosts = [...new Set(draft.allowedHosts.map((h) => h.trim().toLowerCase()).filter(Boolean))];
+  return hosts.length ? hosts : null;
+}
+
+/** The fields of an agent that the form holds, as the config keeps them. */
+function fieldsOf(draft: AgentDraft) {
+  return {
     name: draft.name.trim(),
     job: draft.job.trim(),
     instructions: draft.instructions,
-    model: draft.model.role ? { role: draft.model.role, provider: '', model: '' } : { role: null, provider: draft.model.provider, model: draft.model.model.trim() },
+    model: draft.model.role ? { role: draft.model.role, provider: '', model: '' } : { role: null, provider: draft.model.provider, model: draft.model.model.trim(), ...modelPoolOf(draft.model) },
     permission: draft.permission,
     tracker: draft.tracker,
     shell: draft.shell,
@@ -115,20 +179,52 @@ export function applyAgent(config: WorkspaceConfig, draft: AgentDraft, isNew: bo
     tools: draft.tools ?? undefined,
     autonomous: draft.autonomous,
     turnsTo: draft.turnsTo,
+    // Absent means off and empty: the editor writes none of the three for an agent that has none, and clearing one removes the field.
+    screen: draft.screen ? true : undefined,
+    allowedHosts: hostsOf(draft) ?? undefined,
+    browserProfile: draft.browserProfile ? true : undefined,
+    // Inheriting is the absence of the field, not a value.
+    poolMode: draft.poolMode ?? undefined,
     stages: draft.stages,
   };
-  const next = isNew ? addAgent(config, { id: draft.id, ...fields }) : updateAgent(config, draft.id, fields);
+}
+
+/** The squad of the draft, set only when it differs from the agent's now (setting it also frees the squad the agent leaves of its liaison). */
+function withSquad(next: WorkspaceConfig, draft: AgentDraft): WorkspaceConfig {
   const current = next.agents.team.find((a) => a.id === draft.id)?.squad ?? null;
   return current === draft.squad ? next : setAgentSquad(next, draft.id, draft.squad);
 }
 
+/** The config the draft makes: the agent added or edited, and its squad. Throws what the pure edits throw (a taken id). */
+export function applyAgent(config: WorkspaceConfig, draft: AgentDraft, isNew: boolean): WorkspaceConfig {
+  const fields = fieldsOf(draft);
+  const next = isNew ? addAgent(config, { id: draft.id, ...fields }) : updateAgent(config, draft.id, fields);
+  return withSquad(next, draft);
+}
+
+/**
+ * The config a draft agent of the assistant becomes when the person saves the editor: the same edit as any other, and the mark of a draft leaves the agent in the
+ * same write, so its stages, squad and `turnsTo` start to count from here. Refuses an agent that is not a draft: the editor in this mode never opens on one.
+ */
+export function promoteDraft(config: WorkspaceConfig, draft: AgentDraft): WorkspaceConfig {
+  const found = config.agents.team.find((a) => a.id === draft.id);
+  if (!found) throw new Error(t('main.team.unknown', { id: draft.id }));
+  if (!isDraft(found)) throw new Error(t('main.assist.error.notDraft', { id: draft.id }));
+  // `updateAgent` drops a key the patch sets to undefined.
+  return withSquad(updateAgent(config, draft.id, { ...fieldsOf(draft), draft: undefined }), draft);
+}
+
 const flowInput = (c: WorkspaceConfig) => ({ stages: c.devCycle.stages, team: c.agents.team, extraStages: Object.values(c.devCycle.flows ?? {}).flat() });
 
-/** The checks of the whole team that are about this agent, over the config the draft makes (who it turns to, a loop, idle, its squad). */
-export function teamIssues(config: WorkspaceConfig, draft: AgentDraft, isNew: boolean): { flow: FlowIssue[]; squad: SquadIssue[] } {
+/**
+ * The checks of the whole team that are about this agent, over the config the draft makes (who it turns to, a loop, idle, its squad). For a draft agent being
+ * promoted (`promote`) that is the config with the mark gone: the checks leave a draft out of the team, so over the config as it is now they would not see a problem
+ * of the agent that is about to be saved.
+ */
+export function teamIssues(config: WorkspaceConfig, draft: AgentDraft, isNew: boolean, promote = false): { flow: FlowIssue[]; squad: SquadIssue[] } {
   let next: WorkspaceConfig;
   try {
-    next = applyAgent(config, draft, isNew);
+    next = promote ? promoteDraft(config, draft) : applyAgent(config, draft, isNew);
   } catch {
     return { flow: [], squad: [] };
   }
@@ -165,8 +261,8 @@ export function stagesLosingAgent(config: WorkspaceConfig, id: string): LostStag
   return lost;
 }
 
-/** The ids of the agents a question of this one could pass to: everyone but itself. */
-export const turnsToChoices = (config: WorkspaceConfig, id: string): AgentDef[] => config.agents.team.filter((a) => a.id !== id);
+/** The agents a question of this one could pass to: everyone but itself, and no draft (it takes no part in a run). */
+export const turnsToChoices = (config: WorkspaceConfig, id: string): AgentDef[] => workingTeam(config.agents.team).filter((a) => a.id !== id);
 
 /** The stages an agent works, for the list: the stages that name it, then the ones it lists. */
 export function stagesOfAgent(config: WorkspaceConfig, a: AgentDef): StageDef[] {

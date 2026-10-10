@@ -17,6 +17,8 @@ const FIRST_PROMPTS: [string, CustoKind][] = [
   ['conflict.comment', 'release'],
   ['conflict.ask.intro', 'release'],
   ['conflict.propose', 'release'],
+  ['assist.round', 'assist'],
+  ['assist.review', 'assist'],
 ];
 
 export function classify(firstPrompt: string): CustoKind | null {

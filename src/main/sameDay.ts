@@ -169,8 +169,8 @@ export function unchangedTurn(card: Card, v: SameDayVerdict): AgentTurn {
   };
 }
 
-/** The part of the changed-card prompt that says what the earlier meetings said, answered and decided. */
-export function earlierText(v: SameDayVerdict): string {
+/** The part of the changed-card prompt that says what the earlier meetings said, answered and decided — and, when given, that the question repeated from earlier days. */
+export function earlierText(v: SameDayVerdict, crossDay = ''): string {
   const t = v.ctx.last.turn;
   const part = (value: string | null | undefined, render: (text: string) => string) => (value ? render(value) : '');
   return [
@@ -181,6 +181,7 @@ export function earlierText(v: SameDayVerdict): string {
     part(v.ctx.effects.map((e) => e.text).join('; '), (text) => cp('turn.sameDay.effect', { text })),
     part(v.ctx.question, (text) => cp('turn.sameDay.question', { text })),
     part(v.ctx.deep, (text) => cp('turn.sameDay.deep', { text })),
+    part(crossDay, (text) => text),
   ]
     .filter(Boolean)
     .join('\n');

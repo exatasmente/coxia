@@ -1,6 +1,6 @@
 import { type Params, t } from '../../shared/i18n';
 
-export type VcsErrorCode = 'not_configured' | 'no_token' | 'auth' | 'forbidden' | 'not_found' | 'rate_limited' | 'network' | 'timeout' | 'server' | 'invalid' | 'unsupported' | 'cli_missing';
+export type VcsErrorCode = 'not_configured' | 'no_token' | 'auth' | 'forbidden' | 'not_found' | 'rate_limited' | 'network' | 'timeout' | 'server' | 'invalid' | 'unsupported' | 'cli_missing' | 'upload_needs_api';
 
 // Token shapes that must never reach a message, a log or the audit file, even echoed back by a host or a CLI.
 const SECRETS: RegExp[] = [

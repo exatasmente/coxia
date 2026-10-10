@@ -125,6 +125,16 @@ describe('sending a run back', () => {
     expect(stage(d, 'review').attempts).toBe(2);
   });
 
+  it('marks each artifact with the attempt that produced it, and a name produced again keeps the first attempt', () => {
+    const d = atTheEnd();
+    expect(stage(d, 'implement').artifactAttempts).toEqual({ '3_IMPLEMENTATION.md': 1 });
+    d.do((r, t) => sendBackTo(r, d.flow, { toStage: 'implement', note: 'The QA points are real.' }, t));
+    d.do((r, t) => stageDone(r, d.flow, { summary: 'Again.', handoff: 'over to the next', artifacts: ['3_IMPLEMENTATION.md', '3_NOTES.md'] }, t));
+    expect(stage(d, 'implement').attempts).toBe(2);
+    expect(stage(d, 'implement').artifactAttempts).toEqual({ '3_IMPLEMENTATION.md': 1, '3_NOTES.md': 2 });
+    expect(parseRun(d.run).ok).toBe(true);
+  });
+
   it('from a gate, a stage that waits to be accepted, a failure and a question', () => {
     const gate = drive();
     gate.do((r, t) => stageDone(r, gate.flow, done('1_SPEC'), t));

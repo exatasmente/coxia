@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import { newAgent } from '../../../../shared/config/team';
 import { isWeb } from '../../platform';
-import { LLM_ROLES, STAGE_KINDS, STAGE_TYPES, WAIT_KINDS, type AgentDef, type LlmRole, type StageDef, type StageType, type WaitKind } from '../../../../shared/config/types';
+import { LLM_ROLES, POOL_MODES, STAGE_KINDS, STAGE_TYPES, WAIT_KINDS, type AgentDef, type LlmRole, type PoolMode, type StageDef, type StageType, type WaitKind } from '../../../../shared/config/types';
 import { ISSUE_RECORD, isWork } from '../../../../shared/runs/flow';
 import { flowIssueText, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { useT } from '../../i18n';
 import { slugOf, uniqueId } from './agentEdit';
 import { DEFAULT_ROUND, stageFieldProblems } from './flowEdit';
-import { KIND_LABEL, TYPE_HINT, TYPE_LABEL, WAIT_LABEL } from './labels';
+import { KIND_LABEL, POOL_MODE_LABEL, TYPE_HINT, TYPE_LABEL, WAIT_LABEL } from './labels';
 import { agentName, shown } from './text';
 import { ChipsInput, Labeled, SidePanel, Toggle } from './ui';
 
@@ -64,7 +64,7 @@ export function StagePanel(p: StagePanelProps) {
     if (next === type) return;
     p.onPatch({
       type: next,
-      ...(next !== 'work' ? { agentId: undefined, produces: undefined } : {}),
+      ...(next !== 'work' ? { agentId: undefined, produces: undefined, poolMode: undefined } : {}),
       ...(next === 'wait' ? { waitsFor: stage.waitsFor ?? { kind: 'pr-merged' } } : { waitsFor: undefined }),
     });
   };
@@ -139,6 +139,17 @@ export function StagePanel(p: StagePanelProps) {
               />
             )}
           </div>
+        )}
+
+        {work && (
+          <Labeled label={t('ui.flow.f.poolMode')} hint={t('ui.flow.f.poolModeHint')}>
+            {(id) => (
+              <select id={id} className="text-input" value={stage.poolMode ?? ''} onChange={(e) => p.onPatch({ poolMode: (e.target.value || undefined) as PoolMode | undefined })}>
+                <option value="">{t('ui.flow.f.poolModeDefault')}</option>
+                {POOL_MODES.map((m) => <option key={m} value={m}>{t(POOL_MODE_LABEL[m])}</option>)}
+              </select>
+            )}
+          </Labeled>
         )}
 
         {work && (

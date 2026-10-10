@@ -4,6 +4,7 @@ import { CONFIG_EVENT, type ConfigView } from '../../../../shared/configView';
 import type { EvidenceView } from '../../../../shared/evidence';
 import { FORUM_EVENT, type ForumEventPayload } from '../../../../shared/forum';
 import type { CommandDecision, Run, RunIssue } from '../../../../shared/runs';
+import { SCREEN_EVENT } from '../../../../shared/screen';
 import { api, moduleEvents } from '../../api';
 
 // The runs of the running workspace as the screens see them: the channels of the runner (`runs:*`), and one shared copy of the list that every screen
@@ -35,6 +36,8 @@ export const runsApi = {
   gate: (id: string, action: GateAction, reason?: string) => api.invoke<Run>('runs:gate', id, action, reason),
   answer: (id: string, text: string) => api.invoke<Run>('runs:answer', id, text),
   retry: (id: string) => api.invoke<Run>('runs:retry', id),
+  // The pull request of a run blocked on its failed opening is tried again against a base chosen on the screen; the answer is the run as it goes on.
+  retryPr: (id: string, base: string) => api.invoke<Run>('runs:retryPr', id, base),
   cancel: (id: string) => api.invoke<Run>('runs:cancel', id),
   command: (id: string, command: string, decision: CommandDecision, note: string) => api.invoke<Run>('runs:command', id, command, decision, note),
   skipWait: (id: string, reason: string) => api.invoke<Run>('runs:skipWait', id, reason),
@@ -51,7 +54,29 @@ export const runsApi = {
   removeEvidence: (id: string, evidence: string) => api.invoke<boolean>('runs:evidenceDelete', id, evidence),
   // The cycle memory, which only the run screen may rewrite; the answer is what was really written (masked, capped).
   editMemory: (id: string, text: string) => api.invoke<ArtifactText | null>('runs:memory', id, text),
+  // The record of the activities of the workspace, and the person's correction of one front: read and written without a model call.
+  activities: () => api.invoke<ActivityFrontView[]>('runs:activities'),
+  saveActivity: (ref: string, text: string) => api.invoke<ActivityFrontView | null>('runs:activitySave', ref, text),
 };
+
+/** One activity's front as the runs screen shows it: what the record keeps, with the words already in the workspace's language. */
+export interface ActivityFrontView {
+  ref: string;
+  title: string;
+  url: string | null;
+  lifecycle: 'open' | 'waiting-integration' | 'integrated' | 'cancelled' | 'failed';
+  bare?: true;
+  stage: { id: string; label: string; since: string } | null;
+  squad: string | null;
+  agent: string | null;
+  lastAgent: string | null;
+  decisions: string[];
+  correction: string[];
+  openQuestions: string[];
+  stoppedAt: { text: string; stage: string | null; at: string } | null;
+  source: 'app' | 'person';
+  updatedAt: string;
+}
 
 const REFRESH_MS = 20_000;
 const BURST_MS = 250;
@@ -93,6 +118,8 @@ function start(): void {
     const thread = (e as CustomEvent<ForumEventPayload>).detail?.thread;
     if (typeof thread === 'string' && thread.startsWith('run-')) soon();
   });
+  // A live screen opening or ending changes the run without a message in its thread: the button on the stage card follows at once.
+  moduleEvents.addEventListener(SCREEN_EVENT, soon);
   window.addEventListener('focus', soon);
   setInterval(() => {
     if (!document.hidden) reloadRuns();

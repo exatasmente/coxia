@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { openHostSession } from '../src/main/sandbox/host';
+import { renderExec } from '../src/main/sandbox/tool';
+import { createTypedValues } from '../src/main/screen/typedValues';
 import { watchdog } from '../src/main/runner/executor';
 
 const posix = process.platform !== 'win32';
@@ -84,6 +86,86 @@ describe.runIf(posix)('a host session', () => {
     await s.close();
     await new Promise((r) => setTimeout(r, 100));
     expect(alive(pid)).toBe(false);
+  });
+});
+
+// While the person holds the screen for a hand-off (#178) the agent's commands are refused at the door and again when they come up, without the person being asked to allow
+// them, and what the person typed is taken out of the output of the ones that run.
+describe.runIf(posix)('a host session while the person has the screen', () => {
+  it('refuses a command without asking the person to allow it, without running it, without logging it, and runs again after', async () => {
+    const cwd = folder();
+    const asked: string[] = [];
+    const seen: string[] = [];
+    let held = false;
+    const s = openHostSession({ cwd, limits, env, held: () => held, onExec: (r) => seen.push(r.command), approve: async (c) => (asked.push(c), { ok: true }) });
+    held = true;
+    const refused = await s.exec('touch made-while-held');
+    expect(refused).toMatchObject({ refused: 'handoff', exitCode: null, output: '' });
+    expect(renderExec(refused)).toBe('The person has the screen; wait for the hand-off result.');
+    expect(existsSync(join(cwd, 'made-while-held'))).toBe(false);
+    expect(asked).toEqual([]);
+    expect(seen).toEqual([]);
+    expect(s.log).toEqual([]);
+    held = false;
+    const after = await s.exec('echo back');
+    await s.close();
+    expect(after).toMatchObject({ n: 1, exitCode: 0, output: 'back' });
+    expect(asked).toEqual(['echo back']);
+  });
+
+  it('refuses again a command that was queued before the interval, behind a long one, and does not ask for it', async () => {
+    const cwd = folder();
+    const asked: string[] = [];
+    let held = false;
+    const s = openHostSession({ cwd, limits, env, held: () => held, approve: async (c) => (asked.push(c), { ok: true }) });
+    const slow = s.exec('sleep 0.3; echo slow');
+    const queued = s.exec('touch made-by-the-queued-one');
+    // The slow one is running when the person takes the screen.
+    await new Promise((r) => setTimeout(r, 100));
+    held = true;
+    const [a, b] = await Promise.all([slow, queued]);
+    await s.close();
+    // The one already running is not stopped; the one behind it never starts.
+    expect(a).toMatchObject({ exitCode: 0, output: 'slow' });
+    expect(b).toMatchObject({ refused: 'handoff' });
+    expect(existsSync(join(cwd, 'made-by-the-queued-one'))).toBe(false);
+    expect(asked).toEqual(['sleep 0.3; echo slow']);
+  });
+
+  it('refuses a command the person allowed after the interval began', async () => {
+    const cwd = folder();
+    let held = false;
+    let allow: (v: { ok: boolean }) => void = () => undefined;
+    const s = openHostSession({ cwd, limits, env, held: () => held, approve: () => new Promise((r) => (allow = r)) });
+    const pending = s.exec('touch made-after-allow');
+    await new Promise((r) => setTimeout(r, 20));
+    held = true;
+    allow({ ok: true });
+    expect(await pending).toMatchObject({ refused: 'handoff' });
+    await s.close();
+    expect(existsSync(join(cwd, 'made-after-allow'))).toBe(false);
+  });
+
+  it('takes what the person typed out of the output, in the three forms, before the pattern masking', async () => {
+    const typed = createTypedValues();
+    const value = 'p@ss "w0rd"/x';
+    typed.add([value]);
+    const s = openHostSession({ cwd: folder(), limits, env, mask: typed.mask });
+    const r = await s.exec(`printf '%s|%s|%s' ${JSON.stringify(value)} ${JSON.stringify(encodeURIComponent(value))} ${JSON.stringify(JSON.stringify(value).slice(1, -1))}`);
+    const err = await s.exec(`echo ${JSON.stringify(value)} >&2; exit 2`);
+    await s.close();
+    expect(r.output).toBe('[secret]|[secret]|[secret]');
+    expect(err.output).toBe('[secret]');
+    expect(err.exitCode).toBe(2);
+    // The log the thread and the evidence read holds the masked text too.
+    expect(s.log.map((x) => x.output)).toEqual(['[secret]|[secret]|[secret]', '[secret]']);
+  });
+
+  it('does not show an output the mask could not check', async () => {
+    const s = openHostSession({ cwd: folder(), limits, env, mask: () => { throw new Error('boom'); } });
+    const r = await s.exec('echo something');
+    await s.close();
+    expect(r).toMatchObject({ output: '', outputUnavailable: true, exitCode: 0 });
   });
 });
 

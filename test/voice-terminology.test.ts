@@ -11,6 +11,8 @@ import { entryOf } from '../src/main/sessions-core';
 
 const ROOT = join(import.meta.dirname, '..');
 const CALL_WORD = /\bcalls?\b/i;
+const ASSIST_ROUND = CATALOGS['pt-BR']['prompt.sdd.assist.round'].split('\n')[0];
+const ASSIST_REVIEW = CATALOGS['pt-BR']['prompt.sdd.assist.review'].split('\n')[0];
 
 afterEach(() => {
   setLanguage('pt-BR');
@@ -155,9 +157,13 @@ describe('the agent prompts', () => {
         [`${callWord()} de reentrada da issue web#1 (t), ${modeText()}: o QA`, 'reentry', 'reentrada'],
         [`Retro semanal do Bruno, ${modeText()}, de 1 a 2.`, 'retro', 'retro'],
         [`O Bruno respondeu ${answeredText()}: «ok»`, 'reply', 'fala do agente'],
+        // The assistant's prompts have no voice variant: they must be recognised the same in both modes.
+        [ASSIST_ROUND, 'assist', 'assistente de agentes'],
+        [ASSIST_REVIEW, 'assist', 'assistente de agentes'],
       ];
       for (const [prompt, cost, kind] of prompts) {
         if (cost !== 'reentry' && cost !== 'reply') expect(classify(prompt), `${voice} ${prompt}`).not.toBeNull();
+        if (cost === 'assist') expect(classify(prompt), `${voice} ${prompt}`).toBe('assist');
         expect(appPromptKind(prompt), `${voice} ${prompt}`).toBe(kind);
       }
       expect(entryOf('s', 'deep', `${callWord()} de reentrada da issue web#7 (t), ${modeText()}: o QA`).ref).toBe('web#7');

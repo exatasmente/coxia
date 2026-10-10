@@ -15,6 +15,9 @@ export const CLAUDE_BIN = PACKAGED
   ? join(process.resourcesPath, 'app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude')
   : undefined;
 
+// The Playwright MCP server the app's browser drives (run in Node mode by the app's own executable): a real file, so it ships unpacked.
+export const PLAYWRIGHT_MCP_CLI = PACKAGED ? join(process.resourcesPath, 'app.asar.unpacked/node_modules/@playwright/mcp/cli.js') : join(BASE, 'node_modules/@playwright/mcp/cli.js');
+
 // Where the voice setup puts what it installs: the Python environment, the speech models and the uv it may fetch, all under userData.
 // A development checkout may still use its own sidecar/.venv (legacyVenvDir); the setup never writes there.
 // Functions, not constants: index.ts may move userData (CERIMONIAS_DATA_DIR) after this module loads.

@@ -24,6 +24,7 @@ const input = (key: string) => ({ key, issue: 101, issueTitle: 'Issue', summary:
 
 let ran: string[];
 let failAt: string | null;
+let failUpload: string | null;
 
 beforeEach(() => {
   rmSync(join(ATAS, 'acoes.json'), { force: true });
@@ -31,9 +32,11 @@ beforeEach(() => {
   asReal(false);
   ran = [];
   failAt = null;
+  failUpload = null;
   setVcsRuntimeForTests(
     fakeGitlabRuntime(async () => ({}), undefined, async (command, meta) => {
       if (command.bodyFile) {
+        if (failUpload) throw new Error(failUpload);
         // An upload of evidence answers where the host keeps the file; the runner embeds that address in the comment that cites it.
         if (meta) {
           meta.code = 201;
@@ -141,6 +144,31 @@ describe('a group of writes', () => {
     expect(bodies).toEqual(['What I saw\n\n![The screen](https://example.test/uploads/ev-1.png)']);
     expect(ran).toEqual(bodies);
     expect(told).toHaveLength(1);
+  });
+});
+
+describe('an image that cannot go up', () => {
+  it('does not stop the comment that cites it: the group goes on, the failure is audited and the answer holds the reason', async () => {
+    failUpload = 'the host refused the file';
+    const file = join(DATA, 'ev-2.png');
+    const upload: VcsCommand = { vcs: 'gitlab', via: 'api', method: 'POST', endpoint: 'projects/acme%2Fweb/uploads', fields: {}, headers: { 'Content-Type': 'image/png' }, bodyFile: file };
+    const a = actions.proposeVcsGroup({ ...input('evidence-fails'), evidence: { titles: ['The screen'], positions: [0], bodyAt: 1 } }, [upload, note('What I saw')]) as { id: string };
+    const told: unknown[][] = [];
+    const stop = actions.onActionDone((_a, responses) => told.push(responses));
+    const done = await actions.approveAction(a.id);
+    stop();
+    expect(done.state).toBe('done');
+    // The comment went out as it was written, with no image embedded.
+    expect(ran).toEqual(['What I saw']);
+    expect(told[0][0]).toEqual({ uploadError: 'the host refused the file' });
+    expect(listAudit().map((l) => [l.ok, l.result])).toEqual(expect.arrayContaining([[false, 'the host refused the file'], [true, 'ok']]));
+    expect(listAudit()).toHaveLength(2);
+  });
+
+  it('still stops the group when a command that is not an image fails', async () => {
+    failAt = 'second';
+    const a = actions.proposeVcsGroup(input('plain-fails'), [note('first'), note('second')]) as { id: string };
+    expect((await actions.approveAction(a.id)).state).toBe('failed');
   });
 });
 

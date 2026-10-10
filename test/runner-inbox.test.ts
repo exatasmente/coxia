@@ -54,6 +54,50 @@ describe('the mailbox of a working stage', () => {
   });
 });
 
+describe('the notice of the shared memory in the mailbox', () => {
+  const open = (d: string, memory = false) => {
+    const forum = createForumStore(join(d, 'forum'));
+    forum.ensureThread({ id: 'run-r-abc-0001', kind: 'run', runId: 'r-abc-0001', title: 'r' });
+    return { inbox: openInbox('r-abc-0001', 'triage', 'support', forum, () => '2026-10-07T12:00:00.000Z', memory), forum };
+  };
+
+  it('is handed after the messages addressed to the agent, and writes the line that marks it read when it is handed', () => {
+    const { inbox, forum } = open(dir);
+    expect(inbox.notice('NOTICE', 7)).toBe(true);
+    inbox.post('primeira');
+    expect(inbox.take()).toBe('primeira');
+    expect(forum.read('run-r-abc-0001', 0, 100)?.messages).toHaveLength(0);
+    expect(inbox.take()).toBe('NOTICE');
+    const [mark] = forum.read('run-r-abc-0001', 0, 100)!.messages;
+    expect(mark).toMatchObject({ kind: 'system', code: 'runner.sharedMemory.noticeRead', params: { agent: 'support', n: 1, seqs: '7' } });
+    expect(inbox.take()).toBeNull();
+    inbox.close();
+  });
+
+  it('is refused, with no line, by a stage that is finishing: the notice line is in the thread and the next stage shows it', () => {
+    const { inbox, forum } = open(dir);
+    expect(inbox.notice('NOTICE', 7)).toBe(true);
+    inbox.closing();
+    expect(inbox.notice('LATE', 8)).toBe(false);
+    expect(inbox.take()).toBeNull();
+    // Neither the one that was queued nor the one that came late is written as a missed message, and nothing marks them read.
+    expect(forum.read('run-r-abc-0001', 0, 100)?.messages).toHaveLength(0);
+    inbox.close();
+  });
+
+  it('is not handed after the mailbox closed', () => {
+    const { inbox } = open(dir);
+    inbox.close();
+    expect(inbox.notice('NOTICE', 7)).toBe(false);
+    expect(inbox.take()).toBeNull();
+  });
+
+  it('says whether the stage has the memory\'s session', () => {
+    expect(open(dir).inbox.memory).toBe(false);
+    expect(open(dir, true).inbox.memory).toBe(true);
+  });
+});
+
 describe('a stage on the open engine wired to its mailbox', () => {
   it('ends a step of plain text with the final answer, without waiting for a message that is not coming', async () => {
     fake = await fakeOpenAI([textStep('A issue é clara; segue a triagem.'), textStep(JSON.stringify(answer))]);

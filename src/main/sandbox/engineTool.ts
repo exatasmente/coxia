@@ -11,6 +11,7 @@ import { SHELL_DESCRIPTION, SHELL_MCP_SERVER, SHELL_SCHEMA, SHELL_TOOL_NAME, VIE
 export function shellToolImpl(session: SandboxSession): ToolImpl {
   return {
     name: SHELL_TOOL_NAME,
+    activity: 'shell',
     description: session.description ?? SHELL_DESCRIPTION,
     parameters: SHELL_SCHEMA as unknown as Json,
     async run(input, ctx) {
@@ -24,6 +25,7 @@ export function shellToolImpl(session: SandboxSession): ToolImpl {
 export function viewImageToolImpl(session: SandboxSession, evidence?: EvidenceTools | null, onLooked?: (path: string) => void): ToolImpl {
   return {
     name: VIEW_IMAGE_TOOL_NAME,
+    activity: 'screen',
     description: viewImageDescription(!!evidence, session.gui?.out),
     parameters: viewImageSchema(!!evidence, session.gui?.out) as unknown as Json,
     async run(input, ctx) {

@@ -81,6 +81,8 @@ describe('the registration', () => {
     const lines = activityLog.get(mentionJob('squads')).filter((e) => e.call?.message === m.seq);
     expect([...new Set(lines.map((e) => e.call?.agent))]).toEqual(['turn', 'reply']);
     expect(lines.find((e) => e.call?.agent === 'reply' && e.kind === 'status')?.state).toBe('queued');
+    // each line is headed by the words of the message that named the agent, and hangs under no one
+    expect(lines.every((e) => e.node?.type === 'call' && e.node.label === '@turn @reply hi' && !e.parent)).toBe(true);
     await mentionsIdle();
   });
 

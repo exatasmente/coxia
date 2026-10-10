@@ -57,6 +57,8 @@ describe('a question about another squad\'s area', () => {
     expect(leadB.confine).toBeUndefined();
     expect(leadB.readRoot).toBeUndefined();
     expect(leadB.agent.permission).toBe('read');
+    expect(leadA.background).toBe(true);
+    expect(leadB.background).toBe(true);
     expect(leadB.cwd).toBe(s.web.clone);
     expect(leadB.prompt).toContain('What does the totals API return, and in which unit?');
     expect(leadB.system).toContain('Squad B');

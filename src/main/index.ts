@@ -3,9 +3,9 @@ import { BrowserWindow, Menu, Notification, Tray, app, clipboard, ipcMain, nativ
 import type { HunkChoice } from '../shared/conflict';
 import type { Settings } from '../shared/settings';
 import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, TurnOptions, Voice } from '../shared/types';
-import { ACTIVITY_EVENT, ACTIVITY_GET } from '../shared/activity';
-import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, listActions, previewAction, skipAction, startActions } from './actions';
-import { activityLog, setActivitySink } from './activity';
+import { ACTIVITY_EVENT, ACTIVITY_GET, reasoningOn } from '../shared/activity';
+import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, freeReleaseCheckout, listActions, previewAction, skipAction, startActions } from './actions';
+import { activityLog, setActivitySink, setThoughtsGate } from './activity';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { loadCards } from './cards';
 import { continueInClaude, pasteCommand } from './claude';
@@ -15,17 +15,18 @@ import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGat
 import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
 import { askRetro, latestRetro, prepareRetro } from './retro';
 import { MODULES } from './modules';
+import { endLiveScreens, hasOpenScreens } from './runner/module';
 import { RESOURCES } from './paths';
 import { wantsQuitForUpdate } from './update-core';
 import { SHOWN_EVENT } from '../shared/update';
 import { announceRunning, flushRenderer, forgetRunning, terminateChildren, trackWindow } from './update';
 import { beforeQuit as updatesBeforeQuit, onWindowFocus, setUpdateHooks } from './updates';
 import { bindIpc, handle } from './rpc';
-import { setBoardReady } from './board';
-import { vcsReady } from './vcs';
+import { setBoardHost } from './board';
+import { realBoardHost, startBoardHost } from './boardHost';
 import { upperFirst } from '../shared/cycles/text';
 import { ceremonyLabel } from './cyclePrompts';
-import { onConfigChange } from './workspaceConfig';
+import { getConfig, onConfigChange } from './workspaceConfig';
 import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
@@ -196,6 +197,7 @@ function handlers(): void {
   handle('actions:detect', () => detectRelease(true));
   handle('actions:preview', (id: string) => previewAction(id));
   handle('actions:approve', (id: string) => approveAction(id));
+  handle('actions:freeBranch', (id: string) => freeReleaseCheckout(id));
   handle('actions:skip', (id: string) => skipAction(id));
   handle('actions:conflict', (id: string, question: string) => conflictTalk(id, question));
   handle('conflict:fromMr', (card: Card, ref: string) => conflictFromMr(card, ref));
@@ -280,25 +282,43 @@ if (!app.requestSingleInstanceLock()) {
     bindIpc((channel, fn) => ipcMain.handle(channel, (_e, ...args) => (fn as (...a: unknown[]) => unknown)(...args)));
     handlers();
     setActivitySink((entry) => emit({ type: 'module', name: ACTIVITY_EVENT, payload: entry }));
+    // Read when a thought is made, so the switch of the workspace takes effect from the next one.
+    setThoughtsGate(() => reasoningOn(getConfig()));
     registerWebAccess(join(import.meta.dirname, '../renderer'));
     startVoice();
     createWindow();
     createTray();
     startActions({ notify, emit });
-    // The workspace's own board is offered only where no code host is usable: the same test the day's cards make before they read the host.
-    setBoardReady(() => vcsReady());
+    // The board reaches the code host through one door, handed in once and never handed back to a module.
+    setBoardHost(realBoardHost);
+    startBoardHost();
     for (const register of MODULES) {
-      register({ handle, notify, emit, job: registerJob, deps: (d) => setBoardReady(d.boardReady) });
+      register({ handle, notify, emit, job: registerJob });
     }
     startScheduler({ notify, emit });
     void syncWebAccess().catch((e) => fail('[web]', 'module:web', e));
     announceRunning();
   });
   app.on('quit', (_e, code) => console.log(`[app] quit with exit code ${code}`));
-  app.on('before-quit', () => {
+  // The open screens of the agents get a few seconds to keep their recordings and close their browsers before the app goes: the quit is held once, then asked again.
+  let screensEnded = false;
+  let screensEnding = false;
+  app.on('before-quit', (event) => {
     quitting = true;
+    if (!screensEnded && hasOpenScreens()) {
+      event.preventDefault();
+      if (!screensEnding) {
+        screensEnding = true;
+        void endLiveScreens().finally(() => {
+          screensEnded = true;
+          app.quit();
+        });
+      }
+      return;
+    }
     updatesBeforeQuit();
     forgetRunning();
+    void endLiveScreens();
     stopVoice();
     void stopWebAccess();
   });

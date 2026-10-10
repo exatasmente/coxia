@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { cleanLabels, effectiveCardScope, parseLabelsField, scopesOffered } from '../src/shared/cardScope';
 import { neutralConfig, validateConfig } from '../src/shared/config';
 import { migrateConfig } from '../src/shared/config/migrations';
-import type { VcsKind } from '../src/shared/config/types';
+import { CONFIG_SCHEMA_VERSION, type VcsKind } from '../src/shared/config/types';
 import { VCS_CAPS } from '../src/shared/vcsCaps';
 
 const input = (over: Partial<Parameters<typeof effectiveCardScope>[0]> = {}) => ({ scope: 'assigned' as const, labels: [], project: 'acme/app', kind: 'github' as VcsKind | null, ...over });
@@ -92,7 +92,7 @@ describe('the stored fields', () => {
     const r = migrateConfig(v3, { legacyInstall: false });
     expect(r.fromVersion).toBe(3);
     expect(r.changed).toBe(true);
-    expect(r.config.schemaVersion).toBe(18);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(r.config.projects.issues).toMatchObject({ project: 'acme/app', refPrefix: 'app#', cardScope: 'assigned', cardLabels: [] });
     expect(validateConfig(r.config).ok).toBe(true);
     const v4 = migrateConfig(stored, { legacyInstall: false });
@@ -116,7 +116,7 @@ describe('the stored fields', () => {
     delete v2.projects.issues.cardScope;
     delete v2.projects.issues.cardLabels;
     const r = migrateConfig(v2, { legacyInstall: false });
-    expect(r.config.schemaVersion).toBe(18);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(r.config.projects.issues).toMatchObject({ cardScope: 'assigned', cardLabels: [] });
     expect(r.config.devCycle.priority).toEqual({ labels: [] });
   });

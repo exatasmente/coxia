@@ -3,6 +3,7 @@ import type { Screen } from '../App';
 import { ceremoniesListed } from '../../../shared/cycles/view';
 import { useCycle } from '../cycleApi';
 import { tNodes, tvNodes, useT, useTv, useVoiceEnabled } from '../i18n';
+import { isWeb } from '../platform';
 import { BackIcon } from './icons';
 
 // F1 opens the help from any screen and closes it when it is already open.
@@ -19,7 +20,7 @@ export function useHelpShortcut(current: Screen['name'], go: (s: Screen) => void
 }
 
 const Key = ({ children }: { children: ReactNode }) => <kbd className="kbd">{children}</kbd>;
-const KEYCAP = { enter: 'Enter', tab: 'Tab', shift: 'Shift' }; // i18n-ignore: key names
+const KEYCAP = { enter: 'Enter', tab: 'Tab', shift: 'Shift', ctrl: 'Ctrl' }; // i18n-ignore: key names
 const Mono = ({ children }: { children: ReactNode }) => <span className="mono">{children}</span>;
 
 function Item({ term, children }: { term: ReactNode; children: ReactNode }) {
@@ -73,6 +74,9 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
           <Item term={tNodes('ui.help.tab.term', { tab: <Key>{KEYCAP.tab}</Key>, shift: <Key>{KEYCAP.shift}</Key> })}>
             {tNodes('ui.help.tab.text', { enter: <Key>{KEYCAP.enter}</Key>, space: <Key>{t('ui.help.key.space')}</Key> })}
           </Item>
+          {!isWeb() && (
+            <Item term={tNodes('ui.help.prompts.term', { ctrl: <Key>{KEYCAP.ctrl}</Key>, shift: <Key>{KEYCAP.shift}</Key>, i: <Key>{'I'}</Key> })}>{t('ui.help.prompts.text')}</Item>
+          )}
           {voiceOn ? (
             <Item term={t('ui.help.agentVoice.term')}>{t('ui.help.agentVoice.text')}</Item>
           ) : (

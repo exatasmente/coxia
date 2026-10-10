@@ -218,6 +218,8 @@ export type VcsWriteOp =
   | { op: 'createIssue'; project: string; title: string; body: string; labels: string[] }
   /** An issue closed (what a tracking issue becomes when its work is done). */
   | { op: 'closeIssue'; project: string; iid: number }
+  /** A closed issue opened again (what the board does to undo its own close). */
+  | { op: 'reopenIssue'; project: string; iid: number }
   /** A pull request from a branch of the same repository. */
   | { op: 'createMr'; project: string; title: string; body: string; sourceBranch: string; targetBranch: string }
   /**
@@ -306,11 +308,6 @@ export interface VcsProvider {
 
   /** Describes a write as the commands that would run, reading what it needs to be exact. Runs nothing. */
   planWrite(op: VcsWriteOp): Promise<VcsCommand[]>;
-  /**
-   * The credential an upload of evidence carries in its own headers, right before the call (the proposal itself never holds it). Null when the provider
-   * talks to its host through a CLI instead (GitLab's `glab` posts the file itself, with its own login).
-   */
-  uploadToken(): Promise<string | null>;
   /** Checks that a command (possibly read back from disk) has a shape this provider may run. Throws the reason. */
   validateCommand(command: VcsCommand): void;
 }

@@ -154,6 +154,28 @@ describe('runAgent on the Claude SDK', () => {
     expect(denied).toEqual([{ tool: 'Read', target: '/etc/hostname', code: 'outside' }]);
   });
 
+  it('opens the whole file system to the engine when the workspace lifted the fence of its runs, and the guard lets a read anywhere through', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agent-read-anywhere-'));
+    const denied: string[] = [];
+    const read = readConfinement(root, 'deep', (d) => denied.push(d.code), true)!;
+    await runAgent({ agent: reader, prompt: 'p', schema, system: 's', cwd: root, label: 'refiner', maxTurns: 7, readRoot: read });
+    const o = calls[0].options;
+    expect(o.additionalDirectories).toEqual(['/']);
+    // Lifting the fence opens no tool: a reader still has no Edit, Write or shell.
+    expect(o.disallowedTools).toEqual(expect.arrayContaining(['Edit', 'Write', 'Bash']));
+    const guard = (o.hooks.PreToolUse as { matcher: string; hooks: ((i: unknown, id: undefined, options: { signal: AbortSignal }) => Promise<unknown>)[] }[])[0].hooks[1];
+    expect(await guard({ hook_event_name: 'PreToolUse', tool_name: 'Read', tool_input: { file_path: '/etc/hostname' }, cwd: root }, undefined, { signal: new AbortController().signal })).toEqual({});
+    expect(denied).toEqual([]);
+  });
+
+  it('keeps the engine on the worktree of an agent that writes unless the workspace lifted the fence', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'agent-write-anywhere-'));
+    await runAgent({ agent: writer, prompt: 'p', schema, system: 's', cwd: root, label: 'developer', maxTurns: 5, confine: { root, hooks: confinedHooks({ root, commands: [] }) } });
+    expect(calls[0].options).not.toHaveProperty('additionalDirectories');
+    await runAgent({ agent: writer, prompt: 'p', schema, system: 's', cwd: root, label: 'developer', maxTurns: 5, confine: { root, anywhere: true, hooks: confinedHooks({ root, commands: [], anywhere: true }) } });
+    expect(calls[1].options.additionalDirectories).toEqual(['/']);
+  });
+
   it('gives an agent that writes Edit and Write, its own hooks and only the commands it was given', async () => {
     const root = mkdtempSync(join(tmpdir(), 'agent-write-'));
     mkdirSync(join(root, 'src'));

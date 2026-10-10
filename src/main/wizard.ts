@@ -118,7 +118,7 @@ const TEST_PROMPT = 'Reply with the single word OK.';
 const TEST_TIMEOUT_MS = 90_000;
 
 function failure(engine: ProviderTestResult['engine'], code: ProviderTestResult['code'], detail: string, started: number): ProviderTestResult {
-  return { ok: false, engine, code, detail, messages: [], capabilities: null, models: [], answered: false, ms: Date.now() - started };
+  return { ok: false, engine, code, detail, messages: [], capabilities: null, models: [], catalog: [], answered: false, ms: Date.now() - started };
 }
 
 function modelFor(p: LlmProvider, requested: string | undefined): string {
@@ -128,14 +128,16 @@ function modelFor(p: LlmProvider, requested: string | undefined): string {
   return used ?? p.models[0] ?? '';
 }
 
-async function testOpen(p: LlmProvider, model: string, started: number): Promise<ProviderTestResult> {
+async function testOpen(p: LlmProvider, model: string, started: number, rich: boolean): Promise<ProviderTestResult> {
   let key = '';
   try {
     key = providerSecret(p.secretRef) ?? '';
   } catch (e) {
     return failure('open', 'no-key', e instanceof Error ? e.message : String(e), started);
   }
-  const r = await probeOpenAIProvider(p.baseUrl, key, model, { lang: getLanguage() });
+  // The richer listing (flex, retirement) is read by the test of the provider, not by the test of one more model; it is the provider's own address, already of its origin.
+  const catalogUrl = rich ? p.features?.catalogUrl : undefined;
+  const r = await probeOpenAIProvider(p.baseUrl, key, model, { lang: getLanguage(), ...(catalogUrl ? { catalogUrl } : {}) });
   const caps = r.capabilities;
   return {
     ok: r.ok,
@@ -145,6 +147,8 @@ async function testOpen(p: LlmProvider, model: string, started: number): Promise
     messages: r.messages,
     capabilities: r.ok ? { chat: caps.chat, tools: caps.tools, jsonSchema: caps.jsonSchema, streaming: caps.streaming, reasoning: caps.reasoning, contextWindow: caps.contextWindow ?? null, ...(caps.images !== undefined ? { images: caps.images } : {}) } : null,
     models: r.models.ids.slice(0, 300),
+    catalog: r.catalog,
+    ...(Object.keys(r.deprecations).length ? { deprecations: r.deprecations } : {}),
     answered: r.chat.ok,
     ms: Date.now() - started,
   };
@@ -177,7 +181,7 @@ async function testSdk(p: LlmProvider, model: string, started: number): Promise<
       answered = m.subtype === 'success' && !m.is_error;
       detail = m.subtype === 'success' ? String(m.result ?? '') : m.subtype;
     }
-    return { ok: answered, engine: 'claude-sdk', code: answered ? 'ok' : 'failed', detail: answered ? '' : detail.slice(0, 400), messages: [], capabilities: null, models: [], answered, ms: Date.now() - started };
+    return { ok: answered, engine: 'claude-sdk', code: answered ? 'ok' : 'failed', detail: answered ? '' : detail.slice(0, 400), messages: [], capabilities: null, models: [], catalog: [], answered, ms: Date.now() - started };
   } catch (e) {
     const aborted = ctl.signal.aborted;
     return failure('claude-sdk', aborted ? 'unreachable' : 'failed', aborted ? 'timeout' : e instanceof Error ? e.message.slice(0, 400) : String(e), started);
@@ -186,12 +190,13 @@ async function testSdk(p: LlmProvider, model: string, started: number): Promise<
   }
 }
 
-async function testProvider(providerId: string, requestedModel?: string): Promise<ProviderTestResult> {
+// `rich` says whether the richer listing is read: the card of the provider asks for it (with the model it uses), the test of one more model of a pool does not; without it, no model named means the provider's own test.
+async function testProvider(providerId: string, requestedModel?: string, rich?: boolean): Promise<ProviderTestResult> {
   const started = Date.now();
   const p = getConfig().llm.providers.find((x) => x.id === providerId);
   if (!p) return failure('open', 'unknown-provider', providerId, started);
   const model = modelFor(p, requestedModel);
-  return p.engine === 'open' ? testOpen(p, model, started) : testSdk(p, model, started);
+  return p.engine === 'open' ? testOpen(p, model, started, rich ?? requestedModel === undefined) : testSdk(p, model, started);
 }
 
 // ---- SDK installation -----------------------------------------------------------------------------------------------------------------
@@ -315,7 +320,9 @@ export const wizard: Module = (ctx) => {
   ctx.handle(C.progressSet, (progress: unknown): WizardProgress => writeProgress(ATAS, progress));
   ctx.handle(C.progressClear, (): void => clearProgress(ATAS));
 
-  ctx.handle(C.providerTest, (providerId: string, model?: string): Promise<ProviderTestResult> => testProvider(String(providerId), typeof model === 'string' ? model : undefined));
+  ctx.handle(C.providerTest, (providerId: string, model?: string, opts?: { rich?: boolean }): Promise<ProviderTestResult> =>
+    testProvider(String(providerId), typeof model === 'string' ? model : undefined, typeof opts?.rich === 'boolean' ? opts.rich : undefined),
+  );
 
   ctx.handle(C.sdkStatus, (): SdkStatus => sdkStatus());
   ctx.handle(C.sdkInstall, (): { started: boolean } => {

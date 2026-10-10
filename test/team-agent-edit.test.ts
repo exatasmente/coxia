@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { neutralConfig, validateConfig } from '../src/shared/config';
 import { newSquad, addSquad } from '../src/shared/config/squads';
-import { addAgent } from '../src/shared/config/team';
+import { addAgent, newAgent, workingTeam } from '../src/shared/config/team';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { agentFlow, applyTemplate } from '../src/shared/cycles';
-import { agentProblems, applyAgent, blankAgent, draftOf, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, uniqueId } from '../src/renderer/src/screens/team/agentEdit';
+import { agentModelOffer, agentModelPool, agentModelWith, agentProblems, applyAgent, blankAgent, draftOf, promoteDraft, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId } from '../src/renderer/src/screens/team/agentEdit';
 
 const flow = (): WorkspaceConfig => applyTemplate(neutralConfig(), agentFlow);
 // A squad with members needs a liaison; the squad is not what this test is about, so the checked copy has none.
@@ -45,6 +45,46 @@ describe('the problems of an agent draft', () => {
   });
 });
 
+describe('the virtual screen of an agent in the editor', () => {
+  it('starts off, and a draft of an agent without them holds none', () => {
+    const c = flow();
+    expect(blankAgent()).toMatchObject({ screen: false, allowedHosts: [], browserProfile: false });
+    expect(draftOf(agent(c, 'developer'))).toMatchObject({ screen: false, allowedHosts: [], browserProfile: false });
+  });
+
+  it('writes the three only when they are on, and clearing one removes the field', () => {
+    const c = flow();
+    const plain = applyAgent(c, draftOf(agent(c, 'developer')), false);
+    expect('screen' in agent(plain, 'developer') || 'allowedHosts' in agent(plain, 'developer') || 'browserProfile' in agent(plain, 'developer')).toBe(false);
+    const on = applyAgent(c, { ...draftOf(agent(c, 'developer')), screen: true, allowedHosts: [' Example.com ', 'docs.example.com', 'example.com', ''], browserProfile: true }, false);
+    expect(agent(on, 'developer')).toMatchObject({ screen: true, allowedHosts: ['example.com', 'docs.example.com'], browserProfile: true });
+    expect(validateConfig(agentOnly(on)).errors).toEqual([]);
+    expect(draftOf(agent(on, 'developer'))).toMatchObject({ screen: true, allowedHosts: ['example.com', 'docs.example.com'], browserProfile: true });
+    const off = applyAgent(on, { ...draftOf(agent(on, 'developer')), screen: false, allowedHosts: [], browserProfile: false }, false);
+    expect('screen' in agent(off, 'developer') || 'allowedHosts' in agent(off, 'developer') || 'browserProfile' in agent(off, 'developer')).toBe(false);
+    expect(validateConfig(agentOnly(off)).errors).toEqual([]);
+  });
+
+  it('saves a new agent with them, and an edit of something else leaves them as they were', () => {
+    const c = flow();
+    const made = applyAgent(c, { ...blankAgent(), id: 'scout', name: 'Scout', screen: true, allowedHosts: ['example.com'] }, true);
+    expect(agent(made, 'scout')).toMatchObject({ screen: true, allowedHosts: ['example.com'] });
+    const renamed = applyAgent(made, { ...draftOf(agent(made, 'scout')), name: 'Scout 2' }, false);
+    expect(agent(renamed, 'scout')).toMatchObject({ name: 'Scout 2', screen: true, allowedHosts: ['example.com'] });
+  });
+
+  it('flags a host the proxy would not take and a list that is too long, as validate.ts does', () => {
+    const c = flow();
+    const d = { ...blankAgent(), id: 'ok', name: 'A' };
+    expect(agentProblems(c, { ...d, allowedHosts: ['example.com', ' '] }, true)).toEqual([]);
+    for (const bad of ['https://example.com', 'example.com:443', '*.example.com', 'localhost']) {
+      expect(agentProblems(c, { ...d, allowedHosts: [bad] }, true), bad).toEqual([{ field: 'allowedHosts', key: 'ui.team.err.allowedHost', params: { host: bad } }]);
+    }
+    const many = Array.from({ length: 21 }, (_, i) => `h${i}.example.com`);
+    expect(agentProblems(c, { ...d, allowedHosts: many }, true).map((p) => p.key)).toEqual(['ui.team.err.allowedHostsMax']);
+  });
+});
+
 describe('applying a draft', () => {
   it('adds an agent that validates, with its squad', () => {
     let c = flow();
@@ -69,6 +109,40 @@ describe('applying a draft', () => {
     expect(agent(own, 'developer').model).toEqual({ role: null, provider: 'local', model: 'tiny' });
     const back = applyAgent(own, { ...draftOf(agent(own, 'developer')), model: { role: 'fix', provider: 'local', model: 'tiny' } }, false);
     expect(agent(back, 'developer').model).toEqual({ role: 'fix', provider: '', model: '' });
+  });
+
+  it('keeps the pool of an agent\'s own model when the form saves something else, and leaves none behind for an agent without one', () => {
+    const c = flow();
+    c.llm.providers.push({ ...c.llm.providers[0], id: 'local', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://localhost:11434/v1' });
+    const model = { role: null, provider: 'local', model: 'model-a', fallbacks: [{ provider: 'local', model: 'model-b' }], activities: { shell: [{ provider: 'local', model: 'model-b' }] }, contextWindow: 64_000 };
+    const own = applyAgent(c, { ...draftOf(agent(c, 'developer')), model }, false);
+    expect(agent(own, 'developer').model).toEqual(model);
+    const renamed = applyAgent(own, { ...draftOf(agent(own, 'developer')), name: 'Dev' }, false);
+    expect(agent(renamed, 'developer').model).toEqual(model);
+    expect(validateConfig(agentOnly(renamed)).errors).toEqual([]);
+    const plain = applyAgent(c, { ...draftOf(agent(c, 'developer')), model: { role: null, provider: 'local', model: 'model-a' } }, false);
+    expect(agent(plain, 'developer').model).toEqual({ role: null, provider: 'local', model: 'model-a' });
+    const back = applyAgent(own, { ...draftOf(agent(own, 'developer')), model: { ...model, role: 'fix' } }, false);
+    expect(agent(back, 'developer').model).toEqual({ role: 'fix', provider: '', model: '' });
+  });
+
+  it('keeps the pool mode of an agent through the form, sets it, and clears it back to inheriting', () => {
+    const c = flow();
+    expect(blankAgent().poolMode).toBeNull();
+    expect(draftOf(agent(c, 'developer')).poolMode).toBeNull();
+    const plain = applyAgent(c, draftOf(agent(c, 'developer')), false);
+    expect('poolMode' in agent(plain, 'developer')).toBe(false);
+    const set = applyAgent(c, { ...draftOf(agent(c, 'developer')), poolMode: 'switch' }, false);
+    expect(agent(set, 'developer').poolMode).toBe('switch');
+    expect(validateConfig(agentOnly(set)).errors).toEqual([]);
+    expect(draftOf(agent(set, 'developer')).poolMode).toBe('switch');
+    // Saving something else keeps it; the person clearing it removes the field.
+    const renamed = applyAgent(set, { ...draftOf(agent(set, 'developer')), name: 'Dev' }, false);
+    expect(agent(renamed, 'developer').poolMode).toBe('switch');
+    const cleared = applyAgent(set, { ...draftOf(agent(set, 'developer')), poolMode: null }, false);
+    expect('poolMode' in agent(cleared, 'developer')).toBe(false);
+    const made = applyAgent(c, { ...blankAgent(), id: 'scout', name: 'Scout', poolMode: 'fallback' }, true);
+    expect(agent(made, 'scout').poolMode).toBe('fallback');
   });
 
   it('saving an agent with no allowed command leaves no empty field, and clearing the last one removes it', () => {
@@ -157,5 +231,168 @@ describe('the two permissions of a run in the agent editor', () => {
     const draft = { ...blankAgent(), id: 'r2', name: 'R', permission: 'read' as const, shell: 'allowlist' as const };
     expect(agentProblems(neutralConfig(), draft, true)).toEqual([{ field: 'shell', key: 'ui.team.err.allowlist' }]);
     expect(agentProblems(neutralConfig(), { ...draft, permission: 'worktree' }, true)).toEqual([]);
+  });
+});
+
+describe('a draft agent in the editor', () => {
+  const withDraft = (): WorkspaceConfig => {
+    const c = flow();
+    c.agents.team.push(newAgent({ id: 'trial', draft: true }));
+    return c;
+  };
+
+  it('is not offered as the agent a question turns to, and the others are as before', () => {
+    const c = withDraft();
+    expect(turnsToChoices(c, 'developer').map((a) => a.id)).not.toContain('trial');
+    expect(turnsToChoices(c, 'developer').map((a) => a.id)).toEqual(turnsToChoices(flow(), 'developer').map((a) => a.id));
+    expect(turnsToChoices(c, 'developer').map((a) => a.id)).not.toContain('developer');
+  });
+
+  it('keeps its id taken: a new agent cannot be given the id of a draft', () => {
+    const c = withDraft();
+    expect(agentProblems(c, { ...blankAgent(), name: 'Trial', id: 'trial' }, true).map((p) => p.key)).toEqual(['ui.team.err.idTaken']);
+    // and the id a name makes steps over it
+    expect(uniqueId(slugOf('Trial'), c.agents.team.map((a) => a.id))).toBe('trial-2');
+  });
+
+  it('is no agent a question may turn to, as far as the checks of the team go', () => {
+    const c = withDraft();
+    const d = { ...draftOf(agent(c, 'developer')), turnsTo: 'trial' };
+    expect(teamIssues(c, d, false).flow.map((i) => i.code)).toContain('turns-unknown');
+  });
+});
+
+describe('promoting a draft agent of the assistant', () => {
+  const withTrial = (): WorkspaceConfig => {
+    const c = addSquad(flow(), newSquad({ id: 'core', name: 'Core' }));
+    c.agents.team.push(newAgent({ id: 'trial', name: 'Trial', job: 'old job', instructions: 'old', draft: true, tracker: 'read' }));
+    return c;
+  };
+  const form = (c: WorkspaceConfig, over: Partial<ReturnType<typeof blankAgent>> = {}) => ({ ...draftOf(agent(c, 'trial')), ...over });
+  const workStage = (c: WorkspaceConfig): string => c.devCycle.stages.find((s) => (s.type ?? 'work') === 'work')!.id;
+
+  it('takes the mark off in the same edit that applies the form, its stages, squad and who it turns to included', () => {
+    const c = withTrial();
+    const stage = workStage(c);
+    const next = promoteDraft(c, form(c, { name: ' Trial two ', job: 'new job', instructions: 'new', stages: [stage], squad: 'core', turnsTo: 'tech-lead', permission: 'worktree', shell: 'allowlist' }));
+    const made = agent(next, 'trial');
+    expect(made).toMatchObject({ name: 'Trial two', job: 'new job', instructions: 'new', stages: [stage], squad: 'core', turnsTo: 'tech-lead', permission: 'worktree', shell: 'allowlist', system: false });
+    expect('draft' in made).toBe(false);
+    // from here the agent takes part in the cycle; before, it did not
+    expect(workingTeam(c.agents.team).map((a) => a.id)).not.toContain('trial');
+    expect(workingTeam(next.agents.team).map((a) => a.id)).toContain('trial');
+    expect(turnsToChoices(next, 'developer').map((a) => a.id)).toContain('trial');
+    expect(c.agents.team.find((a) => a.id === 'trial')).toMatchObject({ draft: true });
+  });
+
+  it('keeps every other agent as it was and moves nothing else in the config', () => {
+    const c = withTrial();
+    const next = promoteDraft(c, form(c));
+    expect(next.agents.team.filter((a) => a.id !== 'trial')).toEqual(c.agents.team.filter((a) => a.id !== 'trial'));
+    expect({ ...next, agents: { ...next.agents, team: [] } }).toEqual({ ...c, agents: { ...c.agents, team: [] } });
+  });
+
+  it('is the edit of any agent for the rest: a model of its own, the autonomy and the commands as the form has them', () => {
+    const c = withTrial();
+    const next = promoteDraft(c, form(c, { autonomous: true, allowedCommands: ['npm test:*'], model: { role: 'fix', provider: '', model: '' } }));
+    expect(agent(next, 'trial')).toMatchObject({ autonomous: true, allowedCommands: ['npm test:*'], model: { role: 'fix' } });
+    expect('allowedCommands' in agent(promoteDraft(c, form(c)), 'trial')).toBe(false);
+  });
+
+  it('refuses an agent that is not there and one that is not a draft', () => {
+    const c = withTrial();
+    expect(() => promoteDraft(c, { ...form(c), id: 'ghost' })).toThrow(/ghost/);
+    expect(() => promoteDraft(c, { ...draftOf(agent(c, 'developer')) })).toThrow(/developer/);
+    expect(() => promoteDraft(c, { ...draftOf(agent(c, 'deep')) })).toThrow(/deep/);
+  });
+
+  it('is checked over the config it makes: a problem of the agent about to be saved is not hidden by the mark it still has', () => {
+    const c = withTrial();
+    const d = form(c, { turnsTo: 'ghost' });
+    // as a plain edit the agent is still a draft in the config, so the checks of the flow leave it out and say nothing about it
+    expect(teamIssues(c, d, false).flow.map((i) => i.code)).not.toContain('turns-unknown');
+    expect(teamIssues(c, d, false, true).flow.filter((i) => i.agent === 'trial').map((i) => i.code)).toEqual(['turns-unknown']);
+    // a promotion of something that cannot be promoted says nothing, like an edit that throws
+    expect(teamIssues(c, { ...d, id: 'developer' }, false, true)).toEqual({ flow: [], squad: [] });
+  });
+
+  it('is judged on its own like an agent that exists: its id is not asked about, its name and its commands are', () => {
+    const c = withTrial();
+    expect(agentProblems(c, form(c), false)).toEqual([]);
+    expect(agentProblems(c, form(c, { name: '  ' }), false).map((p) => p.key)).toEqual(['ui.team.err.name']);
+    expect(agentProblems(c, form(c, { shell: 'allowlist' }), false).map((p) => p.key)).toEqual(['ui.team.err.allowlist']);
+  });
+});
+
+describe('the pool of an agent with a model of its own, in the editor', () => {
+  const ref = (model: string, provider = 'local') => ({ provider, model });
+  const withLocal = (): WorkspaceConfig => {
+    const c = flow();
+    c.llm.providers.push({ ...c.llm.providers[0], id: 'local', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://localhost:11434/v1' });
+    return c;
+  };
+  const own = { role: null, provider: 'local', model: 'model-a', fallbacks: [ref('model-b'), ref('model-c')], activities: { shell: [ref('model-c')] }, images: true, contextWindow: 64_000 };
+
+  it('keeps the pool when the person changes the model name or the provider, and keeps what was known only of the same model', () => {
+    const renamed = agentModelWith(own, { provider: 'local', model: 'model-z' });
+    expect(renamed).toEqual({ role: null, provider: 'local', model: 'model-z', fallbacks: own.fallbacks, activities: own.activities });
+    expect(agentModelWith(own, { provider: 'local', model: 'model-a' })).toEqual(own);
+    expect(agentModelWith(own, { provider: 'other', model: 'model-a' })).not.toHaveProperty('images');
+  });
+
+  it('keeps what the catalog said of the model only for the same model, and a pool entry keeps its own', () => {
+    const offered = { ...own, offer: { flex: true, effort: true }, fallbacks: [{ ...ref('model-b'), offer: { deprecated: 1790000000, replacedBy: 'model-c' } }] };
+    expect(agentModelWith(offered, { provider: 'local', model: 'model-a' })).toEqual(offered);
+    const renamed = agentModelWith(offered, { provider: 'local', model: 'model-z' });
+    expect(renamed).not.toHaveProperty('offer');
+    expect(renamed.fallbacks).toEqual(offered.fallbacks);
+    expect(newAgent({ id: 'x', model: offered }).model.offer).toEqual({ flex: true, effort: true });
+    expect(newAgent({ id: 'x', model: { role: null, provider: 'local', model: 'model-a' } }).model).not.toHaveProperty('offer');
+  });
+
+  it('sets the marks of the agent\'s own model by hand, leaving no empty offer and the pool as it was', () => {
+    const marked = agentModelOffer(own, { effort: true });
+    expect(marked.offer).toEqual({ effort: true });
+    expect(marked.fallbacks).toEqual(own.fallbacks);
+    expect(agentModelOffer(marked, undefined)).not.toHaveProperty('offer');
+    expect(own).not.toHaveProperty('offer');
+  });
+
+  it('takes a reserve out of the list when it becomes the agent\'s own model', () => {
+    expect(agentModelWith(own, { provider: 'local', model: 'model-b' }).fallbacks).toEqual([ref('model-c')]);
+    expect(agentModelWith({ ...own, fallbacks: [ref('model-b')] }, { provider: 'local', model: 'model-b' })).not.toHaveProperty('fallbacks');
+  });
+
+  it('keeps the pool in the draft while a role is picked, so the way back finds it, and writes none for the role', () => {
+    const c = withLocal();
+    const byRole = agentModelWith(own, { role: 'fix' });
+    expect(byRole).toEqual({ role: 'fix', provider: '', model: '', fallbacks: own.fallbacks, activities: own.activities });
+    const saved = applyAgent(c, { ...draftOf(agent(c, 'developer')), model: byRole }, false);
+    expect(agent(saved, 'developer').model).toEqual({ role: 'fix', provider: '', model: '' });
+    expect(agentModelWith(byRole, { provider: 'local', model: 'model-a' }).fallbacks).toEqual(own.fallbacks);
+  });
+
+  it('replaces the pool of the model and leaves an empty list out', () => {
+    const next = agentModelPool(own, { fallbacks: [ref('model-d')] });
+    expect(next).toEqual({ role: null, provider: 'local', model: 'model-a', images: true, contextWindow: 64_000, fallbacks: [ref('model-d')] });
+    expect(agentModelPool(own, {})).not.toHaveProperty('fallbacks');
+    const c = withLocal();
+    const saved = applyAgent(c, { ...draftOf(agent(c, 'developer')), model: next }, false);
+    expect(agent(saved, 'developer').model).toEqual(next);
+    expect(validateConfig(agentOnly(saved)).errors).toEqual([]);
+  });
+
+  it('flags a provider that is gone, a model twice in a list, the agent\'s own model as a reserve and a list that is too long', () => {
+    const c = withLocal();
+    const d = { ...draftOf(agent(c, 'developer')), model: { ...own } };
+    expect(agentProblems(c, d, false)).toEqual([]);
+    const keys = (model: object) => agentProblems(c, { ...d, model: { ...own, ...model } }, false).map((p) => p.key);
+    expect(keys({ fallbacks: [ref('model-b', 'gone')] })).toEqual(['ui.team.err.poolProvider']);
+    expect(keys({ fallbacks: [ref('model-b'), ref('model-b')] })).toEqual(['ui.team.err.poolDuplicate']);
+    expect(keys({ fallbacks: [ref('model-a')] })).toEqual(['ui.team.err.poolDuplicate']);
+    expect(keys({ activities: { edit: [ref('model-a'), ref('model-a')] } })).toEqual(['ui.team.err.poolDuplicate']);
+    expect(keys({ fallbacks: Array.from({ length: 9 }, (_, i) => ref(`m-${i}`)) })).toEqual(['ui.team.err.poolMax']);
+    // The model of a role has no pool of its own to check.
+    expect(agentProblems(c, { ...d, model: { role: 'fix', provider: '', model: '', fallbacks: [ref('x', 'gone')] } }, false)).toEqual([]);
   });
 });

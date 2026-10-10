@@ -1,0 +1,189 @@
+# Implementation: the live activity as a tree
+
+Commits follow the order of `2_PLAN.md`. Each section below is written in the commit it describes.
+
+## Commit 1: the reasoning switch in the configuration
+
+Schema 28, `v27ToV28`, `runner.showReasoning` (types, defaults, schema in one commit), `runner.showReasoning` in `WEB_EDITABLE`, the toggle in the runner section, the two texts
+of `ui.runner.*`, `docs/configuration.md` in both languages, and the tests that pin the number or the neutral runner. Nothing reads the switch yet except the settings screen.
+
+Deviations from the plan:
+
+- `reasoningOn` (planned in commit 2 beside the new activity constants) is added to `src/shared/activity.ts` here, alone, because the runner draft (`runnerEdit.ts`) needs it
+  to read an absent field as on. The rest of the shared activity changes stay in commit 2.
+- The v26 helper of `test/config-migrations.test.ts` also deletes `showReasoning`, and the test that compares a v26 file with its migrated result overrides `showReasoning` on both
+  sides like it does `sharedMemory`; the `:486`, `:527` and `:651` cases needed no edit (their `before` comes from `neutralConfig()`, which carries `true`, and the chain writes `true`).
+
+## Commit 2: nodes, a ring per node and the new kinds in the activity log
+
+`ActivityEntry` gains `parent` and `node` (every line of a node) and the kinds `thought` and `answer`; the main log keeps a ring per node, evicts by tree, answers a run id with
+its subtree and a job id with no overall cut, keeps the newest status line when a ring turns over, and makes `thought`, `answer`, `child` and `lend`. `withActivityParent`,
+`currentActivity`, `beginActivity`'s `node` and the joining `withActivityContext` carry the parent. The thoughts gate is wired in `src/main/index.ts`. The renderer store caps per
+run, drops finished trees past 240 runs and keeps new children in `backfillLive`. Nothing emits a thought, an answer or a child yet.
+
+Deviations from the plan:
+
+- `stepText` lives in `src/renderer/src/activity.ts` (the existing DOM-free module), not in `activityTree.ts`, which is created in commit 6: the flat list needs it now, so that a
+  thought can never print as a label. Commit 6 re-exports it from the tree module. The flat timeline (`ActivityTimeline`), the dock's `Steps`, `AgentActivity`'s `act-now` and the
+  thread's `CallLine` all word the newest line through it.
+- `getConfig` was not imported in `src/main/index.ts` (the plan said it was); it is added to the `./workspaceConfig` import next to `onConfigChange`.
+- `beginCallActivity` takes the optional `node` here already (the signature is the log's, not the wiring of path A, which stays in commit 4).
+- The pinned status line is not counted in the ring in the renderer's cap or in the main log's: a ring holds `ring` lines plus the newest status line when that one is older than
+  all of them (`ring + 1` at most), as the plan says; the renderer mirrors this per run.
+- Added `test/activity-policy.test.ts` here (the plan lists it with the phone's tests, no commit given), and the stub `RunActivity` of `test/mentions-call-line.test.ts` gained the
+  new members.
+- `activity.kind.thought`, `activity.kind.answer` and `activity.thought` are the only catalog keys added; the others of the plan's list (`activity.node.*`, `activity.callRefused.*`,
+  the entry titles) come with the commits that use them, so no key sits unused.
+
+## Commit 3: each sub-agent as a node of its own, in both engines
+
+The open loop tells the caller about each sub-agent (`onSubAgent`, a `SubAgentHandle`) before it runs, synchronously and in the order of the tool calls; the sub-agent's own
+`onToolUse` and `onInterim` go to the handle, and the model-switch notice, usage and the sign of life stay the parent's. A kind that changes things (`edit`, `shell`, `screen`) is
+`queued` while another of them is open and `started` when its turn comes; the node ends in the existing `try`/`catch` (`finished`, or `failed` with the reason, a sub-agent out of
+turns included). The agents module (`openSubAgent`) makes the node with `RunActivity.child`, and the Claude SDK loop routes each message by `parent_tool_use_id` to the node that
+the `Agent`/`Task` tool use opened, ends it on the matching `tool_result` (`failed` when `is_error`, never with the result's text), closes what is left open at the `result` message
+and, as `failed`, in a `finally`. `lineOf` words the `Agent` line as `Agent <kind>: <task>`; `source()` is untouched.
+
+Deviations from the plan:
+
+- `SubAgentStart` carries `{ role, kind, name, description, prompt }` instead of `{ kind, name, task }`: the role is the string the open engine already gives the sub-agent's usage
+  (`<role>:<kind or definition name>`, and the node needs it), and the words that head the node (kind or definition, then the task or the first words of the prompt, clipped) are
+  made in one place in the agents module (`subAgentWords`) for both engines.
+- `SubAgentHandle.events` is `Pick<RunEvents, 'onToolUse' | 'onInterim'>`; `onThought` joins it in commit 5, where the engine first calls it.
+- The loop's `runAgent` takes a fourth argument (`about`: the model's `description` and `subagent_type`), because the principal's `Agent` tool has both and the callback needs them.
+- The handle is told `queued` or `started` by the loop itself, synchronously, right after it is created, instead of the agents module emitting a first status: the module cannot
+  know whether another sub-agent is ahead. The node's order under its parent is that of the first line, so it is also the order of the tool calls.
+- The tests are split in two files, `test/activity-subagents.test.ts` (open engine, through `askAgent`) and `test/activity-subagents-sdk.test.ts` (scripted `query`), because the
+  SDK module is replaced for a whole file. The held/queued cases and the handle's own contract are in `test/engine-open-subagent.test.ts`, with a recording caller as the harness.
+  "The usage unchanged" is not asserted separately: the existing usage tests of that file (`used`, `adds the sub-agent's use ...`) run unchanged and pass.
+- `Task`, the older name of the SDK's sub-agent tool, is accepted beside `Agent`; the plan allowed it. A sub-agent of the SDK is headed by its `subagent_type` (or `agent`): the SDK
+  has no kind. The live order and the `parent_tool_use_id` of parallel SDK sub-agents were read in the declarations and are not seen working (risk 3 of the plan).
+
+## Commit 4: called agents linked under the agent that called them
+
+`askAgent` runs the engine under its call's node (`withActivityParent`) and hands the engine its app tools wrapped to run under that node as well (`bindActivityParent`, which keeps
+the job even from a chain that lost the async context); `lineOf` words `CallAgent` as `CallAgent <callee>: <topic>`. Path A: the call's line carries `node` (the message text) at both
+call sites. Path B: `ask` makes the callee a node under the caller and hands it to `answerMentions` through `callOf`. Path C: `runConversation` makes one node for the whole
+conversation, lends it to each round and closes it in its `finally`. The excerpt line is emitted by the code that posts the reply (`answerMentions` for A and B, the round loop for C), never
+by an engine. A refused call adds a line to the caller's node (`activity.callRefused.cycle|cap`) in `converse.ts` and in the executor's `callAgent`.
+
+Deviations from the plan:
+
+- `bindActivityParent` (a new export of the log) is used by the wrapper instead of `withActivityParent` alone: it captures the job and the call that are current where the tool list is
+  wrapped, so an in-process tool server that lost the async context (risk 2) still runs the tool in the same job and a nested `withActivityContext` joins instead of starting a call.
+- `agentLabel(team, id)` (name as the team writes it, the id when the agent is gone) lives in `src/shared/config/team.ts`, pure, because `converse.ts` and `answer.ts` cannot import the
+  agents module (it imports the mentions). `ConversationCall` gained an optional `label` for it.
+- Path B and path C make their node with `currentActivity().child(...)` (the caller's secret-path check is inherited) and fall back to `beginActivity` only when no node is current. The node
+  `ask` hands over is a thin wrapper that remembers whether anything said `failed`, so an agent that gave no answer after the engine said `finished` ends `failed` once, and one the engine
+  already failed (held, stopped) is not failed twice.
+- `get(job)` kept a run only when its call was the job's latest or it was still working; the lines of an `@` call have no call id, and the agents they call copy it, so a callee that
+  had ended was dropped from the backfill while its caller still worked (rule 5). It now keeps every run of a tree that still has work in it (`treeDone`), a fix to commit 2's code
+  found by the path-A test.
+- The cap refusal line reads "the limit of N calls was reached" (not "this answer"), because the same key serves an answer and a stage.
+- The unknown-agent refusal is left alone, as the plan says. The CHANGELOG line waits for commit 7, as the plan's order says.
+- Tests: `test/activity-calls.test.ts` (A, B and C over the real `askAgent` and the fake server; path C there uses a hand-made `callAgent` that calls `runConversation`, as the executor's
+  does); the executor's own refusal lines are in `test/runner-send-call.test.ts`, with the stage's node made by hand (its engine there is the fake one, which does not set the parent).
+  `agent-activity-core.test.ts` gains the `get` case and `bindActivityParent`; the SDK file one `CallAgent` line case.
+
+## Commit 5: the reasoning of each turn as one closed line
+
+The open loop calls `onThought` once with `Completion.reasoning` when a turn is complete (after the assistant message is written, before its narration and tools are handled), and the
+agents module hands it to the call's activity or, for a sub-agent, to its handle (`SubAgentHandle.events.onThought`). The Claude SDK loop joins the `thinking` blocks of one message
+id and flushes them as one line on the node that took the turn (the call's, or the sub-agent's by `parent_tool_use_id`), before the turn's text and tool uses; an empty, blank or
+`redacted_thinking` block makes none. The masking, the 2,000-character cut, the 20,000-character scan bound and the switch were already in the log (commit 2); the request to the SDK is
+not changed.
+
+Deviations from the plan:
+
+- A sub-agent started by a caller that made no node for it (no `onSubAgent`) does not hand its thoughts to the parent's `onThought`: the nested events are the parent's with `onThought`
+  cleared, then the handle's. Tool lines and narration of such a sub-agent still land on the parent's, as before. This is the one place the nested `events` object was rewritten
+  (it is now always set, with the same members as before for everything but `onThought`).
+- The SDK loop also flushes a held thought in its `finally`, so a call that ends by an error after a thinking block still shows the line.
+- The test plan's single `test/activity-thoughts.test.ts` is two files, `test/activity-thoughts.test.ts` (open engine, through `askAgent`) and `test/activity-thoughts-sdk.test.ts`
+  (scripted `query`), because the SDK module is replaced for a whole file. `toolStep` in `test/helpers/fakeOpenAI.ts` gained `reasoning` (a string or pieces) and `reasoningField`.
+- "No file holds the marker of a thought" cannot run the open session with `sessionsDir: null` through `askAgent`; the test walks the data folder and skips `open-sessions`, the one
+  place the principal's reasoning already was.
+- No SDK `thinking` option or `forwardSubagentText` is set: a sub-agent's thought shows on the Claude engine only if the SDK forwards it (Q3 and question 3 of the plan).
+
+## Commit 6: the activity as a tree on the dock, the run screen and the inline panels
+
+`src/renderer/src/activityTree.ts` (DOM-free) builds the tree from the lines (`buildTree`), says what the dock lists and counts (`topEntries`, `dockCounts`), titles a level
+(`nodeTitle`), gives the default of each level (`defaultOpen`) and holds the person's choices outside the components (`createTreeView`); it re-exports `stepText`. `ActivityTree.tsx`
+draws it: a header per level (chevron, a spinner while it works, the title, the state word and, collapsed, its newest own step), the lines under it, a thought as a closed row that
+opens on demand, the answer excerpt with its own icon, and the follow-the-newest scroll of the old timeline on the outer box. `AgentActivity` (run screen, ceremony panels) and the
+dock use it; the generic card, the call groups of the dock and `ActivityTimeline` are gone, and `strayActivity` with them (`useTopEntries` replaces `useStrayActivity`).
+
+Deviations from the plan:
+
+- `ActivityTimeline` is removed instead of reused for a node's own lines: its list, its scroll-follow and its empty text moved into `ActivityTree`, and `KindIcon` with them (both
+  were only used by the dock and `AgentActivity`).
+- An entry of the dock shows only the roots that still have work, with everything under them. A run's bucket keeps the lines of every stage that ever ran in it; the old flat dock
+  showed only runs still going, so a finished stage agent is not listed there (the run screen, which shows the whole bucket, still lists it). Plan rule 5 protects finished
+  children of a parent in the panel, not finished roots.
+- `dockCounts` is a function of `activityTree.ts` (the plan had the sums inline in the dock) so the badge is tested as a plain function.
+- `activity.node.show|hide` read "Open {name}" / "Close {name}" so they are not a copy of `activity.dock.show|hide`; the state words reuse the wording of the existing finished and
+  failed lines. `activity.generic` and `activity.call.entry` were removed (nothing reads them any more).
+- No component is rendered by a test (the runner is a node environment); the markup was checked by `tsc`, the catalog and theme gates and the production build, not seen on screen.
+- `test/gitlab-catalogs-unchanged.test.ts` pins every key of the snapshot of `main`; `activity.generic` is one of them, so it is listed in that test's `REMOVED` table with its reason
+  (the way that test takes a key out), not left in the catalogs unused.
+
+## Commit 7: documentation
+
+`docs/runner.md` gains "A atividade ao vivo" and "The live activity" (the tree, the three paths, the thought, the switch, what the tree is not, the known limit) and one item each in
+"Não verificado" and "Not verified"; `docs/configuration.md` was done with the switch in commit 1. `CHANGELOG.md` has the entries under `## [Unreleased]`: the tree, the thought, the
+switch (on for every workspace, stated), and the removal of the generic card. The plan put the changelog line in this commit, not in the one that changes behaviour; the commits 1 to 6
+leave `[Unreleased]` empty on purpose.
+
+## Delivery summary
+
+What the branch does, in the order of the commits (`git log` of the branch, after the plan and the spec):
+
+1. `runner.showReasoning` in the configuration (schema 28, `v27ToV28`, defaults, schema, editable from a paired browser, the toggle and its texts).
+2. The activity log with nodes: a ring per node, eviction by tree, `get` by subtree, the new kinds `thought` and `answer`, `withActivityParent`, `currentActivity`, the thoughts gate;
+   the renderer store's per-run cap and `backfillLive` that keeps new children.
+3. Sub-agents as nodes in both engines (`onSubAgent` and its handle, `parent_tool_use_id` routing, `queued` for the ordered kinds).
+4. Called agents under their caller on paths A, B and C, with the answer excerpt and the refusal line.
+5. The thought of each turn as one line in both engines, masked and cut, behind the switch.
+6. The tree on the dock, the run screen and the inline panels, with the badge of top entries and the generic card removed.
+7. This documentation.
+
+Gates at the head of the branch: `npx tsc --noEmit`, `npx vitest run` (461 files, 7,755 tests), `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`
+and `npx electron-vite build`, all clean when commit 6 was made. No prompt text changed: the goldens (`test/golden/*`, `prompts-screen`, `cycle-prompts`) ran unchanged.
+
+## Not verified
+
+- **Nothing was seen on screen.** The tree, the dock, the run screen and the thought rows were built and typed, and every decision above the markup is tested as a plain function, but
+  no component is rendered by a test (the runner is a node environment) and the app was not run. The CSS (indent, wrapping, the 44px targets, the dark panels) is unseen.
+- **No real model.** Both engines were driven by a fake model server and a scripted `query`. Whether the Claude models used return the thinking text by default (the manual check of
+  the plan's Q3, outside the suite) was not made; if it comes empty, the Claude engine shows fewer thoughts than the open one, and requesting the summarized display is a decision of
+  its own.
+- **The Claude SDK's sub-agent messages.** The live order, the `parent_tool_use_id` of parallel sub-agents, the `Agent`/`Task` naming and the closing `tool_result` were read in the
+  SDK's declarations; the tests pin the loop's reading of scripted messages, not the SDK's behaviour. A `CallAgent` made from inside an SDK sub-agent hangs under the main agent (the
+  in-process tool server is not told which sub-agent called).
+- **The paired phone** was not driven: the stream, the masking before it and the backfill are tested; the policy of the channel and the switch's editability are pinned by
+  `test/activity-policy.test.ts` and `test/config-web-scope.test.ts`, not by a browser.
+- **The schema number.** 28 was free when commit 1 was made; the plan names an open pull request that also takes a step in the chain. Look again at the rebase.
+- **Memory and rendering cost** of a large fan-out (a live tree is never trimmed) was not measured; the tree of a bucket is built once per change (review fix 2).
+
+## Review fixes
+
+Five findings of `4_REVIEW.md`, one commit each, after the seven above:
+
+1. **Thoughts stay off until the switch is read.** The log's gate defaulted to on; it now defaults to off, and `setThoughtsGate(null)` closes it again. `index.ts` still points it at the
+   workspace's configuration at startup, and the tests that need thoughts open it themselves (`createActivityLog({ thoughts: () => true })` or `setThoughtsGate(() => true)`). A new test
+   pins that a log with a sink and no gate emits no thought.
+2. **The tree of a bucket is built once per change.** `buildTreeOnce` in `activityTree.ts` remembers the tree by the identity of the entries array (a `WeakMap`), which the store keeps
+   for a bucket that did not change; `topEntries` uses it, so a line arriving in one bucket no longer rebuilds the others. The nodes are shared between calls and nothing changes them.
+3. **A sub-agent node always ends.** In `loop.ts` the first `state` and the model-switch notice now run in a guard that ends the node as failed with the error's message and rethrows;
+   `finish` is defined before it. Tested with an `onSwitch` that throws (the node ends once, failed, and the sub-agent never runs).
+4. **A called agent with no answer ends failed on both paths.** In `runConversation`, a turn with nothing to show that the caller did not cause (`closed` is false), and a run that was
+   aborted, end the node failed; the caller ending the conversation still ends it finished. The failure carries no reason text, as the other path's does not.
+5. **The expanded state speaks for itself.** The rows no longer carry the `sr-only` "Open/Close {name}" and "Show/Hide the thought" text that contradicted `aria-expanded`; the four keys
+   (`activity.node.show|hide`, `activity.thought.show|hide`) are out of both catalogs (none was in the `main` snapshot, so `REMOVED` did not need them). On the thought row the icon is
+   decorative (`KindIcon` takes `decorative`), because the button already says "Thought".
+
+Deviation: fix 4 took the screen closing under a turn (a turn cut short, `closed` false) as a no answer too, so that node ends failed as well.
+
+## After the merge
+
+The Windows build of the release failed: `src/renderer/src/activityTree.ts` and `ActivityTree.tsx` sit in one folder, and a case-insensitive file system with `.ts` tried before `.tsx` resolved `./ActivityTree` to the DOM-free module. The module is now `activityTreeModel.ts`, and `test/module-names-case.test.ts` fails on any two modules of a folder whose names differ only by case or extension. Earlier mentions of `activityTree.ts` in this folder name the module by its first name.

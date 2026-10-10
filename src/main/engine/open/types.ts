@@ -45,10 +45,13 @@ export interface ChatRequest {
 export interface Usage {
   prompt_tokens?: number;
   completion_tokens?: number;
-  prompt_tokens_details?: { cached_tokens?: number };
+  // `cache_write_tokens` is null on servers that do not bill cache writes.
+  prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number | null };
+  completion_tokens_details?: { reasoning_tokens?: number | null };
   prompt_cache_hit_tokens?: number;
-  // What the provider says the call cost, in US dollars (OpenRouter does).
+  // What the provider says the call cost, in US dollars (OpenRouter sends `cost`, other servers `estimated_cost`).
   cost?: number;
+  estimated_cost?: number;
 }
 
 export interface ChatChunk {
@@ -64,6 +67,8 @@ export interface ChatChunk {
     };
   }[];
   usage?: Usage | null;
+  // The tier that served the call (a server with tiers says so on every answer).
+  service_tier?: string | null;
   error?: unknown;
 }
 
@@ -79,6 +84,7 @@ export interface ChatResponse {
     };
   }[];
   usage?: Usage | null;
+  service_tier?: string | null;
   error?: unknown;
 }
 
@@ -88,7 +94,9 @@ export interface Completion {
   reasoning: string;
   toolCalls: ToolCall[];
   finishReason: string | null;
-  usage: { promptTokens: number; completionTokens: number; cachedTokens: number; costUsd?: number } | null;
+  usage: { promptTokens: number; completionTokens: number; cachedTokens: number; costUsd?: number; cacheWriteTokens?: number; reasoningTokens?: number } | null;
   // The upstream field the reasoning came in, when any.
   reasoningField: 'reasoning_content' | 'reasoning' | null;
+  // What the server said about the call besides its content: the id it logs the request under and the tier that served it.
+  meta?: { requestId?: string; tier?: string };
 }

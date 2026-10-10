@@ -1,6 +1,7 @@
 // i18n-lint: allow-file default stage patterns of each code host: the words its own labels and statuses use
 import type { StageDef, StageKind, StageMappingRule, VcsKind } from '../../shared/config/types';
 import { matchStage } from '../../shared/config/stages';
+import { stageOfBoardLabel } from '../../shared/boardHost';
 import { mapStageByRules } from '../../shared/cycles/stages';
 import type { VcsIssue, VcsMr } from './types';
 
@@ -67,11 +68,14 @@ export function kindFromWork(issue: VcsIssue, mrs: VcsMr[]): StageKind {
 
 /**
  * The stage of an issue: the cycle's own mapping rules for this provider first (`devCycle.stageMapping`: a label, a status or a state to a stage),
- * then the highest-ranked stage a status or label matches, else the one its merge requests imply. null: the stages have none to offer.
+ * then the stage a `board:<id>` label names, then the highest-ranked stage a status or label matches, else the one its merge requests imply. null: the stages have none to offer.
  */
 export function stageOf(issue: VcsIssue, mrs: VcsMr[], stages: StageDef[], mapping: StageMappingRule[] = [], host?: VcsKind): StageDef | null {
   const byRule = mapStageByRules({ stages, stageMapping: mapping }, { provider: host, labels: issue.labels, status: issue.status, state: issue.state });
   if (byRule) return byRule;
+  // The label the board writes for a column: read after the rules, before the free-text patterns (which would match "board:review" as a review).
+  const byBoard = stageOfBoardLabel(issue.labels, stages);
+  if (byBoard) return byBoard;
   const hits = texts(issue)
     .map((text) => matchStage(stages, text))
     .filter((s): s is StageDef => s !== null);

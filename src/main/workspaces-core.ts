@@ -2,6 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renam
 import { join } from 'node:path';
 import type { Registry, WorkspaceInfo } from '../shared/workspaces';
 import { t } from '../shared/i18n';
+import { deleteAllProfiles } from './browser/profile';
 
 export type { Registry, WorkspaceInfo };
 
@@ -270,8 +271,11 @@ export function deleteWorkspace(root: string, id: string, typedName: string, par
   const w = must(reg, id);
   if (reg.current === id) throw new Error(t('main.workspaces.deleteCurrent'));
   if (typeof typedName !== 'string' || typedName.trim() !== w.name) throw new Error(t('main.workspaces.nameMismatch'));
+  // The logged-in browsers of its agents go first, for good: the trash is moved to and never purged, and cookies must not sit in it. A crash after this leaves the
+  // workspace listed with empty profiles, which is how a new one starts; a profile that cannot be removed stops the deletion with nothing else done.
+  if (!deleteAllProfiles(workspaceDir(root, id))) throw new Error(t('main.workspaces.profilesRemain'));
   const next = { ...reg, list: reg.list.filter((x) => x.id !== id) };
-  // Registry first: a crash in between leaves an unlisted folder, never a listed one that is gone.
+  // Registry next: a crash in between leaves an unlisted folder, never a listed one that is gone.
   writeRegistry(root, next);
   const trash = join(workspacesDir(root), TRASH_DIR);
   mkdirSync(trash, { recursive: true });

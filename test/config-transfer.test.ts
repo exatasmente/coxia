@@ -3,8 +3,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { newProvider, neutralConfig } from '../src/shared/config/defaults';
+import { newAgent } from '../src/shared/config/team';
 import { EXPORT_FORMAT, buildExport, diffConfig, parseImport } from '../src/shared/config/transfer';
-import type { WorkspaceConfig } from '../src/shared/config/types';
+import { CONFIG_SCHEMA_VERSION, type WorkspaceConfig } from '../src/shared/config/types';
 import { collectSecretRequirements, validateConfig } from '../src/shared/config/validate';
 import { CONFIG_FILE, bootstrapConfigs, readConfigFile, writeConfigFile } from '../src/main/config-bootstrap';
 import { applyImport, exportText, previewImport, type TransferDeps } from '../src/main/config-transfer';
@@ -56,7 +57,7 @@ describe('export', () => {
     const file = JSON.parse(text);
     expect(file).toMatchObject({ format: EXPORT_FORMAT, formatVersion: 1, app: { name: 'coxia', version: '1.2.3' }, workspace: { name: 'Acme' }, exportedAt: '2026-10-02T12:00:00.000Z' });
     expect(file.requiredSecrets.map((s: { ref: string }) => s.ref).sort()).toEqual(['llm.anthropic', 'vcs.github']);
-    expect(file.config.schemaVersion).toBe(18);
+    expect(file.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(file.config.vcs[0].secretRef).toBe('vcs.github');
     expect(text).not.toMatch(/"(apiKey|token|password|secret)"/i);
   });
@@ -166,6 +167,19 @@ describe('preview', () => {
     expect(previewImport(deps, { text }, { mode: 'new', name: 'x' }).missingPaths.map((m) => m.field)).toEqual(expect.arrayContaining(['projects.roots[0]', 'projects.repos[api].path']));
   });
 
+  it('says an agent of the file has a screen, hosts to reach or a logged-in browser, and keeps them when the person applies it', () => {
+    const theirs = sample();
+    theirs.agents.team.push(newAgent({ id: 'scout', name: 'Scout', screen: true, allowedHosts: ['example.com'], browserProfile: true }));
+    const text = exportText(theirs, { workspaceName: 'Acme', appVersion: '1', now: new Date(0) });
+    const p = previewImport(deps, { text }, { mode: 'new', name: 'x' });
+    expect(p.ok).toBe(true);
+    expect(p.commands.map((c) => c.field)).toEqual(expect.arrayContaining(['agents.team[scout].screen', 'agents.team[scout].allowedHosts', 'agents.team[scout].browserProfile']));
+    expect(p.changes.map((c) => c.path)).toEqual(expect.arrayContaining(['agents.team[scout].screen', 'agents.team[scout].allowedHosts']));
+    applyImport(deps, { source: { text }, target: { mode: 'new', name: 'x' }, secrets: [] }, null);
+    const saved = readConfigFile(workspaceDir(root, 'x')) as WorkspaceConfig;
+    expect(saved.agents.team.find((a) => a.id === 'scout')).toMatchObject({ screen: true, allowedHosts: ['example.com'], browserProfile: true });
+  });
+
   it('reports every validation problem with its path and writes nothing', () => {
     const bad = JSON.parse(exportText(sample(), { workspaceName: 'Acme', appVersion: '1', now: new Date(0) }));
     bad.config.language = 'fr';
@@ -193,7 +207,7 @@ describe('what an import refuses', () => {
     expect(parseImport('[]').ok).toBe(false);
     expect(parseImport(JSON.stringify({ ...good(), formatVersion: 7 })).errors[0].message).toMatch(/newer/);
     const newer = good();
-    newer.config.schemaVersion = 19;
+    newer.config.schemaVersion = CONFIG_SCHEMA_VERSION + 1;
     expect(parseImport(JSON.stringify(newer)).errors[0].message).toMatch(/newer app/);
   });
 

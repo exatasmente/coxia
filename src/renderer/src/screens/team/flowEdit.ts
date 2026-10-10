@@ -1,6 +1,6 @@
 import { ID } from '../../../../shared/config/schema';
-import { RUN_KIND_FLOW_KEYS } from '../../../../shared/config/squads';
-import { newAgent } from '../../../../shared/config/team';
+import { RUN_KIND_FLOW_KEYS, scopedTeam } from '../../../../shared/config/squads';
+import { newAgent, workingTeam } from '../../../../shared/config/team';
 import { DEFAULT_ROUND_LIMIT, type AgentDef, type CommentTemplate, type FlowAutonomy, type StageDef, type StageKind, type StageType, type WorkspaceConfig } from '../../../../shared/config/types';
 import { newFlowAutonomy } from '../../../../shared/config/autonomy';
 import { isWork } from '../../../../shared/runs/flow';
@@ -18,6 +18,9 @@ const COMMENT_KEY_RE = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 
 /** A flow target: a squad id, or null for the workspace's own flow. */
 export type Target = string | null;
+
+/** The agents a flow may use, for the stage panel and the diagram: a squad's members and the shared ones, or the whole team for the workspace's flow; no draft of the assistant in either. */
+export const flowTeam = (view: WorkspaceConfig, target: Target): AgentDef[] => (target ? scopedTeam(view, target) : workingTeam(view.agents.team));
 
 export interface FlowDraft {
   /** The workspace's flow. */

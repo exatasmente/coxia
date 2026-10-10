@@ -36,6 +36,7 @@ const ACTION_LABEL: Record<RunActionId, string> = {
   skip: 'ui.cycle.action.skip',
   answer: 'ui.cycle.action.answer',
   chooseSquad: 'ui.cycle.action.chooseSquad',
+  retryPr: 'ui.cycle.action.retryPr',
   skipWait: 'ui.cycle.action.skipWait',
   sendBack: 'ui.cycle.action.sendBack',
   retry: 'ui.cycle.action.retry',
@@ -53,6 +54,7 @@ const ERROR_KEY: Record<RunFailure['code'], string> = {
   'no-agent': 'ui.cycle.error.noAgent',
   'stage-failed': 'ui.cycle.error.stageFailed',
   'no-event': 'ui.cycle.error.noEvent',
+  'pr-open-failed': 'ui.cycle.error.prOpenFailed',
 };
 
 interface Props {
@@ -140,6 +142,24 @@ function SquadChoice({ run, squads, busy, call }: { run: Run; squads: readonly S
         ))}
         <button type="button" className="btn" disabled={busy} onClick={() => call(() => runsApi.setSquad(run.id, null))}>{t('ui.cycle.squad.none')}</button>
       </div>
+    </div>
+  );
+}
+
+/** The question of a failed pull request: one button per base the run recorded, the click opens it against that base now. */
+function PrRetryChoice({ run, busy, call }: { run: Run; busy: boolean; call: (fn: () => Promise<Run>) => void }) {
+  const t = useT();
+  return (
+    <div className="cy-pr-retry" role="group" aria-label={t('ui.cycle.prRetry.title')}>
+      <p className="small muted">{t('ui.cycle.prRetry.title')}</p>
+      <div className="row">
+        {(run.question?.bases ?? []).map((base) => (
+          <button key={base} type="button" className="btn btn-dark" disabled={busy} onClick={() => call(() => runsApi.retryPr(run.id, base))}>
+            {t('ui.cycle.prRetry.pick', { branch: base })}
+          </button>
+        ))}
+      </div>
+      <p className="faint small">{t('ui.cycle.prRetry.hint')}</p>
     </div>
   );
 }
@@ -283,6 +303,8 @@ export function RunActions({ run, flow, config, card, actions, go, sendBackAsk =
       case 'retry': return call(() => runsApi.retry(run.id));
       case 'cancel': return confirmCancel ? call(() => runsApi.cancel(run.id)) : setConfirmCancel(true);
       case 'chooseSquad': return undefined;
+      // The base comes from the clicked button, not the text field: the group below draws the choices.
+      case 'retryPr': return undefined;
     }
   };
 
@@ -307,6 +329,9 @@ export function RunActions({ run, flow, config, card, actions, go, sendBackAsk =
       {run.status === 'question' && run.question?.kind === 'squad' && config && (
         <SquadChoice run={run} squads={config.squads ?? []} busy={busy} call={(fn) => call(fn)} />
       )}
+      {run.status === 'question' && run.question?.kind === 'pr-retry' && (run.question.bases ?? []).length > 0 && (
+        <PrRetryChoice run={run} busy={busy} call={(fn) => call(fn)} />
+      )}
       {needsText && (
         <label className="cy-field">
           <span className="small muted">{t(TEXT_LABEL[run.status] ?? 'ui.cycle.input.note')}</span>
@@ -323,7 +348,7 @@ export function RunActions({ run, flow, config, card, actions, go, sendBackAsk =
       )}
       {available.length > 0 && (
         <div className="row">
-          {available.filter((a) => a.id !== 'chooseSquad').map((a) => {
+          {available.filter((a) => a.id !== 'chooseSquad' && a.id !== 'retryPr').map((a) => {
             const missing = a.input === 'required' && !text.trim();
             const confirming = a.id === 'cancel' && confirmCancel;
             return (

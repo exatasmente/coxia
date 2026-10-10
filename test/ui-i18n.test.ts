@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -197,6 +197,30 @@ describe('the lint script', () => {
       writeFileSync(join(dir, 'A.tsx'), 'export const A = () => <p>Olá, mundo</p>;\n');
       expect(() => lint('--dir', dir, '--max', '0')).toThrow();
       expect(lint('--dir', dir, '--max', '1')).toMatch(/total in 1 file/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a catalog that repeats a key, which JSON.parse would keep silently', SLOW, () => {
+    const dir = mkdtempSync(join(tmpdir(), 'i18n-lint-'));
+    const catalogs = join(dir, 'i18n');
+    try {
+      mkdirSync(catalogs);
+      writeFileSync(join(catalogs, 'ui-x.en.json'), '{\n  "ui.x.close": "Close",\n  "ui.x.open": "Open"\n}\n');
+      writeFileSync(join(catalogs, 'ui-x.pt-BR.json'), '{\n  "ui.x.close": "Fechar",\n  "ui.x.open": "Abrir",\n  "ui.x.close": "Fechar"\n}\n');
+      // An empty scan folder keeps the run to the catalogs.
+      const scan = ['--dir', dir, '--keys', '--catalogs', catalogs];
+      let stderr = '';
+      try {
+        lint(...scan);
+      } catch (e) {
+        stderr = String((e as { stderr?: string }).stderr);
+      }
+      expect(stderr).toContain('ui-x.pt-BR.json: "ui.x.close" appears more than once');
+      expect(stderr).not.toContain('ui.x.open');
+      writeFileSync(join(catalogs, 'ui-x.pt-BR.json'), '{\n  "ui.x.close": "Fechar",\n  "ui.x.open": "Abrir"\n}\n');
+      expect(lint(...scan)).toMatch(/i18n keys: 2 in both languages \(1 catalogs\)/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CATALOGS } from '../src/shared/i18n';
-import { CARD_SCOPES, CEREMONY_IDS, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, VCS_KINDS, VOICE_ENGINES } from '../src/shared/config/types';
+import { ACTIVITIES, CARD_SCOPES, CEREMONY_IDS, EFFORT_SETTINGS, LANGUAGES, LLM_ROLES, POOL_MODES, PROVIDER_KINDS, STAGE_KINDS, VCS_KINDS, VOICE_ENGINES } from '../src/shared/config/types';
 import { SECRET_SOURCE_TYPES } from '../src/shared/secrets';
 import { TEMPLATE_NEEDS } from '../src/shared/cycles/types';
 import { DOCS_KEYS, OPEN_PRESETS, WIZARD_STEPS } from '../src/shared/wizard';
@@ -20,6 +20,16 @@ const FILES = [...walk(join(ROOT, 'src/renderer/src/wizard')), join(ROOT, 'src/r
 
 // The values a ${...} can take in each dynamic key family.
 const FAMILIES: [string, string[]][] = [
+  ['wizard.activity.', [...ACTIVITIES]],
+  ['wizard.poolMode.', [...POOL_MODES]],
+  ['wizard.pool.origin.', ['self-reported', 'third-party']],
+  ['wizard.pool.problem.', ['empty', 'provider', 'duplicate', 'max']],
+  ['wizard.pool.unverified.', ['tools', 'structured']],
+  ['wizard.pool.offer.', ['flex', 'effort']],
+  ['wizard.pool.deprecated.', ['past', 'pastNoSub', 'future', 'futureNoSub']],
+  ['wizard.features.problem.', ['scheme', 'origin']],
+  ['wizard.features.', ['serviceTier', 'failFast', 'reasoningEffort']],
+  ['wizard.effort.', [...EFFORT_SETTINGS]],
   ['wizard.cer.', [...CEREMONY_IDS]],
   ['wizard.cycle.need.', [...TEMPLATE_NEEDS]],
   ['wizard.cycle.tpl.', ['none', 'scrum', 'kanban', 'sdd']],

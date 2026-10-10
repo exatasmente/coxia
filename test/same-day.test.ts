@@ -325,6 +325,33 @@ describe('the agenda of a later meeting', () => {
   });
 });
 
+describe('the cross-day note of a question the earlier days also left unanswered', () => {
+  const PREV = '2026-10-01';
+  const prevMeeting = async (stage: string) => {
+    state.saveState(ceremony({ id: `${PREV}T094000`, cards: [subject({ stage })], turns: { 'web#101': { ref: 'web#101', sessionId: null, speech: 'Yesterday.', did: 'did', next: 'Next', blocker: null, question: 'Can it be approved today?' } }, spoken: ['web#101'] }));
+    (await import('../src/main/minutesStore')).dayView(PREV);
+  };
+
+  it('reaches the prompt of a card covered for the first time today', async () => {
+    await prevMeeting('Doing');
+    at('09:40:00');
+    await agents.prepareTurn(subject());
+    expect(calls).toHaveLength(1);
+    expect(calls[0].prompt).toContain('Esta decisão já ficou sem resposta nos dias anteriores: 2026-10-01.');
+  });
+
+  it('reaches the prompt of the same-day turn as well, said next to what the earlier meeting left', async () => {
+    await prevMeeting('Doing');
+    const c = subject();
+    await firstMeeting(c, { question: 'Can Bruno rebase today?' });
+    at('14:10:00');
+    const moved = subject({ pending: ['pipeline vermelha', 'needs approval'] });
+    await agents.prepareTurn(moved, { ceremonyId: SECOND });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].prompt).toContain('Esta decisão já ficou sem resposta nos dias anteriores: 2026-10-01.');
+  });
+});
+
 describe('prompts of a second meeting, against the files captured when the feature was written', () => {
   function golden(name: string, captured: Record<string, Captured>): void {
     const file = join(import.meta.dirname, 'golden', name);

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { neutralConfig } from '../src/shared/config';
 import { newAgent } from '../src/shared/config/team';
-import { docsListsOf, withDocsSources } from '../src/shared/harness/sources';
+import { collectPaths } from '../src/shared/config/transfer';
+import { docsListsOf, withDocsSources, withRoadmapFile } from '../src/shared/harness/sources';
 
 // Settings › Documentation saves the whole configuration (`config:save` replaces it), so what it saves is the configuration as it is at that moment with only the
 // lists of extra sources replaced; a snapshot from when the screen opened must never be what gets written.
@@ -51,5 +52,28 @@ describe('saving the extra sources of the documentation', () => {
     expect(saved.docs.mcpConfigFiles).toEqual([]);
     expect(saved.docs.autoDetect).toBe(now.docs.autoDetect);
     expect(saved.docs.specsDir).toBe(now.docs.specsDir);
+  });
+});
+
+describe('saving the roadmap pointer of the documentation', () => {
+  it('replaces only the pointer, on the configuration as it is now, and a saved list keeps it', () => {
+    const now = neutralConfig();
+    now.agents.team = [...now.agents.team, newAgent({ id: 'added-later' })];
+    now.docs.rulesDirs = ['notes/rules'];
+    const saved = withRoadmapFile(now, '  ~/project/ROADMAP.md ');
+    expect(saved.docs.roadmapFile).toBe('~/project/ROADMAP.md');
+    expect(saved.agents.team.map((a) => a.id)).toContain('added-later');
+    expect(saved.docs.rulesDirs).toEqual(['notes/rules']);
+    expect(now.docs.roadmapFile).toBeUndefined();
+    // saving the lists afterwards does not drop the pointer
+    expect(withDocsSources(saved, docsListsOf(saved)).docs.roadmapFile).toBe('~/project/ROADMAP.md');
+  });
+
+  it('clears the pointer with a blank value, leaving the field absent, and names it among the paths an import checks', () => {
+    const set = withRoadmapFile(neutralConfig(), '~/project/ROADMAP.md');
+    expect(collectPaths(set)).toContainEqual({ field: 'docs.roadmapFile', path: '~/project/ROADMAP.md' });
+    const cleared = withRoadmapFile(set, '   ');
+    expect('roadmapFile' in cleared.docs).toBe(false);
+    expect(collectPaths(cleared).some((p) => p.field === 'docs.roadmapFile')).toBe(false);
   });
 });

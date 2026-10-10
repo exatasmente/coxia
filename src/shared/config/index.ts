@@ -9,3 +9,5 @@ export { CONFIG_SCHEMA } from './schema';
 export * from './stages';
 export * from './transfer';
 export * from './validate';
+export * from './poolMode';
+export * from './offer';

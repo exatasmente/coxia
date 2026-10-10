@@ -2,10 +2,44 @@ import type { AttachmentRef } from '../attachments';
 import type { StageKind, StageType, WaitFor, WaitKind } from '../config/types';
 import type { EvidenceRecord } from '../evidence';
 import type { ForumDraft } from '../forum';
+import type { LiveScreen } from '../screen';
+import type { ProcedureUse } from '../procedures';
 
 // A run: one issue going through the agent cycle. This file is the shape; the moves are in transitions.ts, the file format check in schema.ts.
 
-export const RUN_VERSION = 1;
+/**
+ * The newest run file format this app reads. Version 2 is a run that holds the app's own screen recording (a `webm` evidence record): an app that does not know the
+ * kind refuses such a file as written by a newer app, instead of reading it as invalid. Version 3 is a run whose recording also holds `cuts` or `startedAfterMs` (#176): the beta.4 and
+ * beta.5 apps know the recording but their schema allows no other property in it, so they would call such a run invalid; at 3 they say "written by a newer app".
+ * Version 4 is a run whose recording holds a hand-off interval (`handoff`, and a mark of kind `handoff`, #178): the apps before it allow no such property.
+ * Version 5 is a run whose stage records carry `procedures` (the procedures a stage used, #179): an older app's schema allows no other property in a stage record, so it would call
+ * such a run invalid; at 5 it says "written by a newer app".
+ * Version 6 is a run blocked by its pull request (#160): a question of kind `pr-retry` (or its `bases`, `targetBranch`, `baseGone`), an error with code `pr-open-failed`, or a comment
+ * with `waitingSaid`. An older app's schema has closed enums and no other property in those records, so it would call such a run invalid; at 6 it says "written by a newer app".
+ * Every other run is written as version 1 (`runVersionOf`), so a downgrade loses only the runs that have a recording, from 3 on only the ones with cuts too, from 4 on only
+ * the ones with a hand-off, from 5 on only the ones that used a procedure, and from 6 on only the ones blocked by their pull request.
+ */
+export const RUN_VERSION = 6;
+export type RunVersion = 1 | 2 | 3 | 4 | 5 | 6;
+
+/** The format a run is written as: 6 when the run is blocked by its pull request (a `pr-retry` question, a `pr-open-failed` error, or a `waitingSaid` comment), 5 when a stage record holds `procedures`, 4 when a screen recording holds a hand-off, 3 when it holds cuts or `startedAfterMs` (the fields v2 does not know), 2 when it holds one without, else 1. The store stamps it on every save, so it follows the content and cannot be forgotten by a move. */
+export const runVersionOf = (run: {
+  evidence?: Run['evidence'];
+  stages?: readonly Pick<StageRecord, 'procedures'>[];
+  question?: Pick<PendingQuestion, 'kind' | 'bases' | 'targetBranch' | 'baseGone'> | null;
+  error?: Pick<RunFailure, 'code'> | null;
+  comments?: Record<string, Pick<CommentRecord, 'waitingSaid'>>;
+}): RunVersion => {
+  const q = run.question;
+  if (q && (q.kind === 'pr-retry' || q.bases !== undefined || q.targetBranch !== undefined || q.baseGone !== undefined)) return 6;
+  if (run.error?.code === 'pr-open-failed') return 6;
+  if (Object.values(run.comments ?? {}).some((c) => c.waitingSaid !== undefined)) return 6;
+  if ((run.stages ?? []).some((s) => s.procedures !== undefined)) return 5;
+  const pieces = Object.values(run.evidence ?? {}).filter((e) => e.kind === 'webm');
+  if (pieces.some((e) => e.recording?.handoff === true || e.recording?.marks.some((m) => m.kind !== undefined))) return 4;
+  if (pieces.some((e) => (e.recording?.cuts?.length ?? 0) > 0 || e.recording?.startedAfterMs !== undefined)) return 3;
+  return pieces.length > 0 ? 2 : 1;
+};
 export const RUN_ID = /^r-[a-z0-9]{1,12}-[a-z0-9]{2,8}$/;
 
 export type { EvidenceRecord };
@@ -29,6 +63,8 @@ export interface StageRecord {
   status: StageStatus;
   /** Files of the cycle folder this stage has produced, by name. */
   artifacts: string[];
+  /** The attempt each artifact was produced in, by name; absent in a run written before it was recorded. A name produced again keeps its first attempt. */
+  artifactAttempts?: Record<string, number>;
   /** Start of the latest attempt. */
   startedAt: string | null;
   endedAt: string | null;
@@ -37,7 +73,12 @@ export interface StageRecord {
   autonomous: boolean;
   /** What its model calls used, over all attempts; absent for a stage that ran before this was recorded (and for a gate). */
   usage?: StageUsage;
+  /** The procedures the stage's agent read and what became of each (#179); absent when it read none. At most `PROCEDURES_PER_STAGE`, one per procedure. */
+  procedures?: ProcedureUse[];
 }
+
+/** The most procedures a stage's record lists. */
+export const PROCEDURES_PER_STAGE = 20;
 
 /** What the model calls of a stage used, over all its attempts. `costUsd` is what a provider or the SDK reported, null when none did. */
 export interface StageUsage {
@@ -52,7 +93,7 @@ export interface StageUsage {
   costEstimated?: boolean;
 }
 
-export const QUESTION_KINDS = ['agent', 'review-limit', 'squad'] as const;
+export const QUESTION_KINDS = ['agent', 'review-limit', 'squad', 'pr-retry'] as const;
 export type QuestionKind = (typeof QUESTION_KINDS)[number];
 
 /** How many agents a question may pass through before it goes to the person, whatever the agents say. */
@@ -82,10 +123,16 @@ export interface PendingQuestion {
   text: string;
   askedAt: string;
   stage: string;
+  /** Candidate bases to open the pull request against, for a `pr-retry` question. */
+  bases?: string[];
+  /** The branch the failed pull request was aiming at. */
+  targetBranch?: string;
+  /** The host's refusal was probably the base branch not being there any more. */
+  baseGone?: boolean;
 }
 
 export interface RunFailure {
-  code: 'no-agent' | 'stage-failed' | 'no-event';
+  code: 'no-agent' | 'stage-failed' | 'no-event' | 'pr-open-failed';
   stage: string;
   detail: string | null;
 }
@@ -130,6 +177,8 @@ export interface CommentRecord {
   title?: string | null;
   /** The evidence ids the description cites, for the `pr` record: the images go up with the pull request's own proposal, on its "sim". */
   evidenceIds?: string[];
+  /** The "waiting for the pull request" line was already said for this comment of the run: the sweep does not say it again. */
+  waitingSaid?: boolean;
 }
 
 /** What a transition may record about a comment besides where it stands. */
@@ -360,7 +409,7 @@ export interface RunSubject {
 }
 
 export interface Run {
-  version: typeof RUN_VERSION;
+  version: RunVersion;
   /** Grows by one on every save of the store. */
   rev: number;
   id: string;
@@ -382,6 +431,8 @@ export interface Run {
   question: PendingQuestion | null;
   /** The command the working stage waits for the person to allow (`shell: host`). Filled in by the runner when it hands a run out, never written to the file. */
   command?: PendingCommand | null;
+  /** The live screen of the working stage's virtual display, while it has one. Filled in by the runner when it hands a run out, never written to the file. */
+  screen?: LiveScreen | null;
   /** The result of a non-autonomous agent, waiting for the person (status `to-accept`). */
   pending: PendingResult | null;
   /** How many times each stage sent the work back (by the stage that sent it: review and QA have a budget each) since the person last answered the limit's question. */

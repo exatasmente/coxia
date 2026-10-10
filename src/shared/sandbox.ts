@@ -18,11 +18,13 @@ export interface SandboxStatus {
 
 /**
  * Browsers: none set, ready (the folder exists, passes the guards and holds a browser build), missing, refused by the guards, or holding no browser. Display: switched
- * off, a display program on the sandbox's path, or none.
+ * off, a display program on the sandbox's path, or none. Chromium (what the app's own browser runs): no folder of browsers, a full Chromium in it, or none (a folder
+ * with only a headless shell, or another browser, cannot draw on a display).
  */
 export interface SandboxGuiStatus {
   browsers: 'unset' | 'ready' | 'missing' | 'refused' | 'empty';
   display: 'off' | 'ready' | 'missing';
+  chromium?: 'unset' | 'ready' | 'none';
 }
 
 export const SANDBOX_UNAVAILABLE: SandboxStatus = { available: false, backend: null, version: null, reason: 'platform', detail: '' };

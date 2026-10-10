@@ -11,6 +11,8 @@ import { runThreadId } from '../src/shared/forum';
 import { runConversation } from '../src/main/runner/conversation';
 import { ASK_CONVERSATION_TOOL } from '../src/main/runner/tools';
 import type { AgentCall } from '../src/main/agents';
+import type { ActivityEntry } from '../src/shared/activity';
+import { activityLog, beginActivity, withActivityParent } from '../src/main/activity';
 
 let dir!: string;
 let forum: ForumStore;
@@ -65,12 +67,27 @@ describe('a conversation between two agents', () => {
     expect(r.rounds).toBe(1);
     // The called agent answered once; the second message of the caller never reached it.
     expect(calls).toHaveLength(1);
+    // nobody waits for it, so the engine may use the cheaper tier
+    expect(calls[0].background).toBe(true);
     const thread = forum.read(runThreadId('r1'), 0, 500)?.messages ?? [];
     expect(thread.find((m) => m.code === 'runner.conversation.rounds')?.params).toMatchObject({ cap: 1 });
     expect(thread.find((m) => m.code === 'runner.conversation.ended')).toBeDefined();
     // The answer of the called agent is a post of that agent, and it was handed back to the caller.
     expect(thread.some((m) => m.kind === 'post' && m.author.type === 'agent' && m.author.id === 'qa' && m.text === 'answer 1')).toBe(true);
     expect(ex.answered).toEqual(['answer 1']);
+  });
+
+  it('says in the conversation that the called agent moved to another model of its pool', async () => {
+    const engine = async (call: AgentCall) => {
+      call.onPool?.({ from: { label: 'model-a' }, to: { label: 'model-b' }, reason: 'rate_limit', until: Date.now() + 300_000, activity: 'write' });
+      return { data: { texto: 'done' } };
+    };
+    await runConversation(
+      { run, stage: { id: 'implement' } as never, caller: agent('developer'), called: agent('qa'), forum, config: () => neutralConfig(), engine, commands: [], abort: new AbortController(), chain: ['developer'], place: 'run', title: 'talk' },
+      exchange(['first']).ex,
+    );
+    const thread = forum.read(runThreadId('r1'), 0, 500)?.messages ?? [];
+    expect(thread.find((m) => m.code === 'runner.model.switched')).toMatchObject({ kind: 'system', stage: 'implement', params: { agent: 'qa', from: 'model-a', to: 'model-b' } });
   });
 
   it('opens a thread of its own for a conversation in a new place, linked from the run', async () => {
@@ -162,6 +179,86 @@ describe('a conversation between two agents', () => {
     expect(committed[0]).toContain('developer');
     expect(committed[0]).toContain('qa');
     expect(r.head).toBe('abc123');
+  });
+
+  it('is one node under the calling agent: lent to each round, closed once, with an excerpt of each round that answered', async () => {
+    const config = neutralConfig();
+    config.runner.conversations = { roundsPerConversation: 2, perStage: 3 };
+    const seen: AgentCall[] = [];
+    const engine = async (call: AgentCall) => {
+      seen.push(call);
+      // a round that ends its own activity: on a lent node that closes nothing
+      call.activity?.status('finished');
+      return { data: { texto: `answer ${seen.length}` } };
+    };
+    const pushed: ActivityEntry[] = [];
+    activityLog.setSink((e) => pushed.push(e));
+    const caller = beginActivity('developer');
+    caller.status('started');
+    await withActivityParent(caller.id, () =>
+      runConversation({ run, stage: { id: 'implement' } as never, caller: agent('developer'), called: agent('qa'), forum, config: () => config, engine, commands: [], abort: new AbortController(), chain: ['developer'], place: 'run', title: 'talk' }, exchange(['how do I reproduce it?', 'and now?']).ex),
+    );
+    activityLog.setSink(null);
+    const node = pushed.filter((e) => e.runId !== caller.id);
+    expect(node.every((e) => e.parent === caller.id && e.role === 'qa' && e.node?.type === 'call' && e.node.label === 'how do I reproduce it?' && !e.call)).toBe(true);
+    expect(node.map((e) => [e.kind, e.state ?? e.label])).toEqual([['status', 'started'], ['answer', 'answer 1'], ['answer', 'answer 2'], ['status', 'finished']]);
+    // both rounds ran on the same lent node, which is not the one that was closed by the round
+    expect(seen).toHaveLength(2);
+    expect(seen[0].activity?.id).toBe(seen[1].activity?.id);
+  });
+
+  it('closes the node as failed, with the reason, when a round throws', async () => {
+    const engine = async (): Promise<never> => {
+      throw new Error('model unavailable');
+    };
+    const pushed: ActivityEntry[] = [];
+    activityLog.setSink((e) => pushed.push(e));
+    await expect(
+      runConversation({ run, stage: { id: 'implement' } as never, caller: agent('developer'), called: agent('qa'), forum, config: () => neutralConfig(), engine, commands: [], abort: new AbortController(), chain: ['developer'], place: 'run', title: 'talk' }, exchange(['first']).ex),
+    ).rejects.toThrow('model unavailable');
+    activityLog.setSink(null);
+    // with no node to hang under, the callee is a root of its job
+    expect(pushed.map((e) => e.state ?? e.kind)).toEqual(['started', 'failed']);
+    expect(pushed[1].label).toContain('model unavailable');
+    expect(pushed[0].parent).toBeUndefined();
+  });
+
+  describe('the end of the node of a called agent', () => {
+    const converse = async (engine: (call: AgentCall) => Promise<{ data: unknown }>, said: string[], abort = new AbortController()) => {
+      const pushed: ActivityEntry[] = [];
+      activityLog.setSink((e) => pushed.push(e));
+      try {
+        await runConversation({ run, stage: { id: 'implement' } as never, caller: agent('developer'), called: agent('qa'), forum, config: () => neutralConfig(), engine, commands: [], abort, chain: ['developer'], place: 'run', title: 'talk' }, exchange(said).ex);
+      } finally {
+        activityLog.setSink(null);
+      }
+      return pushed.filter((e) => e.kind === 'status').map((e) => e.state);
+    };
+
+    it('ends failed when the called agent gave no answer at all', async () => {
+      expect(await converse(async () => ({ data: {} }), ['anything?'])).toEqual(['started', 'failed']);
+    });
+
+    it('ends failed when the run was aborted, and the called agent never ran', async () => {
+      const abort = new AbortController();
+      abort.abort();
+      let ran = false;
+      expect(await converse(async () => { ran = true; return { data: { texto: 'x' } }; }, ['anything?'], abort)).toEqual(['started', 'failed']);
+      expect(ran).toBe(false);
+    });
+
+    it('ends finished when the caller is the one that ended the conversation', async () => {
+      const engine = async (call: AgentCall) => {
+        // the called agent asks for the next message and the caller has none: the other side ended it
+        await call.runnerTools?.find((x) => x.name === ASK_CONVERSATION_TOOL)?.run({ text: 'and now?' } as never, {} as never);
+        return { data: {} };
+      };
+      expect(await converse(engine, ['first'])).toEqual(['started', 'finished']);
+    });
+
+    it('still ends finished when the called agent answered', async () => {
+      expect(await converse(async () => ({ data: { texto: 'done' } }), ['first'])).toEqual(['started', 'finished']);
+    });
   });
 
   it('counts the model use of a conversation on the calling stage', async () => {

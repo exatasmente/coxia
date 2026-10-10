@@ -76,6 +76,22 @@ describe('what a stage that runs again is told about the earlier attempts', () =
     expect(stageResume(run, stage, 'qa', thread, wt)).toEqual({ why: 'sent-back', done: ['5_TEST_PLAN.md'], evidence: [{ id: 'ev-1', title: 'Runs screen' }], previous: 'Ten scenarios checked.' });
     expect(stageResume(run, d.flow.find((s) => s.id === 'plan')!, 'planner', thread, wt)).toBeNull();
   });
+
+  it('does not list the app\'s own screen recording among the evidence the agent kept', () => {
+    const d = toTheEnd();
+    d.do((r, t) => sendBackTo(r, d.flow, { toStage: 'qa', note: 'Again.' }, t));
+    const piece = { stage: 'qa', by: 'qa', description: '', from: null, message: null, at: d.run.updatedAt, bytes: 10 };
+    const run = {
+      ...d.run,
+      evidence: {
+        'ev-1': { ...piece, id: 'ev-1', title: 'Runs screen', name: 'a.png', kind: 'png' },
+        'ev-2': { ...piece, id: 'ev-2', title: 'Screen recording', name: 'screen-recording.webm', kind: 'webm', recording: { durationMs: 1000, width: 8, height: 4, marks: [] } },
+      },
+    } as typeof d.run;
+    const wt = mkdtempSync(join(tmpdir(), 'resume-'));
+    const resume = stageResume(run, d.flow.find((s) => s.id === 'qa')!, 'qa', [], wt);
+    expect(resume?.evidence).toEqual([{ id: 'ev-1', title: 'Runs screen' }]);
+  });
 });
 
 describe('the note the person sends back with', () => {

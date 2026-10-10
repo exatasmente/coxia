@@ -1,5 +1,8 @@
+import type { SitesRefusal } from '../../../../shared/browser';
+import type { AssistField } from '../../../../shared/agentAssist';
 import type { SandboxGuiStatus, SandboxReason } from '../../../../shared/sandbox';
-import type { AgentPermission, SandboxNetwork, AgentShell, AgentTracker, CommentEventKey, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
+import type { AgentPermission, PoolMode, SandboxNetwork, AgentShell, AgentTracker, CommentEventKey, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
+import type { AssistStep } from './assistEdit';
 import type { TeamTab } from './teamNav';
 
 // The catalog keys of the values a screen of the team and cycle shows by name. Tables, not built keys, so each key is written out where a search and the
@@ -12,12 +15,18 @@ export const TAB_LABEL: Record<TeamTab, string> = {
   comments: 'ui.team.tab.comments',
   attachments: 'ui.team.tab.attachments',
   runner: 'ui.team.tab.runner',
+  testenv: 'ui.team.tab.testenv',
 };
+
+export const PERMISSION_LABEL: Record<AgentPermission, string> = { read: 'ui.team.permission.read', worktree: 'ui.team.permission.worktree' };
 
 export const PERMISSION_HINT: Record<AgentPermission, string> = {
   read: 'ui.team.permission.read.hint',
   worktree: 'ui.team.permission.worktree.hint',
 };
+
+export const POOL_MODE_LABEL: Record<PoolMode, string> = { fallback: 'ui.team.poolMode.fallback', switch: 'ui.team.poolMode.switch', delegate: 'ui.team.poolMode.delegate' };
+export const POOL_MODE_HINT: Record<PoolMode, string> = { fallback: 'ui.team.poolMode.fallback.hint', switch: 'ui.team.poolMode.switch.hint', delegate: 'ui.team.poolMode.delegate.hint' };
 
 export const TRACKER_LABEL: Record<AgentTracker, string> = { none: 'ui.team.tracker.none', read: 'ui.team.tracker.read' };
 export const TRACKER_HINT: Record<AgentTracker, string> = { none: 'ui.team.tracker.none.hint', read: 'ui.team.tracker.read.hint' };
@@ -83,4 +92,45 @@ export const EVENT_LABEL: Record<CommentEventKey, string> = {
   gate: 'ui.comments.event.gate',
   question: 'ui.comments.event.question',
   pr: 'ui.comments.event.pr',
+};
+
+// The agent assistant: its steps, the name of each setting it reviews, and the tools it may switch.
+export const ASSIST_STEP_LABEL: Record<AssistStep, string> = {
+  request: 'ui.team.assist.step.request',
+  questions: 'ui.team.assist.step.questions',
+  review: 'ui.team.assist.step.review',
+  test: 'ui.team.assist.step.test',
+};
+
+export const ASSIST_FIELD_LABEL: Record<AssistField, string> = {
+  permission: 'ui.team.f.permission',
+  tracker: 'ui.team.f.tracker',
+  shell: 'ui.team.f.shell',
+  tools: 'ui.team.tools',
+  stages: 'ui.team.f.stages',
+  squad: 'ui.team.f.squad',
+  turnsTo: 'ui.team.f.turnsTo',
+};
+
+export const TOOL_LABEL = {
+  files: 'ui.team.tools.files',
+  skills: 'ui.team.tools.skills',
+  vcsCli: 'ui.team.tools.vcsCli',
+  subagents: 'ui.team.tools.subagents',
+} as const;
+
+// The app's browser: the Chromium line of the agent editor, and why the sites of a logged-in profile could not be listed or revoked.
+export const CHROMIUM_LABEL: Record<NonNullable<SandboxGuiStatus['chromium']>, string> = {
+  ready: 'ui.team.screen.chromium.ready',
+  unset: 'ui.team.screen.chromium.unset',
+  none: 'ui.team.screen.chromium.none',
+};
+
+export const SITES_REFUSAL_LABEL: Record<SitesRefusal, string> = {
+  agent: 'ui.team.sessions.why.agent',
+  site: 'ui.team.sessions.why.site',
+  open: 'ui.team.sessions.why.open',
+  busy: 'ui.team.sessions.why.busy',
+  browser: 'ui.team.sessions.why.browser',
+  failed: 'ui.team.sessions.why.failed',
 };

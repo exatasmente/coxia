@@ -1,7 +1,7 @@
 // How another screen asks Settings to open one of the team and cycle sections: `openTeamSettings('flow', squadId)` and then go to the Settings screen.
 // The request waits here until the section is on screen (or is delivered at once when it already is).
 
-export const TEAM_TABS = ['team', 'squads', 'flow', 'comments', 'attachments', 'runner'] as const;
+export const TEAM_TABS = ['team', 'squads', 'flow', 'comments', 'attachments', 'runner', 'testenv'] as const;
 export type TeamTab = (typeof TEAM_TABS)[number];
 
 import type { AgentDraft } from './agentEdit';

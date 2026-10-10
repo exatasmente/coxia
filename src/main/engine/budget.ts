@@ -52,6 +52,23 @@ export function budgetText(text: string): boolean {
   return /402|payment required|insufficient (quota|credits|funds)|out of credits|exceeded your current quota|key limit exceeded|monthly limit|quota|billing balance/i.test(text);
 }
 
+/**
+ * Whether a text the SDK handed back says the model was busy: a rate limit, an overload or a server error (the refusals that move a call to the next model of its pool).
+ * Budget decides first, and a text about the key itself is never a busy model. The SDK words an API failure as `API Error: <status> <body>`; a text that carries no status
+ * is read by the name the API gives the error. Anything else is not recognised, and the call fails as it always did.
+ */
+export function busyText(text: string): 'rate_limit' | 'overloaded' | 'server' | null {
+  if (budgetText(text) || readTextRefusal(text).key) return null;
+  const status = Number(text.match(/\bAPI Error:?\s*(\d{3})\b/i)?.[1] ?? NaN);
+  if (status === 429) return 'rate_limit';
+  if (status === 503 || status === 529) return 'overloaded';
+  if (status >= 500 && status <= 599) return 'server';
+  if (Number.isFinite(status)) return null;
+  if (/rate_limit_error/i.test(text)) return 'rate_limit';
+  if (/overloaded_error/i.test(text)) return 'overloaded';
+  return null;
+}
+
 /** What a call said, for the failure message; kept short, like the rest of the outside text. */
 export function clipProviderText(text: string, max = 4000): string {
   const clean = text.replace(/\r/g, '').trim();

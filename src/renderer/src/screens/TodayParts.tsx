@@ -149,6 +149,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
         </span>
         {card.priority && <span className="badge badge-prio" title={t('ui.today.row.priorityTitle', { label: card.priority.label })}>{card.priority.label}</span>}
         {markText && <span className={`badge ${mark?.kind === 'unchanged' ? 'badge-quiet' : 'badge-ask'}`}>{markText}</span>}
+        {card.board?.host === 'notSent' && <span className="badge badge-quiet">{t('ui.today.board.notOnHost')}</span>}
         <CardRunBadge cardRef={card.ref} />
         {blocked && <span className="badge badge-block">{t('ui.today.row.blocker')}</span>}
         {!blocked && asking && <span className="badge badge-ask">{t('ui.today.row.question')}</span>}

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { RUN_ID, RunError, isTerminal, parseRun, type Run, type Transition } from '../shared/runs';
+import { RUN_ID, RunError, isTerminal, parseRun, runVersionOf, type Run, type Transition } from '../shared/runs';
 
 // The store of runs: one JSON file per run in <workspace>/runs/<id>.json, written atomically (temp file + rename), checked against the schema on
 // every read. A file written by a newer app is neither used nor ever overwritten. Electron-free: the folder comes in as an argument.
@@ -71,7 +71,7 @@ export function createRunStore(dir: string): RunStore {
       if (!checked.ok) throw new RunError('invalid', { id: run.id, detail: checked.errors.join('; ') });
       if (existsSync(file(dir, run.id))) throw new RunError('duplicate', { issue: run.issue.ref });
       if (store.activeFor(run.issue.ref)) throw new RunError('duplicate', { issue: run.issue.ref });
-      const saved: Run = { ...structuredClone(run), rev: 1 };
+      const saved: Run = { ...structuredClone(run), rev: 1, version: runVersionOf(run) };
       save(saved);
       return saved;
     },
@@ -80,7 +80,8 @@ export function createRunStore(dir: string): RunStore {
       if (!r) throw new RunError('unknown-run', { id });
       if (!r.ok) throw new RunError(r.reason === 'newer' ? 'newer-version' : 'invalid', { id, detail: r.errors.join('; ') });
       const result = move(r.run);
-      const saved: Run = { ...result.run, id: r.run.id, rev: r.run.rev + 1 };
+      // The version is stamped here, at the one place every save goes through: 2 only while the run holds a recording (see `runVersionOf`).
+      const saved: Run = { ...result.run, id: r.run.id, rev: r.run.rev + 1, version: runVersionOf(result.run) };
       const checked = parseRun(saved);
       if (!checked.ok) throw new RunError('invalid', { id, detail: checked.errors.join('; ') });
       save(saved);

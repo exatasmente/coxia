@@ -1,6 +1,6 @@
 import { t } from './i18n';
 
-export type RetentionKind = 'sessoes' | 'historico' | 'gates' | 'qa' | 'retros' | 'atividade' | 'feedback' | 'anexos';
+export type RetentionKind = 'sessoes' | 'historico' | 'gates' | 'qa' | 'retros' | 'atividade' | 'feedback' | 'anexos' | 'screens';
 
 /** The kinds whose files are read from a folder of the workspace data whose entries a person attached (kept while a live message references them). */
 export const REFERENCED_KINDS: readonly RetentionKind[] = ['anexos'];

@@ -250,6 +250,26 @@ export async function changedOutside(wt: string, exclude: string): Promise<boole
   return !!(await git(wt, [...SAFE, 'status', '--porcelain', '--', '.', `:(exclude)${exclude}`, ...DEPENDENCY_EXCLUDES], { fail: false })).stdout.trim();
 }
 
+/**
+ * The files new to the worktree (not tracked, or added and never committed) outside `folder`, the cycle folder, whose name is one of `names`: a document of the
+ * cycle an agent wrote itself somewhere else. Paths relative to the worktree, as git lists them, never through a link.
+ */
+export async function strayDocuments(wt: string, folder: string, names: readonly string[]): Promise<string[]> {
+  if (!names.length) return [];
+  const raw = (await git(wt, [...SAFE, 'status', '--porcelain', '-z', '--untracked-files=all', '--', '.', `:(exclude)${folder}`, ...DEPENDENCY_EXCLUDES], { fail: false })).stdout;
+  const entries = raw.split('\0');
+  const found: string[] = [];
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    if (entry.length < 4) continue;
+    const [x, y, path] = [entry[0], entry[1], entry.slice(3)];
+    // A rename or a copy carries its source as the next entry.
+    if (x === 'R' || x === 'C') i++;
+    if (((x === '?' && y === '?') || x === 'A') && names.includes(basename(path))) found.push(path);
+  }
+  return found;
+}
+
 /** What the branch changed since it was cut, outside `exclude` (the cycle folder), as a reviewer reads it: no external diff or text conversion program runs. */
 export async function branchDiff(wt: string, base: string | null, exclude: string): Promise<string> {
   if (!base) return '';

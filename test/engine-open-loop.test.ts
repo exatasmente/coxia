@@ -286,6 +286,21 @@ describe('max turns, partial answer and resume', () => {
     expect(readSession(sessions, first.sessionId)?.some((l) => l.t === 'resume')).toBe(true);
   });
 
+  it('keeps what the server said about each call in the transcript: cost, cache writes, reasoning tokens, tier and request id', async () => {
+    fake = await fakeOpenAI([
+      toolStep([{ name: 'Read', args: { file_path: 'a.txt' } }], { usageTokens: [50, 5], extras: { estimatedCost: 0.002, cached: 40, cacheWrite: 10, reasoning: 3 }, tier: 'flex', requestId: 'req-9' }),
+      finalCall(),
+    ]);
+    const r = await runOpen(params(fake));
+    const msgs = (readSession(sessions, r.sessionId) ?? []).filter((l) => l.t === 'msg' && l.usage);
+    expect(msgs[0]).toMatchObject({ usage: { promptTokens: 50, completionTokens: 5, cachedTokens: 40, costUsd: 0.002, cacheWriteTokens: 10, reasoningTokens: 3 }, tier: 'flex', requestId: 'req-9' });
+    // a call the server said nothing more about carries nothing more
+    expect(msgs[1]).not.toHaveProperty('tier');
+    expect(msgs[1]).not.toHaveProperty('requestId');
+    // the run's own totals are the same three numbers as before
+    expect(r.usage).toEqual({ promptTokens: 80, completionTokens: 13, cachedTokens: 40 });
+  });
+
   it('heals a transcript whose last assistant turn lost its tool results', async () => {
     fake = await fakeOpenAI([toolStep([{ id: 'c1', name: 'Read', args: { file_path: 'a.txt' } }]), finalCall()]);
     let id = '';

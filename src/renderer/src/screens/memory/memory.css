@@ -1,0 +1,26 @@
+/* The Memory view: filters, the conversations with their agents' folders, the notes and the open note. Tokens only. */
+.me-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; }
+.me-filter { flex: 0 1 200px; min-width: 140px; }
+.me-search { flex: 1 1 220px; min-width: 160px; }
+.me-filters .filter, .me-filters .cy-mini { align-self: flex-end; }
+.me-notice { margin: 0; padding: 10px 14px; border-radius: 12px; background: var(--amber-soft); border: 1px solid var(--amber-line); color: var(--amber-ink); line-height: 1.45; }
+.me-conv { gap: 12px; padding: 14px; }
+.me-conv-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; overflow-wrap: anywhere; }
+.me-folder { display: flex; flex-direction: column; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line-2); }
+.me-folder-name { gap: 8px; flex-wrap: wrap; min-width: 0; }
+.me-item { border-bottom: 1px solid var(--line-2); }
+.me-item[data-unsafe] { border-left: 3px solid var(--red-solid); }
+.me-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.me-open { padding: 4px 14px 16px; }
+.me-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.me-meta { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 14px; margin: 0; }
+.me-meta dt, .me-meta dd { margin: 0; overflow-wrap: anywhere; }
+.me-text { margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line-3); font-family: inherit; font-size: 14px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.me-actions { gap: 8px; }
+.me-confirm { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--red-line); background: var(--red-faint); color: var(--red-ink); }
+.me-confirm p { margin: 0; line-height: 1.45; }
+.me-edit { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.me-edit-head { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; }
+@media (max-width: 600px) { .me-edit-head { grid-template-columns: minmax(0, 1fr); } }
+.me-textarea { width: 100%; box-sizing: border-box; min-width: 0; }
+.me-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; overflow-wrap: anywhere; }

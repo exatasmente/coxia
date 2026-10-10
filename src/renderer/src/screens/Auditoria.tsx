@@ -18,8 +18,18 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   minutes: { key: 'ui.audit.kind.minutes' },
   exec: { key: 'ui.audit.kind.exec' },
   release: { key: 'ui.audit.kind.release' },
+  worktree: { key: 'ui.audit.kind.worktree' },
   'plugin-write': { key: 'ui.audit.kind.pluginWrite' },
   'plugin-request': { key: 'ui.audit.kind.pluginRequest' },
+  'screen-open': { key: 'ui.audit.kind.screenOpen' },
+  'screen-close': { key: 'ui.audit.kind.screenClose' },
+  'screen-hold': { key: 'ui.audit.kind.screenHold' },
+  'screen-confirm': { key: 'ui.audit.kind.screenConfirm' },
+  'screen-use': { key: 'ui.audit.kind.screenUse' },
+  procedure: { key: 'ui.audit.kind.procedure' },
+  'screen-handoff': { key: 'ui.audit.kind.screenHandoff' },
+  'test-env': { key: 'ui.audit.kind.testEnv' },
+  memory: { key: 'ui.audit.kind.memory' },
 };
 
 function Row({ e }: { e: AuditEntry }) {

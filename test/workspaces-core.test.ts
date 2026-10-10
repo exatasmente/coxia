@@ -293,6 +293,17 @@ describe('delete', () => {
     expect(readFileSync(join(trashed, 'acoes.json'), 'utf8')).toBe('precious');
   });
 
+  it('deletes the logged-in browser profiles of its agents for good: they never reach the trash', () => {
+    const dir = workspaceDir(root, 'descartavel');
+    mkdirSync(join(dir, 'browser', 'scout', 'Default'), { recursive: true });
+    writeFileSync(join(dir, 'browser', 'scout', 'Default', 'Cookies'), 'a session');
+    writeFileSync(join(dir, 'acoes.json'), 'precious');
+    const { trashed } = deleteWorkspace(root, 'descartavel', 'Descartável');
+    expect(readFileSync(join(trashed, 'acoes.json'), 'utf8')).toBe('precious');
+    expect(existsSync(join(trashed, 'browser'))).toBe(false);
+    expect(readdirSync(trashed)).not.toContain('browser');
+  });
+
   it('refuses the current workspace, a wrong typed name and an unknown id, touching nothing', () => {
     expect(() => deleteWorkspace(root, 'testes', 'Testes')).toThrow(/em uso/);
     expect(() => deleteWorkspace(root, 'descartavel', 'descartavel')).toThrow(/não confere/);

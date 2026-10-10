@@ -1,11 +1,15 @@
 import { ID } from '../../../../shared/config/schema';
 import { addSquad, membersOf, setAgentSquad, squadOf, squadsOf, updateSquad } from '../../../../shared/config/squads';
-import type { SquadDef, SquadPath, WorkspaceConfig } from '../../../../shared/config/types';
+import { workingTeam } from '../../../../shared/config/team';
+import type { AgentDef, SquadDef, SquadPath, WorkspaceConfig } from '../../../../shared/config/types';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
 
 // The squad editor, as pure functions: the draft a person types into, the checks shown while typing, and the config the draft makes.
 
 const ID_RE = new RegExp(ID);
+
+/** The agents a squad can take as members: the team that takes part in the cycle, without the drafts of the assistant. */
+export const memberChoices = (config: Pick<WorkspaceConfig, 'agents'>): AgentDef[] => workingTeam(config.agents.team);
 
 export interface SquadDraft {
   id: string;

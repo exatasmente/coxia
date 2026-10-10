@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { takeContext } from '../shared/activity';
 import { withActivityContext } from './activity';
 import { rpcContext } from './errorlog-core';
@@ -13,6 +14,11 @@ const table = new Map<string, Handler>();
 const deviceTable = new Map<string, (deviceId: string, ...args: never[]) => unknown>();
 let bind: Binder | null = null;
 
+// Which door a call came through, for a handler that must say who answered (a held step is answered from the window or from a paired browser). It travels with the call,
+// across the awaits of the handler, and is 'ipc' when no call is running.
+const origin = new AsyncLocalStorage<'ipc' | 'web'>();
+export const callOrigin = (): 'ipc' | 'web' => origin.getStore() ?? 'ipc';
+
 // Every failure of a channel call lands in the error log, whichever door it came through. The arguments never do.
 function guarded(channel: string, via: 'ipc' | 'web', run: (...args: never[]) => unknown, raw: never[]): unknown {
   // A call made for a renderer job carries the job id as a trailing marker; the handler never sees it.
@@ -23,7 +29,7 @@ function guarded(channel: string, via: 'ipc' | 'web', run: (...args: never[]) =>
     throw e;
   };
   try {
-    const result = withActivityContext(jobId, () => run(...args));
+    const result = origin.run(via, () => withActivityContext(jobId, () => run(...args)));
     return result instanceof Promise ? result.catch(fail) : result;
   } catch (e) {
     return fail(e);

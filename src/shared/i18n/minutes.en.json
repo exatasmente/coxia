@@ -123,5 +123,13 @@
   "prompt.sdd.turn.sameDay.question": "- Question left unanswered: {text}",
   "prompt.sdd.turn.sameDay.deep": "- There was a deep dive; the last point was: {text}",
   "prompt.sdd.turn.sameDay.nothing": "Nothing changed on the card since then; {theUser} asked to go deeper anyway. Go deeper, without repeating what was already said.",
-  "minutes.delete.versionLine": "Version {n} ({from}–{to})"
+  "minutes.delete.versionLine": "Version {n} ({from}–{to})",
+  "minutes.day.repeated": "Unanswered questions that repeated",
+  "minutes.day.repeated.on": "left unanswered on: {dates}",
+  "minutes.day.repeated.days_one": "{count} day",
+  "minutes.day.repeated.days_other": "{count} days",
+  "minutes.file.repeated.title": "## Unanswered questions that repeated",
+  "minutes.file.repeated.intro": "Questions that were already left unanswered on earlier days, repeating the same decision (same activity and same stage).",
+  "minutes.file.repeated.item": "- {question} ({ref}) — left unanswered on {dates} — {days}",
+  "prompt.sdd.turn.crossDay": "This decision was already left unanswered on earlier days: {dates}. Treat it as something raised before; do not present it as new."
 }

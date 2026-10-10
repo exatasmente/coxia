@@ -92,6 +92,38 @@ describe('reaching an attachment', () => {
   });
 });
 
+describe('dropping a whole conversation', () => {
+  it('removes every file of the conversation and its folder, and leaves the other conversations alone', () => {
+    const a = store.put(THREAD, 'a.txt', text('x\ny\n'));
+    store.put(THREAD, 'shot.png', png());
+    store.put(THREAD, 'b.json', text('{"a":1}'));
+    const other = store.put('run-r-other-1234', 'c.txt', text('x\ny\n'));
+    expect(store.sizeOf(THREAD)).toBe(3);
+    store.dropThread(THREAD);
+    expect(store.list(THREAD)).toEqual([]);
+    expect(store.get(THREAD, a.id)).toBeNull();
+    expect(existsSync(join(root, 'anexos', THREAD))).toBe(false);
+    expect(store.get('run-r-other-1234', other.id)).not.toBeNull();
+    expect(existsSync(join(root, 'anexos'))).toBe(true);
+  });
+
+  it('is nothing to do for a conversation that holds nothing, and can be repeated', () => {
+    expect(() => store.dropThread('run-r-empty-1234')).not.toThrow();
+    store.put(THREAD, 'a.txt', text('x\n'));
+    store.dropThread(THREAD);
+    expect(() => store.dropThread(THREAD)).not.toThrow();
+  });
+
+  it('refuses a name that is no conversation\'s, and never reaches outside the attachments folder', () => {
+    store.put(THREAD, 'a.txt', text('x\n'));
+    for (const bad of ['', '..', '.', '.hidden', '../anexos', 42, null]) expect(() => store.dropThread(bad as string), String(bad)).toThrow();
+    // a path-like name is folded to a harmless one inside the folder, not followed
+    expect(() => store.dropThread('a/../../..')).not.toThrow();
+    expect(store.list(THREAD)).toHaveLength(1);
+    expect(existsSync(join(root, 'anexos'))).toBe(true);
+  });
+});
+
 describe('reading for the tool', () => {
   it('gives an image as an image, with the name and size as text - never the content', () => {
     const ref = store.put(THREAD, 'shot.png', png());

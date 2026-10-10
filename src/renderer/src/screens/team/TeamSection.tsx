@@ -1,17 +1,23 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { offeredStages } from '../../../../shared/agentAssist';
 import { squadsOf } from '../../../../shared/config/squads';
-import { removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
-import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
+import { isDraft, removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
+import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, POOL_MODES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type PoolMode, type WorkspaceConfig } from '../../../../shared/config/types';
 import { flowIssueText } from '../../../../shared/runs/flowCheck';
 import { squadIssueText } from '../../../../shared/runs/squadCheck';
 import { errorText, api } from '../../api';
+import { forgetNow, reloadThreads } from '../cycle/forumApi';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
-import { applyAgent, agentProblems, blankAgent, draftOf, shellAfterPermission, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
-import { PERMISSION_HINT, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL, SHELL_HINT, SHELL_LABEL, TRACKER_HINT, TRACKER_LABEL } from './labels';
+import { AgentAssist } from './AgentAssist';
+import { applyAgent, agentModelOffer, agentModelPool, agentModelWith, agentProblems, blankAgent, draftOf, promoteDraft, shellAfterPermission, slugOf, stagesLosingAgent, stagesOfAgent, subagentsOff, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
+import { editorOf, startAssist, type AssistState } from './assistEdit';
+import { PERMISSION_HINT, POOL_MODE_HINT, POOL_MODE_LABEL, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL, SHELL_HINT, SHELL_LABEL, TRACKER_HINT, TRACKER_LABEL } from './labels';
+import { PoolEditor } from '../../wizard/PoolEditor';
 import { Recommended } from './Recommended';
+import { ScreenFields } from './ScreenFields';
 import { useSandboxStatus } from './sandboxStatus';
-import { teamApi } from './teamApi';
+import { assistApi, teamApi } from './teamApi';
 import { agentName, agentNameById, shown, squadName } from './text';
 import { Confirm, Labeled, Problems, SidePanel, Toggle, type Problem, type SectionProps } from './ui';
 
@@ -27,10 +33,14 @@ export function modelText(config: WorkspaceConfig, a: AgentDef, t: Translate): s
 export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentDraft; suggestionId: string } }) {
   const { config, save, reload, suggestion } = props;
   const t = useT();
-  const [editing, setEditing] = useState<{ draft: AgentDraft; isNew: boolean; suggestionId?: string } | null>(null);
+  const [editing, setEditing] = useState<{ draft: AgentDraft; isNew: boolean; suggestionId?: string; assisted?: boolean; promote?: { id: string } } | null>(null);
+  // The assistant's state lives here, above the two panels: the editor it opens can be cancelled and the assistant is still where it was.
+  const [assist, setAssist] = useState<AssistState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [said, setSaid] = useState<string | null>(null);
+  // The draft agent whose discarding waits for the person's yes: it deletes the agent and its conversation.
+  const [discarding, setDiscarding] = useState<string | null>(null);
   const squads = squadsOf(config);
 
   // A suggestion the card sent here to edit: the editor opens filled in with it and remembers where it came from. The request is kept in a ref (not only
@@ -56,6 +66,57 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
     setSuggesting(false);
   };
 
+  const openAssist = (base: AgentDraft | null) => {
+    setError(null);
+    setSaid(null);
+    setEditing(null);
+    setAssist(startAssist(base));
+  };
+
+  const closeAssist = (problem?: string) => {
+    const was = assist;
+    setAssist(null);
+    if (problem) setError(problem);
+    // Adjusting from the editor: closing the assistant gives the person back the form they had.
+    if (was?.mode === 'adjust' && was.base) setEditing({ draft: was.base, isNew: false });
+  };
+
+  // Concluding: the editor opens on what the assistant made. A draft agent saved for the test is promoted in place (its id stays); with none, a new agent is made;
+  // an agent being adjusted is edited where it is, with the changes not yet saved. Cancelling the editor comes back to the assistant, at the review.
+  const openEditor = (s: AssistState) => {
+    setAssist({ ...s, step: 'review' });
+    setEditing(editorOf(s, config.agents.team.map((a) => a.id)));
+  };
+
+  // The agent was saved from the assistant's editor: the assistant is done, and the copy that tested an adjustment goes (when it cannot, it stays in the list as a draft).
+  const assistSaved = async () => {
+    const was = assist;
+    if (was?.mode === 'adjust' && was.testId) {
+      try {
+        await assistApi.discard(was.testId);
+        forgetNow();
+        reloadThreads();
+      } catch (e) {
+        setError(errorText(e));
+      }
+    }
+    setAssist(null);
+    reload();
+  };
+
+  const discard = async (a: AgentDef) => {
+    setDiscarding(null);
+    setError(null);
+    try {
+      await assistApi.discard(a.id);
+      forgetNow();
+      reloadThreads();
+      reload();
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
   const toggle = async (a: AgentDef, on: boolean) => {
     setError(null);
     try {
@@ -67,13 +128,14 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
   };
 
   return (
-    <div className="tm-split" data-open={editing ? 'true' : 'false'}>
+    <div className="tm-split" data-open={editing || assist ? 'true' : 'false'}>
       <div className="wz-stack">
         <div className="row spread">
           <p className="small muted" style={{ flex: '1 1 240px' }}>{t('ui.team.hint')}</p>
           <div className="row">
             <button type="button" className="btn" disabled={suggesting || isWeb()} onClick={() => void suggest()}>{suggesting ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.team.suggest.button')}</button>
-            <button type="button" className="btn btn-dark" onClick={() => setEditing({ draft: blankAgent(), isNew: true })}>{t('ui.team.new')}</button>
+            {!isWeb() && <button type="button" className="btn" disabled={!!assist} onClick={() => openAssist(null)}>{t('ui.team.assist.create')}</button>}
+            <button type="button" className="btn btn-dark" disabled={!!assist} onClick={() => setEditing({ draft: blankAgent(), isNew: true })}>{t('ui.team.new')}</button>
           </div>
         </div>
         {said && <p className="small muted">{said}</p>}
@@ -81,7 +143,9 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
         {!isWeb() && <Recommended config={config} save={save} />}
         <ul className="tm-list" aria-label={t('ui.team.listAria')}>
           {config.agents.team.map((a) => {
-            const works = stagesOfAgent(config, a);
+            // A draft of the assistant takes part in nothing, whatever a file lists on it: no way to edit it or to let it run, only to discard it.
+            const draftCard = isDraft(a);
+            const works = draftCard ? [] : stagesOfAgent(config, a);
             const squad = squads.find((s) => s.id === a.squad);
             const held = a.autonomous && squad && !squad.autonomy;
             return (
@@ -91,22 +155,28 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
                     <div className="tm-card-title">
                       {agentName(a)} <span className="small muted mono">@{a.id}</span>
                       {a.system && <span className="badge badge-quiet" style={{ marginLeft: 8 }}>{t('ui.team.system')}</span>}
+                      {draftCard && <span className="badge badge-block" style={{ marginLeft: 8 }}>{t('ui.team.draft')}</span>}
                     </div>
                     <div className="small muted tm-clamp">{shown(a.job) || t('ui.team.noJob')}</div>
                   </div>
-                  <button type="button" className="btn" aria-label={t('ui.team.editAria', { name: agentName(a) })} onClick={() => setEditing({ draft: draftOf(a), isNew: false })}>{t('ui.team.edit')}</button>
+                  {!draftCard && <button type="button" className="btn" disabled={!!assist} aria-label={t('ui.team.editAria', { name: agentName(a) })} onClick={() => setEditing({ draft: draftOf(a), isNew: false })}>{t('ui.team.edit')}</button>}
+                  {draftCard && !isWeb() && (
+                    <button type="button" className="btn tm-danger" disabled={assist?.testId === a.id} title={assist?.testId === a.id ? t('ui.team.draft.inUse') : undefined} aria-label={t('ui.team.draft.discardAria', { name: agentName(a) })} onClick={() => setDiscarding(a.id)}>{t('ui.team.draft.discard')}</button>
+                  )}
                 </div>
                 <dl className="tm-meta">
                   <div><dt>{t('ui.team.squad')}</dt><dd>{squad ? squadName(squad) : t('ui.team.shared')}</dd></div>
-                  <div><dt>{t('ui.team.stages')}</dt><dd>{works.length ? works.map((s) => s.label || s.id).join(', ') : t('ui.team.noStages')}</dd></div>
+                  <div><dt>{t('ui.team.stages')}</dt><dd>{works.length ? works.map((s) => shown(s.label) || s.id).join(', ') : t('ui.team.noStages')}</dd></div>
                   <div><dt>{t('ui.team.permission')}</dt><dd>{t(`ui.team.permission.${a.permission}`)}</dd></div>
                   {!a.system && <div><dt>{t('ui.team.tracker')}</dt><dd>{t(TRACKER_LABEL[a.tracker])}</dd></div>}
                   {!a.system && <div><dt>{t('ui.team.shell')}</dt><dd>{t(SHELL_LABEL[a.shell])}</dd></div>}
                   <div><dt>{t('ui.team.model')}</dt><dd>{modelText(config, a, t)}</dd></div>
                   <div><dt>{t('ui.team.turnsTo')}</dt><dd>{a.turnsTo ? agentNameById(config, a.turnsTo) : t('ui.team.thePerson')}</dd></div>
                 </dl>
-                <Toggle checked={a.autonomous} onChange={(on) => void toggle(a, on)} label={t('ui.team.autonomy')} hint={held ? t('ui.team.heldBySquad') : undefined} />
-                {held && <div className="small muted">{t('ui.team.heldBySquad')}</div>}
+                {!draftCard && <Toggle checked={a.autonomous} onChange={(on) => void toggle(a, on)} label={t('ui.team.autonomy')} hint={held ? t('ui.team.heldBySquad') : undefined} />}
+                {!draftCard && held && <div className="small muted">{t('ui.team.heldBySquad')}</div>}
+                {draftCard && <p className="small muted">{t('ui.team.draft.hint')}</p>}
+                {draftCard && discarding === a.id && <DiscardDraft name={agentName(a)} onConfirm={() => void discard(a)} onCancel={() => setDiscarding(null)} />}
               </li>
             );
           })}
@@ -119,27 +189,58 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
           initial={editing.draft}
           isNew={editing.isNew}
           suggestionId={editing.suggestionId}
+          assisted={editing.assisted}
+          promote={editing.promote}
+          // Adjusting with the AI is for an agent the person made, from the window, and not while an assistant is already open.
+          onAssist={!isWeb() && !assist && !editing.isNew && !editing.assisted ? (form) => openAssist(form) : undefined}
+          onSaved={editing.assisted ? assistSaved : undefined}
           save={save}
           onClose={() => setEditing(null)}
+        />
+      )}
+      {!editing && assist && (
+        <AgentAssist
+          config={config}
+          state={assist}
+          update={(session, change) => setAssist((s) => (s && s.session === session ? change(s) : s))}
+          reload={reload}
+          onConclude={openEditor}
+          onClose={closeAssist}
         />
       )}
     </div>
   );
 }
 
-function AgentPanel({ config, initial, isNew, suggestionId, save, onClose }: { config: WorkspaceConfig; initial: AgentDraft; isNew: boolean; suggestionId?: string; save: SectionProps['save']; onClose: () => void }) {
+/** What discarding a draft agent asks first: it deletes the agent and its conversation, and that cannot be undone. */
+export function DiscardDraft({ name, onConfirm, onCancel }: { name: string; onConfirm: () => void; onCancel: () => void }) {
+  const t = useT();
+  return (
+    <Confirm danger confirmLabel={t('ui.team.draft.discard.confirm')} onConfirm={onConfirm} onCancel={onCancel}>
+      <strong>{t('ui.team.draft.discard.title', { name })}</strong>
+      <p>{t('ui.team.draft.discard.body')}</p>
+    </Confirm>
+  );
+}
+
+/**
+ * The editor of one agent. Besides a new agent and an agent that exists it opens in two more ways, both from the assistant (`assisted`, which also shows the stages
+ * the agent works): on a draft agent the assistant saved (`promote`, where saving takes the mark off and the id stays), and on an agent being adjusted (`isNew` false)
+ * with the assistant's changes not yet saved. `onAssist` is given only where "Adjust with AI" is offered; `onSaved` runs after a save, before the panel closes.
+ */
+export function AgentPanel({ config, initial, isNew, suggestionId, assisted, promote, onAssist, onSaved, save, onClose }: { config: WorkspaceConfig; initial: AgentDraft; isNew: boolean; suggestionId?: string; assisted?: boolean; promote?: { id: string }; onAssist?: (form: AgentDraft) => void; onSaved?: () => void | Promise<void>; save: SectionProps['save']; onClose: () => void }) {
   const t = useT();
   const [draft, setDraft] = useState<AgentDraft>(initial);
   const [idTouched, setIdTouched] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const system = !isNew && config.agents.team.find((a) => a.id === initial.id)?.system === true;
+  const system = !isNew && !promote && config.agents.team.find((a) => a.id === initial.id)?.system === true;
   const set = (patch: Partial<AgentDraft>) => setDraft((d) => ({ ...d, ...patch }));
   const squads = squadsOf(config);
 
   const own = useMemo(() => agentProblems(config, draft, isNew), [config, draft, isNew]);
-  const team = useMemo(() => teamIssues(config, draft, isNew), [config, draft, isNew]);
+  const team = useMemo(() => teamIssues(config, draft, isNew, !!promote), [config, draft, isNew, promote]);
   const problems: Problem[] = [
     ...own.map((p) => ({ severity: 'error' as const, text: t(p.key, p.params) })),
     ...team.flow.map((i) => ({ severity: i.severity, text: flowIssueText(i, t) })),
@@ -150,7 +251,7 @@ function AgentPanel({ config, initial, isNew, suggestionId, save, onClose }: { c
     const p = own.find((x) => x.field === field);
     return p ? t(p.key, p.params) : undefined;
   };
-  const lost = useMemo(() => (isNew || system ? [] : stagesLosingAgent(config, initial.id)), [config, initial.id, isNew, system]);
+  const lost = useMemo(() => (isNew || system || promote ? [] : stagesLosingAgent(config, initial.id)), [config, initial.id, isNew, system, promote]);
 
   const run = async (make: () => WorkspaceConfig) => {
     setSaving(true);
@@ -159,6 +260,7 @@ function AgentPanel({ config, initial, isNew, suggestionId, save, onClose }: { c
       await save(make());
       // An agent saved from a suggestion: the decision is recorded as "edited", with the id the editor gave it.
       if (suggestionId) await api.invoke('suggestions:edited', suggestionId, draft.id).catch(() => undefined);
+      await onSaved?.();
       onClose();
     } catch (e) {
       setError(errorText(e));
@@ -169,14 +271,22 @@ function AgentPanel({ config, initial, isNew, suggestionId, save, onClose }: { c
   const remove = () => run(() => removeAgent(config, initial.id));
 
   return (
-    <SidePanel label={isNew ? t('ui.team.panel.new') : t('ui.team.panel.edit', { name: agentName({ id: initial.id, name: initial.name }) })} onClose={onClose}>
-      <form className="wz-stack" onSubmit={(e) => { e.preventDefault(); if (!blocked) void run(() => applyAgent(config, draft, isNew)); }}>
+    <SidePanel label={isNew || promote ? t('ui.team.panel.new') : t('ui.team.panel.edit', { name: agentName({ id: initial.id, name: initial.name }) })} onClose={onClose}>
+      <form className="wz-stack" onSubmit={(e) => { e.preventDefault(); if (!blocked) void run(() => (promote ? promoteDraft(config, draft) : applyAgent(config, draft, isNew))); }}>
+        {assisted && <p className="small muted tm-assist-note" role="note">{t(promote ? 'ui.team.assist.editorNote.promote' : isNew ? 'ui.team.assist.editorNote.create' : 'ui.team.assist.editorNote.adjust')}</p>}
+        {onAssist && !system && (
+          <div className="tm-assist-offer">
+            <button type="button" className="btn" disabled={saving} onClick={() => onAssist(draft)}>{t('ui.team.assist.adjust')}</button>
+            <span className="small muted">{t('ui.team.assist.adjustHint')}</span>
+          </div>
+        )}
         <Labeled label={t('ui.team.f.name')} error={fieldError('name')}>
           {(id) => (
             <input
               id={id}
               className="text-input"
-              maxLength={100}
+              // What the configuration takes (`agentDef.name`): a longer name was typed here and then refused on save.
+              maxLength={80}
               value={shown(draft.name)}
               onChange={(e) => {
                 const name = e.target.value;
@@ -210,9 +320,11 @@ function AgentPanel({ config, initial, isNew, suggestionId, save, onClose }: { c
           )}
         </Labeled>
         <PermissionFields config={config} initial={initial} draft={draft} isNew={isNew} set={set} error={fieldError('shell')} />
+        <ScreenFields draft={draft} set={set} hostsError={fieldError('allowedHosts')} agent={isNew || promote ? undefined : { id: initial.id, name: agentName({ id: initial.id, name: initial.name }) }} />
         <Toggle checked={draft.autonomous} onChange={(autonomous) => set({ autonomous })} label={t('ui.team.autonomy')} />
         <p className="small muted">{t('ui.team.autonomyHint')}</p>
         <ToolsFields config={config} draft={draft} set={set} />
+        {assisted && <StagesFields config={config} draft={draft} set={set} />}
 
         <Labeled label={t('ui.team.f.squad')} hint={t('ui.team.f.squadHint')}>
           {(id) => (
@@ -253,7 +365,7 @@ function AgentPanel({ config, initial, isNew, suggestionId, save, onClose }: { c
         <div className="wz-actions">
           <button type="submit" className="btn btn-dark" disabled={saving || blocked}>{saving ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.team.save')}</button>
           <button type="button" className="btn" onClick={onClose}>{t('ui.team.cancel')}</button>
-          {!isNew && !system && !confirmDelete && <button type="button" className="btn tm-danger" onClick={() => setConfirmDelete(true)}>{t('ui.team.delete')}</button>}
+          {!isNew && !system && !promote && !confirmDelete && <button type="button" className="btn tm-danger" onClick={() => setConfirmDelete(true)}>{t('ui.team.delete')}</button>}
         </div>
         {system && <p className="small muted">{t('ui.team.systemNote')}</p>}
       </form>
@@ -341,6 +453,34 @@ function ToolsFields({ config, draft, set }: { config: WorkspaceConfig; draft: A
   );
 }
 
+/** The work stages of the flow the agent works, as boxes; shown when the editor comes from the assistant, which is where the stages are proposed (the flow editor is the other place that sets them). */
+function StagesFields({ config, draft, set }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void }) {
+  const t = useT();
+  const offered = offeredStages(config, draft.id || null);
+  // A stage the agent lists that the flow no longer offers stays in the list, so the person can see it and take it away.
+  const known = new Set(offered.map((s) => s.id));
+  const gone = draft.stages.filter((id) => !known.has(id));
+  const toggle = (id: string) => set({ stages: draft.stages.includes(id) ? draft.stages.filter((x) => x !== id) : [...draft.stages, id] });
+  return (
+    <fieldset className="wz-fieldset">
+      <legend className="wz-label">{t('ui.team.f.stages')}</legend>
+      <p className="small muted">{t('ui.team.f.stagesHint')}</p>
+      {offered.length + gone.length === 0 ? (
+        <p className="small muted">{t('ui.team.f.stagesNone')}</p>
+      ) : (
+        <div className="tm-checks">
+          {[...offered.map((s) => ({ id: s.id, label: shown(s.label) || s.id })), ...gone.map((id) => ({ id, label: id }))].map((s) => (
+            <label key={s.id} className="tm-check">
+              <input type="checkbox" checked={draft.stages.includes(s.id)} onChange={() => toggle(s.id)} />
+              <span>{s.label}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
 function ModelFields({ config, draft, set, error }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void; error?: string }) {
   const t = useT();
   const byRole = draft.model.role !== null;
@@ -349,22 +489,24 @@ function ModelFields({ config, draft, set, error }: { config: WorkspaceConfig; d
     <fieldset className="wz-fieldset">
       <legend className="wz-label">{t('ui.team.f.model')}</legend>
       <div role="group" aria-label={t('ui.team.f.model')} className="wz-pills">
-        <button type="button" aria-pressed={byRole} className={`filter ${byRole ? 'on' : ''}`} onClick={() => set({ model: { role: draft.model.role ?? 'deep', provider: '', model: '' } })}>{t('ui.team.model.useRole')}</button>
-        <button type="button" aria-pressed={!byRole} className={`filter ${!byRole ? 'on' : ''}`} onClick={() => set({ model: { role: null, provider: draft.model.provider || (config.llm.providers[0]?.id ?? ''), model: draft.model.model } })}>{t('ui.team.model.useProvider')}</button>
+        <button type="button" aria-pressed={byRole} className={`filter ${byRole ? 'on' : ''}`} onClick={() => set({ model: agentModelWith(draft.model, { role: draft.model.role ?? 'deep' }) })}>{t('ui.team.model.useRole')}</button>
+        <button type="button" aria-pressed={!byRole} className={`filter ${!byRole ? 'on' : ''}`} onClick={() => set({ model: agentModelWith(draft.model, { provider: draft.model.provider || (config.llm.providers[0]?.id ?? ''), model: draft.model.model }) })}>{t('ui.team.model.useProvider')}</button>
       </div>
       {byRole ? (
         <Labeled label={t('ui.team.model.role.label')} hint={t('ui.team.model.role.hint')}>
           {(id) => (
-            <select id={id} className="text-input" value={draft.model.role ?? 'deep'} onChange={(e) => set({ model: { role: e.target.value as LlmRole, provider: '', model: '' } })}>
+            <select id={id} className="text-input" value={draft.model.role ?? 'deep'} onChange={(e) => set({ model: agentModelWith(draft.model, { role: e.target.value as LlmRole }) })}>
               {LLM_ROLES.map((r) => <option key={r} value={r}>{t(`ui.settings.role.${r}.label`)}</option>)}
             </select>
           )}
         </Labeled>
-      ) : (
+      ) : null}
+      {byRole && draft.model.role && <RolePoolNote config={config} role={draft.model.role} />}
+      {!byRole && (
         <div className="wz-two">
           <Labeled label={t('ui.team.model.provider')}>
             {(id) => (
-              <select id={id} className="text-input" value={draft.model.provider} onChange={(e) => set({ model: { role: null, provider: e.target.value, model: draft.model.model } })}>
+              <select id={id} className="text-input" value={draft.model.provider} onChange={(e) => set({ model: agentModelWith(draft.model, { provider: e.target.value, model: draft.model.model }) })}>
                 {config.llm.providers.length === 0 && <option value="">{t('ui.team.model.noProvider')}</option>}
                 {config.llm.providers.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
               </select>
@@ -373,14 +515,72 @@ function ModelFields({ config, draft, set, error }: { config: WorkspaceConfig; d
           <Labeled label={t('ui.team.model.name')}>
             {(id) => (
               <>
-                <input id={id} className="text-input mono" list={`${id}-models`} spellCheck={false} value={draft.model.model} onChange={(e) => set({ model: { role: null, provider: draft.model.provider, model: e.target.value } })} />
+                <input id={id} className="text-input mono" list={`${id}-models`} spellCheck={false} value={draft.model.model} onChange={(e) => set({ model: agentModelWith(draft.model, { provider: draft.model.provider, model: e.target.value }) })} />
                 <datalist id={`${id}-models`}>{(provider?.models ?? []).map((m) => <option key={m} value={m} />)}</datalist>
               </>
             )}
           </Labeled>
         </div>
       )}
+      {!byRole && <OwnPool config={config} draft={draft} set={set} />}
+      <PoolModeField config={config} draft={draft} set={set} />
       {error && <div className="tm-field-error small" role="alert">{error}</div>}
     </fieldset>
+  );
+}
+
+/** How the agent's pool is used: its own choice, or the stage's and then the workspace's. The pool decides nothing alone; a mode only acts where a list of an activity exists. */
+function PoolModeField({ config, draft, set }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void }) {
+  const t = useT();
+  const hint = draft.poolMode === null ? t('ui.team.poolMode.inherit.hint') : t(POOL_MODE_HINT[draft.poolMode]);
+  return (
+    <div className="wz-stack">
+      <Labeled label={t('ui.team.poolMode')} hint={t('ui.team.poolMode.hint')}>
+        {(id) => (
+          <select id={id} className="text-input" value={draft.poolMode ?? ''} onChange={(e) => set({ poolMode: (e.target.value || null) as PoolMode | null })}>
+            <option value="">{t('ui.team.poolMode.inherit')}</option>
+            {POOL_MODES.map((m) => <option key={m} value={m}>{t(POOL_MODE_LABEL[m])}</option>)}
+          </select>
+        )}
+      </Labeled>
+      <p className="small muted">{hint}</p>
+      {draft.poolMode === 'delegate' && subagentsOff(config, draft) && <p className="small muted" role="note">{t('ui.team.poolMode.subagentsOff')}</p>}
+    </div>
+  );
+}
+
+/** An agent that borrows a role's model uses the role's pool; the pool is changed in the Models step of the setup, where the role is. */
+function RolePoolNote({ config, role }: { config: WorkspaceConfig; role: LlmRole }) {
+  const t = useT();
+  const pool = config.llm.roles[role];
+  const reserves = (pool.fallbacks?.length ?? 0) + Object.values(pool.activities ?? {}).reduce((n, l) => n + (l?.length ?? 0), 0);
+  return <p className="small muted">{t('ui.team.pool.usesRole', { role: t(`ui.settings.role.${role}.label`), count: String(reserves) })}</p>;
+}
+
+/**
+ * The reserve models of an agent with a model of its own. From a paired browser they are only shown: adding one sends a stage's content to another provider, which is
+ * the computer's to decide (the server refuses the addition as well, `poolRaised`).
+ */
+function OwnPool({ config, draft, set }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void }) {
+  const t = useT();
+  if (isWeb()) {
+    const reserves = draft.model.fallbacks ?? [];
+    return (
+      <div className="wz-stack">
+        <div className="wz-label">{t('wizard.pool.reserves')}</div>
+        <p className="small muted">{t('ui.team.pool.webOnly')}</p>
+        {reserves.length > 0 && <ul className="wz-list">{reserves.map((r) => <li key={`${r.provider}\n${r.model}`} className="small mono">{r.provider} · {r.model}</li>)}</ul>}
+      </div>
+    );
+  }
+  return (
+    <PoolEditor
+      providers={config.llm.providers}
+      primary={{ provider: draft.model.provider, model: draft.model.model, ...(draft.model.offer ? { offer: draft.model.offer } : {}) }}
+      value={draft.model}
+      onChange={(pool) => set({ model: agentModelPool(draft.model, pool) })}
+      onPrimary={(next) => set({ model: agentModelOffer(draft.model, next.offer) })}
+      overrides={config.llm.scoreOverrides}
+    />
   );
 }

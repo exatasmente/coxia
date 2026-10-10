@@ -5,7 +5,7 @@ import { squadIssueText } from '../../../../shared/runs/squadCheck';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
 import { slugOf, uniqueId } from './agentEdit';
-import { applySquad, blankSquad, draftOfSquad, hasOwnFlow, movingAgents, normalizePrefix, squadIssues, squadProblems, withLabel, type SquadDraft } from './squadEdit';
+import { applySquad, blankSquad, draftOfSquad, hasOwnFlow, memberChoices, movingAgents, normalizePrefix, squadIssues, squadProblems, withLabel, type SquadDraft } from './squadEdit';
 import { teamApi } from './teamApi';
 import { agentName, agentNameById, shown, squadName } from './text';
 import { ChipsInput, Confirm, Labeled, Problems, SidePanel, Toggle, type Problem, type SectionProps } from './ui';
@@ -214,7 +214,7 @@ function SquadPanel({ config, initial, isNew, save, reload, openFlow, onClose }:
           <legend className="wz-label">{t('ui.squads.f.members')}</legend>
           <p className="small muted">{t('ui.squads.f.membersHint')}</p>
           <div className="tm-checks">
-            {config.agents.team.map((a) => (
+            {memberChoices(config).map((a) => (
               <label key={a.id} className="tm-check">
                 <input type="checkbox" checked={draft.members.includes(a.id)} onChange={() => set({ members: toggleIn(draft.members, a.id), ...(draft.liaison === a.id && draft.members.includes(a.id) ? { liaison: null } : {}) })} />
                 <span>{agentName(a)}{a.squad && a.squad !== draft.id ? <span className="small muted"> · {t('ui.squads.f.inSquad', { squad: squadName(squadsOf(config).find((s) => s.id === a.squad) ?? { id: a.squad, name: a.squad }) })}</span> : null}</span>

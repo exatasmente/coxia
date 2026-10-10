@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { scopedTeam, squadsOf } from '../../../../shared/config/squads';
+import { squadsOf } from '../../../../shared/config/squads';
 import type { AgentDef, StageDef, StageType } from '../../../../shared/config/types';
 import { flowOf } from '../../../../shared/runs/flow';
 import { flowIssueText } from '../../../../shared/runs/flowCheck';
@@ -11,7 +11,7 @@ import { Diagram } from '../Diagram';
 import { flowDiagram } from './flowDiagram';
 import {
   applyFlows, chainRename, checkFlows, draftOfFlows, dropOwnFlow, duplicateStage, giveOwnFlow, insertStage, moveStage, ownsFlow, patchStage, removeStage, renameStage,
-  stagesOfTarget, withAutonomy, withStages, autonomyOfTarget, type FlowDraft, type Target,
+  flowTeam, stagesOfTarget, withAutonomy, withStages, autonomyOfTarget, type FlowDraft, type Target,
 } from './flowEdit';
 import { applyBundle, exportFlowText, readFlowText, STARTERS, type FlowBundle } from './flowFile';
 import { NEW_STAGE_LABEL, TYPE_LABEL, WAIT_LABEL } from './labels';
@@ -75,7 +75,7 @@ export function FlowEditor({ config, save, squad }: SectionProps & { squad?: str
 
   const stages = stagesOfTarget(draft, target);
   const view = useMemo(() => applyFlows(config, draft), [config, draft]);
-  const team: AgentDef[] = useMemo(() => (target ? scopedTeam(view, target) : view.agents.team), [view, target]);
+  const team: AgentDef[] = useMemo(() => flowTeam(view, target), [view, target]);
   const checks = useMemo(() => checkFlows(config, draft, target), [config, draft, target]);
   const flow = useMemo(() => flowOf({ agents: { team }, devCycle: { stages } }, stages), [team, stages]);
   const code = useMemo(

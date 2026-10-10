@@ -43,12 +43,13 @@ function what(a: ReleaseAction): string {
 }
 
 /** `waitsFor`: the steps of the same stage this release step needs first (a push before its cut): until they are done it cannot be approved. */
-function ActionCard({ a, go, waitsFor = [] }: { a: ReleaseAction; go: (s: Screen) => void; waitsFor?: ReleaseAction[] }) {
+export function ActionCard({ a, go, waitsFor = [] }: { a: ReleaseAction; go: (s: Screen) => void; waitsFor?: ReleaseAction[] }) {
   const t = useT();
   const [preview, setPreview] = useState<string | null>(null);
   const [localBusy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [confirmingFree, setConfirmingFree] = useState(false);
   const open = a.state === 'pending' || a.state === 'failed';
 
   const run = async (label: string, fn: () => Promise<unknown>) => {
@@ -72,9 +73,10 @@ function ActionCard({ a, go, waitsFor = [] }: { a: ReleaseAction; go: (s: Screen
   const busy = busyText(running, localBusy);
   const previewing = running[0]?.key.endsWith(':preview') ?? false;
   const executing = running[0]?.key.endsWith(':approve') ?? false;
-  const start = (op: 'preview' | 'approve', label: string, fn: () => Promise<string | unknown>) => {
+  const freeing = running[0]?.key.endsWith(':free') ?? false;
+  const start = (op: 'preview' | 'approve' | 'free', label: string, fn: () => Promise<string | unknown>) => {
     setError(null);
-    jobs.launch(`action:${a.id}:${op}`, { label: `${label}: ${title(a)}`, busy: op === 'preview' ? t('ui.actions.busy.preview') : t('ui.actions.busy.run'), screen: { name: 'actions' } }, async () => {
+    jobs.launch(`action:${a.id}:${op}`, { label: `${label}: ${title(a)}`, busy: op === 'preview' ? t('ui.actions.busy.preview') : op === 'free' ? t('ui.actions.busy.freeBranch') : t('ui.actions.busy.run'), screen: { name: 'actions' } }, async () => {
       const r = await fn();
       return typeof r === 'string' ? r : '';
     });
@@ -135,6 +137,25 @@ function ActionCard({ a, go, waitsFor = [] }: { a: ReleaseAction; go: (s: Screen
       {isSuggestion(a) && <SuggestionCard a={a} go={go} />}
       {preview && <pre className="small mono" style={{ whiteSpace: 'pre-wrap', margin: 0, maxHeight: 320, overflow: 'auto', background: 'var(--surface-2)', padding: 12, borderRadius: 10 }}>{preview}</pre>}
       {error && <div className="error">{error}</div>}
+      {open && a.kind === 'release-git' && a.conflict && (
+        <>
+          <p className="small">{t('ui.actions.freeBranch.what', { branch: a.conflict.branch, path: a.conflict.path })}</p>
+          <div className="row">
+            {confirmingFree ? (
+              <>
+                <button type="button" className="btn btn-red" disabled={!!busy || freeing} onClick={() => { setConfirmingFree(false); start('free', t('ui.actions.busy.freeBranch'), () => api.freeReleaseCheckout(a.id)); }}>
+                  {freeing ? <span className="spinner" /> : null} {t('ui.actions.confirm.freeBranch')}
+                </button>
+                <button type="button" className="btn" disabled={!!busy} onClick={() => setConfirmingFree(false)}>{t('ui.actions.cancel')}</button>
+              </>
+            ) : (
+              <button type="button" className="btn btn-amber" disabled={!!busy} onClick={() => setConfirmingFree(true)}>
+                {t('ui.actions.freeBranch', { path: a.conflict.path })}
+              </button>
+            )}
+          </div>
+        </>
+      )}
       {open && waitsFor.length > 0 && <p className="small muted">{t('ui.actions.waitsFor', { steps: waitsFor.map((b) => title(b)).join('; ') })}</p>}
 
       {open && !isSuggestion(a) && (

@@ -1,6 +1,8 @@
-import { memo } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { type AttachmentRef, formatBytes } from '../../../../shared/attachments';
+import { base64ToArrayBuffer } from '../../../../shared/wire';
 import { useT } from '../../i18n';
+import { RecordingPlayer } from './RecordingPlayer';
 import { forumApi } from './forumApi';
 
 // The files a message carries: an image as a thumbnail that opens full size and downloads, anything else as a card with name, kind and size.
@@ -14,6 +16,7 @@ const KIND_KEY: Record<AttachmentRef['kind'], string> = {
   pdf: 'ui.forum.file.kind.pdf',
   json: 'ui.forum.file.kind.json',
   csv: 'ui.forum.file.kind.csv',
+  video: 'ui.forum.file.kind.video',
 };
 
 /** The blob URL of a data URL, revoked when the component goes; a plain <img src> would keep the whole base64 in the accessibility tree. */
@@ -28,6 +31,7 @@ export function kindMime(kind: AttachmentRef['kind']): string {
   if (kind === 'pdf') return 'application/pdf';
   if (kind === 'json') return 'application/json';
   if (kind === 'csv') return 'text/csv';
+  if (kind === 'video') return 'video/webm';
   return 'text/plain';
 }
 
@@ -67,10 +71,75 @@ const ImageThumb = memo(function ImageThumb({ thread, message, ref }: { thread: 
   );
 });
 
-/** One file of a message: an image (thumbnail) or a card (name, kind, size; open or save). */
+/**
+ * The video of an attachment as an address the page may play: read only when the person asks (a recording is up to 24 MiB, base64 on the wire), on a `blob:` address that is
+ * revoked when the player goes. Both content policies allow a video from `blob:` and from nowhere else.
+ */
+function useVideoUrl(thread: string, message: number, ref: AttachmentRef, on: boolean): { url: string | null; failed: boolean } {
+  const [url, setUrl] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    setUrl(null);
+    setFailed(false);
+    if (!on) return;
+    let live = true;
+    let made: string | null = null;
+    void forumApi.attachmentGet(thread, message, ref.id).then(
+      (got) => {
+        if (!live) return;
+        if (!got) {
+          setFailed(true);
+          return;
+        }
+        made = URL.createObjectURL(new Blob([base64ToArrayBuffer(got.data)], { type: kindMime('video') }));
+        setUrl(made);
+      },
+      () => {
+        if (live) setFailed(true);
+      },
+    );
+    return () => {
+      live = false;
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [thread, message, ref.id, on]);
+  return { url, failed };
+}
+
+/** The app's recording of an agent's screen: played in place on request, or a note that retention took the file. The model never sees it. */
+function VideoItem({ thread, message, ref }: { thread: string; message: number; ref: AttachmentRef }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const { url, failed } = useVideoUrl(thread, message, ref, open && !ref.removed);
+  return (
+    <span className="cy-file-card cy-file-video">
+      <span className="cy-file-kind badge">{t(KIND_KEY.video)}</span>
+      <span className="cy-file-name mono">{ref.name}</span>
+      <span className="cy-file-size faint small">{formatBytes(ref.bytes)}</span>
+      {ref.removed ? (
+        <span className="small cy-evidence-removed">{t('ui.screen.rec.removed')}</span>
+      ) : (
+        <>
+          <button type="button" className="cy-link" aria-pressed={open} onClick={() => setOpen((v) => !v)}>{t(open ? 'ui.screen.rec.hide' : 'ui.screen.rec.play')}</button>
+          <button type="button" className="cy-link" onClick={() => void download(thread, message, ref)}>{t('ui.forum.file.save')}</button>
+        </>
+      )}
+      {open && !ref.removed && (
+        <span className="cy-file-player">
+          {!url && !failed && <span className="small faint"><span className="spinner" aria-hidden="true" /> {t('ui.screen.rec.loading')}</span>}
+          {failed && <span className="small error" role="alert">{t('ui.cycle.rec.gone')}</span>}
+          {url && <RecordingPlayer record={{}} url={url} />}
+        </span>
+      )}
+    </span>
+  );
+}
+
+/** One file of a message: an image (thumbnail), a recording (played in place) or a card (name, kind, size; open or save). */
 export function AttachmentItem({ thread, message, ref }: { thread: string; message: number; ref: AttachmentRef }) {
   const t = useT();
   if (ref.kind === 'image') return <ImageThumb thread={thread} message={message} ref={ref} />;
+  if (ref.kind === 'video') return <VideoItem thread={thread} message={message} ref={ref} />;
   return (
     <span className="cy-file-card">
       <span className="cy-file-kind badge">{t(KIND_KEY[ref.kind])}</span>

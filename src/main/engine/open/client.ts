@@ -2,6 +2,7 @@
 import { EngineError, type Learned, adaptBodyForError, mapHttpError, mapNetworkError, newLearned, withoutImages } from './errors';
 import { type Lang, msg } from './messages';
 import { SseParser, ThinkSplitter, newId } from './text';
+import type { ReasoningEffort } from '../../../shared/config/types';
 import { t } from '../../../shared/i18n';
 import type { ChatChunk, ChatMessage, ChatRequest, ChatResponse, Completion, Json, ToolCall, ToolChoice, ToolDef, Usage } from './types';
 
@@ -23,6 +24,8 @@ export interface ProviderConfig {
   // Base delay of the transient retry backoff (tests set it to 0).
   retryDelayMs?: number;
   maxRetries?: number;
+  // The model needs its own reasoning sent back on assistant turns with tool calls: from the first call, not only after a reply has shown the field.
+  echoReasoning?: boolean;
 }
 
 // The user may paste http://localhost:11434, http://localhost:11434/v1 or the full .../chat/completions URL.
@@ -52,6 +55,12 @@ export interface CallOptions {
   toolChoice?: ToolChoice;
   responseFormat?: Json;
   maxTokens?: number;
+  /** Ask a server with tiers for the cheaper, slower one. Only for a call nobody waits for. */
+  serviceTier?: 'flex';
+  /** How hard the model thinks. Only for a model the caller knows reasons. */
+  effort?: ReasoningEffort;
+  /** Refuse at once (429) instead of queueing when the model is busy, so a pool can move on. */
+  failFast?: boolean;
   signal?: AbortSignal;
   onText?: (text: string) => void;
   onReasoning?: (text: string) => void;
@@ -82,6 +91,7 @@ export class ChunkFolder {
   private finish: string | null = null;
   private usage: Completion['usage'] = null;
   private field: Completion['reasoningField'] = null;
+  private tier: string | undefined;
   private split = new ThinkSplitter();
   error: unknown = null;
 
@@ -104,6 +114,7 @@ export class ChunkFolder {
       return;
     }
     if (chunk.usage) this.usage = foldUsage(chunk.usage);
+    if (typeof chunk.service_tier === 'string' && chunk.service_tier) this.tier = chunk.service_tier;
     const choice = chunk.choices?.find((c) => (c.index ?? 0) === 0);
     if (!choice) return;
     const d = choice.delta ?? {};
@@ -151,6 +162,7 @@ export class ChunkFolder {
       return;
     }
     if (res.usage) this.usage = foldUsage(res.usage);
+    if (typeof res.service_tier === 'string' && res.service_tier) this.tier = res.service_tier;
     const choice = res.choices?.[0];
     const m = choice?.message;
     if (!m) return;
@@ -172,13 +184,26 @@ export class ChunkFolder {
     const toolCalls: ToolCall[] = this.tools
       .filter((t) => t.name)
       .map((t) => ({ id: t.id, type: 'function', function: { name: t.name, arguments: t.args } }));
-    return { text: this.text, reasoning: this.reasoning, toolCalls, finishReason: this.finish, usage: this.usage, reasoningField: this.field };
+    return { text: this.text, reasoning: this.reasoning, toolCalls, finishReason: this.finish, usage: this.usage, reasoningField: this.field, ...(this.tier ? { meta: { tier: this.tier } } : {}) };
   }
 }
 
+const count = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+
 function foldUsage(u: Usage): NonNullable<Completion['usage']> {
   const cached = u.prompt_tokens_details?.cached_tokens ?? u.prompt_cache_hit_tokens ?? 0;
-  return { promptTokens: u.prompt_tokens ?? 0, completionTokens: u.completion_tokens ?? 0, cachedTokens: cached, ...(typeof u.cost === 'number' && u.cost >= 0 ? { costUsd: u.cost } : {}) };
+  // What the server says it charged beats any estimate; `cost` first, then `estimated_cost`.
+  const cost = count(u.cost) ? u.cost : count(u.estimated_cost) ? u.estimated_cost : undefined;
+  const written = u.prompt_tokens_details?.cache_write_tokens;
+  const reasoning = u.completion_tokens_details?.reasoning_tokens;
+  return {
+    promptTokens: u.prompt_tokens ?? 0,
+    completionTokens: u.completion_tokens ?? 0,
+    cachedTokens: cached,
+    ...(cost !== undefined ? { costUsd: cost } : {}),
+    ...(count(written) ? { cacheWriteTokens: written } : {}),
+    ...(count(reasoning) ? { reasoningTokens: reasoning } : {}),
+  };
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -198,6 +223,7 @@ export class ChatClient {
   constructor(readonly cfg: ProviderConfig, learned?: Learned) {
     this.baseUrl = normalizeBaseUrl(cfg.baseUrl);
     this.learned = learned ?? newLearned();
+    if (cfg.echoReasoning && !this.learned.echoRefused) this.learned.echoReasoning = true;
     this.lang = cfg.lang ?? 'pt-BR';
     this.fetchImpl = cfg.fetchImpl ?? fetch;
   }
@@ -217,7 +243,7 @@ export class ChatClient {
 
   private build(o: CallOptions): ChatRequest {
     const stream = this.cfg.stream !== false;
-    const echoed = this.learned.echoReasoning ? o.messages : o.messages.map(({ reasoning_content: _r, ...m }) => m as ChatMessage);
+    const echoed = this.learned.echoReasoning && !this.learned.echoRefused ? o.messages : o.messages.map(({ reasoning_content: _r, ...m }) => m as ChatMessage);
     // A server that refused an image once gets a line in place of each one from then on.
     const messages = this.learned.noImages ? withoutImages(echoed, t('main.engine.text.noImage')) : echoed;
     const body: ChatRequest = { model: this.cfg.model, messages };
@@ -235,6 +261,10 @@ export class ChatClient {
       if (o.toolChoice && !this.learned.dropParams.has('tool_choice')) body.tool_choice = o.toolChoice;
     }
     if (o.responseFormat && !this.learned.dropParams.has('response_format')) body.response_format = o.responseFormat;
+    // Nothing here unless the caller asked, and nothing the server has already refused.
+    if (o.serviceTier && !this.learned.dropParams.has('service_tier')) body.service_tier = o.serviceTier;
+    if (o.effort && !this.learned.dropParams.has('reasoning_effort')) body.reasoning_effort = o.effort;
+    if (o.failFast && !this.learned.dropParams.has('fail_fast')) body.fail_fast = true;
     return body;
   }
 
@@ -245,6 +275,7 @@ export class ChatClient {
     let body = this.build(o);
     let transient = 0;
     let adapted = 0;
+    let tierRetried = false;
     for (;;) {
       let res: Response;
       try {
@@ -266,8 +297,20 @@ export class ChatClient {
           body = retryBody;
           continue;
         }
+        // A refusal the call asked for is the answer: the pool moves on, and retrying here would put the queue back.
+        if (res.status === 429 && body.fail_fast === true) throw err;
+        // A flex call that is refused goes again once in the standard tier, instead of leaving the model for the sake of a discount. Nothing is learned from it.
+        if (res.status === 429 && body.service_tier !== undefined && !tierRetried) {
+          tierRetried = true;
+          const { service_tier: _tier, ...rest } = body;
+          body = rest as ChatRequest;
+          continue;
+        }
         if (err.retryable && transient < (this.cfg.maxRetries ?? 2)) {
-          await sleep(err.retryAfterMs ?? (this.cfg.retryDelayMs ?? 1000) * 2 ** transient++, o.signal);
+          // A Retry-After counts as an attempt too, or a model that keeps refusing is retried forever.
+          const wait = err.retryAfterMs ?? (this.cfg.retryDelayMs ?? 1000) * 2 ** transient;
+          transient++;
+          await sleep(wait, o.signal);
           continue;
         }
         throw err;
@@ -279,7 +322,9 @@ export class ChatClient {
         else folder.fromResponse(JSON.parse(await res.text()) as ChatResponse);
         if (folder.error !== null) throw this.streamError(folder.error, ctx);
         const done = folder.result();
-        if (done.reasoningField === 'reasoning_content') this.learned.echoReasoning = true;
+        const requestId = res.headers.get('x-request-id');
+        if (requestId) done.meta = { ...done.meta, requestId };
+        if (done.reasoningField === 'reasoning_content' && !this.learned.echoRefused) this.learned.echoReasoning = true;
         return done;
       } catch (e) {
         if (e instanceof EngineError) throw e;
@@ -324,6 +369,32 @@ export class ChatClient {
     }
     feed(parser.push(decoder.decode()));
     feed(parser.flush());
+  }
+
+  /**
+   * The provider's richer model listing, an address of its own (`features.catalogUrl`). The key goes along, so it is read only from the origin of `baseUrl`; the app
+   * calls it from the connection test only, never while a run works.
+   */
+  async listRich(url: string, signal?: AbortSignal): Promise<Json[]> {
+    const ctx = { lang: this.lang, model: this.cfg.model, host: this.host };
+    let sameOrigin = false;
+    try {
+      sameOrigin = new URL(url).origin === new URL(this.baseUrl).origin;
+    } catch {
+      sameOrigin = false;
+    }
+    // i18n-ignore: developer error, the address was validated against the origin when it was saved
+    if (!sameOrigin) throw new EngineError('the listing is not at the provider\'s origin', 'bad_request');
+    let res: Response;
+    try {
+      res = await this.fetchImpl(url, { headers: this.headers(false), signal: signal ?? AbortSignal.timeout(10_000) });
+    } catch (e) {
+      throw this.aborted(e, signal, ctx) ?? mapNetworkError(e, ctx);
+    }
+    if (!res.ok) throw mapHttpError(res.status, await res.text().catch(() => ''), res.headers, ctx);
+    const json = (await res.json()) as unknown;
+    const list = Array.isArray(json) ? json : (json as { data?: unknown; models?: unknown } | null)?.data ?? (json as { models?: unknown } | null)?.models;
+    return Array.isArray(list) ? (list as Json[]) : [];
   }
 
   async listModels(signal?: AbortSignal): Promise<{ ids: string[]; raw: Json[] }> {

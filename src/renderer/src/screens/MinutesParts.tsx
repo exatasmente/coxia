@@ -330,6 +330,18 @@ export function DayPanel({ day, onCopy, copied }: { day: DayView; onCopy: (text:
             ))}
           </>
         )}
+        {day.repeated.length > 0 && (
+          <>
+            <h3 className="section-title" style={{ marginTop: 8 }}>{t('minutes.day.repeated')} · {day.repeated.length}</h3>
+            {day.repeated.map((r) => (
+              <div key={r.ref} className="item ask">
+                <span className="mono small">{r.ref}</span>
+                <span className="small">{r.question}</span>
+                <span className="dest">{t('minutes.day.repeated.on', { dates: r.dates.join(', ') })} · {t(r.count === 1 ? 'minutes.day.repeated.days_one' : 'minutes.day.repeated.days_other', { count: r.count })}</span>
+              </div>
+            ))}
+          </>
+        )}
         <h3 className="section-title" style={{ marginTop: 8 }}>{t('minutes.day.covered')} · {m.covered.length}</h3>
         {m.covered.map((c) => (
           <div key={c.ref} className="row" style={{ gap: 10 }}>

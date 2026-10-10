@@ -24,6 +24,14 @@ export type PutProblem = KindProblem | 'write';
 
 const dirOf = (dataDir: string, runId: string): string => join(dataDir, EVIDENCE_DIR, runId);
 
+/**
+ * What `putEvidence` needs of a run to name the next piece: the run as a stage sees it, with the pieces it has just kept counted on top of the stored ones. A stage
+ * is handed a run that does not change under it, so its second piece would otherwise take the id of the first.
+ */
+export function withRecordedEvidence(run: Run, records: readonly EvidenceRecord[]): Run {
+  return { ...run, evidence: { ...(run.evidence ?? {}), ...Object.fromEntries(records.map((r) => [r.id, r])) } };
+}
+
 /** The next id of a run: the highest it has used, plus one. The run keeps the count, so an id is never reused across attempts. */
 export function nextEvidenceId(run: Pick<Run, 'evidence'>): string {
   const used = Object.keys(run.evidence ?? {})
@@ -31,6 +39,16 @@ export function nextEvidenceId(run: Pick<Run, 'evidence'>): string {
     .filter((n) => Number.isFinite(n));
   const next = used.length ? Math.max(...used) + 1 : 1;
   return `ev-${next}`;
+}
+
+/**
+ * The id as it is, or the next free one when a file of the run already has it in any kind. The numbering above follows the record the caller holds, which can be older
+ * than the folder (a stage numbers from the run as it started); a stored file is never written over.
+ */
+export function freeEvidenceId(dir: string, id: string): string {
+  let n = Number(id.replace(/^ev-/, ''));
+  while (Object.values(EVIDENCE_EXT).some((ext) => existsSync(join(dir, `ev-${n}.${ext}`)))) n++;
+  return `ev-${n}`;
 }
 
 /** Reads the head of a file without following a link, at most `HEAD_MAX` bytes. */
@@ -52,6 +70,25 @@ function readHead(path: string, size: number): Uint8Array {
 }
 
 /**
+ * Writes the bytes of a new piece of a run as its next free id, atomically: a temporary name in the same folder, then a rename, so a crash never leaves a half file as
+ * evidence, and a stored file is never written over. Returns the id, or null when the file could not be written.
+ */
+export function placeEvidence(dataDir: string, run: Pick<Run, 'id' | 'evidence'>, kind: EvidenceKind, bytes: Uint8Array): string | null {
+  const dir = dirOf(dataDir, run.id);
+  try {
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
+    const id = freeEvidenceId(dir, nextEvidenceId(run));
+    const dest = join(dir, `${id}.${EVIDENCE_EXT[kind]}`);
+    const tmp = `${dest}.tmp-${process.pid}`;
+    writeFileSync(tmp, bytes, { mode: 0o600, flag: 'wx' });
+    renameSync(tmp, dest);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Reads a file of the stage's output folder and keeps it as evidence of the run. The kind is decided by the content; the bytes are copied once into the
  * workspace's own data and never read from the output folder again. Returns the problem instead of throwing so the tool can word it for the model.
  */
@@ -65,19 +102,14 @@ export function putEvidence(dataDir: string, run: Run, input: { path: string; na
   const head = readHead(input.path, size);
   const kind = detectKind(head, size);
   if (!kind.kind) return { ok: false, problem: kind.problem ?? 'unknown' };
-  const id = nextEvidenceId(run);
-  const dir = dirOf(dataDir, run.id);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const dest = join(dir, `${id}.${EVIDENCE_EXT[kind.kind]}`);
+  let bytes: Buffer;
   try {
-    // Atomic: a temporary name in the same folder, then a rename, so a crash never leaves a half file as evidence.
-    const tmp = `${dest}.tmp-${process.pid}`;
-    const bytes = readFileSync(input.path);
-    writeFileSync(tmp, bytes, { mode: 0o600, flag: 'wx' });
-    renameSync(tmp, dest);
+    bytes = readFileSync(input.path);
   } catch {
     return { ok: false, problem: 'write' };
   }
+  const id = placeEvidence(dataDir, run, kind.kind, bytes);
+  if (!id) return { ok: false, problem: 'write' };
   const record: EvidenceRecord = {
     id,
     stage: input.stage,
@@ -151,7 +183,8 @@ export function uploadsOf(dataDir: string, run: Run, ids: readonly string[]): Ev
   const out: EvidenceUpload[] = [];
   for (const id of ids) {
     const record = run.evidence?.[id];
-    if (!record) continue;
+    // The app's own screen recording never goes up to the code host, whoever names it: it is a video, and what it shows is for the app.
+    if (!record || record.recording) continue;
     const bytes = readEvidence(dataDir, run.id, record);
     if (!bytes) continue;
     const media = EVIDENCE_KIND_MEDIA[record.kind];

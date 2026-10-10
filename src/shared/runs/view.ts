@@ -66,7 +66,7 @@ export function reposToChoose(repos: readonly Pick<RepoConfig, 'id' | 'projectPa
 
 // ---- what the person can do about a run ---------------------------------------------------------------------------------------------
 
-export const RUN_ACTIONS = ['startStage', 'accept', 'return', 'approve', 'reject', 'skip', 'answer', 'chooseSquad', 'skipWait', 'sendBack', 'retry', 'cancel'] as const;
+export const RUN_ACTIONS = ['startStage', 'accept', 'return', 'approve', 'reject', 'skip', 'answer', 'chooseSquad', 'retryPr', 'skipWait', 'sendBack', 'retry', 'cancel'] as const;
 export type RunActionId = (typeof RUN_ACTIONS)[number];
 
 export interface RunAction {
@@ -97,7 +97,8 @@ export function runActions(run: Pick<Run, 'status' | 'question'> & { stage?: str
     case 'gate':
       return [act('approve', 'optional'), act('reject', 'required'), act('skip', 'required'), ...back, cancel];
     case 'question':
-      return [run.question?.kind === 'squad' ? act('chooseSquad') : act('answer', 'required'), ...back, cancel];
+      // A failed pull request is retried against a base chosen on the screen (no text box); a routing run is decided with `chooseSquad`; the rest is answered in words.
+      return [run.question?.kind === 'squad' ? act('chooseSquad') : run.question?.kind === 'pr-retry' ? act('retryPr') : act('answer', 'required'), ...back, cancel];
     case 'waiting':
       return [act('skipWait', 'required'), ...back, cancel];
     case 'failed':

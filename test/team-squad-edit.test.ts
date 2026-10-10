@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { neutralConfig, validateConfig } from '../src/shared/config';
 import { membersOf, squadOf } from '../src/shared/config/squads';
+import { newAgent } from '../src/shared/config/team';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { agentFlow, applyTemplate } from '../src/shared/cycles';
-import { applySquad, blankSquad, draftOfSquad, hasOwnFlow, movingAgents, normalizePrefix, squadIssues, squadProblems, withLabel } from '../src/renderer/src/screens/team/squadEdit';
+import { applySquad, blankSquad, draftOfSquad, hasOwnFlow, memberChoices, movingAgents, normalizePrefix, squadIssues, squadProblems, withLabel } from '../src/renderer/src/screens/team/squadEdit';
 
 const base = (): WorkspaceConfig => {
   const c = applyTemplate(neutralConfig(), agentFlow);
@@ -91,5 +92,16 @@ describe('the checks of a squad over its draft', () => {
     expect(hasOwnFlow(c, 'backend')).toBe(false);
     c.devCycle.flows = { backend: [] };
     expect(hasOwnFlow(c, 'backend')).toBe(true);
+  });
+});
+
+describe('who can be a member of a squad', () => {
+  it('is everyone on the team but the draft agents of the assistant', () => {
+    const c = base();
+    const before = c.agents.team.map((a) => a.id);
+    expect(memberChoices(c).map((a) => a.id)).toEqual(before);
+    c.agents.team.push(newAgent({ id: 'trial', name: 'Trial', draft: true }));
+    expect(memberChoices(c).map((a) => a.id)).toEqual(before);
+    expect(c.agents.team.map((a) => a.id)).toContain('trial');
   });
 });

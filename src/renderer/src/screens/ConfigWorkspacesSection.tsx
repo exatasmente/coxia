@@ -7,6 +7,7 @@ import { publishWorkspaces, useWorkspaces, workspaceApi } from '../workspaceApi'
 import { ConfigExport, ConfigImport } from '../wizard/ConfigTransfer';
 import { Notice } from '../wizard/ui';
 import { RestartOverlay, WorkspacesSection } from './WorkspacesSection';
+import { McpStateSection } from './McpStateSection';
 
 /** Settings → "Configurações e workspaces": the setup wizard, export and import of a configuration, and the list of workspaces. */
 export function ConfigWorkspacesSection({ go }: { go: (s: Screen) => void }) {

@@ -7,7 +7,7 @@ import { collectCommands, collectPaths } from '../src/shared/config/transfer';
 import { agentFlow, agentFlowEngineering, agentFlowTeam, applyTemplate, docsWriter, engineeringTeam, releaseManager } from '../src/shared/cycles';
 import { mergeTemplateTeam } from '../src/shared/cycles/apply';
 import { cycleOf } from '../src/shared/cycles';
-import type { WorkspaceConfig } from '../src/shared/config/types';
+import { CONFIG_SCHEMA_VERSION, type WorkspaceConfig } from '../src/shared/config/types';
 
 type Doc = Record<string, any>;
 
@@ -33,7 +33,7 @@ describe('the migration to schema 10', () => {
   it('raises nothing: an agent that writes keeps the commands of the runner, one that only reads runs none', () => {
     const r = migrate(v9());
     expect(r.fromVersion).toBe(9);
-    expect(r.config.schemaVersion).toBe(18);
+    expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     expect(agent(r.config, 'dev')).toMatchObject({ shell: 'allowlist', tracker: 'none' });
     expect(agent(r.config, 'po')).toMatchObject({ shell: 'none' });
     for (const a of r.config.agents.team) expect(a.shell).not.toBe('sandbox');
@@ -176,5 +176,13 @@ describe('what an import shows', () => {
     expect(fields).toContain('agents.team[developer].shell');
     expect(fields).not.toContain('agents.team[refiner].shell');
     expect(collectPaths(c).map((x) => x.field)).toContain('runner.sandbox.readOnlyPaths[0]');
+  });
+
+  it('lists an agent with a screen, hosts to reach or a logged-in browser, and says which hosts', () => {
+    const c = neutralConfig();
+    c.agents.team.push(newAgent({ id: 'scout', screen: true, allowedHosts: ['example.com', 'docs.example.com'], browserProfile: true }), newAgent({ id: 'plain' }));
+    const found = collectCommands(c).filter((x) => x.field.startsWith('agents.team[scout]') || x.field.startsWith('agents.team[plain]'));
+    expect(found.map((x) => x.field)).toEqual(['agents.team[scout].screen', 'agents.team[scout].allowedHosts', 'agents.team[scout].browserProfile']);
+    expect(found.find((x) => x.field.endsWith('allowedHosts'))?.command).toContain('example.com, docs.example.com');
   });
 });

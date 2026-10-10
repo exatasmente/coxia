@@ -20,6 +20,7 @@ const CHANNEL: Record<RunActionId, string> = {
   skip: 'runs:gate',
   answer: 'runs:answer',
   chooseSquad: 'runs:setSquad',
+  retryPr: 'runs:retryPr',
   skipWait: 'runs:skipWait',
   sendBack: 'runs:sendBack',
   retry: 'runs:retry',
@@ -31,10 +32,11 @@ describe('the run screen in a browser', () => {
     const question = { by: 'developer', holder: null, kind: 'agent' as const, text: 'x', askedAt: '', stage: 'plan' };
     const seen = new Set<RunActionId>();
     for (const status of RUN_STATUSES) {
-      for (const question_ of [null, question, { ...question, kind: 'squad' as const }]) {
+      for (const question_ of [null, question, { ...question, kind: 'squad' as const }, { ...question, kind: 'pr-retry' as const, bases: ['release/0.8.0', 'main'], targetBranch: 'release/0.8.0', baseGone: true }]) {
         for (const a of runActions({ status, question: question_ })) {
           seen.add(a.id);
-          expect(webAccess(CHANNEL[a.id]), `${status}/${a.id}`).toBe('allow');
+          // the pull request retry writes the host directly, behind the same switch as approving a proposal (webPolicy.ts)
+          expect(webAccess(CHANNEL[a.id]), `${status}/${a.id}`).toBe(a.id === 'retryPr' ? 'external' : 'allow');
         }
       }
     }
@@ -52,10 +54,16 @@ describe('the run screen in a browser', () => {
   });
 
   it('has no desktop-only branch left: no screen of the cycle reads the platform, and no text says the app on the computer must do it', () => {
-    for (const f of readdirSync(CYCLE).filter((n) => /\.tsx?$/.test(n))) {
+    // The exceptions, by decision (#157, #178): the live screen's Take control is hidden in a paired browser, which only watches, and the card of a hand-off offers the browser only
+    // Decline (taking the screen and giving it back are the computer's). The server refuses `screen:*` to it anyway.
+    const watchOnly = new Set(['LiveScreen.tsx', 'HandoffCard.tsx']);
+    for (const f of readdirSync(CYCLE).filter((n) => /\.tsx?$/.test(n) && !watchOnly.has(n))) {
       const text = source(CYCLE, f);
       expect(text, f).not.toMatch(/isWeb\(|platform'|desktopOnly|\bweb[=:}]/);
     }
+    expect(webAccess('screen:control')).toBe('deny');
+    expect(webAccess('screen:input')).toBe('deny');
+    expect(webAccess('runs:screen')).toBe('allow');
     // The field that starts a release is offered wherever the workspace has the flow: the server decides whether a paired browser may use it.
     expect(source(CYCLE, 'RunsScreen.tsx')).toMatch(/flows\?\.release && <StartRelease/);
   });

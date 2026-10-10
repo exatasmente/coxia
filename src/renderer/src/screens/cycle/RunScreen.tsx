@@ -14,12 +14,14 @@ import { useT } from '../../i18n';
 import { useActivity } from '../../useActivity';
 import { BackIcon } from '../icons';
 import { EvidenceBlock, useEvidenceList } from './Evidence';
+import { evidenceKey } from './recording';
 import { useSeen, useThreads } from './forumApi';
 import { ReviewRounds } from './ReviewRounds';
 import { CommandsSection } from './CommandsSection';
 import { AutonomyNote } from './AutonomyNote';
 import { CommandApproval } from './CommandApproval';
 import { RunActions } from './RunActions';
+import { RunHandoff } from './RunHandoff';
 import { RunBadge } from './RunBadge';
 import { StageTimeline } from './StageTimeline';
 import { Thread } from './Thread';
@@ -110,7 +112,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
 
   const activity = useActivity(run ? `run:${run.id}` : undefined);
   // The evidence the run kept, for the stage list and for what a scenario cites.
-  const evidence = useEvidenceList(run?.id ?? '');
+  const evidence = useEvidenceList(run?.id ?? '', evidenceKey(run));
   // A call a message made to an agent of this run's thread: the panel appears for it whatever the run's own status, under the called agent's name.
   const call = useMemo(() => (run ? callGroups(activity).find((g) => g.thread === runThreadId(run.id)) ?? null : null), [activity, run]);
 
@@ -164,6 +166,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
           ) : null}
         </dl>
         <FlowNote run={run} current={currentHash} />
+        <RunHandoff run={run} team={config?.agents.team} />
         {narrow && (
           <div className="cy-tabs" role="tablist" aria-label={t('ui.cycle.tabs')}>
             <button type="button" role="tab" id="cy-tab-cycle" aria-selected={tab === 'cycle'} aria-controls="cy-panel-cycle" className={`cy-tab ${tab === 'cycle' ? 'on' : ''}`} onClick={() => setTab('cycle')}>{t('ui.cycle.tab.cycle')}</button>
@@ -190,6 +193,7 @@ export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' },
           {(!narrow || tab === 'forum') && (
             <div className="cy-side" id="cy-panel-forum" role={narrow ? 'tabpanel' : undefined} aria-labelledby={narrow ? 'cy-tab-forum' : undefined}>
               <Thread
+                handoffAbove
                 thread={runThreadId(run.id)}
                 run={run}
                 team={config?.agents.team}

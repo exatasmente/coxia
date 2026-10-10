@@ -39,6 +39,9 @@ export const MSG_KEYS = [
   'probeReasoning',
   'probeContext',
   'probeSmallContext',
+  'probeRichFail',
+  'probeDeprecated',
+  'probeDeprecatedNoSub',
 ] as const;
 
 export type MsgKey = (typeof MSG_KEYS)[number];

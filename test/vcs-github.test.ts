@@ -270,7 +270,9 @@ describe('planWrite', () => {
   });
 
   it('plans the upload of a piece of evidence: a file on GitHub\'s uploads host, with its own type', async () => {
-    const out = await plan({ op: 'uploadAttachment', project: 'acme/app', path: '/tmp/ev-1.png', name: 'ev-1.png', media: 'image/png' });
+    // Only github.com has the uploads host the command names; an Enterprise host plans nothing (see vcs-github-upload.test.ts).
+    const dotcom = buildRuntime(settings({ host: 'github.com' }), { token: () => TOKEN, env: () => ({}), sleep: noSleep });
+    const out = await dotcom.provider.planWrite({ op: 'uploadAttachment', project: 'acme/app', path: '/tmp/ev-1.png', name: 'ev-1.png', media: 'image/png' });
     expect(out).toEqual([{ vcs: 'github', via: 'api', method: 'POST', endpoint: 'uploads.github.com/?repository_id=acme%2Fapp&name=ev-1.png&content_type=image%2Fpng', fields: {}, headers: { 'Content-Type': 'image/png', 'User-Agent': 'Coxia' }, bodyFile: '/tmp/ev-1.png' }]);
     for (const c of out) expect(() => validateGitHubCommand(c)).not.toThrow();
   });

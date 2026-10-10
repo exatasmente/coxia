@@ -7,6 +7,7 @@ import type { AgentCall } from '../agents';
 import { prompt as cp, text as cycleWord } from '../cyclePrompts';
 import type { FolderFile } from '../runner/cycleFolder';
 import { fence, threadText } from '../runner/prompt';
+import { type ScreenPrompt, screenRules, shellRules } from '../runner/screenPrompt';
 
 // What an agent is given when a person names it: the question, where it was named, the conversation and (when it runs commands) a throwaway copy of the code.
 // It never writes to the repository: the call has no confinement to write in, so whatever the agent's own permission is, a mention changes no file of the branch.
@@ -30,12 +31,29 @@ export interface MentionInput {
   place: 'run' | 'channel' | 'general' | 'ceremony';
   /** The agent's commands run in a session over a copy of the code: what it is told about it. Absent: no commands. */
   shell?: { host: boolean; network: 'off' | 'registry' | 'open' };
+  /** What the agent is told of its screen, its own hosts and the app's browser; absent for an agent with neither the switch nor a host list. */
+  screen?: ScreenPrompt;
   /** The agent may propose writes on the code host (it reads it): the answer gets a `proposals` field. */
   proposals?: boolean;
   /** The agent is autonomous: a comment and a label change it proposes go out as soon as it answers, and it is told so. */
   autonomous?: boolean;
   /** The conversation the agent was called in and the files the message carries: the call gets the read-only attachment tool, scoped to it. */
   attachments?: { thread: string; refs: readonly AttachmentRef[] };
+  /**
+   * What the app knows of the activities of this workspace, already rendered by the caller: the front the message named whole, or the short list of
+   * what is in progress. It is shown as material, never added to the tools, and an empty one leaves the call without the section.
+   */
+  memory?: string;
+  /** The learned procedures, as in a stage's input: a string means the call has the tools (the rules are told), and the string is the rendered list ("" lists nothing). */
+  procedures?: string;
+  /** The call has the app's browser, so it is also given the draft (see `StageInput.proceduresGui`). */
+  proceduresGui?: boolean;
+  /** The call has the app's shell, so it is also given the draft of its commands: the rules say to keep a task fought with commands with `procedures_draft`. Only with `procedures`. */
+  proceduresCmd?: boolean;
+  /** The shared memory, as in a stage's input: a string means the call has a session, and the string is the list its prompt carries. Absent: the memory is off. */
+  index?: string;
+  /** The session writes (a mention may keep and remove notes of its own); a call of a ceremony reads only. */
+  indexWrite?: boolean;
 }
 
 /** An issue the answer proposes, read leniently: a title and a body are needed, labels are optional. */
@@ -162,12 +180,18 @@ export function mentionCall(i: MentionInput): AgentCall {
   const system = [
     cp('runner.mention.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.ref ?? '—', title: i.title ?? '—' }),
     placeLine(i),
-    i.shell ? (i.shell.host ? cp('runner.rules.shell.host') : i.shell.network === 'open' ? cp('runner.rules.shell.open') : i.shell.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
+    i.shell ? shellRules(i.shell, i.screen) : '',
     i.shell ? (i.shell.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
+    screenRules(i.screen),
     i.proposals ? (i.autonomous ? cp('runner.mention.proposalsAuto') : cp('runner.mention.proposals')) : '',
     i.proposals ? labelsLine(i.config) : '',
     cp('runner.rules.data'),
     cp('runner.rules.claims'),
+    i.procedures !== undefined ? cp('runner.rules.procedures') : '',
+    i.procedures !== undefined && i.proceduresGui ? cp('runner.rules.proceduresGui') : '',
+    i.procedures !== undefined && i.proceduresCmd ? cp('runner.rules.proceduresCmd') : '',
+    i.index !== undefined ? cp('runner.rules.sharedMemory') : '',
+    i.index !== undefined && i.indexWrite ? cp('runner.rules.sharedMemoryWrite') : '',
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.agent.instructions).trim(),
@@ -176,6 +200,10 @@ export function mentionCall(i: MentionInput): AgentCall {
     .join('\n\n');
   const sections = [
     ...i.files.map((f) => cp('runner.section.file', { name: f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') })),
+    // What the app knows of the activities, before the thread: material to consult, under its own tags, so a call about an activity is answered from it.
+    i.memory ? (i.index !== undefined ? cp('runner.section.sharedOne', { text: fence(i.memory) }) : cp('runner.section.shared', { text: fence(i.memory) })) : '',
+    i.index ? cp('runner.section.sharedIndex', { text: fence(i.index) }) : '',
+    i.procedures ? cp('runner.section.procedures', { text: fence(i.procedures) }) : '',
     // The files of the message the agent was called in: the warning names them by the ref the tool takes, and never a path.
     i.attachments?.refs.length ? cp('runner.mention.attachment.list', { text: fence(attachmentsSection(i.attachments.refs)) }) : '',
     threadText(i.thread.slice(-40)) ? cp('runner.section.thread', { text: fence(threadText(i.thread.slice(-40))) }) : '',

@@ -12,6 +12,14 @@ files:
 asarUnpack:
   # The SDK's native Claude Code binary must be a real file to be executed.
   - node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/**
+  # The app's browser runs the Playwright MCP server (cli.js) with the app's own executable in Node mode, so it and the Playwright core it carries (nested under it,
+  # a different version from the repository's own dev dependency) must be real files. src/main/paths.ts reads them from app.asar.unpacked.
+  - node_modules/@playwright/**
+  - node_modules/@playwright/mcp/node_modules/playwright-core/**
+  # In the package the server's own Playwright is hoisted next to it (the repository's playwright-core is a dev dependency and stays out),
+  # and Node does not look inside app.asar from app.asar.unpacked: what cli.js requires must be unpacked too.
+  - node_modules/playwright/**
+  - node_modules/playwright-core/**
 extraResources:
   - from: resources
     to: resources

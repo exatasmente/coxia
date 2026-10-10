@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { type ForumMessage, type ThreadSummary, GENERAL_THREAD, SQUADS_CHANNEL } from '../src/shared/forum';
-import { applyMention, baselineSeen, commandRound, forumLists, groupThread, markSeen, mentionAt, mentionOptions, mergeMessages, totalUnread, unreadOf } from '../src/shared/forumView';
+import { applyMention, baselineSeen, chatAgents, commandRound, forumLists, groupThread, markSeen, mentionAt, mentionChoices, mentionOptions, mergeMessages, totalUnread, unreadOf } from '../src/shared/forumView';
 
 let seq = 0;
 const msg = (over: Partial<ForumMessage>): ForumMessage => ({
@@ -214,5 +214,27 @@ describe('@agent while typing', () => {
   it('puts the whole mention in place of the partial one, with a space after', () => {
     expect(applyMention('hello @de and more', 6, 9, 'developer')).toEqual({ text: 'hello @developer and more', caret: 17 });
     expect(applyMention('@t', 0, 2, 'tech-lead')).toEqual({ text: '@tech-lead ', caret: 11 });
+  });
+});
+
+describe('the agents the forum offers while a draft agent exists', () => {
+  const team = [{ id: 'developer' }, { id: 'trial', draft: true }, { id: 'qa' }, { id: 'other-trial', draft: true }];
+
+  it('completes @ with the agents of the cycle, and a draft only in its own conversation', () => {
+    expect(mentionChoices(team, 'general').map((a) => a.id)).toEqual(['developer', 'qa']);
+    expect(mentionChoices(team, 'run-r-abc123-x1y2').map((a) => a.id)).toEqual(['developer', 'qa']);
+    expect(mentionChoices(team, 'agent-developer').map((a) => a.id)).toEqual(['developer', 'qa']);
+    // the person talking to the draft may name it; no other draft comes with it
+    expect(mentionChoices(team, 'agent-trial').map((a) => a.id)).toEqual(['developer', 'trial', 'qa']);
+  });
+
+  it('keeps the team as it was when there is no draft', () => {
+    const plain = [{ id: 'developer' }, { id: 'qa' }];
+    expect(mentionChoices(plain, 'general')).toEqual(plain);
+    expect(chatAgents(plain)).toEqual(plain);
+  });
+
+  it('offers no direct conversation with a draft', () => {
+    expect(chatAgents(team).map((a) => a.id)).toEqual(['developer', 'qa']);
   });
 });

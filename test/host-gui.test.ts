@@ -12,7 +12,8 @@ import { neutralSandbox } from '../src/shared/config/defaults';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import type { Run } from '../src/shared/runs';
 import { createSandboxService } from '../src/main/sandbox';
-import { startHostDisplay } from '../src/main/sandbox/display';
+import { HOST_DISPLAY_ARGS, startHostDisplay } from '../src/main/sandbox/display';
+import { hostDisplaySocket } from '../src/main/sandbox/host';
 import { viewImageToolImpl } from '../src/main/sandbox/engineTool';
 import { openHostSession } from '../src/main/sandbox/host';
 import { offersViewImage, viewImageDescription } from '../src/main/sandbox/tool';
@@ -86,6 +87,8 @@ describe.runIf(posix)('a host session asked to test an interface', () => {
     expect(r.output).toBe('[:0][][]');
     expect(s.gui).toBeUndefined();
     expect(s.readImage).toBeUndefined();
+    // No interface to test, no output folder: such a stage keeps what it had.
+    expect(s.outputDir).toBeUndefined();
     expect(offersViewImage(s)).toBe(false);
   });
 
@@ -97,7 +100,31 @@ describe.runIf(posix)('a host session asked to test an interface', () => {
     expect(r.output).toContain(`/b/ms-playwright :101 [][] ${out}`);
     expect(r.output).toContain('folder');
     expect(s.gui).toEqual({ browsers: '/b/ms-playwright', display: 'on', out });
+    // The folder the stage saves in is the folder its evidence is read from; a host session has no stage folder.
+    expect(s.outputDir).toBe(out);
+    expect(s.stageDir).toBeUndefined();
     expect(offersViewImage(s)).toBe(true);
+  });
+
+  it('reports where the stage\'s display can be dialled from the app, and only when it is on', async () => {
+    const on = ask({ browsers: null, display: 'on', displayName: ':101' });
+    expect(on.screen).toEqual({ socket: '/tmp/.X11-unix/X101', kind: 'host' });
+    // What the prompt receives does not change: no path of this computer is in `gui`.
+    expect(JSON.stringify(on.gui)).not.toContain('X11');
+    // No display name (the server did not say which it took) is no socket either.
+    const others = [ask({ browsers: null, display: 'missing' }), ask({ browsers: null, display: 'failed' }), ask({ browsers: '/b', display: null }), ask({ browsers: null, display: 'on' }), openHostSession({ cwd: root, limits, env: hostEnv })];
+    for (const s of others) expect(s.screen).toBeUndefined();
+    await Promise.all([on, ...others].map((s) => s.close()));
+  });
+
+  it('takes only a plain display number for a socket', () => {
+    expect(hostDisplaySocket(':0')).toBe('/tmp/.X11-unix/X0');
+    expect(hostDisplaySocket(':99999')).toBe('/tmp/.X11-unix/X99999');
+    for (const bad of ['', ':', ':1.0', 'host:1', ':100000', ':-1', ':1/../../x', '/tmp/x']) expect(hostDisplaySocket(bad)).toBeNull();
+  });
+
+  it('starts the host display with the arguments it always had: no file for the framebuffer, no TCP', () => {
+    expect(HOST_DISPLAY_ARGS).toEqual(['-displayfd', '3', '-screen', '0', '1280x800x24', '-nolisten', 'tcp']);
   });
 
   it('leaves a command no display at all when the one that was asked for is not there, so a window app does not open on the person\'s screen', async () => {
@@ -205,6 +232,9 @@ describe.runIf(posix)('the host session of the sandbox service', () => {
     const off = await svc.openHost({ worktree: wt(), reader: false, config: { ...config, display: false }, display: true });
     try {
       expect(qa.gui).toMatchObject({ browsers: browsers(), display: 'on' });
+      expect(qa.screen).toEqual({ socket: '/tmp/.X11-unix/X77', kind: 'host' });
+      expect(other.screen).toBeUndefined();
+      expect(off.screen).toBeUndefined();
       expect((await qa.exec('echo "$DISPLAY"')).output).toBe(':77');
       expect(other.gui).toMatchObject({ browsers: browsers(), display: null });
       expect(off.gui).toMatchObject({ display: null });
@@ -325,6 +355,32 @@ describe('a QA stage of an agent that runs on this computer', () => {
     expect(qa.system).not.toContain('the sandbox you are in is the boundary');
     expect(qa.system).not.toContain('Save screenshots and traces in /coxia/out');
     expect(b.thread(run).some((m) => m.code === 'runner.sandbox.noDisplay')).toBe(true);
+  });
+
+  it.each([
+    ['en', 'Run the browser headed'],
+    ['pt-BR', 'Rode o navegador com janela'],
+  ] as const)('tells an agent that runs on this computer to run its browser headed when the display is on, in %s', async (language, headed) => {
+    const sandbox = fakeSandbox({ gui: { browsers: '/b/ms-playwright', display: 'on', out: '/tmp/host-stage/out' } });
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'qa', 'host'); c.language = language; } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.system).toContain(headed);
+    expect(qa.system).toContain('headless: false');
+    expect(qa.system).not.toMatch(/\{\w+\}/);
+  });
+
+  it.each(['missing', 'failed'] as const)('does not mention a headed browser on this computer when the display is %s', async (display) => {
+    const sandbox = fakeSandbox({ gui: { browsers: '/b/ms-playwright', display, out: '/tmp/host-stage/out' } });
+    const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'qa', 'host'); c.language = 'en'; } });
+    easy(b);
+    let run = await b.runner.start('app#101');
+    run = await reach(b, run, 'ready');
+    const qa = b.engine.calls.find((c) => c.agent.id === 'qa')!;
+    expect(qa.system).toContain('virtual display the person switched on is not available');
+    expect(qa.system).not.toContain('headed');
   });
 
   it('is told, in Portuguese too, to give the app under test an empty data folder', async () => {

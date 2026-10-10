@@ -5,7 +5,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { neutralConfig } from '../src/shared/config';
-import { MAX_MENTIONS, parseMentions, unknownMentions, type ForumMessage } from '../src/shared/forum';
+import { MAX_MENTIONS, messageText, parseMentions, unknownMentions, type ForumMessage } from '../src/shared/forum';
+import { ProviderBusyError } from '../src/main/engine/contract';
 import { createForumStore, type ForumStore } from '../src/main/forum-core';
 import { personPost } from '../src/main/forum';
 import { answerMentions } from '../src/main/mentions/answer';
@@ -117,6 +118,25 @@ describe('the answer in another thread', () => {
     expect(lines.find((m) => m.code === 'runner.mentionFailed')?.params.reason).toContain('the model is down');
     expect(answered('squads')).toEqual([]);
     expect(lines.some((m) => m.code === 'runner.partial')).toBe(false);
+  });
+
+  it('says in the thread that the agent moved to another model, and names the pool whole when every model of it was busy', async () => {
+    const engine = fakeEngine();
+    const back = Date.now() + 10 * 60_000;
+    engine.script('turn', (call) => {
+      call.onPool?.({ from: { label: 'model-a' }, to: { label: 'model-b' }, reason: 'overloaded', until: back, activity: 'write' });
+      return { text: 'Done.' };
+    });
+    engine.script('reply', () => {
+      throw new ProviderBusyError('reply', 'open', ['model-a', 'model-b'], back, 'Rate limit reached');
+    });
+    await answerMentions(place, personMessage('squads', '@turn @reply hi', ['turn', 'reply']), { forum, config, engine, env: () => ({ fallbackCwd: dir }) });
+    const lines = forum.read('squads', 0, 200)?.messages ?? [];
+    expect(lines.find((m) => m.code === 'runner.model.switched')).toMatchObject({ kind: 'system', params: { agent: 'turn', from: 'model-a', to: 'model-b' } });
+    const all = lines.find((m) => m.code === 'runner.model.allBusy');
+    expect(all?.params).toMatchObject({ agent: 'reply', pool: 'reply', models: 'model-a, model-b' });
+    expect(messageText(all as ForumMessage)).toContain('model-a, model-b');
+    expect(lines.some((m) => m.code === 'runner.mentionFailed')).toBe(false);
   });
 
   it('answers nobody when the mention names no agent of the team', async () => {
