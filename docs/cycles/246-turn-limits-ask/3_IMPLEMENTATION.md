@@ -104,3 +104,17 @@ Deviations from the plan:
 - The stage's title reads "{agent} used {used} of {limit} turns" with `limit` equal to `used`: the work stopped at its limit, and the record carries no separate limit.
 - `useCeremonyCommands()` is the old effect unchanged (it does not refetch on reconnect, as before); the new hook does, on reconnect and on window focus.
 - The card reuses the classes of the command card (`cc-item`, `cc-title`, `cc-actions`); `turnAsks.css` only adds the detail line.
+
+## Commit 6: show a node that waits for the person in the activity tree
+
+`activityTreeModel.ts` (`NodeState` `waiting`; `stateOf` reads it from the newest status line; `hasWork` counts it, so `topEntries` keeps the entry and the badge counts it once;
+`waitsBelow`, `anyWaiting`, `waitingLine`; `TopEntry.waits`), `ActivityTree.tsx` (the state word for a waiting node, and on a closed row whose descendant waits "Waiting for you, below"),
+`JobsDock.tsx` (a closed entry whose tree waits shows the reason of the waiting node in place of the newest step), `activity.css` / `jobs.css` (amber tokens, with the night variant the
+file already has for red), `activity.node.state.waiting` and `activity.node.waitsBelow` in both catalogs (`activity.turnLimit` and `activity.continued` came with commit 3).
+
+Deviations from the plan:
+
+- `waitingLine(nodes)` is new: the dock's closed line shows the newest waiting node's own line ("Reached 12 turns: waiting for you"), which already says why, instead of a second
+  text key. `Steps` takes `waits` (the entry's, or `anyWaiting` for a renderer job's tree) and picks that line only while closed.
+- The tree still has no button: the row of a waiting node is the same markup as any other, with the class `act-state-waiting` that the amber rule reads.
+- The tests are in `test/activity-turn-wait.test.ts` (the log's part from commit 3, the model's part here), not in `activity-tree.test.ts`, whose cases are untouched.

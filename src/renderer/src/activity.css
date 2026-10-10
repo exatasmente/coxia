@@ -23,6 +23,9 @@
 .act-node-now { flex: 0 0 100%; padding-left: 24px; box-sizing: border-box; opacity: 0.85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .act-spinner { flex: 0 0 auto; width: 12px; height: 12px; }
 .act-state-failed > .act-node-head .act-node-state { color: var(--red-ink); opacity: 1; }
+/* A node that waits for the person, or has one below it while it is closed, is in the amber of the questions that wait for the person. */
+.act-state-waiting > .act-node-head .act-node-state, .act-node-waits { color: var(--amber-ink); opacity: 1; font-weight: 600; }
+.act-node-waits { flex: 0 0 auto; font-size: 12px; }
 .act-step { display: grid; grid-template-columns: auto 16px minmax(0, 1fr); align-items: start; gap: 8px; padding: 4px 10px; line-height: 1.35; }
 .act-time { font-variant-numeric: tabular-nums; opacity: 0.65; min-width: 3.2ch; text-align: right; }
 .act-icon { margin-top: 1px; opacity: 0.8; }
@@ -38,4 +41,5 @@
 .act-latest { position: absolute; right: 8px; bottom: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; box-shadow: 0 6px 18px -8px color-mix(in srgb, currentColor 50%, transparent); }
 
 @media (prefers-reduced-motion: reduce) { .act-chevron { transition: none; } .act-spinner { animation: none; } }
+.panel-dark .act-state-waiting > .act-node-head .act-node-state, .panel-dark .act-node-waits, .ceremony.main .act-state-waiting > .act-node-head .act-node-state, .ceremony.main .act-node-waits { color: var(--night-amber); }
 .panel-dark .act-bad .act-label, .panel-dark .act-icon-bad, .ceremony.main .act-bad .act-label, .ceremony.main .act-icon-bad, .panel-dark .act-state-failed > .act-node-head .act-node-state, .ceremony.main .act-state-failed > .act-node-head .act-node-state { color: var(--night-red); }

@@ -224,6 +224,8 @@
   "activity.call.working": "Working…",
   "activity.node.state.working": "Working",
   "activity.node.state.queued": "Waiting",
+  "activity.node.state.waiting": "Waiting for you",
+  "activity.node.waitsBelow": "Waiting for you, below",
   "activity.node.state.finished": "Finished",
   "activity.node.state.failed": "Failed",
   "activity.conversation.entry": "Conversation · {agents}",
