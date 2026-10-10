@@ -278,3 +278,19 @@ cross the 5 s timeout under the full run on a loaded machine and pass alone); `n
 - Two app instances on one data folder; the long id of a stage-opened side conversation as a folder name (an id past 64 characters makes the session a reader); the effect of tagging the two reads `explore` on a pool in
   `switch` mode.
 - Whether a note a model writes passes the prose validator in ordinary use (a full commit hash is refused with the short form asked for; a URL with a query string is refused); the plan's fallback is a maintainer decision.
+
+## Review fixes
+
+Five fixes after `4_REVIEW.md`, one commit each, on top of commit 10:
+
+1. **Invisible characters in a note the person edits.** The screen's edit refuses a title or a text with an invisible or direction-changing character (code `control`, text in both catalogs), and a file edited on disk that holds one
+   is not accepted (`problemsOf` names the field): it is left out of what agents read and cannot be marked reviewed until the person fixes it. The check is the procedures validator's, exported as `hasInvisible` from
+   `procedures/record.ts` and not copied; the rest of the person's latitude (line breaks, accents, emoji, text that is masked and not refused) is unchanged.
+2. **The runs memory channels are pinned by policy.** `test/runs-policy.test.ts` no longer matches the wording of a source comment; it keeps the `webAccess` assertions and the audit operations.
+3. **The version line of the index is clipped** to 200 characters (the roadmap line already was); `memory_read('sys:version')` still gives the whole of it.
+4. **The version of each repository is read at once** (`Promise.all`, each read with its own git timeout, the order of the configuration kept).
+5. **A save from the person must carry the revision.** `memory:save` refuses a missing or non-integer revision with the code `revision` (mapped on the screen) before anything is checked or written.
+   `docs/memory.md` says in both languages that an invisible character is refused.
+
+Gates after the last fix: `npx tsc --noEmit` clean; `npx vitest run` 452 files passed (1 skipped), 7,633 tests passed and 3 skipped; `node scripts/theme-audit.mjs`, `npm run i18n:lint` (5,739 keys in
+both languages) and `public-audit.mjs` clean. The follow-ups listed in `4_REVIEW.md` stay open.

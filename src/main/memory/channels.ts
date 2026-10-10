@@ -89,16 +89,17 @@ export function createMemoryChannels(deps: ChannelDeps): MemoryChannels {
       return got.status === 'ok' ? { status: 'ok', note: item(got.note, team()), text: got.text } : { status: 'missing' };
     },
 
-    // The person's edit of a note: only an existing one (a note is created by an agent), the revision they opened named, the text masked and checked for its shape.
+    // The person's edit of a note: only an existing one (a note is created by an agent), the revision they opened named (a save without it is refused), the text masked and checked for its shape.
     save(conversation, agent, id, revision, patch) {
       const scope = scopeOf(conversation, agent);
       const want = noteId(id);
       if (!scope || !want) return BAD;
+      // The stale check is the person's protection against an agent that moved on: a save that does not name the revision it read would skip it.
+      if (typeof revision !== 'number' || !Number.isInteger(revision)) return { ok: false, code: 'revision', text: 'the revision the note was opened at must be named; open it again' };
       const p = (patch && typeof patch === 'object' ? patch : {}) as NotePatch;
       if (typeof p.title !== 'string' && typeof p.text !== 'string' && p.kind === undefined) return { ok: false, code: 'invalid', text: 'there is nothing to change' };
       if ((p.title !== undefined && typeof p.title !== 'string') || (p.text !== undefined && typeof p.text !== 'string') || (p.kind !== undefined && !isNoteKind(p.kind))) return { ok: false, code: 'invalid', text: 'the title, the text or the kind has the wrong type' };
-      const rev = typeof revision === 'number' && Number.isInteger(revision) ? revision : undefined;
-      return noteWrite('edit', scope, store.edit({ scope, id: want, title: p.title, text: p.text, kind: p.kind, revision: rev }));
+      return noteWrite('edit', scope, store.edit({ scope, id: want, title: p.title, text: p.text, kind: p.kind, revision }));
     },
 
     // The person looked at a note that waited for review, or at a foreign one: it can now be read by the agents.

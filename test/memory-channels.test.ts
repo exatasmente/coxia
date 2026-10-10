@@ -132,6 +132,9 @@ describe('memory:save, the person\'s edit', () => {
     const id = keep(dev);
     channels.save('general', 'developer', id, 1, { text: 'one' });
     expect(channels.save('general', 'developer', id, 1, { text: 'two' })).toMatchObject({ ok: false, code: 'revision' });
+    // a save that does not name the revision it read would skip the stale check: refused, and nothing is written
+    for (const rev of [undefined, null, '2', 2.5, Number.NaN, {}]) expect(channels.save('general', 'developer', id, rev, { text: 'three' }), String(rev)).toMatchObject({ ok: false, code: 'revision' });
+    expect(store.read(dev, id, 'person')).toMatchObject({ text: 'one' });
     expect(channels.save('general', 'developer', id, 2, {})).toMatchObject({ ok: false, code: 'invalid' });
     expect(channels.save('general', 'developer', id, 2, null)).toMatchObject({ ok: false, code: 'invalid' });
     expect(channels.save('general', 'developer', id, 2, { title: 5 })).toMatchObject({ ok: false, code: 'invalid' });
