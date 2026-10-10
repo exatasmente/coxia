@@ -211,6 +211,8 @@ describe('a sub-agent', () => {
     expect(back).toMatch(/^\[partial result: the person finished this sub-agent of kind explore at its limit of 3 turns|^\[resultado parcial: a pessoa encerrou este subagente do tipo explore/);
     expect(back).toContain('Found A and B. Did not reach C.');
     expect(back).not.toMatch(/stopped after|parou após/);
+    // the node leaves the waiting state before the closing call, then ends
+    expect(notes).toEqual(['explore:do the task started', 'explore:do the task waiting 3', 'explore:do the task started', 'explore:do the task end']);
     expect(notes.at(-1)).toBe('explore:do the task end');
     expect(notes.some((n) => n.includes('failed'))).toBe(false);
     // the principal's request carried it as a tool result that is not an error

@@ -474,7 +474,11 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
           ask: async (stop, signal) => {
             handle?.waiting?.(stop.used);
             const decision = await p.turnLimit!.ask({ ...stop, kind: kind ?? null, name: about.type?.trim() || null, task: about.description?.trim() || prompt.slice(0, 200) }, signal);
-            if (decision === 'continue' && !signal?.aborted) handle?.continued?.();
+            // Either answer leaves the waiting state before the work goes on (the closing call of "finish now" takes time); "continued" is for a new round only.
+            if (!signal?.aborted) {
+              if (decision === 'continue') handle?.continued?.();
+              else handle?.state('started');
+            }
             return decision;
           },
         },
