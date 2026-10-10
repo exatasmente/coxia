@@ -123,5 +123,13 @@
   "prompt.sdd.turn.sameDay.question": "- Pergunta que ficou sem resposta: {text}",
   "prompt.sdd.turn.sameDay.deep": "- Houve aprofundamento; o último ponto foi: {text}",
   "prompt.sdd.turn.sameDay.nothing": "Nada mudou no cartão desde então; {theUser} pediu para aprofundar mesmo assim. Aprofunde, sem repetir o que já foi dito.",
-  "minutes.delete.versionLine": "Versão {n} ({from}–{to})"
+  "minutes.delete.versionLine": "Versão {n} ({from}–{to})",
+  "minutes.day.repeated": "Perguntas repetidas sem resposta",
+  "minutes.day.repeated.on": "ficou sem resposta em: {dates}",
+  "minutes.day.repeated.days_one": "{count} dia",
+  "minutes.day.repeated.days_other": "{count} dias",
+  "minutes.file.repeated.title": "## Perguntas repetidas sem resposta",
+  "minutes.file.repeated.intro": "Perguntas que já ficaram sem resposta em dias anteriores, repetindo a mesma decisão (mesma atividade e mesma etapa).",
+  "minutes.file.repeated.item": "- {question} ({ref}) — ficou sem resposta em {dates} — {days}",
+  "prompt.sdd.turn.crossDay": "Esta decisão já ficou sem resposta nos dias anteriores: {dates}. Trate como um assunto já levantado antes; não apresente como assunto novo."
 }

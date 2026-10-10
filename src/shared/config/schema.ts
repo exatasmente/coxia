@@ -1,9 +1,9 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
-import { AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
+import { ACTIVITIES, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 18). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 27). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -30,6 +30,38 @@ function object(description: string, properties: Record<string, JsonSchema>, req
 function byRole(description: string, item: JsonSchema): JsonSchema {
   return object(description, Object.fromEntries(LLM_ROLES.map((r) => [r, item])), [...LLM_ROLES]);
 }
+
+/** One model of a pool: a provider the person registered, a model id, and what is known about it. */
+const modelRef = object(
+  'A model of a registered provider.',
+  {
+    provider: string('A provider id (llm.providers).', { pattern: ID }),
+    model: string('Model id as the provider spells it.', { minLength: 1, maxLength: 200, pattern: '^\\S+$' }),
+    images: boolean('The model takes an image in a message. Absent: the provider\'s capability decides.'),
+    contextWindow: integer('Context window in tokens, when known.', 1000, 10_000_000),
+    echoReasoning: boolean('Send the model\'s own reasoning back to it from the first call (some reasoning models need it). Absent: learned at run time.'),
+    offer: object('What the provider\'s catalog said of the model when the connection was tested. Absent: nothing known, nothing extra is sent.', {
+      flex: boolean('The model is served in the flex tier.'),
+      effort: boolean('The model takes reasoning_effort.'),
+      deprecated: integer('When the provider retires the model (seconds since 1970).', 0, 10_000_000_000),
+      replacedBy: string('The model the provider says replaces it.', { maxLength: 200 }),
+    }),
+  },
+  ['provider', 'model'],
+);
+
+const modelList = (description: string): JsonSchema => list(description, modelRef, { maxItems: MAX_POOL_ENTRIES });
+
+const poolFields = {
+  fallbacks: modelList('Spare models, cheapest first: the call moves to the next one when the model in use is busy. Absent: none, nothing changes.'),
+  activities: object(
+    'A complete list per activity, replacing the role\'s list for it. An activity without a list uses the role\'s.',
+    Object.fromEntries(ACTIVITIES.map((a) => [a, modelList(`The models for the "${a}" activity, in order.`)])),
+  ),
+};
+
+const score = (description: string): JsonSchema => ({ type: 'number', description, minimum: 0, maximum: 100 });
+const scoresOf = (description: string): JsonSchema => object(description, Object.fromEntries(SCORED_ACTIVITIES.map((a) => [a, score(`Score for "${a}", 0 to 100.`)])));
 
 const provider = object(
   'A model provider.',
@@ -64,6 +96,12 @@ const provider = object(
     temperature: { type: ['number', 'null'], description: "Sampling temperature (open engine); null: the server's default.", minimum: 0, maximum: 2 },
     timeoutMs: { type: ['integer', 'null'], description: "Limit of one whole call in ms (open engine); null: the engine's default.", minimum: 1000 },
     legacyCustomEndpoint: boolean('The Claude Agent SDK is pointed at a non-Anthropic endpoint; kept only for installs that predate the configuration.'),
+    features: object('What the server takes beyond the protocol (open engine). Absent: none of it, and nothing in the request changes.', {
+      serviceTier: boolean('Send service_tier "flex" on the calls nobody waits for, for the models marked for it.'),
+      failFast: boolean('Send fail_fast on every model of a pool but the last, so a busy model refuses at once.'),
+      reasoningEffort: boolean('Send reasoning_effort per activity, for the models marked for it.'),
+      catalogUrl: string('The richer model listing the connection test reads (flex, retirement). It must have the origin of baseUrl.', { maxLength: 500 }),
+    }),
   },
   ['id', 'kind'],
 );
@@ -125,6 +163,8 @@ const stage = object(
     waitsFor: waitFor,
     comment: { type: ['string', 'null'], description: 'The key of this stage\'s comment template in devCycle.comments; left out: the stage id; null or empty: no comment.', maxLength: 48 },
     trackerStatus: string('A label the issue gets on the tracker when the run enters the stage.', { maxLength: 200 }),
+    poolMode: enumOf('How the pool of the stage\'s agent is used here (work stages): fallback: one model, the pool only when it is busy; switch: each turn goes to the model of its activity; delegate: a fixed main model hands edit, command and screen work to sub-agents. Left out: the workspace\'s llm.poolMode.', POOL_MODES),
+    testEnv: boolean('This stage receives the workspace\'s test environment (plain variables and secret references from testEnvironment). Left out: a QA stage of the current editor reads as yes, an already-saved template reads as no.'),
   },
   ['id', 'kind'],
 );
@@ -169,6 +209,12 @@ const flowAutonomy = object(
   { useWorkspace: boolean('On: the workspace\'s block decides for this flow and the fields here are shown disabled. Off: this block decides.'), ...autonomy.properties } as Record<string, JsonSchema>,
 );
 
+/** The workspace's block: a flow's five fields and the board's own choice, which is not a step of a run and so does not depend on `cycle`. */
+const workspaceAutonomy = object(
+  'What a run lets go on without the person, and whether the board writes to the code host by itself.',
+  { ...autonomy.properties, board: boolean('A write of the board (a card sent to the code host, moved, commented, closed) goes through the door executed and audited, with no "yes" in Actions. Independent of cycle; a test workspace still refuses it.') } as Record<string, JsonSchema>,
+);
+
 const gateFiles = object(
   'Where the artifact of a gate lives.',
   {
@@ -202,6 +248,11 @@ const agentModel = object('Which model an agent uses.', {
   role: { type: ['string', 'null'], description: 'Borrow the provider and model of this llm.roles entry; null: use provider and model.', enum: [...LLM_ROLES, null] },
   provider: string('A provider id; empty while role is set.', { pattern: PROVIDER_OR_EMPTY }),
   model: string('Model id as the provider spells it; empty while role is set.', { maxLength: 200, pattern: '^\\S*$' }),
+  ...poolFields,
+  images: boolean('The agent\'s own model takes an image in a message.'),
+  contextWindow: integer('Context window of the agent\'s own model, in tokens, when known.', 1000, 10_000_000),
+  echoReasoning: boolean('Send the agent\'s own model its reasoning back from the first call.'),
+  offer: modelRef.properties!.offer,
 });
 
 /** The tools pre-approved for agents, at the workspace and (overriding it field by field) per agent. */
@@ -211,7 +262,7 @@ const agentTools = object('Tools pre-approved for agents. Writes, web and secret
   trackerMcp: boolean('Issue tracker MCP tools.'),
   trackerMcpServer: string('MCP server that offers the issue tools; empty: none.', { maxLength: 100 }),
   vcsCli: boolean('Read-only use of the VCS CLI.'),
-  subagents: boolean('Subagents in the unblock ceremony.'),
+  subagents: boolean('Subagents: delegating reading in the unblock ceremony and, in runs, the sub-agents a model hands edits, commands and the screen to when its pool is used by delegation (llm.poolMode).'),
 });
 
 const agentDef = object(
@@ -230,6 +281,11 @@ const agentDef = object(
     autonomous: boolean('Runs by itself: its stage starts on its own, its tracker comments are posted automatically and its result goes on without waiting. Off: the person starts the stage, approves its comments in Actions and accepts its result. The ceremonies ignore it; pushing and opening the pull request always wait for the person.'),
     turnsTo: { type: ['string', 'null'], description: 'Who the agent turns to when it cannot decide: another agent of the team, or null for the person.', pattern: ID },
     squad: { type: ['string', 'null'], description: 'The squad the agent belongs to (a squads id); absent or null: a shared agent, which works for every squad.', pattern: ID },
+    draft: boolean('An agent the AI assistant saved to be tested in a direct conversation: it works no stage, is not asked and is not called by another agent. Absent: an agent of the team.'),
+    screen: boolean('A virtual screen for the agent and the app\'s browser tools, which the person can watch. Absent: off. A paired browser may turn it off, never on; a template or an import never brings it.'),
+    allowedHosts: list('The hosts the agent may reach through the app\'s filtering proxy: exact lowercase names, HTTPS port 443, no wildcard or port. Not used by an agent on shell: host. Absent: none.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+    browserProfile: boolean('The agent\'s browser keeps its logins between uses, in a profile folder of its own in the workspace\'s data. Absent: off, a fresh profile every time.'),
+    poolMode: enumOf('How the agent\'s model pool is used (fallback, switch or delegate). Absent: the stage\'s, then the workspace\'s llm.poolMode.', POOL_MODES),
     instructions: string('Appended to the agent system prompt (a catalog key or a literal).', { maxLength: 20_000 }),
     system: boolean('One of the five built-in agents: it can be edited and never removed.'),
   },
@@ -391,7 +447,13 @@ export const CONFIG_SCHEMA: JsonSchema = {
       }),
       llm: object('Model providers and which one serves each role.', {
         providers: list('Providers.', provider, { maxItems: 20 }),
-        roles: byRole('Provider and model per role.', object('Provider and model.', { provider: string('A provider id.', { pattern: ID }), model: string('Model id as the provider spells it.', { minLength: 1, maxLength: 200, pattern: '^\\S+$' }) }, ['provider', 'model'])),
+        roles: byRole('Provider and model per role.', object('Provider and model.', { provider: string('A provider id.', { pattern: ID }), model: string('Model id as the provider spells it.', { minLength: 1, maxLength: 200, pattern: '^\\S+$' }), images: modelRef.properties!.images, contextWindow: modelRef.properties!.contextWindow, echoReasoning: modelRef.properties!.echoReasoning, offer: modelRef.properties!.offer, ...poolFields }, ['provider', 'model'])),
+        poolMode: enumOf('The default for how a pool is used. fallback: one model, the pool only when it is busy. switch: each turn goes to the model of its activity\'s list. delegate: the main model stays fixed and hands edit, command and screen work to sub-agents on the lists of their activity. It acts only where a role or an agent has a list of its own for an activity. Absent: delegate.', POOL_MODES),
+        effort: object('Reasoning effort per activity, for the models that take it. An activity left out uses the proposal (explore and shell low, edit medium, write and screen the model\'s own); "default" sends nothing.', Object.fromEntries(ACTIVITIES.map((a) => [a, enumOf(`The effort for "${a}".`, EFFORT_SETTINGS)]))),
+        scoreOverrides: object('Overrides of the quality scores the app ships for the suggested pools.', {
+          floors: scoresOf('The score a model must reach to go first, per activity.'),
+          models: { type: 'object', description: 'The scores of one model, by its normalized id (lowercase, without the organization prefix).', additionalProperties: scoresOf('Scores of the model.') },
+        }),
       }),
       projects: object('Where the code lives.', {
         roots: strings('Folders that contain the repos; the first is the working directory of the agents.'),
@@ -417,6 +479,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         knowledgeDirs: strings('Knowledge base folders.'),
         mcpConfigFiles: strings('MCP config files.'),
         specsDir: nullableString('Folder with one subfolder per issue. null: no spec files.'),
+        roadmapFile: nullableString('A Markdown file whose headings are the roadmap the agents can learn the priorities from ("~/" expands). Only the computer changes it. Optional: absent or null means there is no roadmap.'),
       }),
       devCycle: object('The development cycle the ceremonies follow.', {
         templateId: string('Template this section came from.', { pattern: '^[a-z0-9][a-z0-9_.-]{0,47}$' }),
@@ -497,7 +560,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         stageIdleMs: integer('An agent that shows no sign of life (no model event) for this long fails the stage, which can be retried (ms).', 10_000, 21_600_000),
         stageMaxMs: integer('A stage still going after this long fails whatever the agent shows; the cap on a stage that keeps talking and never finishes (ms).', 60_000, 86_400_000),
         turns: object('How many steps (model turns) an agent may take in one pass of a stage.', { read: integer('An agent that only reads and writes its documents.', 1, 500), write: integer('An agent that changes files.', 1, 500) }),
-        autonomy,
+        autonomy: workspaceAutonomy,
         sandbox: object('What the sandbox of an agent set to `shell: sandbox` may reach and use.', {
           network: enumOf('off: no network at all; registry: only HTTPS (port 443) to registryHosts, through the app\'s filtering proxy; open: the computer\'s own network, shared whole, with no proxy and no host list (desktop only, a choice of risk). "Localhost" inside the sandbox is the sandbox\'s own except in open mode.', SANDBOX_NETWORKS),
           registryHosts: list('Exact host names the registry switch lets through.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
@@ -515,6 +578,10 @@ export const CONFIG_SCHEMA: JsonSchema = {
         }),
         identity: object('Who the app\'s commits are made as (a run\'s, and the merge that resolves a conflict); both empty: the one in the repository\'s own .git/config, never the global one, and with neither the app does not commit.', { name: string('Author and committer name.', { maxLength: 200 }), email: string('Author and committer email.', { maxLength: 200 }) }),
         evidence: enumOf('Where a stage\'s evidence is kept: app (only with the run, in the workspace\'s data, never in a commit; the default) or cycle (also copied into the cycle folder and committed with the stage). Only the computer changes it. Optional: absent reads as app.', EVIDENCE_PLACEMENTS),
+        procedures: boolean('Agents keep what they learned as procedures in the workspace and read them the next time. Only the computer changes it. Off: no tool and no prompt section; the Procedures view still lists, edits and deletes. Optional: absent reads as off.'),
+        flex: boolean('Calls nobody waits for (stages, questions between agents) ask for the cheaper flex tier where the provider has it and the model is marked for it. Ceremonies and mentions never do. Only the computer changes it. Optional: absent reads as on.'),
+        unconfined: boolean('The file tools of a run\'s agents read, and write when the agent writes, anywhere on the machine instead of only in the run\'s worktree; .git, hook folders and secret files stay refused, and the shell\'s sandbox is not affected. Only the computer changes it. Optional: absent reads as off.'),
+        sharedMemory: boolean('Agents keep notes per conversation and read a short list of the whole app\'s notes, decisions and findings wherever they run. The computer and a paired browser change it. Off: no tool, no prompt section, no folder, no notice and no agent writes; the Memory view still lists, edits and removes what exists. Optional: absent reads as off.'),
         commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         prTitle: string('The title of the pull request a run opens; {title} (the agent\'s title, or the issue\'s) and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         linkDependencies: boolean('A run\'s worktree gets a link to the dependency folders (node_modules, .venv) of the repository\'s clone, so the commands the app runs there find their tools. Optional: absent reads as true.'),
@@ -527,6 +594,28 @@ export const CONFIG_SCHEMA: JsonSchema = {
         }),
       }),
       plugins,
+      testEnvironment: {
+        type: 'object',
+        description: 'What an allowed stage gets to exercise the app under development with: plain variables with their values, kept only here, and secret references into the secrets store under the test. prefix, whose values exist only on this computer, at launch.',
+        properties: {
+          variables: list('Plain variables (a URL, a feature flag, a model name). Never a credential: that is what the secrets are for.', object('One variable.', {
+            name: string('The name it becomes as an environment variable of the stage.', { pattern: '^[A-Za-z_][A-Za-z0-9_]{0,63}$', minLength: 1, maxLength: 64 }),
+            value: string('The value, kept in this file only.', { maxLength: 4000 }),
+            hosts: list('Exact host names the stage network opens to because of this entry (443, through the app proxy). Empty: it opens nothing.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+            privateHosts: list('Hosts of hosts that are private addresses, reached only when marked so here.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+          }, ['name', 'value']), { maxItems: 50 }),
+          secrets: list('Secret references into the secrets store, every one under the "test." prefix. Never a value.', object('One secret.', {
+            ref: string('The secrets-store reference.', { pattern: SECRET_REF }),
+            testOnly: boolean('A secret for testing only (a dedicated project, a low-budget key). One not marked so needs the person confirmation, once, before a stage launches with it.'),
+            hosts: list('Exact host names the stage network opens to because of this entry.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+            privateHosts: list('Hosts of hosts that are private addresses, reached only when marked so here.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
+          }, ['ref', 'testOnly']), { maxItems: 50 }),
+        },
+        required: ['variables', 'secrets'],
+      },
+      mcpState: object('The local read-only state server of the workspace: a terminal session adds it over stdio. It answers the workspace\'s cycles, runs, conversations, evidence and memories, always masked; it never writes.', {
+        enabled: boolean('A terminal session with the setup entry may list the state server\'s read tools. Off: the server answers every call with the refusal.'),
+      }),
     },
     ['schemaVersion'],
   ),

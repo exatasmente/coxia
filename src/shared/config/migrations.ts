@@ -35,6 +35,18 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v17 `runner.prTitle` (the template of the pull request title, `{title}` and `{iid}`) and `{iid}` in `runner.commitMessage`, which is
 //       appended when a stored message leaves the number out. Nothing else moves.
 //   v18 `runner.evidence`: where a stage's evidence is kept, `app` by default (nothing of it enters a commit). Nothing else moves.
+//   v19 agents.team[].draft: the mark of an agent the AI assistant saved to be tested; absent keeps an agent of the team. Nothing stored changes; the bump makes an
+//       older app refuse the file instead of repairing (and then saving) a team it cannot read.
+//   v20 `runner.autonomy.board`: the board's own autonomy (its writes to the code host skip the "yes" in Actions), off by default. Nothing else moves.
+//   v21 agents.team[].screen, .allowedHosts and .browserProfile: the virtual screen of an agent, the hosts it may reach and its logged-in browser; absent means off and
+//       empty, so nothing is raised. Nothing stored changes; the bump makes an older app refuse the file instead of repairing a team it cannot read.
+//   v22 `runner.procedures`: the learned procedures of the agents, off for a workspace that existed and on for a new one. Nothing else moves.
+//   v23 `testEnvironment`: the workspace's test environment (variables and secret references delivered to the stages that allow it), empty by default. Nothing else moves.
+//   v24 `mcpState`: the opt-in of the local read-only state server a terminal session adds over stdio, off for every workspace. Nothing else moves.
+//   v25 `runner.unconfined`: the lifted fence of the file tools of a run's agents, off for every workspace that existed. Nothing else moves.
+//   v26 model pools, pool mode and what a provider offers: optional fields, absent = nothing is used, switched on or raised. Only the version moves.
+//   v27 `runner.sharedMemory`: the shared, indexed memory of the agents, off for a workspace that existed and on for a new one; `docs.roadmapFile`: the roadmap pointer,
+//       optional (absent = no roadmap). Nothing else moves.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -320,7 +332,78 @@ function v17ToV18(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 18, runner: { ...runner, evidence: 'app' } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18 };
+// An agent may now carry `draft`, the mark of one the AI assistant saved to be tested. A v18 file has none, and an agent without it is an agent of the team:
+// nothing is raised. The bump is what keeps an app that does not know the field from reading a file that carries it as a team to repair.
+function v18ToV19(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  notes.push('an agent may be marked as a draft (saved by the AI assistant to be tested); one without the mark is an agent of the team');
+  return { ...old, schemaVersion: 19 };
+}
+
+// The workspace's autonomy block gains the board's own choice. A value that is not a boolean becomes off (writes wait in Actions for a yes); a stored `true` is kept.
+// The step touches nothing else and never raises anything.
+function v19ToV20(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const runner = pick(old.runner);
+  const autonomy = pick(runner.autonomy);
+  if (typeof autonomy.board === 'boolean') return { ...old, schemaVersion: 20 };
+  notes.push('runner.autonomy.board was added (off: board writes wait in Actions for a yes)');
+  return { ...old, schemaVersion: 20, runner: { ...runner, autonomy: { ...autonomy, board: false } } };
+}
+
+// An agent may now carry `screen`, `allowedHosts` and `browserProfile`. A v20 file has none, and an agent without them has no screen, reaches no host of its own and
+// keeps no logins: nothing is raised. The bump is what keeps an app that does not know the fields from reading a file that carries them as a team to repair.
+function v20ToV21(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  notes.push('an agent may have a virtual screen, a list of hosts it may reach and a logged-in browser of its own (screen, allowedHosts, browserProfile); one without them has none');
+  return { ...old, schemaVersion: 21 };
+}
+
+// The runner gains the switch for the learned procedures. A workspace that existed does not get a new write into a store other agents read without being asked, so the step
+// writes it off, whatever the chain seeded: a v21 file cannot carry a stored choice (the field is new), only the neutral value `neutralRunner()` put there on the way from
+// v1 or v5. It touches nothing else.
+function v21ToV22(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  if (!isObject(old.runner)) return { ...old, schemaVersion: 22 };
+  notes.push('learned procedures are off for a workspace that existed; turn them on in Settings');
+  return { ...old, schemaVersion: 22, runner: { ...old.runner, procedures: false } };
+}
+
+// The workspace gains its test environment: an empty section is filled in, and nothing else changes. No stage field is defaulted here — a template saved
+// before the field existed keeps "left out = no", so only QA stages of this version's editor receive the environment.
+function v22ToV23(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  notes.push('testEnvironment was added (an empty list: the person fills it in per workspace)');
+  // A section the person already had (a doc saved by a later build carried into an older install) must survive the step untouched.
+  return { ...old, schemaVersion: 23, testEnvironment: old.testEnvironment ?? { variables: [], secrets: [] } };
+}
+
+// The workspace gains the opt-in of the local state server, off for every workspace (the person turns it on in Settings). A section the person
+// already had (a doc saved by a later build carried into an older install) must survive the step untouched; nothing else moves.
+function v23ToV24(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  notes.push('the local state server opt-in was added (off; turn it on in Settings)');
+  return { ...old, schemaVersion: 24, mcpState: old.mcpState ?? { enabled: false } };
+}
+
+// The runs gain a switch that lifts the fence of their file tools; a workspace that existed keeps the fence, as a new one does.
+function v24ToV25(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
+  if (!isObject(old.runner)) return { ...old, schemaVersion: 25 };
+  return { ...old, schemaVersion: 25, runner: { ...old.runner, unconfined: false } };
+}
+
+// A role and an agent's own model may now carry a pool (`fallbacks`, `activities`) and the workspace `llm.scoreOverrides`. A v24 file has none, and a model without a pool is
+// the only one its call uses: nothing is raised or switched on. The pool mode (`llm.poolMode`, `agents.team[].poolMode`, a stage's `poolMode`) is part of the same unreleased step: it
+// is no permission and a file without it reads as the default. The bump is what keeps an app that does not know the fields from reading a file that carries them as an llm block to repair.
+function v25ToV26(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  notes.push('model pools were added (fallbacks and activities per role and per agent; absent = no fallbacks) with the way they are used (poolMode; absent = delegate, which acts only on an activity list) and what a provider offers (features, offer, effort, flex; absent = nothing is sent)');
+  return { ...old, schemaVersion: 26 };
+}
+
+// The runner gains the switch for the shared memory. A workspace that existed does not get new tools and a larger prompt it did not ask for, so the step writes it off,
+// whatever the chain seeded: a v26 file cannot carry a stored choice (the field is new), only the neutral value `neutralRunner()` put there on the way from an older file.
+// `docs.roadmapFile` needs no value (absent reads as none); the bump keeps an older app from repairing a `docs` block it cannot read. It raises no permission.
+function v26ToV27(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  if (!isObject(old.runner)) return { ...old, schemaVersion: 27 };
+  notes.push('the shared memory is off for a workspace that existed; turn it on in Settings');
+  return { ...old, schemaVersion: 27, runner: { ...old.runner, sharedMemory: false } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 
@@ -335,15 +418,69 @@ function set(root: Doc, path: (string | number)[], value: unknown): void {
 }
 
 // A stored value that fails validation is replaced by the default it would have had, so one bad field never locks a workspace out.
+// The optional model-pool fields are absent in every default, so a bad one is dropped (one entry of a list, or the field), never the role or the agent model around it.
+const POOL_KEYS = new Set(['fallbacks', 'activities', 'scoreOverrides', 'images', 'contextWindow', 'echoReasoning', 'offer']);
+
+// Index of the pool field a path points into, or -1: `llm.roles.<role>.<key>`, `llm.scoreOverrides` or `agents.team[i].model.<key>`; the pool mode of the workspace, of an
+// agent and of a stage is dropped alone too (absent = inherit).
+function poolKeyAt(path: (string | number)[]): number {
+  if (path[0] === 'llm' && path[1] === 'poolMode') return 1;
+  // What the provider offers: a bad field of a provider's `features` or of `llm.effort` is dropped alone, `runner.flex` too (absent = the default).
+  if (path[0] === 'llm' && path[1] === 'providers' && path[3] === 'features') return path.length > 4 ? 4 : 3;
+  if (path[0] === 'llm' && path[1] === 'effort') return path.length > 2 ? 2 : 1;
+  if (path[0] === 'runner' && path[1] === 'flex') return 1;
+  if (path[0] === 'agents' && path[1] === 'team' && path[3] === 'poolMode') return 3;
+  if (path[0] === 'devCycle' && path[1] === 'stages' && path[3] === 'poolMode') return 3;
+  if (path[0] === 'devCycle' && path[1] === 'flows' && path[4] === 'poolMode') return 4;
+  const known = (k: string | number | undefined) => typeof k === 'string' && POOL_KEYS.has(k);
+  if (path[0] === 'llm' && path[1] === 'roles' && known(path[3])) return 3;
+  if (path[0] === 'llm' && path[1] === 'scoreOverrides') return 1;
+  if (path[0] === 'agents' && path[1] === 'team' && path[3] === 'model' && known(path[4])) return 4;
+  return -1;
+}
+
+// The rules of `validate` name a provider by its id (`llm.providers.<id>.features...`), the schema by its index: the provider's `features` are dropped alone either way.
+function providerByIndex(out: Doc, path: (string | number)[]): (string | number)[] {
+  if (path[0] !== 'llm' || path[1] !== 'providers' || typeof path[2] !== 'string' || path[3] !== 'features') return path;
+  const list = get(out, ['llm', 'providers']);
+  const i = Array.isArray(list) ? list.findIndex((p) => p !== null && typeof p === 'object' && (p as Record<string, unknown>).id === path[2]) : -1;
+  return i < 0 ? path : [path[0], path[1], i, ...path.slice(3)];
+}
+
+function dropPoolField(out: Doc, path: (string | number)[], drops: { list: unknown[]; entry: unknown }[]): boolean {
+  path = providerByIndex(out, path);
+  const at = poolKeyAt(path);
+  if (at < 0) return false;
+  // Inside a list (`fallbacks[1]`, `activities.edit[0]`): drop that entry only.
+  const listAt = path.findIndex((k, i) => i > at && typeof k === 'number');
+  if (listAt > at) {
+    const list = get(out, path.slice(0, listAt));
+    if (Array.isArray(list)) drops.push({ list, entry: list[path[listAt] as number] });
+    return true;
+  }
+  const parent = get(out, path.slice(0, at));
+  if (parent !== null && typeof parent === 'object') delete (parent as Record<string, unknown>)[path[at] as string];
+  return true;
+}
+
 function repair(doc: Doc, base: WorkspaceConfig, issues: ConfigIssue[], notes: string[]): Doc {
   const out = structuredClone(doc);
+  const drops: { list: unknown[]; entry: unknown }[] = [];
   for (const issue of issues) {
+    if (dropPoolField(out, tokens(issue.path), drops)) {
+      notes.push(`dropped ${issue.path}: ${issue.message}`);
+      continue;
+    }
     let path = tokens(issue.path);
     while (path.length && typeof path[path.length - 1] === 'number') path = path.slice(0, -1);
     while (path.length > 1 && get(base, path) === undefined) path = path.slice(0, -1);
     if (!path.length || get(base, path) === undefined) continue;
     set(out, path, structuredClone(get(base, path)));
     notes.push(`reset ${path.join('.')}: ${issue.message}`);
+  }
+  for (const d of drops) {
+    const i = d.list.indexOf(d.entry);
+    if (i >= 0) d.list.splice(i, 1);
   }
   return out;
 }

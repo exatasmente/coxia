@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import type { SandboxLimits } from '../../shared/config/types';
 import { SHELL_COMMAND_MAX } from '../../shared/sandbox';
 import { redact } from '../errorlog-core';
-import { tail } from '../runner/commands';
+import { plain, tail } from '../runner/commands';
 import { MAX_IMAGE_BYTES, imageMediaType } from '../imageType';
-import { CTL, FORWARDER_JS, OUT, SUPERVISOR_COMMAND, SUPERVISOR_SH } from './policy';
+import { CTL, DISPLAY_SOCKET_NAME, FORWARDER_JS, OUT, SUPERVISOR_COMMAND, SUPERVISOR_SH, X11_DIR } from './policy';
 import { SandboxError } from './errors';
 import { removeTree } from './remove';
 
@@ -28,7 +28,7 @@ export interface ExecResult {
   outputUnavailable?: true;
   ms: number;
   /** Why the command was not run at all. */
-  refused?: 'empty' | 'size' | 'budget' | 'closed' | 'denied';
+  refused?: 'empty' | 'size' | 'budget' | 'closed' | 'denied' | 'handoff';
 }
 
 /** What a stage's sandbox offers to test an interface. */
@@ -46,13 +46,24 @@ export interface SandboxGui {
 /** An image the stage saved in its output folder, read for the model, or why it was not. `file` is the real path on this computer of the file the picture came from. */
 export type ImageRead = { ok: true; path: string; mediaType: string; data: string; file?: string } | { ok: false; why: 'outside' | 'missing' | 'not-file' | 'too-big' | 'not-image' };
 
+/** Where the app reaches a stage's virtual display from outside: the socket of the display, and whose it is. */
+export interface ScreenSocket {
+  /** The socket's real path on this computer. */
+  socket: string;
+  kind: 'sandbox' | 'host';
+}
+
 export interface SandboxSession {
   /** What the Shell tool tells the model about where its commands run; absent: the sandbox's own text. */
   readonly description?: string;
   /** The folder made for the stage (`ctl`, `out` and `home` inside it): what the evidence tools read the stage's output from. Absent: no evidence tools. */
   readonly stageDir?: string;
+  /** The folder of this stage the evidence tools and `ViewImage` read from: `out` inside a sandbox's stage folder, the output folder of a host session that tests an interface. Absent: no evidence tools. */
+  readonly outputDir?: string;
   /** What the sandbox offers to test an interface; absent: nothing was asked for (a session with neither setting on). */
   readonly gui?: SandboxGui;
+  /** The stage's virtual display, reachable for the live screen; set only when `gui.display` is `on`. Absent: there is no screen to show. */
+  readonly screen?: ScreenSocket;
   /** Reads an image the stage saved in its output folder (`/coxia/out` inside; a host session's own folder, `gui.out`); absent where there is no such folder. */
   readImage?(path: string): ImageRead;
   /**
@@ -92,7 +103,29 @@ export interface SessionOptions {
   readyMs?: number;
   /** What was asked for to test an interface: the browsers folder, and the display (`start`: a program to start was found; `missing`: none was). */
   gui?: { browsers: string | null; browsersGone?: string; display: 'start' | 'missing' | null };
+  /** The person has the screen for a hand-off (#178): a command is refused, unlogged, without being run, while this answers true. */
+  held?: () => boolean;
+  /** Takes what the person typed during a hand-off out of a command's output, before the pattern-based masking. */
+  mask?: OutputMask;
 }
+
+/** A function over a command's output. */
+export type OutputMask = (text: string) => string;
+
+/**
+ * The end of a command's output as the model reads it: the escapes and carriage returns go first (one inside a value would hide it from the exact match), the typed values are taken out of the whole text (a value the cut would split is still found), then the end is kept
+ * and the pattern-based masking runs last, so it cannot reshape a typed value before the exact match. Null when the mask failed: what could not be checked is not shown.
+ */
+export function shownOutput(text: string, mask?: OutputMask): string | null {
+  try {
+    return redact(tail(mask ? mask(plain(text)) : text));
+  } catch {
+    return null;
+  }
+}
+
+/** What a command that was refused at the door of a hand-off looks like: not run, not numbered and not in the log. */
+export const handoffRefusal = (n: number, command: string): ExecResult => ({ n, command, exitCode: null, timedOut: false, output: '', ms: 0, refused: 'handoff' });
 
 export interface SessionDeps {
   spawn?: (file: string, args: string[], options: { stdio: ['pipe', 'pipe', 'pipe', 'pipe']; detached: true; env: NodeJS.ProcessEnv }) => ChildProcess;
@@ -135,7 +168,8 @@ const LINE_MAX = 4096;
 export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Promise<SandboxSession> {
   const ctl = join(o.stageDir, 'ctl');
   const out = join(o.stageDir, 'out');
-  for (const d of [o.stageDir, ctl, out, join(o.stageDir, 'home')]) mkdirSync(d, { recursive: true, mode: 0o700 });
+  // The display's own folder (bound over /tmp/.X11-unix, see bwrapArgs) must exist before the sandbox starts.
+  for (const d of [o.stageDir, ctl, out, join(o.stageDir, 'home'), ...(o.gui?.display === 'start' ? [join(o.stageDir, X11_DIR)] : [])]) mkdirSync(d, { recursive: true, mode: 0o700 });
   writeFileSync(join(ctl, 'supervisor.sh'), SUPERVISOR_SH, { mode: 0o700 });
   if (o.proxy) writeFileSync(join(ctl, 'forward.js'), FORWARDER_JS, { mode: 0o600 });
 
@@ -243,6 +277,8 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
   const run = (command: string): Promise<ExecResult> =>
     new Promise((resolve) => {
       const n = results.length + 1;
+      // A command queued before the person took the screen is asked again here: the queue may have held it behind a long one.
+      if (o.held?.()) return resolve(handoffRefusal(n, command));
       const record = (r: Omit<ExecResult, 'n'>, mode: 'run' | 'refused'): void => {
         const full: ExecResult = { n, ...r };
         results.push(full);
@@ -273,7 +309,8 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
         spent += ms;
         const text = readTailNoFollow(join(out, `out.${n}`), OUTPUT_READ);
         const timedOut = code === 124 || (code === 137 && ms >= secs * 1000);
-        record({ command, exitCode: code, timedOut, output: text === null ? '' : redact(tail(text)), ...(text === null ? { outputUnavailable: true as const } : {}), ms }, 'run');
+        const output = text === null ? null : shownOutput(text, o.mask);
+        record({ command, exitCode: code, timedOut, output: output ?? '', ...(output === null ? { outputUnavailable: true as const } : {}), ms }, 'run');
       };
       const onLine = (line: string): void => {
         const m = /^done (\d+) (\w+) (\d+)$/.exec(line);
@@ -287,7 +324,9 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
   const gui: SandboxGui | undefined = o.gui ? { browsers: o.gui.browsers, ...(o.gui.browsersGone ? { browsersGone: o.gui.browsersGone } : {}), display: o.gui.display === 'start' ? (noDisplay ? 'failed' : 'on') : o.gui.display === 'missing' ? 'missing' : null } : undefined;
   return {
     stageDir: o.stageDir,
+    outputDir: out,
     ...(gui ? { gui } : {}),
+    ...(gui?.display === 'on' ? { screen: { socket: join(o.stageDir, X11_DIR, DISPLAY_SOCKET_NAME), kind: 'sandbox' as const } } : {}),
     readImage: (path) => readOutputImage(out, path),
     take: (name, max) => readOutputText(out, name, max),
     put: (name, content) => {
@@ -297,6 +336,8 @@ export async function openSession(o: SessionOptions, deps: SessionDeps = {}): Pr
       return `${CTL}/files/${name}`;
     },
     exec: (command) => {
+      // At the door, so a refusal does not wait behind a command that is still running.
+      if (o.held?.()) return Promise.resolve(handoffRefusal(results.length + 1, command));
       const next = queue.then(() => run(command));
       queue = next.catch(() => undefined);
       return next;
@@ -335,13 +376,19 @@ export function readOutputText(outDir: string, name: string, max: number): strin
 }
 
 /**
- * An image the stage saved in its output folder, for the model. The path is the one the agent knows (`/coxia/out/shot.png`, or a name in that folder); nothing outside
- * the folder is read. What is there was written by a process the app does not trust, so it is opened like the commands' output: no link followed, no pipe waited on,
- * a regular file checked on the descriptor, a size cap, and the content (not the name) must be a picture.
+ * An image the stage saved in its output folder, for the model. The path is one the agent knows: a name in the folder, or the full path of the file as this computer
+ * has it (a sandbox names the folder `/coxia/out` from the inside; a host stage saves in a real folder it is told the name of). Only a file of that folder is read.
+ * What is there was written by a process the app does not trust, so it is opened like the commands' output: no link followed, no pipe waited on, a regular file
+ * checked on the descriptor, a size cap, and the content (not the name) must be a picture.
  */
 export function readOutputImage(outDir: string, path: string, shown: string = OUT): ImageRead {
-  const rel = path.startsWith(`${shown}/`) ? path.slice(shown.length + 1) : path.startsWith('/') ? null : path;
-  if (!rel || rel.split('/').some((part) => part === '..' || part === '')) return { ok: false, why: 'outside' };
+  // The folder is named to the model in one of two ways: `shown` (the sandbox's `/coxia/out`, which its own tools hand over) or, for a stage that saves in a real
+  // folder, the path of that folder itself. A path under either name is read against the folder; a name relative to it is read as it is; anything else — another
+  // absolute path of this computer — is outside, and refused.
+  const rel =
+    path === shown || path === outDir ? '' : path.startsWith(`${shown}/`) ? path.slice(shown.length + 1) : path.startsWith(`${outDir}/`) ? path.slice(outDir.length + 1) : path.startsWith('/') ? null : path;
+  // A path that leaves the folder, by walking with `..` or by aiming somewhere else on this computer, is refused before anything is opened.
+  if (rel === null || rel.split('/').some((part) => part === '..' || part === '')) return { ok: false, why: 'outside' };
   let fd: number | null = null;
   try {
     try {

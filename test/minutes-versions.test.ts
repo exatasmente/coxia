@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type MinutesVersion, dayMinutes, diffVersions, mergeDay, previousOf, snapshotOf, versionFile } from '../src/shared/minutesVersions';
+import { type MinutesVersion, dayMinutes, diffVersions, mergeDay, previousOf, repeatedUnanswered, snapshotOf, versionFile } from '../src/shared/minutesVersions';
 import { NO_SELF_WRITES, diffSeen, orderAgenda, seenOf } from '../src/shared/sameDay';
 import { card, ceremony, turn } from './helpers/ceremony';
 
@@ -22,7 +22,7 @@ describe('snapshotOf', () => {
       spoken: ['acme#1', 'acme#2'],
     });
     const snap = snapshotOf(s);
-    expect(snap.unanswered).toEqual([{ ref: 'acme#1', question: 'Ship it?' }, ...(s.turns['acme#3'].question ? [] : [])]);
+    expect(snap.unanswered).toEqual([{ ref: 'acme#1', question: 'Ship it?', stage: a.stage }, ...(s.turns['acme#3'].question ? [] : [])]);
     expect(snap.covered.map((x) => [x.ref, x.status])).toEqual([['acme#1', 'new'], ['acme#2', 'unchanged']]);
   });
 });
@@ -96,10 +96,10 @@ describe('mergeDay', () => {
       version(2, { effects: [{ ref: 'acme#1', text: 'Open the MR', repo: 'app' }], covered: [covered('acme#1', 'changed')] }),
     ]);
     expect(merged.effects).toHaveLength(1);
-    expect(merged.unanswered).toEqual([{ ref: 'acme#2', question: 'Who?', version: 1 }]);
+    expect(merged.unanswered).toEqual([{ ref: 'acme#2', question: 'Who?', stage: null, version: 1 }]);
     const minutes = dayMinutes(merged);
     expect(minutes.decisions).toEqual([]);
-    expect(minutes.unanswered).toEqual([{ ref: 'acme#2', question: 'Who?' }]);
+    expect(minutes.unanswered).toEqual([{ ref: 'acme#2', question: 'Who?', stage: null }]);
   });
 });
 

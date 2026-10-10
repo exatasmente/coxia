@@ -1,11 +1,12 @@
 import { existsSync, readdirSync, realpathSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { isAbsolute, join, resolve } from 'node:path';
+import { isAbsolute, join, resolve, sep } from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { destination } from '../shared/destination';
 import type { UsageReport } from '../shared/runs/usage';
 import type { AgentTurn, Card, DeepAnswer, DeepOption, Decision, DecisionTarget, Minutes, ReplyResult, TurnOptions } from '../shared/types';
-import type { AgentDef, AgentToolsConfig } from '../shared/config/types';
+import type { AgentDef, AgentToolsConfig, PoolMode } from '../shared/config/types';
+import { effectivePoolMode, resolvePoolMode } from '../shared/config/poolMode';
 import { toolsForAgent } from '../shared/config/team';
 import type { AttachmentRef } from '../shared/attachments';
 import type { ModelRole } from '../shared/settings';
@@ -13,21 +14,27 @@ import { getLanguage, t } from '../shared/i18n';
 import { type RunActivity, beginActivity } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type CommandAsk, type Confinement, type EngineRequest, type ReadConfinement, type Run, type Schema, type ShellPolicy, MaxTurnsError, ProviderBudgetError } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
 import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
-import { budgetText, clipProviderText } from './engine/budget';
+import { budgetText, busyText, clipProviderText } from './engine/budget';
 import { redact } from './errorlog-core';
 import { credentialNames } from './engine/guard';
 import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { scrubShellHooks } from './engine/scrubShell';
-import { type DocSources, type OpenEngineSelection, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
+import { type DocSources, type OpenEngineSelection, type PoolMemberSpec, type SelectionPool, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
+import { memberKey, withPool, withoutPool } from './modelPick';
+import { ACTIVITIES, type Activity } from '../shared/config/types';
+import { canEffort, canFailFast, canFlex, effortFor } from '../shared/config/offer';
 import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
+import { crossDayRepeats } from './minutesStore';
 import { deltaText, earlierMeetings, earlierText, infoOf, judge, timeOf, unchangedTurn } from './sameDay';
 import { claudeSdkEnv, providerSecret } from './llm';
 import { loginPath, mergedPath } from './loginPath';
 import { noteSession } from './sessions';
-import { ATAS } from './env';
+import { anyProfileDenyGlobs, isInsideAnyProfiles } from './browser/profile';
+import { ATAS, DATA_ROOT } from './env';
+import { MEMORY_DIR } from './runner/activities';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
@@ -37,6 +44,7 @@ import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } 
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
 import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
 import { runnerMcpServer, runnerMcpToolName } from './runner/tools';
+import type { MemberParams, Tuning } from './engine/open/pool';
 import type { ToolImpl } from './engine/open/tools/types';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
 import { vcsProvider, vcsReady } from './vcs';
@@ -44,13 +52,22 @@ import { shellMcpServer, shellToolImpl, viewImageToolImpl } from './sandbox/engi
 import { EVIDENCE_TOOL_NAMES, evidenceMcpServer, evidenceToolImpls } from './evidence/engineTool';
 import { evidenceMcpToolName } from './evidence/tool';
 import type { EvidenceTools } from './evidence/tool';
+import { ceremonyAddition, ceremonyAgent, openCeremonyMemory } from './memory/ceremony';
+import { memoryMcpServer, memorySubagentGuard, memoryToolImpls } from './memory/engineTool';
+import { MEMORY_WRITE_TOOLS, memoryMcpToolName, memoryToolNames, type MemoryTools } from './memory/tools';
+import { procedureMcpServer, procedureToolImpls } from './procedures/engineTool';
+import { procedureMcpToolName, procedureToolNames, type ProcedureTools } from './procedures/tools';
 import { incomingActivity, incomingText } from './engine/incoming';
 import { SHELL_MCP_TOOL_NAME, SHELL_TOOL_NAME, VIEW_IMAGE_MCP_TOOL_NAME, VIEW_IMAGE_TOOL_NAME, offersViewImage } from './sandbox/tool';
 import { ATTACHMENT_TOOL } from '../shared/attachments';
+import { type ScreenToolset, screenMcpServers, screenMcpToolNames, screenToolImpls, screenToolNames } from './browser/engineTool';
 import { ATTACHMENT_MCP_TOOL_NAME, attachmentMcpServer, attachmentToolImpl } from './attachmentTool';
 import type { SandboxSession } from './sandbox/session';
 
 export { GLAB_READ };
+
+// The door the ceremonies read the shared memory through is registered by the memory module at start.
+export { setCeremonyMemory } from './memory/ceremony';
 
 /** The projects of the code host the workspace works with (a team agent of a run, which sets `tracker`, is refused when there are none; the ceremonies are not): its issue project and the project of each repository (what the cards are limited to). */
 export function workspaceProjects(): string[] {
@@ -187,6 +204,9 @@ export const SECRET_GLOBS = [
   '~/.claude.json',
   '~/.claude/*.json',
   '~/.claude/projects/**',
+  // The logged-in browsers of the agents (cookies, local storage) live in the workspace's data, and an agent with no shell reads from that folder: its profile files
+  // match none of the names above, so the folder itself is refused, by the absolute path the SDK's rules take, for every workspace of the data folder.
+  ...anyProfileDenyGlobs(DATA_ROOT),
 ];
 export const SECRET_READ_DENY = SECRET_GLOBS.map((g) => `Read(${g})`);
 
@@ -196,6 +216,11 @@ function inClaudeState(p: string): boolean {
   if (!p.startsWith(base)) return false;
   const rel = p.slice(base.length);
   return rel.startsWith('projects/') || (!rel.includes('/') && rel.endsWith('.json'));
+}
+
+// The profiles of the agents' browsers, of any workspace: nothing under them is read by an agent, whichever way the path is written.
+function inBrowserProfiles(p: string): boolean {
+  return isAbsolute(p) && isInsideAnyProfiles(DATA_ROOT, p);
 }
 
 // The path as written, with ~ expanded, absolute against the cwd and with symlinks resolved:
@@ -210,7 +235,7 @@ export function secretPath(p: string, cwd = process.cwd()): boolean {
     // does not exist: the written forms are all there is
   }
   const dir = isDirectory(abs);
-  return forms.some((f) => inClaudeState(f) || KEY_RULE.test(f) || (NAME_RULE.test(f) && !dir));
+  return forms.some((f) => inClaudeState(f) || inBrowserProfiles(f) || KEY_RULE.test(f) || (NAME_RULE.test(f) && !dir));
 }
 
 // A directory named tokens/ has no extension to tell code from data: it can be searched, and the results are judged file by file.
@@ -287,7 +312,9 @@ export function withoutSecretFiles(response: unknown, cwd?: string): object | nu
   const keptLines = lines?.filter((l) => {
     for (const m of l.matchAll(/[:-]\d+[:-]/g)) {
       const file = l.slice(0, m.index);
-      if (!/\s/.test(file) && secretPath(file, cwd)) return false;
+      // A name with a space ("Login Data", "Local State") cannot be told from text, so the secret-name rule skips it; a prefix that leads into a browser profile is cut
+      // all the same: no line of text starts with the path of one.
+      if (/\s/.test(file) ? inBrowserProfiles(isAbsolute(file) ? file : resolve(cwd ?? '.', file)) : secretPath(file, cwd)) return false;
     }
     return true;
   });
@@ -417,7 +444,8 @@ function sdkOptions(req: EngineRequest): Options {
   // A ceremony agent that may ask has the whole shell: the hook decides every command (allowed, a rule, or the person's answer).
   const asks = !confine && !!req.ask;
   const shellOff = asks ? false : confine ? !req.shell.rules.length : !((host && vcsReadPolicy().via === 'cli') || req.shell.rules.length);
-  const dirs = [...req.extraDirs, ...(read?.roots ?? [])];
+  // A workspace that lifted the fence of its runs opens the whole file system to the engine; the hooks still refuse `.git`, hooks and secrets.
+  const dirs = confine?.anywhere || read?.anywhere ? [sep] : [...req.extraDirs, ...(read?.roots ?? [])];
   return {
     cwd: req.cwd,
     // dontAsk denies every tool that allowedTools does not pre-approve.
@@ -438,6 +466,9 @@ function sdkOptions(req: EngineRequest): Options {
     // An agent of the team reads the documentation the app hands it and none of Claude Code's: no CLAUDE.md or .claude/ of the project or the home, no settings
     // files, no automatic memory (which is the person's, not the project's). What the call needs from them the app passes itself (permissions, hooks, model, env).
     ...(req.isolated ? { settingSources: [], settings: { autoMemoryEnabled: false } } : {}),
+    // A bare call opens nothing: no native tool (`tools: []` also makes the open engine offer none), nothing pre-approved, and no MCP server but the ones passed
+    // here, which are none. `allowedTools` is set again because the engine adds the names of its in-process servers to the request's list.
+    ...(req.bare ? { tools: [], allowedTools: [], strictMcpConfig: true } : {}),
     ...(dirs.length ? { additionalDirectories: dirs } : {}),
     ...(req.abort ? { abortController: req.abort } : {}),
     ...req.extra,
@@ -446,17 +477,34 @@ function sdkOptions(req: EngineRequest): Options {
 
 // Documentation sources for the open engine: the config's lists (plus what autoDetect finds); the engine's own defaults when none exist. An isolated call never
 // falls back to them: its lists are the ones the person wrote (and the project's `.mcp.json`), always defined, because an empty list is not an absent one.
-function openDocs(cwd: string, role: ModelRole, isolated = false): DocSources {
+function openDocs(cwd: string, role: ModelRole, isolated = false, bare = false): DocSources {
+  // A bare call reads no documentation: every list empty and defined, so the engine neither discovers a CLAUDE.md up the tree nor indexes a folder.
+  if (bare) return { claudeMd: [], skillDirs: [], agentDirs: [], docDirs: [], mcpConfigs: [] };
   const d = docsFor(role, isolated ? { claude: false } : {});
   const docs: DocSources = { claudeMd: d.claudeMdRoots, skillDirs: d.skillsDirs, agentDirs: d.agentsDirs, docDirs: [...d.rulesDirs, ...d.knowledgeDirs], mcpConfigs: d.mcpConfigFiles };
   return isolated || Object.values(docs).some((list) => list.length) ? docs : defaultDocSources(cwd);
 }
 
-/** What the open engine needs to reach the provider a role is mapped to: key from the secrets store, probe results from the config. */
-export function openSelection(t: ResolvedRole, cwd: string, isolated = false): OpenEngineSelection {
+/** What the model may be sent beyond the protocol: only what the provider's features and the catalog's mark of the model allow, and the workspace's flex switch. */
+function extras(t: ResolvedRole): MemberParams | undefined {
+  const params: MemberParams = {
+    ...(canFlex(t.features, t.offer, getConfig().runner.flex) ? { flex: true } : {}),
+    ...(canEffort(t.features, t.offer) ? { effort: true } : {}),
+    ...(canFailFast(t.features) ? { failFast: true } : {}),
+  };
+  return Object.keys(params).length ? params : undefined;
+}
+
+/** How to reach one model of the open engine and what is known of it: the key from the secrets store, the probe results from the config, the facts of the pool entry. */
+function openMember(t: ResolvedRole): PoolMemberSpec {
   const c = t.capabilities;
+  const images = t.images ?? c?.images;
+  const contextWindow = t.contextWindow ?? c?.contextWindow ?? null;
   return {
-    provider: {
+    key: memberKey(t),
+    label: t.model,
+    provider: t.providerId,
+    config: {
       baseUrl: t.baseUrl,
       model: t.model,
       apiKey: providerSecret(t.secretRef) ?? undefined,
@@ -465,16 +513,72 @@ export function openSelection(t: ResolvedRole, cwd: string, isolated = false): O
       ...(t.maxOutputTokens !== null ? { maxOutputTokens: t.maxOutputTokens } : {}),
       ...(t.temperature !== null ? { temperature: t.temperature } : {}),
       ...(t.timeoutMs !== null ? { timeoutMs: t.timeoutMs } : {}),
+      ...(t.echoReasoning !== undefined ? { echoReasoning: t.echoReasoning } : {}),
     },
-    ...(c ? { capabilities: { tools: c.tools, jsonSchema: c.jsonSchema, ...(c.contextWindow !== null ? { contextWindow: c.contextWindow } : {}), ...(c.images !== undefined ? { images: c.images } : {}) } } : {}),
+    ...(extras(t) ? { params: extras(t) } : {}),
+    ...(c || images !== undefined || contextWindow !== null
+      ? { capabilities: { ...(c ? { tools: c.tools, jsonSchema: c.jsonSchema } : {}), ...(contextWindow !== null ? { contextWindow } : {}), ...(images !== undefined ? { images } : {}) } }
+      : {}),
+  };
+}
+
+/**
+ * Whether the call may hand work to sub-agents of a kind: the model it runs on is of the open engine, and its pool is used by `delegate` with a list of its own for at
+ * least one activity (`switch` and `delegate` without one are a plain fallback and change nothing, `Agent` included). The lists counted are the ones the open
+ * engine will see: the entries of the Claude engine wait for the start of a stage.
+ */
+export function delegatesWork(picked: ResolvedRole, mode: PoolMode): boolean {
+  if (picked.engine !== 'open') return false;
+  const lists: Partial<Record<Activity, ResolvedRole[]>> = {};
+  for (const a of ACTIVITIES) {
+    const open = (picked.pool?.activities[a] ?? []).filter((r) => r.engine === 'open');
+    if (open.length) lists[a] = open;
+  }
+  return effectivePoolMode(mode, lists) === 'delegate';
+}
+
+/**
+ * What the open engine needs to reach the provider a role is mapped to, and the models its pool may move the call to. Only models of the open engine are in the pool:
+ * an entry that belongs to the Claude engine is chosen at the start of a stage, never in the middle of an open session.
+ */
+export function openSelection(t: ResolvedRole, cwd: string, isolated = false, bare = false, mode?: PoolMode, onSkipped?: (label: string, reason: string) => void): OpenEngineSelection {
+  const first = openMember(t);
+  // A spare whose key cannot be read is left out and said so, once: it must not fail a call that never needs it.
+  const told = new Set<string>();
+  const spare = (r: ResolvedRole): PoolMemberSpec[] => {
+    try {
+      return [openMember(r)];
+    } catch (e) {
+      if (!told.has(memberKey(r))) {
+        told.add(memberKey(r));
+        onSkipped?.(r.model, e instanceof Error ? e.message : String(e));
+      }
+      return [];
+    }
+  };
+  const open = (list: ResolvedRole[] | undefined): PoolMemberSpec[] => (list ?? []).filter((r) => r.engine === 'open').flatMap(spare);
+  const activities = Object.fromEntries(
+    ACTIVITIES.flatMap((a) => {
+      const list = open(t.pool?.activities[a]);
+      return list.length ? [[a, list]] : [];
+    }),
+  ) as NonNullable<SelectionPool['activities']>;
+  const fallbacks = open(t.pool?.fallbacks);
+  const pooled = fallbacks.length > 0 || Object.keys(activities).length > 0;
+  const overrides = getConfig().llm.scoreOverrides;
+  return {
+    provider: first.config,
+    ...(first.params ? { params: first.params } : {}),
+    ...(pooled ? { pool: { name: t.role, primary: { key: first.key, label: first.label, provider: first.provider }, fallbacks, activities, ...(overrides ? { scoreOverrides: overrides } : {}), ...(mode ? { mode } : {}) } } : {}),
+    ...(first.capabilities ? { capabilities: first.capabilities } : {}),
     structured: t.structured,
-    docs: openDocs(cwd, t.role, isolated),
+    docs: openDocs(cwd, t.role, isolated, bare),
   };
 }
 
 // Whether this call gets the VcsRead app tool: the code host is read through the app (no CLI), and the call is one that uses tools.
 function wantsVcsTool(req: EngineRequest): boolean {
-  if (req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
+  if (req.bare || req.role === 'teams' || (Array.isArray(req.extra.tools) && req.extra.tools.length === 0)) return false;
   const mode = req.tracker ?? 'workspace';
   if (mode === 'none') return false;
   // An agent of a run reads the host through the tool only, whichever read path the workspace has; the tool needs one of the host-read switches of the agent on. The
@@ -492,17 +596,30 @@ async function commandPath(): Promise<Record<string, string>> {
   return path ? { PATH: path } : {};
 }
 
+/** What the call is for, as the open engine needs it: whether anyone waits for it, and the effort the workspace asks for per activity. */
+function tuningOf(req: EngineRequest): Tuning {
+  const llm = getConfig().llm;
+  const efforts = Object.fromEntries(ACTIVITIES.flatMap((a) => (effortFor(llm, a) ? [[a, effortFor(llm, a)]] : []))) as Tuning['efforts'];
+  return { background: req.background === true, efforts };
+}
+
 async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   // Test hook (COXIA_ENGINE=open): the same call on the open engine against the server the environment names, with no provider secret read. The hook carries no
   // `docs`, which the bridge would fill with the defaults (CLAUDE.md up the tree, ~/.claude): an isolated call gets its own lists whichever way the selection came.
   const hook = openEngineFromEnv();
-  const selection = hook ? (req.isolated ? { ...hook, docs: openDocs(req.cwd, req.target.role, true) } : hook) : openSelection(req.target, req.cwd, req.isolated);
+  // A bare call gets empty lists the same way, on either path; so does a call that has only the procedure tools.
+  const noDocs = !!(req.bare || req.procedureOnly);
+  const selection = hook ? (req.isolated || noDocs ? { ...hook, docs: openDocs(req.cwd, req.target.role, true, noDocs) } : hook) : openSelection(req.target, req.cwd, req.isolated, noDocs, req.poolMode, (model, reason) => req.activity?.tool(t('main.agents.spareSkipped', { model, reason })));
   const tool = wantsVcsTool(req);
   // One `ViewImage`, the sandbox's: a stage that keeps evidence gets it with evidence ids added.
   const looks = offersViewImage(req.exec, req.evidence);
-  const evidence = req.evidence ? evidenceToolImpls(req.evidence) : [];
-  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? [])];
-  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name)];
+  // The output folder of the session that is running: a host stage names its own, a sandbox has `/coxia/out` and the tools' own wording stands.
+  const evidenceOut = req.exec?.outputDir;
+  const evidence = req.evidence ? evidenceToolImpls(req.evidence, evidenceOut) : [];
+  const procedures = req.procedures ? procedureToolImpls(req.procedures) : [];
+  const memory = req.memoryTools ? memoryToolImpls(req.memoryTools) : [];
+  const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? []), ...procedures, ...memory, ...(req.screen ? screenToolImpls(req.screen) : [])];
+  const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name), ...(req.procedures ? procedureToolNames(req.procedures) : []), ...(req.memoryTools ? memoryToolNames(req.memoryTools) : []), ...(req.screen ? screenToolNames(req.screen) : [])];
   try {
     return await runOpenOnce<T>({
     selection,
@@ -516,7 +633,10 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     writeRoot: req.confine?.writeRoot ?? req.confine?.root,
     writeReserved: req.confine?.writeReserved,
     writeAllow: req.confine?.writeAllow,
+    writeAnywhere: req.confine?.anywhere && !req.confine.writeRoot,
+    writeKeep: req.confine ? [join(ATAS, MEMORY_DIR)] : undefined,
     signal: req.abort?.signal,
+    tuning: tuningOf(req),
     describeTool: source,
     events: {
       onSession: (id) => {
@@ -530,18 +650,25 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
       onToolResult: () => req.beat?.(),
       onUsage: (u) => {
         req.beat?.();
-        req.onUsage?.({ promptTokens: u.promptTokens, completionTokens: u.completionTokens, cachedTokens: u.cachedTokens, ...(u.costUsd !== undefined ? { costUsd: u.costUsd } : {}), ...(u.estimated ? { estimated: true } : {}) });
+        req.onUsage?.({ promptTokens: u.promptTokens, completionTokens: u.completionTokens, cachedTokens: u.cachedTokens, ...(u.costUsd !== undefined ? { costUsd: u.costUsd, costEstimated: false } : {}), ...(u.estimated ? { estimated: true } : {}) });
       },
       onText: () => req.beat?.(),
       onReasoning: () => req.beat?.(),
+      // A call in the flex tier waits in the server's queue without a word: that is not a stage that stopped.
+      onWait: () => req.beat?.(),
       onInterim: (text) => req.activity?.text(text),
+      // A switch of model shows on the live line and, when the caller keeps a thread, there.
+      onSwitch: (e) => {
+        req.activity?.tool(poolNoticeText(e));
+        req.onPool?.(e);
+      },
     },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
     incoming: req.incoming,
     });
   } catch (e) {
-    // A refusal by budget is a wait, not a failure: it goes up with the provider the role is mapped to, which the bridge does not know.
-    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(req.target.providerId, 'open', e.detail);
+    // A refusal by budget is a wait, not a failure: it goes up with the provider that refused (a spare of the pool names itself), else the one the role is mapped to.
+    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(e.provider || req.target.providerId, 'open', e.detail);
     throw e;
   }
 }
@@ -603,18 +730,29 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   // The files a called agent may open, scoped to its conversation: an image comes back as an image block for the model.
   const attachment = req.attachments ? await attachmentMcpServer(req.attachments.thread, req.attachments.refs) : null;
   // The evidence tools of a stage that keeps evidence: the same in-process MCP server shape as the Shell tool.
-  const evidence = req.evidence ? await evidenceMcpServer(req.evidence) : null;
+  const evidence = req.evidence ? await evidenceMcpServer(req.evidence, req.exec?.outputDir) : null;
   if (req.evidence && !evidence) throw new Error(t('main.evidence.error.tool-missing'));
   // The app tools of a stage that talks while it works (SendMessage, CallAgent) or of a called agent (AskConversation), as an in-process MCP server.
   const runner = req.runnerTools?.length ? await runnerMcpServer(req.runnerTools) : null;
-  const mcp = vcs || shell || release || attachment || evidence || runner ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}), ...(runner ?? {}) } : null;
+  // The procedure tools: unlike the tools above, a server that cannot be built does not stop the call. The list is in its prompt; the thread says the tools are not there.
+  const procedures = req.procedures ? await procedureMcpServer(req.procedures) : null;
+  if (req.procedures && !procedures) req.procedures.unavailable?.();
+  // The memory tools are the same kind of server and fail the same way: the list stays in the prompt, the thread says the tools are not there (once, however often the
+  // server is rebuilt for another model of the pool).
+  const memory = req.memoryTools ? await memoryMcpServer(req.memoryTools) : null;
+  if (req.memoryTools && !memory) req.memoryTools.unavailable?.();
+  // The agent's screen: the app's browser and the confirmation tool, two more in-process servers.
+  const screen = req.screen ? await screenMcpServers(req.screen) : null;
+  const mcp = vcs || shell || release || attachment || evidence || runner || procedures || memory || screen ? { ...(vcs ?? {}), ...(shell ?? {}), ...(release ?? {}), ...(attachment ?? {}), ...(evidence ?? {}), ...(runner ?? {}), ...(procedures ?? {}), ...(memory ?? {}), ...(screen ?? {}) } : null;
   const env = { ...claudeSdkEnv(req.target), ...(await commandPath()) };
   // The child that runs a command of an agent that writes inherits this environment, provider key included: each such command is rewritten to start
   // without the credential-looking variables (the open engine cleans its own environment instead).
   const confine = req.confine ? { ...req.confine, hooks: scrubShellHooks(req.confine.hooks, credentialNames(env)) } : undefined;
   const options = {
-    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : [])], confine }),
+    ...sdkOptions({ ...req, allowedTools: [...req.allowedTools, ...(vcs ? [VCS_MCP_TOOL_NAME] : []), ...(shell ? [SHELL_MCP_TOOL_NAME] : []), ...(shell && offersViewImage(req.exec, req.evidence) ? [VIEW_IMAGE_MCP_TOOL_NAME] : []), ...(release ? [RELEASE_MCP_TOOL_NAME] : []), ...(attachment ? [ATTACHMENT_MCP_TOOL_NAME] : []), ...(evidence ? EVIDENCE_TOOL_NAMES.map(evidenceMcpToolName) : []), ...(runner && req.runnerTools ? req.runnerTools.map((x) => runnerMcpToolName(x.name)) : []), ...(procedures && req.procedures ? procedureToolNames(req.procedures).map(procedureMcpToolName) : []), ...(memory && req.memoryTools ? memoryToolNames(req.memoryTools).map(memoryMcpToolName) : []), ...(screen && req.screen ? screenMcpToolNames(req.screen) : [])], confine }),
     ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
+    // `tools: []` turns off the SDK's built-in tools and leaves the in-process servers; the strict config keeps out every server the person has set up themselves.
+    ...(req.procedureOnly ? { tools: [], strictMcpConfig: true } : {}),
     model: req.target.model,
     env,
     ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
@@ -652,10 +790,14 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     };
     options.hooks = { ...options.hooks, PostToolBatch: [...(options.hooks?.PostToolBatch ?? []), between] };
   }
+  // Only the agent whose folder it is writes into it: a call from inside a sub-agent is refused (the SDK's `agent_id` on the hook input).
+  if (memory && req.memoryTools?.save) options.hooks = { ...options.hooks, PreToolUse: [...(options.hooks?.PreToolUse ?? []), { matcher: MEMORY_WRITE_TOOLS.map(memoryMcpToolName).join('|'), hooks: [memorySubagentGuard] }] };
   const q = query({ prompt: stream ?? req.prompt, options });
   const counted = new Set<string>();
   // What the assistant said, kept for the failure a call with no structured output throws: the provider's refusal reaches the person, never only the subtype.
   const assistantText: string[] = [];
+  // Whether the model used a tool: a busy refusal after that cannot be handed to another model, since what the tools did is not undone.
+  let toolUsed = false;
   for await (const m of q) {
     req.beat?.();
     if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt, req.resume !== undefined);
@@ -675,6 +817,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
           req.activity?.text(block.text);
         }
         if (block.type !== 'tool_use') continue;
+        if (block.name !== 'StructuredOutput') toolUsed = true;
         sources.push(source(block.name, block.input as Record<string, unknown>));
         if (block.name !== 'StructuredOutput') req.activity?.tool(sources[sources.length - 1]);
         if (process.env.CERIMONIAS_DEBUG) console.error('[tool]', block.name, JSON.stringify(block.input).slice(0, 300));
@@ -699,7 +842,11 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         // A refusal by budget is a wait, not a failure of the stage; the SDK prefixes the gateway's message with "Failed to authenticate", so the body decides.
         if (budgetText(said)) throw new ProviderBudgetError(req.target.providerId, 'claude-sdk', redact(said));
         // i18n-ignore: developer error from the SDK result
-        throw new Error(`agent failed: ${redact(said || `agent ended with ${m.subtype}`)}`);
+        const failure = `agent failed: ${redact(said || `agent ended with ${m.subtype}`)}`;
+        // A busy model says so in the same text: the pool of the role may hand the start of the call to its next model (same message otherwise).
+        const busy = busyText(said);
+        if (busy) throw new EngineBusyError(failure, busy, toolUsed);
+        throw new Error(failure);
       }
       stream?.end();
       return { data: m.structured_output as T, sessionId, sources };
@@ -740,7 +887,8 @@ export async function probeProviderBudget(providerId: string): Promise<{ ok: boo
   }
 }
 
-// One agent call: the role says which provider and model serve it (llm.roles), the provider says which engine runs it.
+// One agent call: the role says which provider and model serve it (llm.roles), the provider says which engine runs it. With a pool the model is the first of the
+// role's start list that is not resting; `resumeEngine` is the engine of the session a wrap-up continues.
 async function runOnce<T>(
   role: ModelRole,
   prompt: string,
@@ -748,9 +896,11 @@ async function runOnce<T>(
   extra: Partial<Options> = {},
   shell: ShellPolicy = { rules: [], patterns: [] },
   activity?: RunActivity,
+  resumeEngine?: ResolvedRole['engine'],
 ): Promise<Run<T>> {
-  // The env hook (COXIA_ENGINE=open) forces the open engine whatever the provider says.
-  const target = openEngineFromEnv() ? { ...engineFor(role), engine: 'open' as const } : engineFor(role);
+  // The env hook (COXIA_ENGINE=open) forces the open engine whatever the provider says, and with one server there is no pool to pick from.
+  const base = engineFor(role);
+  const resolved = openEngineFromEnv() ? { ...withoutPool(base), engine: 'open' as const } : base;
   const cwd = rc().projectsRoot;
   // The ceremony follows its system agent of the team: whether it reads the code host, and the commands the person allowed it always.
   const agent = getConfig().agents.team.find((a) => a.id === role && a.system);
@@ -758,7 +908,36 @@ async function runOnce<T>(
   const id = agent?.id ?? role;
   const ask: CommandAsk | undefined = role === 'teams' ? undefined : { rules: agent?.allowedCommands ?? [], request: (command) => ceremonyCommands.ask(id, command, extra.abortController?.signal) };
   const tools = agent ? toolsForAgent(getConfig(), agent) : getConfig().agents.tools;
-  return runnerFor(target)<T>({ role, prompt, schema, target, system: systemPrompt(role), cwd, allowedTools: [...allowedFor(role, reads, tools), ...shell.rules], extraDirs: extraDirs(cwd, role), shell, extra, activity, tracker: reads ? 'workspace' : 'none', tools, ask });
+  // A ceremony has no stage: the system agent of the role, then the workspace.
+  const poolMode = resolvePoolMode({ agent: agent?.poolMode, workspace: getConfig().llm.poolMode });
+  // The shared memory, read only (a ceremony never writes it): opened once, before the pool is asked, so a retry on another model reads the same list with the same tools. The
+  // wrap-up resume of a call that ran out of turns has no tool, so it gets none of it.
+  const memory = extra.resume ? null : await openCeremonyMemory({ agent: ceremonyAgent(getConfig().agents.team, role), tools: role !== 'teams' });
+  const added = memory ? ceremonyAddition(memory) : null;
+  try {
+    return await withPool<T>(resolved, { resume: resumeEngine, notify: (n) => activity?.tool(poolNoticeText(n)) }, (target) =>
+      runnerFor(target)<T>({
+        role,
+        prompt: added ? `${prompt}\n\n${added.prompt}` : prompt,
+        schema,
+        target,
+        system: [systemPrompt(role), added?.system].filter(Boolean).join('\n\n'),
+        cwd,
+        allowedTools: [...allowedFor(role, reads, tools), ...shell.rules],
+        extraDirs: extraDirs(cwd, role),
+        shell,
+        extra,
+        activity,
+        tracker: reads ? 'workspace' : 'none',
+        tools,
+        ask,
+        poolMode,
+        ...(memory?.tools ? { memoryTools: memory.tools } : {}),
+      }),
+    );
+  } finally {
+    memory?.finish();
+  }
 }
 
 // An agent that runs out of turns is resumed once, without tools, to answer with what it has; that answer is marked partial.
@@ -782,6 +961,42 @@ async function run<T>(
   }
 }
 
+/**
+ * A call that can only answer: the role's model, the caller's system text, the prompt and the schema, and nothing else. No tool of any kind, no code host read, no
+ * MCP server (the person's included), no CLAUDE.md or AGENTS.md, and a working directory that is not a repository (the workspace's data folder). It goes through no
+ * `runOnce`, so the role's own persona and instructions do not reach the system text either. A model that runs out of turns throws `MaxTurnsError` as it is, with no
+ * resume. The session is kept like any other: the cost screen and the retention read it.
+ */
+async function askBare<T>(role: ModelRole, prompt: string, schema: Schema, opts: { system: string; maxTurns?: number }): Promise<Run<T>> {
+  const activity = beginActivity(role, (p) => secretPath(p, ATAS));
+  activity.status('started');
+  try {
+    // The env hook (COXIA_ENGINE=open) forces the open engine here too.
+    const target = openEngineFromEnv() ? { ...engineFor(role), engine: 'open' as const } : engineFor(role);
+    const r = await runnerFor(target)<T>({
+      role,
+      prompt,
+      schema,
+      target,
+      system: opts.system,
+      cwd: ATAS,
+      allowedTools: [],
+      extraDirs: [],
+      shell: { rules: [], patterns: [] },
+      extra: { maxTurns: opts.maxTurns ?? 2 },
+      activity,
+      tracker: 'none',
+      isolated: true,
+      bare: true,
+    });
+    activity.status('finished');
+    return r;
+  } catch (e) {
+    activity.status('failed', e instanceof Error ? e.message : String(e));
+    throw e;
+  }
+}
+
 async function runResumable<T>(activity: RunActivity, role: ModelRole, prompt: string, schema: Schema, extra: Partial<Options>, shell: ShellPolicy): Promise<Run<T>> {
   // A role may have its own turn limit in the config; the one-turn wrap-up below is never raised by it.
   const cap = getConfig().agents.roles[role].maxTurns;
@@ -794,7 +1009,7 @@ async function runResumable<T>(activity: RunActivity, role: ModelRole, prompt: s
     console.error('[agent] error_max_turns, resuming once for a partial answer', e.sessionId);
     activity.status('resumed');
     try {
-      const r = await runOnce<T>(role, cp('system.wrapUp'), schema, { ...extra, resume: e.sessionId, maxTurns: 2, tools: [], allowedTools: [] }, { rules: [], patterns: shell.patterns }, activity);
+      const r = await runOnce<T>(role, cp('system.wrapUp'), schema, { ...extra, resume: e.sessionId, maxTurns: 2, tools: [], allowedTools: [] }, { rules: [], patterns: shell.patterns }, activity, e.engine);
       return { ...r, sources: [...e.sources, ...r.sources], partial: true };
     } catch (again) {
       console.error('[agent] partial answer failed', again instanceof Error ? again.message : again);
@@ -822,6 +1037,7 @@ export async function prepareTurn(card: Card, opts: TurnOptions = {}): Promise<A
   const snap = day?.now ?? cardSnapshot(card);
   const c = cycle();
   const pre = c.ceremonyParams.preDaily;
+  const crossDates = crossDayRepeats(card);
   const common = {
     ref: card.ref,
     card: cardContext(card),
@@ -830,8 +1046,12 @@ export async function prepareTurn(card: Card, opts: TurnOptions = {}): Promise<A
     questionLine: c.meanings.question.enabled ? cp('turn.questionOn', { question: cycleWord(c.meanings.question.text) }) : cp('turn.questionOff'),
     meanings: meaningsLine(),
     priorityLine: priorityLine(card),
+    crossDay: crossDates.length ? cp('turn.crossDay', { dates: crossDates.join(', ') }) : '',
   };
-  const prompt = day ? cp('turn.sameDay', { ...common, since: timeOf(day), earlier: earlierText(day), delta: deltaText(day) }) : cp('turn.main', common);
+  const prompt =
+    day
+      ? cp('turn.sameDay', { ...common, since: timeOf(day), earlier: earlierText(day, crossDates.length ? cp('turn.crossDay', { dates: crossDates.join(', ') }) : ''), delta: deltaText(day) })
+      : cp('turn.main', common);
   const schema = obj({ fala: str, andou: str, proximo: str, bloqueio: strOrNull, pergunta: strOrNull, opcoes: OPTIONS });
   const r = await run<{ fala: string; andou: string; proximo: string; bloqueio: string | null; pergunta: string | null; opcoes: string[] }>(
     'turn',
@@ -1122,6 +1342,17 @@ export interface AgentCall {
   incoming?: (delivered: (text: string) => void) => Promise<string | null>;
   /** The app tools of a stage that talks (`SendMessage`, `CallAgent`) or of a called agent (`AskConversation`); the engine offers each one by its name. */
   runnerTools?: ToolImpl[];
+  /** The workspace's procedure tools, from the call's procedure session; absent: the call has none (a ceremony, a call with no session, the switch off). */
+  procedures?: ProcedureTools;
+  /** The shared memory's tools, from the call's memory session; absent: the call has none (the switch off, a call with no session). */
+  memoryTools?: MemoryTools;
+  /** The agent's screen (the app's browser and the confirmation tool), offered by name to either engine. */
+  screen?: ScreenToolset;
+  /**
+   * The one last turn of a work that may be kept as a procedure (#187): the call gets the procedure tools and nothing else, whatever the agent's permission, shell or
+   * screen, and reads no documentation. Everything else the call carries is dropped, as in the wrap-up of a call that ran out of turns; `procedures` stays.
+   */
+  procedureOnly?: boolean;
   /** What the live activity calls it (the agent's id). */
   label: string;
   /** The activity already made for a call that was accepted earlier (a mention): the engine reports only how it ends. */
@@ -1137,6 +1368,12 @@ export interface AgentCall {
   beat?: () => void;
   /** Called once per model call with what it used, and what it cost when the provider or the SDK said. */
   onUsage?: (usage: UsageReport) => void;
+  /** Called when the call moves to another model of its role's pool: where the caller says it in its thread. */
+  onPool?: (notice: PoolNotice) => void;
+  /** The `poolMode` of the stage the call works for (the cycle model's), between the agent's own and the workspace's. */
+  stagePoolMode?: PoolMode;
+  /** Nobody waits for the answer (a stage, a question between agents, the last turn of procedures): the engine may use the cheaper tier. Absent: someone does. */
+  background?: boolean;
 }
 
 // What a reader of a run may use: the tools the agent uses (its own when it names them, else the workspace's), as the ceremonies get them, and no shell beyond the
@@ -1164,6 +1401,10 @@ function withActivity(session: SandboxSession, activity: RunActivity): SandboxSe
   return {
     description: session.description,
     ...(session.stageDir ? { stageDir: session.stageDir } : {}),
+    // What the tools read from and describe: a stage that runs on the host names its own output folder, and the wrapper must not hide it from `ViewImage`.
+    ...(session.outputDir ? { outputDir: session.outputDir } : {}),
+    ...(session.gui ? { gui: session.gui } : {}),
+    ...(session.readImage ? { readImage: session.readImage } : {}),
     exec: async (command) => {
       const r = await session.exec(command);
       activity.tool(r.refused ? `exit — ${r.refused}` : r.timedOut ? `exit — timeout (${Math.round(r.ms / 1000)}s)` : `exit ${r.exitCode ?? '—'} (${Math.max(1, Math.round(r.ms / 100) / 10)}s)`);
@@ -1182,9 +1423,10 @@ function withActivity(session: SandboxSession, activity: RunActivity): SandboxSe
  */
 export async function runAgent<T>(call: AgentCall, commands: string[] = []): Promise<Run<T>> {
   const resolved = rc().agentModel(call.agent.model);
-  const chosen = openEngineFromEnv() ? { ...resolved, engine: 'open' as const } : resolved;
-  // A round that continues an earlier call runs on the engine that holds its session: a session of the open engine is not one the SDK knows, and the other way round.
-  const target = call.resume && call.resume.engine !== chosen.engine ? { ...chosen, engine: call.resume.engine } : chosen;
+  // The env hook (COXIA_ENGINE=open) forces the open engine whatever the provider says, and with one server there is no pool to pick from.
+  const chosen = openEngineFromEnv() ? { ...withoutPool(resolved), engine: 'open' as const } : resolved;
+  /** The model the call runs on: the first of the role's start list that is not resting, or the one the SDK left for the next. The budget refusal names its provider. */
+  let target = chosen;
   /** The session this call left open, for the round that continues it: read after the call, never mid-flight. */
   let resumed: string | null = null;
   const activity = call.activity ?? beginActivity(call.label, (p) => secretPath(p, call.cwd));
@@ -1194,47 +1436,74 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     const { allowedTools, shell, tracker, tools } = toolsOf(call);
     const rules = call.confine ? commands.map((c) => `Bash(${c})`) : shell.rules;
     const modelRole = call.agent.model.role ?? 'deep';
-    // The documentation of the repositories goes in the system text, the same for both engines; a failure to read it never fails the call.
-    const docs = call.docs ? await harnessSection(call.docs, call.agent, { cwd: call.cwd, contextWindow: target.capabilities?.contextWindow }).catch((e: unknown) => {
-      console.error('[agent] could not build the documentation section', e instanceof Error ? e.message : e);
-      return '';
-    }) : '';
-    const request: EngineRequest = {
-      role: target.role,
-      prompt: call.prompt,
-      schema: call.schema,
-      target,
-      system: [call.system, docs].filter(Boolean).join('\n\n'),
-      cwd: call.cwd,
-      allowedTools: [...allowedTools, ...rules],
-      extraDirs: call.confine ? [] : extraDirs(call.cwd, modelRole, { claude: false }),
-      isolated: true,
-      shell: { rules, patterns: shell.patterns },
-      extra: { maxTurns: call.maxTurns },
-      activity,
-      confine: call.confine,
-      read: call.readRoot,
-      tracker,
-      tools,
-      exec: call.exec ? withActivity(call.exec, activity) : undefined,
-      evidence: call.evidence,
-      onLooked: call.onLooked,
-      ...(call.resume ? { resume: call.resume.session } : {}),
-      release: call.release,
-      attachments: call.attachments,
-      abort: call.abort,
-      beat: call.beat,
-      onUsage: call.onUsage,
-      incoming: call.incoming,
-      runnerTools: call.runnerTools,
-    };
-    let r: Run<T>;
-    try {
-      r = await runnerFor(target)<T>(request);
-    } catch (e) {
-      if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
-      r = await wrapUpAnswer<T>(request, e, activity);
-    }
+    const only = call.procedureOnly === true;
+    const poolMode = resolvePoolMode({ agent: call.agent.poolMode, stage: call.stagePoolMode, workspace: getConfig().llm.poolMode });
+    // A round that continues an earlier call runs on the engine that holds its session (a session of the open engine is not one the SDK knows, and the other way
+    // round); a start picks the first model of the pool that is not resting. The thread hears when the call does not open on the first one.
+    const r = await withPool<T>(
+      chosen,
+      {
+        resume: call.resume?.engine,
+        notify: (n) => {
+          activity.tool(poolNoticeText(n));
+          call.onPool?.(n);
+        },
+      },
+      async (picked) => {
+        target = picked;
+        // The documentation of the repositories goes in the system text, the same for both engines; a failure to read it never fails the call.
+        const docs = call.docs && !only ? await harnessSection(call.docs, call.agent, { cwd: call.cwd, contextWindow: picked.capabilities?.contextWindow }).catch((e: unknown) => {
+          console.error('[agent] could not build the documentation section', e instanceof Error ? e.message : e);
+          return '';
+        }) : '';
+        const request: EngineRequest = {
+          role: picked.role,
+          prompt: call.prompt,
+          schema: call.schema,
+          target: picked,
+          system: [call.system, docs].filter(Boolean).join('\n\n'),
+          cwd: call.cwd,
+          // `Agent` for a call that delegates, whoever it is (a writer included): the switch of the agent's tools that governs sub-agents decides, and its sub-agents have
+          // only tools the call has. A call whose pool does not delegate gets the tools it got before.
+          allowedTools: only ? [] : [...allowedTools, ...(tools.subagents && delegatesWork(picked, poolMode) && !allowedTools.includes('Agent') ? ['Agent'] : []), ...rules],
+          extraDirs: call.confine || only ? [] : extraDirs(call.cwd, modelRole, { claude: false }),
+          isolated: true,
+          shell: only ? { rules: [], patterns: shell.patterns } : { rules, patterns: shell.patterns },
+          extra: { maxTurns: call.maxTurns },
+          activity,
+          // Nothing of the code host, no file confinement to carry (no file tool), no sandbox, evidence, release, attachments, mailbox, runner tool or screen: only `procedures`.
+          confine: only ? undefined : call.confine,
+          read: only ? undefined : call.readRoot,
+          tracker: only ? 'none' : tracker,
+          tools,
+          exec: call.exec && !only ? withActivity(call.exec, activity) : undefined,
+          evidence: only ? undefined : call.evidence,
+          onLooked: only ? undefined : call.onLooked,
+          ...(call.resume ? { resume: call.resume.session } : {}),
+          release: only ? undefined : call.release,
+          attachments: only ? undefined : call.attachments,
+          abort: call.abort,
+          beat: call.beat,
+          onUsage: call.onUsage,
+          onPool: call.onPool,
+          poolMode,
+          ...(call.background ? { background: true } : {}),
+          incoming: only ? undefined : call.incoming,
+          runnerTools: only ? undefined : call.runnerTools,
+          procedures: call.procedures,
+          // The last turn of procedures keeps the procedure tools and nothing else, the memory's included.
+          memoryTools: only ? undefined : call.memoryTools,
+          screen: only ? undefined : call.screen,
+          ...(only ? { procedureOnly: true } : {}),
+        };
+        try {
+          return await runnerFor(picked)<T>(request);
+        } catch (e) {
+          if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
+          return wrapUpAnswer<T>(request, e, activity);
+        }
+      },
+    );
     // The engine reports the session it opened or resumed: what a later round of the same stage continues from.
     resumed = r.sessionId;
     // A call whose session is kept for a round that continues it is not the end of the stage: the activity is left working, and the run's own state says when
@@ -1243,8 +1512,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     return r;
   } catch (e) {
     activity.status('failed', e instanceof Error ? e.message : String(e));
-    // One seam for stages, mentions and the chain: the reason carries the provider the role is mapped to, whichever engine raised it.
-    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(target.providerId, e.engine, e.detail);
+    // One seam for stages, mentions and the chain: the reason carries the provider that refused (a spare of the pool names itself), else the one the call ran on.
+    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(e.provider || target.providerId, e.engine, e.detail);
     throw e;
   }
 }
@@ -1268,6 +1537,9 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
       read: undefined,
       exec: undefined,
       release: undefined,
+      procedures: undefined,
+      memoryTools: undefined,
+      screen: undefined,
     });
     return { ...r, sources: [...e.sources, ...r.sources], partial: true };
   } catch (again) {
@@ -1279,4 +1551,4 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
 }
 
 // Structured agent call for the other ceremony modules (gate, QA handoff, retro).
-export { run as askAgent, obj, str, strOrNull };
+export { run as askAgent, askBare, obj, str, strOrNull };

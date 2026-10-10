@@ -36,6 +36,10 @@ import {
   recordCommentPublished,
   recordCommentRefused,
   recordCommentRemoved,
+  recordCommentWaiting,
+  prRecorded,
+  prOpenBlocked,
+  prRetryAnswered,
   renderComment,
   scenarioBlocks,
   scenarioNotes,
@@ -194,6 +198,13 @@ export interface Publisher {
   actionRefused(action: ReleaseAction, reason: string): Promise<void>;
   /** The review of a round that waited for the pull request goes out now, if the pull request exists. */
   flushReviews(runId: string): Promise<void>;
+  /** Resolves and records the pull request of the run (the recorded one, else an open one linked to the issue): whether the run now has one known. Never throws. */
+  ensurePr(runId: string): Promise<boolean>;
+  /**
+   * The person chose the base on the run screen (a `pr-retry` question was open): the run leaves its question and the pull request is opened now, audited,
+   * against the corrected base. Nothing is re-run by it: a failure stops the run blocked again, a success goes on through `flushReviews`.
+   */
+  retryPr(runId: string, base: string): Promise<void>;
   /** Whether the event a waiting run waits for has happened, as the code host says (a reply is what the person wrote). Never throws: an unreadable host is "not yet". */
   waitOver(runId: string): Promise<{ over: boolean; reply?: string }>;
   /** Proposes deleting what an automatic post of the run put on the tracker (always a "yes"). `proposed` is false when there was nothing to propose and `reason` says why. */
@@ -454,7 +465,11 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
     const where = x.target === 'issue' ? { project: projects(run).issue, iid: trackIid(run) } : await prOf(run, provider);
     if (!where) {
-      say(run, 'runner.review.waiting', { round: x.key.replace(/^\D+/, '') || '1' });
+      // Once per comment record: the sweep repeats until the pull request exists, and the thread must not gain a line each time.
+      if (!run.comments[x.key]?.waitingSaid) {
+        say(run, 'runner.review.waiting', { round: x.key.replace(/^\D+/, '') || '1' });
+        moveRun(d, runId, (r) => recordCommentWaiting(r, x.key, now()));
+      }
       return;
     }
 
@@ -752,7 +767,11 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     }
     const pr = await prOf(run, provider);
     if (!pr) {
-      say(run, 'runner.review.waiting', { round }, 'review');
+      // Once per comment record: the sweep runs again and again, and the thread must not gain a line each time.
+      if (!run.comments[key]?.waitingSaid) {
+        say(run, 'runner.review.waiting', { round }, 'review');
+        moveRun(d, runId, (r) => recordCommentWaiting(r, key, now()));
+      }
       return;
     }
     run = need(runId);
@@ -889,13 +908,149 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     if (created) say(run, 'runner.push.proposed', { branch: run.branch }, end.stage.id);
   }
 
-  /** The push was carried out: the pull request is opened by itself or waits in Actions for its own "sim" (unless one is already there). When it waits, the images its description cites go up in the same group, after that "sim"; when it goes by itself they go up first. */
+  /**
+   * Opens the pull request now, audited, with the description already drafted: the images it cites go up first and follow with their addresses. It is
+   * the autonomous branch of the end-of-push flow and the person's own retry (the click is the approval). Throws what the host refused.
+   */
+  async function openPrNow(runId: string, run: Run, provider: VcsProvider): Promise<void> {
+    const draft = run.comments.pr;
+    const { repo } = projects(run);
+    const title = pullRequestTitle(deps.config().runner.prTitle, draft?.title?.trim() || run.issue.title, run.issue.iid);
+    // The description comes from the template; a cycle with none still says which issue the pull request closes (a documentation run closes none).
+    const written = draft?.body ? draft.body : run.docs ? '' : `${closesOf(run)}\n`;
+    const ids = draft?.evidenceIds ?? [];
+    // The cited images are planned as the first commands of the pull request's own group: nothing goes up before the "yes" that carries them, and the
+    // description the host takes is the one with the addresses embedded once it ran.
+    const total = ids.length ? uploadableEvidence(run, ids).total : 0;
+    let planned: { body: string; uploads: PendingUpload[]; dir: string | null; missing: number } = { body: written, uploads: [], dir: null, missing: 0 };
+    if (ids.length) {
+      try {
+        planned = await planEvidence(run, provider, written, ids);
+      } catch (e) {
+        say(run, 'runner.evidence.uploadFailed', { title: run.issue.title, reason: message(e) });
+        planned = { body: written, uploads: [], dir: null, missing: total };
+      }
+    }
+    const { uploads, dir, missing: planMissing } = planned;
+    // The pieces no command carries are counted in the description right away; the ones a command carries are embedded when the group has run.
+    const plannedBody = planMissing > 0 ? withEvidenceImages(planned.body, [], planMissing) : planned.body;
+    placeUploads(uploads, 0);
+    const uploadCommands = uploads.flatMap((u) => u.commands);
+    // The branch the run was cut from (the open release, when there was one); a run made before that was recorded aims at the default branch.
+    const target = run.baseBranch ?? (await provider.getRepo(repo)).defaultBranch;
+    const createMr = (body: string): Promise<VcsCommand[]> => provider.planWrite({ op: 'createMr', project: repo, title, body, sourceBranch: run.branch, targetBranch: target });
+    // Nothing here is a group the person approved, so the upload and the pull request are two calls of one run: the audit log gets a line for each.
+    const meta = { key: `pr:${run.id}`, issue: run.issue.iid, summary: title, by: 'app' };
+    try {
+      const uploaded: { title: string; url: string }[] = [];
+      if (uploadCommands.length) {
+        const answers = await door.post(meta, uploadCommands);
+        for (const u of uploads) {
+          const url = embedUrlOf(answers[u.at]);
+          if (url) uploaded.push({ title: u.title, url });
+        }
+      }
+      // The pieces no command carried were counted already; one the host took no address from is counted too instead of disappearing.
+      const body = uploads.length ? withEvidenceImages(planned.body, uploaded, planMissing + uploads.length - uploaded.length) : plannedBody;
+      const responses = await door.post(meta, await createMr(body));
+      await pullRequestOpened(runId, responses, undefined, body);
+    } finally {
+      dropUploads(dir);
+    }
+  }
+
+  /** Whether the host's refusal reads as a refused branch (any 4xx validation answer, whatever the prose). */
+  const isValidationRefusal = (e: unknown): boolean => {
+    if (!(e instanceof VcsError)) return false;
+    return (e.status !== null && e.status >= 400 && e.status < 500) || e.code === 'invalid';
+  };
+
+  /** The stage the run's text names: its label when the run's flow says it, its id otherwise. */
+  const stageLabelOfRun = (run: Run, stageId: string | undefined): string => {
+    const id = stageId ?? run.stage;
+    const stage = flowOfRun(run, deps.config()).find((s) => s.id === id);
+    return stage ? stageName(stage.label) : id;
+  };
+
+  /**
+   * The pull request could not be opened after the push: the thread gets the host's answer and the branch it aimed at, and a run that still carried on with
+   * its stages stops blocked (`pr-retry` question) so the person can choose the base it is retried against. Whatever the classification missed still reaches
+   * the reason: the host's own text is said verbatim.
+   */
+  async function failPr(runId: string, error: unknown, stage?: string): Promise<void> {
+    const run = deps.runs.get(runId);
+    if (!run) return;
+    say(run, 'runner.pr.failed', { branch: run.baseBranch ?? '', reason: message(error) });
+    const provider = door.provider();
+    if (!provider) return;
+    try {
+      const defaultBranch = (await provider.getRepo(projects(run).repo)).defaultBranch;
+      const target = run.baseBranch ?? defaultBranch;
+      const baseGone = (run.baseBranch ?? '') !== defaultBranch && isValidationRefusal(error);
+      // A run that already moved on (the failure arrived while the flow was elsewhere, or it stopped otherwise) keeps what happened on the surface as it is.
+      if (deps.runs.get(runId)?.status !== 'working') return;
+      moveRun(d, runId, (r) => {
+        const stopped = prOpenBlocked(r, { by: 'app', text: tr(baseGone ? 'main.runs.stage.prBaseGone' : 'main.runs.stage.prBlocked', { stage: stageLabelOfRun(r, stage ?? r.stage), branch: target, reason: message(error) }), bases: [...new Set([target, defaultBranch])], targetBranch: target, baseGone, stage: stage ?? r.stage }, now());
+        // The description's own record is refused when it is not on the tracker (published or proposed) yet: a wait that follows must not be able to rely on it.
+        if (r.comments.pr && r.comments.pr.status !== 'published' && r.comments.pr.status !== 'proposed') {
+          const refused = recordCommentRefused(stopped.run, 'pr', 'mr', now());
+          return { run: refused.run, messages: [...stopped.messages, ...refused.messages] };
+        }
+        return stopped;
+      });
+    } catch (e) {
+      console.error('[runner] could not stop the run for the failed pull request', message(e));
+    }
+  }
+
+  /** A pull request linked to the issue (the person may have opened it by hand) is resolved and recorded: whether the run now has one to wait for. */
+  async function ensurePr(runId: string): Promise<boolean> {
+    const run = deps.runs.get(runId);
+    const provider = door.provider();
+    if (!run || !provider) return false;
+    if (prRecorded(run)) return true;
+    return !!(await prOf(run, provider));
+  }
+
+  /** The person chose the base on the run screen: the run is stopped out of its question, the base is corrected, and the pull request is opened now. */
+  async function retryPr(runId: string, base: string): Promise<void> {
+    const run = need(runId);
+    if (run.status !== 'question' || run.question?.kind !== 'pr-retry') throw new Error(`run ${runId} is not waiting for a pull request retry`);
+    const refused = door.refusal();
+    if (refused) return say(run, 'runner.pr.refused', { reason: refused });
+    const provider = door.provider();
+    if (!provider) return say(run, 'runner.comment.noHost', { title: run.issue.title });
+    moveRun(d, runId, (r) => prRetryAnswered(r, base, now()));
+    try {
+      await openPrNow(runId, need(runId), provider);
+    } catch (e) {
+      // Failing again raises the question once more: the same description, the base the person still has to choose.
+      await failPr(runId, e, run.question.stage);
+    }
+  }
+
+  /** The push was carried out: the pull request is opened by itself or waits in Actions for its own "sim" (unless one is already there). When it waits, the images its description cites go up in the same group, after that "sim". */
   async function pullRequest(runId: string): Promise<void> {
     const run = need(runId);
     const provider = door.provider();
     if (!provider) return;
     try {
       if (await prOf(run, provider)) return;
+      // The autonomy block may open it by itself, through the same door that audits every other write an agent's autonomy lets out.
+      if (chooses(run, 'pullRequest')) {
+        const refusal = door.refusal();
+        if (refusal) {
+          say(run, 'runner.pr.refused', { reason: refusal });
+          return;
+        }
+        try {
+          await openPrNow(runId, run, provider);
+        } catch (e) {
+          await failPr(runId, e);
+        }
+        return;
+      }
+      // Nothing here is open by itself: the pull request waits in Actions for its own "sim", with the description from the template.
       const draft = run.comments.pr;
       const { repo } = projects(run);
       const title = pullRequestTitle(deps.config().runner.prTitle, draft?.title?.trim() || run.issue.title, run.issue.iid);
@@ -915,44 +1070,12 @@ export function createPublisher(deps: PublisherDeps): Publisher {
         }
       }
       const { uploads, dir, missing: planMissing } = planned;
-      // The pieces no command carries are counted in the description right away; the ones a command carries are embedded when the "sim" runs.
       const plannedBody = planMissing > 0 ? withEvidenceImages(planned.body, [], planMissing) : planned.body;
       placeUploads(uploads, 0);
       const uploadCommands = uploads.flatMap((u) => u.commands);
       // The branch the run was cut from (the open release, when there was one); a run made before that was recorded aims at the default branch.
       const target = run.baseBranch ?? (await provider.getRepo(repo)).defaultBranch;
       const createMr = (body: string): Promise<VcsCommand[]> => provider.planWrite({ op: 'createMr', project: repo, title, body, sourceBranch: run.branch, targetBranch: target });
-      // The autonomy block may open it by itself, through the same door that audits every other write an agent's autonomy lets out. The images the description
-      // cites go up first, by themselves, under the same autonomy; the pull request waits for their addresses and follows them, as an autonomous comment does.
-      // Nothing here is a group the person approved, so the upload and the pull request are two calls of one run: the audit log gets a line for each.
-      if (chooses(run, 'pullRequest')) {
-        const refusal = door.refusal();
-        if (refusal) {
-          dropUploads(dir);
-          say(run, 'runner.pr.refused', { reason: refusal });
-          return;
-        }
-        try {
-          const meta = { key: `pr:${run.id}`, issue: run.issue.iid, summary: title, by: 'app' };
-          const uploaded: { title: string; url: string }[] = [];
-          if (uploadCommands.length) {
-            const answers = await door.post(meta, uploadCommands);
-            for (const u of uploads) {
-              const url = embedUrlOf(answers[u.at]);
-              if (url) uploaded.push({ title: u.title, url });
-            }
-          }
-          // The pieces no command carried were counted already; one the host took no address from is counted too instead of disappearing.
-          const body = uploads.length ? withEvidenceImages(planned.body, uploaded, planMissing + uploads.length - uploaded.length) : plannedBody;
-          const responses = await door.post(meta, await createMr(body));
-          await pullRequestOpened(runId, responses, undefined, body);
-        } catch (e) {
-          say(run, 'runner.pr.failed', { reason: message(e) });
-        } finally {
-          dropUploads(dir);
-        }
-        return;
-      }
       const commands = [...uploadCommands, ...(await createMr(plannedBody))];
       const evidence = uploads.length ? { titles: uploads.map((u) => u.title), positions: uploads.map((u) => u.at), bodyAt: uploadCommands.length } : undefined;
       const created = door.propose({ key: `pr:${run.id}`, issue: run.issue.iid, issueTitle: run.issue.title, summary: title, detail: plannedBody, unit: { runId, purpose: 'run-pr' }, evidence, notify: { title: tr('main.runner.comment.proposalTitle', { ref: run.issue.ref }), body: title } }, commands);
@@ -960,7 +1083,9 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       if (created) say(run, 'runner.pr.proposed', { title }, 'implement');
       dropUploads(dir);
     } catch (e) {
-      say(run, 'runner.pr.failed', { reason: message(e) });
+      // The run is still here at the moment of the failure only when nothing of the flow moved on meanwhile (the flow is elsewhere, or the refusal came
+      // from a re-read before the write): whatever it is, the thread keeps the host's answer and the branch.
+      await failPr(runId, e);
     }
   }
 
@@ -969,7 +1094,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const run = need(runId);
     const made = prRefOf(responses[evidence ? evidence.bodyAt : 0]);
     if (made.iid === null) {
-      say(run, 'runner.pr.failed', { reason: tr('main.runner.comment.noId') });
+      await failPr(runId, new Error(tr('main.runner.comment.noId')));
       return;
     }
     // An autonomous pull request records the description it posted (with its images already embedded); a proposal embeds them now, from the group's answers.
@@ -1694,6 +1819,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     actionDone: (a, responses) => guarded(String(a.unit?.runId ?? ''), () => done(a, responses)),
     actionRefused: (a, reason) => guarded(String(a.unit?.runId ?? ''), () => releaseStepRefused(a, reason)),
     flushReviews: (runId) => guarded(runId, () => flush(runId)),
+    ensurePr: (runId) => ensurePr(runId).catch(() => false),
+    retryPr: (runId, base) => guarded(runId, () => retryPr(runId, base)),
     waitOver,
     undo: (runId, key) => undo(runId, key),
     stageEntered: (runId, e) => guarded(runId, () => stageEntered(runId, e)),
@@ -1705,4 +1832,3 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     releaseTick: (runId) => guarded(runId, () => releaseTick(runId)),
   };
 }
-

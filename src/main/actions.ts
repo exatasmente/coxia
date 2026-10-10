@@ -37,8 +37,18 @@ import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
 import { VcsError } from './vcs/errors';
+import { testEnvScanActive, testEnvTextProblem, activeTestEnvForms } from './testEnv';
+
+/** The text one command carries (its body, its fields, its endpoint): what a value could ride out inside. */
+const commandText = (c: VcsCommand): string => [c.method, c.endpoint, ...Object.values(c.fields), c.json ?? ''].join('\n');
+
+/** Spec rules 7 and 8: while a test environment is live, no write may carry one of its exact forms; the reason names the form, never the value. */
+export const assertNoTestEnvLeak = (c: VcsCommand): void => {
+  const leak = testEnvTextProblem(commandText(c));
+  if (leak) throw new VcsError('unsupported', { kind: c.via.toUpperCase(), what: leak });
+};
 import { type ReleaseUnit, alwaysWaits, isReleasePush, parseReleaseUnit, releaseBlockers, releaseWaits, soleMaintainerOf } from '../shared/release';
-import { type ReleasePr, previewRelease, releaseCommandLine, runReleaseOp, sameSha } from './releaseGit';
+import { ReleaseConflictError, freeBranchCheckout, type ReleasePr, previewRelease, releaseCommandLine, runReleaseOp, sameSha } from './releaseGit';
 import { type VcsRuntime, vcsProvider, vcsRuntime } from './vcs';
 import { STATUS_MUTATION } from './vcs/gitlab';
 import type { ExecMeta } from './vcs/types';
@@ -530,6 +540,7 @@ export interface AutoWrite {
 
 export async function runVcsAuto(w: AutoWrite, c: VcsCommand): Promise<unknown> {
   validateVcsCommand(c);
+  assertNoTestEnvLeak(c);
   let response: unknown;
   await audited({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by, bodyHash: w.bodyHash }, { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
     const out = await runVcs(c, meta);
@@ -583,6 +594,7 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       for (let i = a.done ?? 0; i < all.length; i++) {
         // An upload of evidence carries its header only at the moment it runs: the proposal never stores the credential.
         const raw = all[i];
+        assertNoTestEnvLeak(raw);
         let c = await withUploadHeaders(raw);
         // The comment that cites evidence takes up the addresses the uploads of the same group just answered with; without an image the body goes as written.
         if (evidence && i === evidence.bodyAt) c = withEvidenceEmbeds(c, evidence, uploadedAt);
@@ -623,7 +635,9 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
     if (done.kind === 'conflict-push') return await afterPublish(done);
     return done;
   } catch (e) {
-    return update(id, (x) => ({ ...x, state: 'failed', finishedAt: new Date().toISOString(), output: String((e as Error).message) }));
+    // A worktree conflict is said on the card itself (and offered to be resolved there), not only in the raw output.
+    const conflict = e instanceof ReleaseConflictError ? e.conflict : undefined;
+    return update(id, (x) => ({ ...x, state: 'failed', finishedAt: new Date().toISOString(), output: String((e as Error).message), ...(conflict ? { conflict } : {}) }));
   }
 }
 
@@ -1049,8 +1063,8 @@ async function publishConflict(a: ReleaseAction): Promise<string> {
 }
 
 // ---- the push of a run's branch -----------------------------------------------------------------------------------------------------------
-// The runner never pushes: it proposes the push here and it waits for its own "sim" whatever the agents' autonomy. The action names a run, never a
-// folder: the worktree and the branch are read from the run's file when it is approved, so a stored action cannot point the push anywhere else.
+// By default the runner does not push: it proposes the push here and it waits for its own "sim". Only the autonomy block's "push" choice lets a run push
+// by itself, through pushRunBranchAuto below, with the same checks and an audit line of its own. The action names a run, never a folder: the worktree and the branch are read from the run's file when it is approved, so a stored action cannot point the push anywhere else.
 
 /** Proposes the push of a run's branch. A push of the same run that still waits is replaced: what goes is the branch as it is when the "sim" comes. */
 export function proposeRunPush(input: { key: string; issue: number; issueTitle?: string; summary: string; detail?: string; runId: string; branch: string; notify?: { title: string; body: string } }): ReleaseAction | null {
@@ -1122,6 +1136,11 @@ export async function pushRunBranchAuto(w: AutoWrite, runId: string, branch: str
   const memory = `:(top,exclude,literal)${run.cycleFolder}/${MEMORY_FILE}`;
   if ((await git(run.worktree, ['status', '--porcelain', '--untracked-files=no', '--', '.', memory])).stdout.trim()) throw new Error(t('main.conflictGit.dirty'));
   const now = new Date().toISOString();
+  // Spec rule 7 applied to the push itself: every file the branch would send is searched for the exact forms of a live test environment first.
+  for (const f of activeTestEnvForms()) {
+    const hit = (await git(run.worktree, ['grep', '--fixed-strings', '--files-with-matches', '-I', f.value, 'HEAD'])).stdout.trim();
+    if (hit) throw new Error(t('main.testEnv.refusal.commit', { what: t(`main.testEnv.form.${f.kind}`) }));
+  }
   const a = blank({ key: w.key, kind: 'run-push', issue: w.issue, summary: w.summary, unit: { runId, branch } });
   // A push of this run that still waited is replaced: what goes out is the branch as it is now, not the state the proposal was made for.
   const store = read();
@@ -1271,6 +1290,28 @@ async function previewReleaseAction(a: ReleaseAction): Promise<string> {
   const unit = parseReleaseUnit(a.unit);
   const { clone } = await releaseContextOf(unit);
   return previewRelease(unit, clone);
+}
+
+/**
+ * The "sim" of a failed release step that stopped on a worktree conflict: the branch is freed from the worktree that holds it (its tree is left whole, on the
+ * same commit, detached) and the step waits again, so it can be run at once. The detach is local git like anything that writes, audited and refused in a test
+ * workspace; the run's own worktree (which may hold the branch between steps) is never the one detached.
+ */
+export async function freeReleaseCheckout(id: string): Promise<ReleaseAction> {
+  const a = read().actions.find((x) => x.id === id);
+  if (!a || a.kind !== 'release-git') throw new Error(t('main.actions.missing', { id }));
+  if (a.state === 'running') throw new Error(t('main.actions.stepRunning'));
+  const conflict = a.conflict;
+  if (!conflict) throw new Error(t('main.release.noConflict'));
+  const unit = parseReleaseUnit(a.unit);
+  const { run, clone } = await releaseContextOf(unit);
+  const own = join(dirname(run.worktree), `release-${unit.version}-steps`);
+  const output = await audited(originOf(a), { kind: 'worktree', target: `worktree ${conflict.path} detach (${conflict.branch})`, via: 'git', fields: {} }, async () => {
+    const at = await freeBranchCheckout(clone, conflict.branch, own);
+    // what the audit line keeps as its result, and what the output says either way
+    return at ? t('main.release.worktreeFreed', { branch: conflict.branch, path: at }) : t('main.release.worktreeAlreadyFree', { branch: conflict.branch });
+  });
+  return update(id, (x) => ({ ...x, state: 'pending', finishedAt: null, output, conflict: undefined }));
 }
 
 // After a successful push: clean up, close the conflict and hand the QA comment to its own "sim".

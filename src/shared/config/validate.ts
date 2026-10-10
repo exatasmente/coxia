@@ -9,12 +9,14 @@ import { catalogText } from '../cycles/text';
 import { effectiveCardScope } from '../cardScope';
 import { isVerifyProject } from '../verifyCommands';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../sandboxPaths';
+import { catalogUrlProblem } from './offer';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA, ID } from './schema';
 import { DOCS_COMMENT_EVENTS, DOCS_FLOW_KEY, RELEASE_COMMENT_EVENTS, RELEASE_FLOW_KEY, RUN_KIND_FLOW_KEYS, isRunKindFlowKey } from './squads';
 import { isSystemId } from './team';
-import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
+import { ACTIVITIES, COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, TEST_ENV_REF_PREFIX, type LlmProvider, type ModelPool, type ModelRef, type SecretRequirement, type WorkspaceConfig } from './types';
+import { ENV_NAME, SECRET_REF } from '../secrets';
 
 export interface ConfigIssue {
   path: string;
@@ -33,6 +35,7 @@ function duplicates(ids: string[]): string[] {
   return ids.filter((id, i) => ids.indexOf(id) !== i);
 }
 
+const MAX_SCORE_MODELS = 200;
 const ANTHROPIC_HOST = /^https:\/\/api\.anthropic\.com\/?$/;
 
 function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
@@ -44,10 +47,41 @@ function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIs
     warnings.push({ path: at('baseUrl'), message: 'the Claude Agent SDK is pointed at a non-Anthropic endpoint; only Claude models are supported there' });
   }
   if (p.legacyCustomEndpoint && p.kind !== 'anthropic') errors.push({ path: at('legacyCustomEndpoint'), message: 'only applies to the anthropic kind' });
+  const f = p.features;
+  if (f?.catalogUrl !== undefined) {
+    // The connection test sends the key to this address: it has to be the provider's own origin.
+    const why = catalogUrlProblem(p.baseUrl, f.catalogUrl);
+    if (why === 'scheme' || f.catalogUrl === '') errors.push({ path: at('features.catalogUrl'), message: 'must be an http:// or https:// address' });
+    else if (why === 'origin') errors.push({ path: at('features.catalogUrl'), message: 'must have the same origin as the provider\'s baseUrl: the key is never sent anywhere else' });
+  }
+  if (f && p.engine === 'claude-sdk' && (f.serviceTier || f.failFast || f.reasoningEffort)) warnings.push({ path: at('features'), message: 'only the open engine sends these parameters; the Claude Agent SDK ignores them' });
   if (p.kind === 'anthropic' && !p.secretRef) warnings.push({ path: at('secretRef'), message: 'no API key configured for the anthropic provider' });
   if (p.kind === 'bedrock' && !p.options.region) warnings.push({ path: at('options.region'), message: 'no AWS region set' });
   if (p.kind === 'vertex' && !(p.options.project && p.options.region)) warnings.push({ path: at('options'), message: 'vertex needs project and region' });
   if (p.kind === 'foundry' && !(p.options.resource || p.baseUrl.trim())) warnings.push({ path: at('options.resource'), message: 'foundry needs a resource name or a base URL' });
+}
+
+// A pool entry points at a provider the person registered, and a list holds a model once. An entry for the screen that is known not to take images is a warning, not an error:
+// the run skips it, and the person may know something the test did not.
+function poolRules(pool: ModelPool, first: ModelRef | null, at: string, providers: Set<string>, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const list = (path: string, entries: ModelRef[], lead: ModelRef | null) => {
+    const seen = new Set<string>(lead ? [`${lead.provider}\n${lead.model}`] : []);
+    entries.forEach((m, i) => {
+      if (!providers.has(m.provider)) errors.push({ path: `${path}[${i}].provider`, message: `unknown provider "${m.provider}"` });
+      const key = `${m.provider}\n${m.model}`;
+      if (seen.has(key)) errors.push({ path: `${path}[${i}]`, message: `"${m.model}" of "${m.provider}" is already in this list` });
+      seen.add(key);
+    });
+  };
+  list(`${at}.fallbacks`, pool.fallbacks ?? [], first);
+  for (const a of ACTIVITIES) {
+    const entries = pool.activities?.[a];
+    if (!entries) continue;
+    list(`${at}.activities.${a}`, entries, null);
+    entries.forEach((m, i) => {
+      if (a === 'screen' && m.images === false) warnings.push({ path: `${at}.activities.screen[${i}]`, message: `"${m.model}" is marked as not taking images: the screen never uses it` });
+    });
+  }
 }
 
 function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
@@ -68,13 +102,20 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
     (a.allowedCommands ?? []).forEach((r, j) => {
       if (!validRule(r)) errors.push({ path: at(`allowedCommands[${j}]`), message: 'a rule is one line of at most 200 characters ("prefix:*" or an exact command)' });
     });
+    (a.allowedHosts ?? []).forEach((h, j) => {
+      if (!isRegistryHost(h)) errors.push({ path: at(`allowedHosts[${j}]`), message: 'must be a host name such as example.com: lowercase, no scheme, port, path or wildcard' });
+    });
+    if ((a.allowedHosts ?? []).length > MAX_REGISTRY_HOSTS) errors.push({ path: at('allowedHosts'), message: `at most ${MAX_REGISTRY_HOSTS} hosts` });
+    for (const h of duplicates(a.allowedHosts ?? [])) warnings.push({ path: at('allowedHosts'), message: `"${h}" is listed twice` });
     if (a.shell === 'allowlist' && a.permission !== 'worktree') errors.push({ path: at('shell'), message: '"allowlist" needs the "worktree" permission: an agent that only reads runs commands only in a sandbox' });
     if (a.model.role === null) {
       if (!providers.has(a.model.provider)) errors.push({ path: at('model.provider'), message: `unknown provider "${a.model.provider}"` });
       if (!a.model.model.trim()) errors.push({ path: at('model.model'), message: 'is required when the agent names no role' });
+      poolRules(a.model, { provider: a.model.provider, model: a.model.model }, at('model'), providers, errors, warnings);
     } else if (a.model.provider || a.model.model) {
       warnings.push({ path: at('model'), message: 'provider and model are ignored while a role is set' });
     }
+    if (a.model.role !== null && (a.model.fallbacks || a.model.activities)) warnings.push({ path: at('model'), message: 'fallbacks and activities are ignored while a role is set: the role\'s pool is used' });
   });
   const agentIds = new Set(team.map((a) => a.id));
   c.devCycle.stages.forEach((s, i) => {
@@ -154,8 +195,45 @@ function runnerRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: Config
   sandboxRules(r.sandbox, errors, warnings);
 }
 
+// What a stage of the workspace may receive while it exercises the app under development: names and refs held to the store's grammar, hosts to the
+// registry's, and no entry that promises a private address it did not also allow. The references are validated, never resolved: nothing of the store
+// exists here.
+function testEnvRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const env = c.testEnvironment;
+  if (!env) return;
+  const hostsRules = (hosts: string[] | undefined, privateHosts: string[] | undefined, at: string): void => {
+    (hosts ?? []).forEach((h, i) => {
+      if (!isRegistryHost(h)) errors.push({ path: `${at}.hosts[${i}]`, message: 'must be a host name such as registry.example.com: no scheme, port, path or wildcard' });
+    });
+    for (const h of duplicates(hosts ?? [])) warnings.push({ path: `${at}.hosts`, message: `"${h}" is listed twice` });
+    if ((privateHosts ?? []).length > (hosts ?? []).length) errors.push({ path: `${at}.privateHosts`, message: 'has more hosts than hosts' });
+    (privateHosts ?? []).forEach((h, i) => {
+      const ref = (hosts ?? []).find((x) => x.toLowerCase() === h.toLowerCase());
+      if (!ref) errors.push({ path: `${at}.privateHosts[${i}]`, message: `"${h}" is not listed in hosts: a private address is opened only by marking a listed host private` });
+    });
+    for (const h of duplicates(privateHosts ?? [])) warnings.push({ path: `${at}.privateHosts`, message: `"${h}" is listed twice` });
+  };
+  const seenNames = new Set<string>();
+  env.variables.forEach((v, i) => {
+    const at = `testEnvironment.variables[${i}]`;
+    if (!ENV_NAME.test(v.name)) errors.push({ path: at, message: `the name "${v.name}" cannot be an environment variable: use letters, digits and _ only, starting with a letter or _` });
+    if (seenNames.has(v.name.toUpperCase())) errors.push({ path: 'testEnvironment.variables', message: `the variable name "${v.name.toUpperCase()}" is used twice (environment names ignore case, so the second entry would overwrite the first)` });
+    seenNames.add(v.name.toUpperCase());
+    hostsRules(v.hosts, v.privateHosts, at);
+  });
+  env.secrets.forEach((s, i) => {
+    const at = `testEnvironment.secrets[${i}]`;
+    if (!SECRET_REF.test(s.ref)) errors.push({ path: at, message: `the ref "${s.ref}" is not a secrets-store reference` });
+    else if (!s.ref.startsWith(TEST_ENV_REF_PREFIX)) errors.push({ path: at, message: `the ref "${s.ref}" must start with "${TEST_ENV_REF_PREFIX}", so the test secrets stay a group the person can manage and delete together` });
+    if (s.testOnly !== true && s.testOnly !== false) errors.push({ path: at, message: 'must say whether the secret is test-only' });
+    hostsRules(s.hosts, s.privateHosts, at);
+  });
+  for (const ref of duplicates(env.secrets.map((s) => s.ref))) errors.push({ path: 'testEnvironment.secrets', message: `the ref "${ref}" is listed twice` });
+}
+
 // The attachment limits: a per-message total smaller than the per-file limit, or one over the total, would leave every file of that kind refused.
 function attachmentRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+
   const a = c.attachments;
   if (!a) return;
   const { imageBytes, otherBytes, messageBytes, perMessage } = a.limits;
@@ -229,12 +307,15 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
   for (const id of duplicates(c.llm.providers.map((p) => p.id))) errors.push({ path: 'llm.providers', message: `duplicate provider id "${id}"` });
   for (const [role, rm] of Object.entries(c.llm.roles)) {
     if (!providers.has(rm.provider)) errors.push({ path: `llm.roles.${role}.provider`, message: `unknown provider "${rm.provider}"` });
+    poolRules(rm, rm, `llm.roles.${role}`, providers, errors, warnings);
   }
+  if (Object.keys(c.llm.scoreOverrides?.models ?? {}).length > MAX_SCORE_MODELS) errors.push({ path: 'llm.scoreOverrides.models', message: `at most ${MAX_SCORE_MODELS} models` });
   for (const p of c.llm.providers) providerRules(p, errors, warnings);
   teamRules(c, errors, warnings);
   flowRules(c, errors, warnings, tolerateFlow);
   squadRules(c, errors, warnings, tolerateFlow);
   runnerRules(c, errors, warnings);
+  testEnvRules(c, errors, warnings);
   attachmentRules(c, errors, warnings);
   commentRules(c, errors, warnings);
   const vcsIds = new Set(c.vcs.map((v) => v.id));

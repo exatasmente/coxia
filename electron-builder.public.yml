@@ -7,5 +7,11 @@ files:
   - out/**
   - package.json
   - "!node_modules/@anthropic-ai/**"
-# The base config unpacks the SDK's native binary; there is nothing to unpack here.
-asarUnpack: []
+# A list here replaces the base's, so the SDK's binary (left out of this package) drops out and the Playwright MCP server of the app's browser stays unpacked.
+asarUnpack:
+  - node_modules/@playwright/**
+  - node_modules/@playwright/mcp/node_modules/playwright-core/**
+  # In the package the server's own Playwright is hoisted next to it (the repository's playwright-core is a dev dependency and stays out),
+  # and Node does not look inside app.asar from app.asar.unpacked: what cli.js requires must be unpacked too.
+  - node_modules/playwright/**
+  - node_modules/playwright-core/**

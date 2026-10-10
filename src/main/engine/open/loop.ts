@@ -14,6 +14,7 @@ import {
   skillTool,
 } from './context';
 import { EngineError } from './errors';
+import { type MemberParams, type OpenPool, type PoolMember, type PoolSwitch, type Tuning, PoolClient, activityOf, weigh } from './pool';
 import { scrubbedEnv } from '../guard';
 import { type SdkHooks, policyFromHooks } from './policy';
 import { describeErrors, prune, validate } from './schema';
@@ -26,6 +27,9 @@ import { editTool, writeTool } from './tools/write';
 import { globTool, grepTool } from './tools/search';
 import { type ToolContext, type ToolImage, type ToolImpl, ToolError } from './tools/types';
 import type { ChatMessage, Completion, ContentPart, Json, ToolCall, ToolChoice, ToolDef } from './types';
+import type { Activity, PoolMode } from '../../../shared/config/types';
+import { effectivePoolMode } from '../../../shared/config/poolMode';
+import { type SubKind, MUTATING_KINDS, KIND_TURNS, isSubKind, modelOfKind, offeredKinds, toolsOfKind } from './subagent';
 import { t } from '../../../shared/i18n';
 import { incomingActivity, incomingText } from '../incoming';
 
@@ -54,6 +58,10 @@ export interface RunEvents {
   onReasoning?: (text: string) => void;
   // What the model said alongside tool calls it is about to make (its narration between steps); never the final answer.
   onInterim?: (text: string) => void;
+  // The call moved to another model of the role's pool (it was busy, or the turn is for an activity the first one does not serve).
+  onSwitch?: (e: PoolSwitch) => void;
+  // A call waits in the server's queue (the flex tier): a sign of life every so often, though the model says nothing.
+  onWait?: () => void;
 }
 
 export interface OpenRunParams {
@@ -62,7 +70,19 @@ export interface OpenRunParams {
   // JSON Schema of the final answer; without it the final text is the answer.
   schema?: Json;
   client: ChatClient;
+  // The spare models of the role and the lists of its activities; without it `client` is the only model and nothing changes.
+  pool?: OpenPool;
+  // A sub-agent shares the pool of its parent, and with it the model in use.
+  poolClient?: PoolClient;
+  // The activity of the first turn: a stage starts as `write`, a sub-agent as `explore`.
+  startActivity?: Activity;
+  // A sub-agent handed a task in `delegate` mode: it has only the tools of this kind that its parent has.
+  kind?: SubKind;
   capabilities?: Capabilities;
+  // What `client`'s model may be sent beyond the protocol (the tier, the effort, fail-fast), as its provider and the catalog allow; a model of the pool has its own.
+  params?: MemberParams;
+  // What the call is for: a call nobody waits for may use the cheaper tier, and the effort of each activity.
+  tuning?: Tuning;
   structured?: StructuredStrategy;
   cwd: string;
   additionalDirectories?: string[];
@@ -77,6 +97,10 @@ export interface OpenRunParams {
   writeRoot?: string;
   writeReserved?: readonly string[];
   writeAllow?: readonly string[];
+  // The workspace lifted the fence of its runs: Write and Edit may land anywhere, `.git`, hooks and secrets still refused.
+  writeAnywhere?: boolean;
+  // Folders the app keeps for itself: Write and Edit refuse them even with the fence lifted.
+  writeKeep?: readonly string[];
   hooks?: SdkHooks;
   // Tools the app itself provides (in-process, not shell or MCP); one is offered when its name is in allowedTools.
   extraTools?: ToolImpl[];
@@ -142,7 +166,19 @@ export function bashPrefixesOf(allowed: string[]): string[] {
   return out;
 }
 
-async function buildTools(p: OpenRunParams, skills: ReturnType<typeof loadSkills>, agents: AgentDef[], runAgent: (a: AgentDef | null, prompt: string) => Promise<string>): Promise<ToolImpl[]> {
+interface Delegation {
+  /** The kinds the `Agent` tool offers; empty: the tool is the plain read-only sub-agent. */
+  kinds: SubKind[];
+}
+
+async function buildTools(
+  p: OpenRunParams,
+  skills: ReturnType<typeof loadSkills>,
+  agents: AgentDef[],
+  runAgent: (a: AgentDef | null, prompt: string, kind?: SubKind) => Promise<string>,
+  mode: PoolMode,
+  delegation: Delegation,
+): Promise<ToolImpl[]> {
   if (p.noTools) return [];
   const allowed = new Set(p.allowedTools);
   const denied = bareNames(p.disallowedTools);
@@ -156,38 +192,76 @@ async function buildTools(p: OpenRunParams, skills: ReturnType<typeof loadSkills
   if (p.writeRoot && on('Edit')) tools.push(editTool);
   for (const extra of p.extraTools ?? []) if (on(extra.name)) tools.push(extra);
   if (!denied.has('Bash') && p.allowedTools.some((t) => t === 'Bash' || t.startsWith('Bash('))) tools.push(bashToolFor(bashPrefixesOf(p.allowedTools)));
-  const mcpAllowed = p.allowedTools.filter((t) => t.startsWith('mcp__') && !denied.has(t));
+  // A sub-agent of a kind has no MCP tool (`toolsOfKind` drops them), so its servers are not asked about.
+  const mcpAllowed = p.kind ? [] : p.allowedTools.filter((t) => t.startsWith('mcp__') && !denied.has(t));
   if (mcpAllowed.length) {
     const servers: Record<string, McpServerConfig> = loadMcpConfigs(p.docs?.mcpConfigs ?? []);
     tools.push(...(await mcpTools(servers, mcpAllowed, (s, e) => console.error('[open-engine] mcp', s, e.message))));
   }
   if (on('Agent') && (p.depth ?? 0) === 0) {
+    // In `delegate` mode the tool hands work to a sub-agent of a kind; the kinds are fixed for the session, from the tools the principal has at this point.
+    if (mode === 'delegate') delegation.kinds = offeredKinds({ lists: p.pool?.activities, tools, writes: !!p.writeRoot });
+    const kinds = delegation.kinds;
     tools.push({
       name: 'Agent',
-      description:
-        // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
-        'Delegates a focused, read-only task to a sub-agent that has the same read tools and returns only its final answer. ' +
-        // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
-        `Use it for broad searches that would flood your context.${agents.length ? ` Known subagent_type values: ${agents.map((a) => a.name).join(', ')}.` : ''}`,
+      activity: 'explore',
+      description: kinds.length
+        ? // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+          'Hands a task to a sub-agent of the given kind. The sub-agent starts with an empty history, has only the tools of that kind and returns only its final answer, so write the complete task: it sees nothing of this conversation. ' +
+          // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+          `Kinds: ${kinds.map((k) => `${k} (${KIND_HINT[k]})`).join('; ')}.${agents.length ? ` Known subagent_type values: ${agents.map((a) => a.name).join(', ')}.` : ''}`
+        : // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+          'Delegates a focused, read-only task to a sub-agent that has the same read tools and returns only its final answer. ' +
+          // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+          `Use it for broad searches that would flood your context.${agents.length ? ` Known subagent_type values: ${agents.map((a) => a.name).join(', ')}.` : ''}`,
       parameters: {
         type: 'object',
         properties: {
           // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
           description: { type: 'string', description: 'Three to five words' },
           prompt: { type: 'string', description: 'The complete task for the sub-agent' },
+          ...(kinds.length ? { kind: { type: 'string', enum: kinds, description: 'The kind of sub-agent: which tools it has' } } : {}),
           subagent_type: { type: 'string', description: 'Optional agent definition name' },
           // i18n-ignore-end
         },
-        required: ['prompt'],
+        required: kinds.length ? ['prompt', 'kind'] : ['prompt'],
       },
       async run(input, ctx) {
         const def = agents.find((a) => a.name === input.subagent_type) ?? null;
-        const text = await runAgent(def, String(input.prompt ?? ''));
+        let text: string;
+        if (kinds.length) {
+          if (!isSubKind(input.kind) || !kinds.includes(input.kind)) throw new ToolError(t('main.engine.text.subKind', { kind: String(input.kind ?? ''), kinds: kinds.join(', ') }));
+          text = await runAgent(def, String(input.prompt ?? ''), input.kind);
+        } else {
+          text = await runAgent(def, String(input.prompt ?? ''));
+        }
         return { response: text, render: (r) => String(r).slice(0, ctx.outputMax) };
       },
     });
   }
   return tools;
+}
+
+// What each kind of sub-agent is for, as the principal reads it in the tool and in the prompt.
+const KIND_HINT: Record<SubKind, string> = {
+  // i18n-ignore-start: prompt and tool texts the open engine sends the model: English by design
+  explore: 'read and search',
+  edit: 'change files',
+  shell: 'run commands',
+  screen: 'drive the virtual screen',
+  // i18n-ignore-end
+};
+
+/** What a sub-agent of a kind is told: its job is the task, and its answer is all the principal reads. */
+function subagentNote(kind: SubKind): string {
+  // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+  return `You are a sub-agent of kind ${kind} (${KIND_HINT[kind]}), handed one task by another agent that sees only your final answer. Do the task completely with your tools, then answer with a short report: what you did, what you found, and anything the other agent must check. Do not ask questions; if something is missing, say what in the report.`;
+}
+
+/** The paragraph that tells the principal to delegate by kind: only the kinds on offer, and that the sub-agent sees none of the conversation. */
+function delegationNote(kinds: SubKind[]): string {
+  // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
+  return `Sub-agents: the Agent tool hands a task to a sub-agent of a kind (${kinds.join(', ')}). A sub-agent starts with an empty history and has only the tools of its kind, so give it the complete task: the files, what to change or run and how to tell it worked. Hand it the work of its kind (${kinds.filter((k) => k !== 'explore').map((k) => `${k}: ${KIND_HINT[k]}`).join('; ') || 'nothing but reading'}) one task at a time, do not edit yourself the files a sub-agent is editing, and read its final answer instead of doing the work again.`;
 }
 
 /** The message that shows the model the images its tools read: one line naming them, then each picture. */
@@ -256,33 +330,98 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   const sessionId = prior && p.resume ? p.resume : randomUUID();
   const messages: ChatMessage[] = prior ? messagesOf(prior) : [];
   const usage: UsageRecord = { promptTokens: 0, completionTokens: 0, cachedTokens: 0 };
-  const write = (message: ChatMessage, u?: UsageRecord): void => {
+  const write = (message: ChatMessage, u?: UsageRecord, model?: string, meta?: Completion['meta']): void => {
     messages.push(message);
-    if (persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'msg', at: now().toISOString(), message, ...(u ? { usage: u, model: client.cfg.model } : {}) }]);
+    if (persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'msg', at: now().toISOString(), message, ...(u ? { usage: u, model: model ?? client.cfg.model } : {}), ...(meta?.tier ? { tier: meta.tier } : {}), ...(meta?.requestId ? { requestId: meta.requestId } : {}) }]);
   };
+  // The models of the pool, the one that answers each turn; a lone model is the pool of one.
+  const primary: PoolMember = {
+    key: p.pool?.primary.key ?? `${client.baseUrl}|${client.cfg.model}`,
+    model: client.cfg.model,
+    label: p.pool?.primary.label ?? client.cfg.model,
+    provider: p.pool?.primary.provider,
+    client,
+    images: p.capabilities?.images,
+    tools: p.capabilities?.tools,
+    contextWindow: p.capabilities?.contextWindow,
+    ...(p.params ? { params: p.params } : {}),
+  };
+  // How the pool is used. Without lists for explore, edit, shell or screen only a busy model moves the call (`fallback`); a pool the engine is given without a mode
+  // is a `switch` one. `switch` sends each turn to its activity's list, the other two keep the model in use on the role's `write` list.
+  // A call with no pool at all has no list to switch by: it is a plain `fallback`, and its main model asks for one effort (that of `write`) on every turn.
+  const mode = !p.pool ? 'fallback' : p.pool.mode ? effectivePoolMode(p.pool.mode, p.pool.activities) : 'switch';
+  const pool =
+    p.poolClient ??
+    new PoolClient(primary, p.pool, {
+      route: mode === 'switch' ? 'activity' : 'fixed',
+      ...(p.tuning ? { tuning: p.tuning } : {}),
+      onWait: () => events.onWait?.(),
+      onSwitch: (e) => {
+        if (persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'switch', at: now().toISOString(), from: e.from.label, to: e.to.label, reason: e.reason, until: e.until, activity: e.activity }]);
+        events.onSwitch?.(e);
+      },
+    });
+  // What the next turn answers: the start of a stage and anything the person or the loop says is `write`; tool results set it (see `activityOf`).
+  let activity: Activity = p.startActivity ?? 'write';
 
   // --- tools
-  const runAgent = async (def: AgentDef | null, prompt: string): Promise<string> => {
-    const r = await runOpen<string>({
-      ...p,
-      role: `${p.role}:${def?.name ?? 'agent'}`,
-      prompt,
-      schema: undefined,
-      resume: undefined,
-      allowedTools: p.allowedTools.filter((t) => t !== 'Agent'),
-      systemAppend: def?.body || undefined,
-      maxTurns: 12,
-      sessionsDir: null,
-      sources,
-      depth: (p.depth ?? 0) + 1,
-    });
-    usage.promptTokens += r.usage.promptTokens;
-    usage.completionTokens += r.usage.completionTokens;
-    usage.cachedTokens += r.usage.cachedTokens;
-    return r.data;
+  // Sub-agents that change something (edit, shell, screen) run one at a time, in the order they were asked: a chain of promises per loop.
+  let mutating: Promise<unknown> = Promise.resolve();
+  const delegatedTo = new Set<string>();
+  const principalOnly = new Set((p.extraTools ?? []).filter((x) => x.principalOnly).map((x) => x.name));
+  const inOrder = <R,>(work: () => Promise<R>): Promise<R> => {
+    const result = mutating.then(work);
+    mutating = result.catch(() => undefined);
+    return result;
+  };
+  const runAgent = async (def: AgentDef | null, prompt: string, kind?: SubKind): Promise<string> => {
+    // A sub-agent of a kind runs on the list of its own activity when the pool has one; without it, and for a plain sub-agent, on the principal's pool.
+    const own = kind ? modelOfKind(kind, p.pool) : null;
+    let model = own?.pool.primary.label ?? pool.member.label;
+    // The thread hears when a sub-agent runs on another model than the main one: once per kind and model in the session.
+    if (own && own.pool.primary.key !== pool.member.key) {
+      const told = `${kind}|${own.pool.primary.key}`;
+      if (!delegatedTo.has(told)) {
+        delegatedTo.add(told);
+        events.onSwitch?.({ from: { label: pool.member.label, provider: pool.member.provider }, to: { label: own.pool.primary.label, provider: own.pool.primary.provider }, reason: 'delegate', until: null, activity: kind as SubKind });
+      }
+    }
+    const sub = async (): Promise<OpenRunResult<string>> =>
+      runOpen<string>({
+        ...p,
+        role: `${p.role}:${def?.name ?? kind ?? 'agent'}`,
+        prompt,
+        schema: undefined,
+        resume: undefined,
+        // `Agent` is the principal's alone, and so is every tool that writes into the principal's place (the memory's write tools): a sub-agent reads.
+        allowedTools: p.allowedTools.filter((t) => t !== 'Agent' && !principalOnly.has(t)),
+        systemAppend: [def?.body, kind ? subagentNote(kind) : undefined].filter(Boolean).join('\n\n') || undefined,
+        maxTurns: kind ? KIND_TURNS[kind] : 12,
+        sessionsDir: null,
+        sources,
+        depth: (p.depth ?? 0) + 1,
+        ...(own ? { client: own.client, capabilities: own.capabilities, params: own.params, pool: own.pool, poolClient: undefined } : { poolClient: pool }),
+        startActivity: 'explore',
+        ...(kind ? { kind, incoming: undefined, events: { ...events, onUsage: (u) => { model = u.model; events.onUsage?.(u); } } } : {}),
+      });
+    try {
+      const r = await (kind && MUTATING_KINDS.has(kind) ? inOrder(sub) : sub());
+      usage.promptTokens += r.usage.promptTokens;
+      usage.completionTokens += r.usage.completionTokens;
+      usage.cachedTokens += r.usage.cachedTokens;
+      if (kind && persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'sub', at: now().toISOString(), kind, model, turns: r.turns, promptTokens: r.usage.promptTokens, completionTokens: r.usage.completionTokens }]);
+      return r.data;
+    } catch (e) {
+      // Out of turns is the sub-agent's failure, not the principal's: the principal reads it and decides (what the sub-agent did on disk stays).
+      if (kind && e instanceof OpenMaxTurnsError) throw new ToolError(t('main.engine.text.subTurns', { kind, turns: KIND_TURNS[kind] }));
+      throw e;
+    }
   };
   const toolsAllowed = client.learned.noTools !== true && p.capabilities?.tools !== false;
-  const impls = toolsAllowed ? await buildTools(p, skills, agents, runAgent) : [];
+  const delegation: Delegation = { kinds: [] };
+  const built = toolsAllowed ? await buildTools(p, skills, agents, runAgent, mode, delegation) : [];
+  // A sub-agent of a kind has the tools of that kind among the ones its parent has, and no others.
+  const impls = p.kind ? toolsOfKind(p.kind, built) : built;
   const byApi = new Map(impls.map((t) => [toApiName(t.name), t]));
   const roots = [p.cwd, ...(p.additionalDirectories ?? []), ...(docs.docDirs ?? []), ...(docs.skillDirs ?? [])];
   const outputMax = p.toolOutputMax ?? (p.capabilities?.contextWindow ? Math.max(4000, Math.min(30_000, Math.floor(p.capabilities.contextWindow * 1.2))) : 30_000);
@@ -295,11 +434,13 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     writeRoot: p.writeRoot ?? null,
     writeReserved: p.writeReserved,
     writeAllow: p.writeAllow,
+    writeAnywhere: p.writeAnywhere,
+    writeKeep: p.writeKeep,
     outputMax,
     env: { ...(p.writeRoot ? scrubbedEnv(process.env) : (process.env as Record<string, string>)), ...p.shellEnv },
     bashPrefixes: bashPrefixesOf(p.allowedTools),
     ripgrep: p.ripgrep ?? 'auto',
-    seesImages: () => p.capabilities?.images !== false && client.learned.noImages !== true,
+    seesImages: () => pool.member.images !== false && pool.member.client.learned.noImages !== true,
   };
   const policy = policyFromHooks(p.hooks, sessionId);
 
@@ -344,7 +485,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       skills: impls.some((t) => t.name === 'Skill') ? skills : [],
       agents: impls.some((t) => t.name === 'Agent') ? agents : [],
       docs: docFiles,
-      append: [p.systemAppend, structuredNote].filter(Boolean).join('\n\n'),
+      append: [p.systemAppend, delegation.kinds.length ? delegationNote(delegation.kinds) : '', structuredNote].filter(Boolean).join('\n\n'),
       toolNames: impls.map((t) => t.name),
       now: now(),
     });
@@ -357,15 +498,23 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   write({ role: 'user', content: p.prompt });
 
   // --- helpers
-  const call = async (o: { tools?: ToolDef[]; toolChoice?: ToolChoice; responseFormat?: Json }): Promise<Completion> => {
-    const window = p.capabilities?.contextWindow;
-    if (window && estimateTokens(messages) + estimateTokens(o.tools ?? []) > window * 0.8) compact(messages);
+  const call = async (o: { tools?: ToolDef[]; toolChoice?: ToolChoice; responseFormat?: Json; activity?: Activity }): Promise<Completion> => {
+    const need = () => ({ activity: o.activity ?? activity, tools: !!o.tools?.length, tokens: weigh(messages, o.tools) });
+    const window = pool.peek(need()).contextWindow;
+    if (window && need().tokens > window * 0.8) compact(messages);
     let compacted = false;
     for (;;) {
       try {
-        const c = await client.complete({ messages, tools: o.tools?.length ? o.tools : undefined, toolChoice: o.toolChoice, responseFormat: o.responseFormat, signal: p.signal, onText: events.onText, onReasoning: events.onReasoning });
+        const { completion: c, member } = await pool.complete({ messages, tools: o.tools?.length ? o.tools : undefined, toolChoice: o.toolChoice, responseFormat: o.responseFormat, signal: p.signal, onText: events.onText, onReasoning: events.onReasoning }, need(), p.kind);
         const u: UsageRecord = c.usage
-          ? { promptTokens: c.usage.promptTokens, completionTokens: c.usage.completionTokens, cachedTokens: c.usage.cachedTokens, ...(c.usage.costUsd !== undefined ? { costUsd: c.usage.costUsd } : {}) }
+          ? {
+              promptTokens: c.usage.promptTokens,
+              completionTokens: c.usage.completionTokens,
+              cachedTokens: c.usage.cachedTokens,
+              ...(c.usage.costUsd !== undefined ? { costUsd: c.usage.costUsd } : {}),
+              ...(c.usage.cacheWriteTokens !== undefined ? { cacheWriteTokens: c.usage.cacheWriteTokens } : {}),
+              ...(c.usage.reasoningTokens !== undefined ? { reasoningTokens: c.usage.reasoningTokens } : {}),
+            }
           : {
               promptTokens: estimateTokens(messages) + estimateTokens(o.tools ?? []),
               completionTokens: estimateTokens(c.text) + estimateTokens(c.toolCalls),
@@ -375,11 +524,12 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         usage.promptTokens += u.promptTokens;
         usage.completionTokens += u.completionTokens;
         usage.cachedTokens += u.cachedTokens;
-        events.onUsage?.({ ...u, sessionId, role: p.role, model: client.cfg.model });
+        events.onUsage?.({ ...u, sessionId, role: p.role, model: member.client.cfg.model });
         const msg: ChatMessage = { role: 'assistant', content: c.text };
         if (c.toolCalls.length) msg.tool_calls = c.toolCalls;
         if (c.reasoning) msg.reasoning_content = c.reasoning;
-        write(msg, u);
+        pool.stamp(msg, member);
+        write(msg, u, member.client.cfg.model, c.meta);
         return c;
       } catch (e) {
         if (e instanceof EngineError && e.kind === 'context' && !compacted && compact(messages, 1, 600)) {
@@ -413,6 +563,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       return { text: r.render(rewritten ?? r.response), ...(r.images?.length ? { images: r.images } : {}) };
     } catch (e) {
       if (e instanceof EngineError && e.kind === 'aborted') throw e;
+      // A sub-agent's model that refuses by budget or by key ends the call as the principal's own would (a budget is a wait for the stage), not a tool error to read.
+      if (e instanceof EngineError && (e.kind === 'budget' || e.kind === 'auth')) throw e;
       return fail(e instanceof ToolError ? e.message : `${(e as Error).message}`);
     }
   };
@@ -443,6 +595,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     const message = await p.incoming((text) => events.onInterim?.(incomingActivity(text)));
     if (message === null) return false;
     write({ role: 'user', content: incomingText(message) });
+    activity = 'write';
     return true;
   };
   const throughDoor = async (stepText?: string): Promise<DoorTurn> => {
@@ -454,7 +607,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     const ready = stepText === undefined ? null : extractAnswer(stepText, p.schema as Json);
     if (ready?.ok) return { took: 'answer', value: ready.value as Json };
     write({ role: 'user', content: t('main.engine.text.collect') });
-    const last = await call({ tools: [], responseFormat });
+    const last = await call({ tools: [], responseFormat, activity: 'write' });
     const got = extractAnswer(last.text, p.schema as Json);
     if (got.ok) return { took: 'answer', value: got.value as Json };
     return { took: 'bad', errors: describeErrors(got.errors) };
@@ -490,6 +643,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         for (const tc of c.toolCalls) write(toolMessage(tc, tc === fin ? t('main.engine.text.fixFinal', { errors: describeErrors(errors), tool: FINAL }) : t('main.engine.text.ignoredShort')));
         if (repairs++ >= 2) throw new StructuredOutputError(describeErrors(errors));
         forceFinal = true;
+        activity = 'write';
         continue;
       }
       if (c.text.trim()) events.onInterim?.(c.text);
@@ -498,6 +652,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       // A tool message carries text only: the pictures the tools read follow in one message the model reads right after them.
       const images = results.flatMap((r) => r.images ?? []);
       if (images.length) write(imageMessage(images));
+      // The next turn answers what these tools returned: the most demanding of them decides which models may take it.
+      activity = activityOf(c.toolCalls.map((tc) => byApi.get(tc.function.name)?.activity), images.length > 0);
       // A message that arrived while the tools ran is handed over now, with their results: the agent hears it on its next step, whatever it is doing.
       if (await deliver()) {
         noteSteps = 0;
@@ -535,6 +691,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       turns--;
       write({ role: 'user', content: t('main.engine.text.callFinal', { tool: FINAL }) });
       forceFinal = true;
+      activity = 'write';
       continue;
     }
     if (strategy === 'tool') throw new StructuredOutputError(describeErrors(parsed.errors));
@@ -545,16 +702,17 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     if (door) {
       if (doorRepairs++ >= 1) throw new StructuredOutputError(describeErrors(parsed.errors));
       write({ role: 'user', content: t('main.engine.text.invalidAnswer', { errors: describeErrors(parsed.errors) }) });
+      activity = 'write';
       if (turns >= p.maxTurns) throw new OpenMaxTurnsError(sessionId, sources);
       turns++;
       continue;
     }
     write({ role: 'user', content: strategy === 'response_format' ? finalizePrompt() : `${finalizePrompt()} ${t('main.engine.text.previousProblems', { errors: describeErrors(parsed.errors) })}` });
-    let last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
+    let last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined, activity: 'write' });
     let fixed = extractAnswer(last.text, p.schema);
     if (!fixed.ok) {
       write({ role: 'user', content: t('main.engine.text.invalidAnswer', { errors: describeErrors(fixed.errors) }) });
-      last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined });
+      last = await call({ responseFormat: strategy === 'response_format' ? responseFormat : undefined, activity: 'write' });
       fixed = extractAnswer(last.text, p.schema);
     }
     if (fixed.ok) return done(fixed.value, turns);

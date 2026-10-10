@@ -1,12 +1,18 @@
 import { useState } from 'react';
+import { runKey } from '../../../../shared/browser';
+import { runThreadId } from '../../../../shared/forum';
 import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { shownText } from '../../../../shared/cycles/text';
 import { type FlowStage, type Run, type StageUsage, hasUsage } from '../../../../shared/runs';
+import type { ProcedureUse } from '../../../../shared/procedures';
 import { type CommentRow, type StageRow, type StageState, canUndoPost, commentRows, stageRows, usageParams } from '../../../../shared/runs/view';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import { ArtifactView } from './ArtifactView';
+import { LiveScreen } from './LiveScreen';
+import { asksOf } from './askView';
+import { useScreens } from './useScreens';
 import { WAIT_KEY, agentName, agentRole } from './names';
 import { runsApi } from './runsApi';
 
@@ -107,6 +113,22 @@ function Usage({ usage }: { usage: StageUsage }) {
   return <p className="faint small cy-usage">{t(key, { calls: p.calls, prompt: p.prompt, cached: p.cached, completion: p.completion, cost: p.cost ?? '' })}</p>;
 }
 
+const PROCEDURE_KEY = { ok: 'ui.cycle.stage.procedureUsed', failed: 'ui.cycle.stage.procedureFailed', replaced: 'ui.cycle.stage.procedureReplaced' } as const;
+
+/** The procedures the stage's agent read, one chip each: the title, and whether a step failed or the agent replaced it. A failure stands out, nothing else does. */
+function Procedures({ uses }: { uses: readonly ProcedureUse[] }) {
+  const t = useT();
+  return (
+    <ul className="cy-artifacts" aria-label={t('ui.cycle.stage.procedures')}>
+      {uses.map((u) => (
+        <li key={u.id}>
+          <span className={`badge ${u.outcome === 'failed' ? 'badge-block' : 'badge-quiet'}`}>{t(PROCEDURE_KEY[u.outcome], { title: u.title })}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow; comments: CommentRow[]; config: WorkspaceConfig | null; go: (s: Screen) => void; view: (name: string) => void }) {
   const t = useT();
   const { stage, record, state } = row;
@@ -114,6 +136,11 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
   const agent = stage.agent;
   // What the stage's agent does when it is entered: the record keeps what it was then; a stage not entered yet shows what it would be now.
   const autonomous = record ? record.autonomous : stage.autonomous;
+  // The agent's virtual screen, while this is the stage working on one. A viewer that is open stays when the stage ends, so it can say so.
+  const [watching, setWatching] = useState(false);
+  // The questions waiting on the stage's screen are answered from its viewer; the list is read only while the viewer is open.
+  const open = useScreens(watching ? runThreadId(run.id) : null);
+  const hasScreen = row.current && state === 'running' && run.screen?.stage === stage.id;
   return (
     <li className="cy-stage" data-state={state} aria-current={row.current ? 'step' : undefined}>
       <span className="cy-dot" aria-hidden="true" />
@@ -122,6 +149,7 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
           <h3 className="cy-stage-name">{shownText(stage.label)}</h3>
           <span className="badge badge-quiet">{t(TYPE_KEY[stage.type])}</span>
           <span className={`cy-stage-state cy-s-${state}`}>{t(STATE_KEY[state])}</span>
+          {hasScreen && <button type="button" className="btn cy-mini" onClick={() => setWatching(true)}>{t('ui.cycle.live.open')}</button>}
           {record && record.attempts > 1 && <span className="faint small">{t('ui.cycle.stage.attempts', { count: record.attempts })}</span>}
         </div>
         {agent && (
@@ -134,13 +162,19 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
         {stage.type === 'wait' && stage.waitsFor && <p className="small faint">{t(WAIT_KEY[stage.waitsFor.kind], { label: stage.waitsFor.label ?? '', minutes: stage.waitsFor.minutes ?? 0 })}</p>}
         {record?.startedAt && <p className="faint small">{t('ui.cycle.stage.since', { when: when(record.startedAt) })}{record.endedAt ? ` · ${t('ui.cycle.stage.until', { when: when(record.endedAt) })}` : ''}</p>}
         {record && hasUsage(record.usage) && <Usage usage={record.usage} />}
+        {record?.procedures && record.procedures.length > 0 && <Procedures uses={record.procedures} />}
         {record && record.artifacts.length > 0 && (
           <ul className="cy-artifacts" aria-label={t('ui.cycle.stage.artifacts')}>
-            {record.artifacts.map((name) => (
-              <li key={name}>
-                <button type="button" className="cy-file mono" onClick={() => view(name)}>{name}</button>
-              </li>
-            ))}
+            {record.artifacts.map((name) => {
+              // A resumed stage merges the artifacts of its attempts; the badge says which attempt each one is from, when the run recorded it.
+              const attempt = record.attempts > 1 ? record.artifactAttempts?.[name] : undefined;
+              return (
+                <li key={name}>
+                  <button type="button" className="cy-file mono" onClick={() => view(name)}>{name}</button>
+                  {attempt !== undefined && <span className="faint small"> · {t('ui.cycle.stage.attemptOf', { count: attempt })}</span>}
+                </li>
+              );
+            })}
           </ul>
         )}
         {comments.length > 0 && (
@@ -149,6 +183,7 @@ function Row({ run, row, comments, config, go, view }: { run: Run; row: StageRow
           </ul>
         )}
       </div>
+      {watching && <LiveScreen screenKey={runKey(run.id)} state={run.screen ?? null} asks={asksOf(open).filter((a) => a.key === runKey(run.id))} team={team} onClose={() => setWatching(false)} />}
     </li>
   );
 }

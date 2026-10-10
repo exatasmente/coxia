@@ -1,4 +1,5 @@
 import type { SandboxGui } from '../sandbox/session';
+import { OUT } from '../sandbox/policy';
 import type { AgentDef, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type AttachmentRef, formatBytes, kindLabelKey } from '../../shared/attachments';
 import { type ForumMessage, messageText } from '../../shared/forum';
@@ -9,6 +10,7 @@ import { prompt as cp, text as cycleWord } from '../cyclePrompts';
 import type { CommandResult } from './commands';
 import { type FolderFile, ISSUE_FILE, MEMORY_FILE } from './cycleFolder';
 import { MEMORY_MAX } from './memory';
+import { type ScreenPrompt, screenRules, shellRules } from './screenPrompt';
 
 // The text a stage's agent is given. The ids are `runner.*` prompts of the catalogs (the base family): the app's own wording, in the workspace's
 // language. Everything that came from outside (the issue, comments, the thread, files, the diff) goes between <data> tags and the system text says
@@ -42,6 +44,8 @@ export interface StageInput {
   commandResults?: CommandResult[];
   /** The stage's agent runs commands in a sandbox: what it is told about it (and that a reader works in a copy). */
   sandbox?: { network: 'off' | 'registry' | 'open'; reader: boolean; host?: boolean; gui?: SandboxGui; look?: boolean };
+  /** What the agent is told of its screen, its own hosts and the app's browser; absent for an agent with neither the switch nor a host list. */
+  screen?: ScreenPrompt;
   /** The commands are numbered in the prompt (a stage with a sandbox: the agent cites them as the evidence of a scenario). */
   numberedCommands?: boolean;
   /** The agent has the evidence tools: what it is told about keeping a file and citing its id. */
@@ -72,8 +76,30 @@ export interface StageInput {
   plugins?: { name: string; note: string }[];
   /** The cycle memory of the run: whether it passed its cap and what the cap is. The file itself arrives in `files`, first. */
   memory?: { over: boolean; max: number } | null;
+  /** What the app knows of the activities of the workspace, rendered: the front of this activity whole and the rest in short, or "" (then no section). */
+  shared?: string;
+  /**
+   * The workspace's learned procedures: the call has the tools when this is a string (then the rules are in the system text), and the list is the string itself,
+   * rendered; "" is a call with the tools and nothing listed (no section). Absent: no tools, and neither rules nor section.
+   */
+  procedures?: string;
+  /** The call has the app's browser, so it is also given the draft: the rules say to keep a screen task with `procedures_draft`. Only with `procedures`. */
+  proceduresGui?: boolean;
+  /** The call has the app's shell, so it is also given the draft of its commands: the rules say to keep a task fought with commands with `procedures_draft`. Only with `procedures`. */
+  proceduresCmd?: boolean;
+  /**
+   * The shared memory (#215): the call has a session when this is a string, and the string is the list its prompt carries, already built (the rules are in the system text;
+   * the section is absent when the list is ""). Absent: the memory is off or could not be opened, and the prompt is what it always was.
+   */
+  index?: string;
+  /** The notices of the shared memory no stage has read yet (their text, from the run's thread): the section right after the resume block. Absent: none. */
+  notices?: string[];
+  /** The session writes: the call may also keep and remove notes of its own. Only with `index`. */
+  indexWrite?: boolean;
   /** The stage changes the branch and the repository has AGENTS.md instructions that must stay true. */
   docsKeep?: boolean;
+  /** The stage carries the workspace's test environment: it is told what that means (masked values, blocked images). */
+  testEnv?: boolean;
 }
 
 /** Why a stage runs again: the person sent the work back, a review or QA returned it, the person retried a failure, or the app restarted under it. */
@@ -119,10 +145,11 @@ export const DIFF_LIMIT = DIFF_MAX;
  * How to test an interface in this stage: the general way (the sandbox's, or the computer's for an agent that runs commands there), then one line for each piece the
  * person switched on, saying whether the stage has it. Absent when the person switched neither on, so such a stage's prompt is what it was.
  */
-function guiRules(gui: SandboxGui, look: boolean, host: boolean): string {
+function guiRules(gui: SandboxGui, look: boolean, host: boolean, screen?: ScreenPrompt): string {
   const out = gui.out ?? '';
+  // An agent that has the app's browser is told that its own Playwright is for the app under test: the text that says "no network" or "never an external address" reads it.
   return [
-    host ? cp('runner.rules.gui.host', { out }) : cp('runner.rules.gui'),
+    host ? (screen?.screen ? cp('runner.rules.gui.host.screen', { out }) : cp('runner.rules.gui.host', { out })) : screen?.screen ? cp('runner.rules.gui.screen') : cp('runner.rules.gui'),
     gui.browsers ? cp('runner.rules.gui.browsers', { path: gui.browsers }) : gui.browsersGone ? cp('runner.rules.gui.noBrowsers') : '',
     gui.display === 'on' ? cp('runner.rules.gui.display') : gui.display === 'missing' || gui.display === 'failed' ? cp('runner.rules.gui.noDisplay') : '',
     look ? (host ? cp('runner.rules.gui.look.host', { out }) : cp('runner.rules.gui.look')) : cp('runner.rules.gui.noLook'),
@@ -141,14 +168,22 @@ export function systemText(i: StageInput): string {
     cp('runner.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.run.issue.ref, title: i.run.issue.title, stage: cycleWord(i.stage.label) }),
     i.squad ? cp('runner.squad.system', { squad: cycleWord(i.squad.name), mission: i.squad.mission.trim() ? cycleWord(i.squad.mission) : '—' }) : '',
     rules,
-    i.sandbox ? (i.sandbox.host ? cp('runner.rules.shell.host') : i.sandbox.network === 'open' ? cp('runner.rules.shell.open') : i.sandbox.network === 'registry' ? cp('runner.rules.shell.registry') : cp('runner.rules.shell')) : '',
+    i.sandbox ? shellRules(i.sandbox, i.screen) : '',
     i.sandbox?.reader ? (i.sandbox.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
-    i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true, i.sandbox.host === true) : '',
+    i.sandbox?.gui ? guiRules(i.sandbox.gui, i.sandbox.look === true, i.sandbox.host === true, i.screen) : '',
+    i.testEnv ? cp('runner.rules.testEnv') : '',
+    screenRules(i.screen),
     cp('runner.rules.data'),
     cp('runner.rules.memory', { max: MEMORY_MAX }),
     cp('runner.rules.claims'),
     cp('runner.rules.focus'),
-    i.evidence ? cp('runner.rules.evidence') : '',
+    i.procedures !== undefined ? cp('runner.rules.procedures') : '',
+    i.procedures !== undefined && i.proceduresGui ? cp('runner.rules.proceduresGui') : '',
+    i.procedures !== undefined && i.proceduresCmd ? cp('runner.rules.proceduresCmd') : '',
+    i.index !== undefined ? cp('runner.rules.sharedMemory') : '',
+    i.index !== undefined && i.indexWrite ? cp('runner.rules.sharedMemoryWrite') : '',
+    // The folder of the stage's evidence is named as this stage has it: the sandbox's `/coxia/out`, or the real folder a host session saves in.
+    i.evidence ? cp(i.sandbox?.host && i.sandbox.gui?.out ? 'runner.rules.evidence.host' : 'runner.rules.evidence', { out: i.sandbox?.gui?.out ?? OUT }) : '',
     i.docsKeep ? cp('runner.docs.keep') : '',
     agents.persona.trim(),
     agents.extraInstructions.trim(),
@@ -234,6 +269,8 @@ export function stagePrompt(i: StageInput): string {
   // A stage that runs again opens with why and what was asked; the handoff is said there, so it is not repeated in the thread or at the end.
   const resume = i.resume && !i.answer ? i.resume : null;
   if (resume) sections.push(resumeSection(i, resume));
+  // What was written elsewhere in the memory since the last stage read the thread comes right after the app's own framing of this attempt, and before the folder.
+  if (i.notices?.length) sections.push(cp('runner.section.sharedNew', { text: fence(i.notices.join('\n\n')) }));
   for (const f of i.files) {
     sections.push(cp('runner.section.file', { name: f.name === ISSUE_FILE ? `${f.name} (${t('main.runner.issueFile')})` : f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') }));
     if (f.name === MEMORY_FILE && i.memory?.over) sections.push(cp('runner.section.memoryOver', { max: i.memory.max }));
@@ -243,6 +280,11 @@ export function stagePrompt(i: StageInput): string {
     sections.push(cp('runner.section.diff', { stat: i.diff.stat, text: fence(body) + (i.diff.clipped || i.diff.text.length > DIFF_MAX ? `\n${cp('runner.section.diffClipped')}` : '') }));
   }
   if (i.commandResults) sections.push(commandsSection(i.commandResults, i.numberedCommands));
+  // What the app knows of the other activities, and of this one whole: material to consult, under its own tags (specification rules 5 to 7).
+  // With the shared memory on, this section holds the activity the call is about, whole; the others are lines of the index just below.
+  if (i.shared) sections.push(i.index !== undefined ? cp('runner.section.sharedOne', { text: fence(i.shared) }) : cp('runner.section.shared', { text: fence(i.shared) }));
+  if (i.index) sections.push(cp('runner.section.sharedIndex', { text: fence(i.index) }));
+  if (i.procedures) sections.push(cp('runner.section.procedures', { text: fence(i.procedures) }));
   if (i.release) sections.push(i.release);
   if (i.plugins?.length) sections.push(cp('runner.section.plugins', { text: fence(i.plugins.map((p) => `${p.name}: ${p.note}`).join('\n')) }));
   if (i.earlier?.length) sections.push(cp('runner.section.rounds', { text: fence(roundsText(i.earlier)) }));
@@ -260,6 +302,6 @@ export function stagePrompt(i: StageInput): string {
     folder: i.run.cycleFolder,
     expected: i.stage.artifacts.length ? cp('runner.expected', { artifacts: i.stage.artifacts.join(', ') }) : cp('runner.expected.none'),
     sections: sections.join('\n\n'),
-    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? [cp('runner.output.qa'), i.sandbox ? cp('runner.output.evidence') : ''].filter(Boolean).join(' ') : cp('runner.output.work'), cp('runner.output.memory', { max: MEMORY_MAX }), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
+    output: [i.kind === 'review' ? [cp('runner.output.review'), i.earlier?.length ? cp('runner.output.reviewAgain', { round: (i.earlier.at(-1)?.round ?? 0) + 1 }) : ''].filter(Boolean).join(' ') : i.kind === 'qa' ? [cp('runner.output.qa'), i.sandbox ? cp('runner.output.evidence', { out: i.sandbox.gui?.out ?? OUT }) : ''].filter(Boolean).join(' ') : cp('runner.output.work'), cp('runner.output.memory', { max: MEMORY_MAX }), i.turnsTo ? cp('runner.output.ask', { agent: i.turnsTo }) : '', i.reporter ? cp('runner.output.reporter') : '', i.priority?.length ? cp('runner.output.priority', { labels: i.priority.join(', ') }) : '', i.priorityHint?.length ? cp('runner.output.priorityHint', { labels: i.priorityHint.join(', ') }) : '', i.routing ? cp(`runner.output.squad.${i.routing.why}`, { squads: i.routing.squads.map(squadLine).join('\n') }) : '', commentPrompt(i)].filter(Boolean).join('\n\n'),
   });
 }

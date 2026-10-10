@@ -72,6 +72,7 @@ export function bashDescription(prefixes: string[]): string {
 
 export const bashTool: ToolImpl = {
   name: 'Bash',
+  activity: 'shell',
   description: bashDescription([]),
   parameters: {
     type: 'object',

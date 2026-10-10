@@ -3,6 +3,7 @@ import { useT } from '../../i18n';
 import { CommentsEditor } from './CommentsEditor';
 import { FlowEditor } from './FlowEditor';
 import { RunnerSection } from './RunnerSection';
+import { TestEnvSection } from './TestEnvSection';
 import { AttachmentsSection } from './AttachmentsSection';
 import { SquadsSection } from './SquadsSection';
 import { TeamSection } from './TeamSection';
@@ -23,6 +24,7 @@ const AVAILABLE: Record<TeamTab, ((p: SectionProps & { squad?: string; suggestio
   comments: (p) => <CommentsEditor {...p} />,
   attachments: (p) => <AttachmentsSection {...p} />,
   runner: (p) => <RunnerSection {...p} />,
+  testenv: (p) => <TestEnvSection {...p} />,
 };
 
 export function TeamSettings() {

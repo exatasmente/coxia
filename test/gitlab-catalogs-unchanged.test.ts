@@ -112,6 +112,23 @@ const INTENDED: Record<string, Intended> = {
       ['paired devices, the glossary and the conflict verification commands.', 'paired devices, and the glossary. The conflict verification commands belong to each workspace (Settings › Conflict verification).'],
     ],
   },
+  // The tools switch for sub-agents also governs the sub-agents of a model pool used by delegation (the pool mode `delegate`), not only the unblock ceremony.
+  'ui.settings.tool.subagents.hint': {
+    reason: 'the sub-agents switch also governs the sub-agents a model hands edits, commands and the screen to when its pool of models is used by delegation',
+    language: 'both',
+    replace: [
+      ['delegate reading (kb-reader, Explore).', 'delegate reading (kb-reader, Explore). In runs it also lets a model hand edits, commands and the screen to sub-agents when its pool of models is used by delegation.'],
+      ['delegar leitura (kb-reader, Explore).', 'delegar leitura (kb-reader, Explore). Nas execuções, também deixa o modelo passar edição, comandos e tela a subagentes quando o conjunto de modelos é usado por delegação.'],
+    ],
+  },
+  'ui.settings.tool.subagents.label': {
+    reason: 'the switch is no longer about the unblock ceremony alone',
+    language: 'both',
+    replace: [
+      ['Subagents in the unblock', 'Subagents'],
+      ['Subagentes no desbloqueio', 'Subagentes'],
+    ],
+  },
   'main.engine.text.read.outside': {
     reason: 'the same refusal now serves a ceremony and a reading agent of a run, and it names the path tried and the folders allowed',
     language: 'both',
@@ -151,6 +168,15 @@ const INTENDED: Record<string, Intended> = {
     replace: [
       ['com a main', 'com a {target}'],
       ['with main', 'with {target}'],
+    ],
+  },
+  // The turn prompt carries an optional note that this decision was already left unanswered on earlier days.
+  'prompt.sdd.turn.main': {
+    reason: 'the turn prompt carries an optional note that the decision was already left unanswered on earlier days',
+    language: 'both',
+    replace: [
+      ['\n{specHint}\nMonte a sua vez', '\n{specHint}\n{crossDay}\nMonte a sua vez'],
+      ['\n{specHint}\nBuild your turn', '\n{specHint}\n{crossDay}\nBuild your turn'],
     ],
   },
   'ui.resolver.publish.intro': {

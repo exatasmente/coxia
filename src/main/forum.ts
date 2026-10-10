@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { ATTACHMENT_LIMITS, type AttachmentRef } from '../shared/attachments';
-import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, parseMentions, unknownMentions } from '../shared/forum';
+import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, agentThreadId, mentionableIds, parseMentions, unknownMentions } from '../shared/forum';
+import { isDraft, workingTeam } from '../shared/config/team';
 import { t } from '../shared/i18n';
 import { attachmentStore } from './attachments';
 import { ATAS } from './env';
@@ -60,6 +61,8 @@ export function attachmentPost(forum: ForumStore, agentIds: readonly string[], t
   const total = refs.reduce((n, r) => n + r.bytes, 0);
   if (total > limits.messageBytes) throw new Error(t('main.attachment.messageLimit', { max: Math.round(limits.messageBytes / 1024 / 1024) }));
   if (refs.length > limits.perMessage) throw new Error(t('main.attachment.tooMany', { max: limits.perMessage }));
+  // A recording is the app's own: the id of one that exists cannot be posted again as a person's attachment.
+  if (refs.some((r) => r.kind === 'video')) throw new Error(t('main.attachment.gone'));
   // Every ref must hold a file of this conversation, and be the size it says: a ref that points nowhere is refused, nothing is written.
   for (const r of refs) if (!storeApi.holds(thread, r.id, r.bytes)) throw new Error(t('main.attachment.gone'));
   const draft = { kind: 'post' as const, author: { type: 'person' as const }, text: body, mentions: parseMentions(body, agentIds), attachments: refs, anchor: threadAnchor(thread) };
@@ -95,10 +98,12 @@ export const forumModule: Module = (ctx) => {
     ensureGeneral(forum);
     const config = getConfig();
     ensureSquadChannels(forum, config.squads ?? [], config.language);
-    // One direct conversation per agent of the team, made as soon as the forum is listed, like the general thread and the channels.
-    for (const a of config.agents.team) ensureAgentThread(forum, a, config.language);
+    // One direct conversation per agent of the team, made as soon as the forum is listed, like the general thread and the channels. A draft has none here: the
+    // assistant makes it for the test, and it stays out of the list so an agent being tried out is no noise (no unread count) in the forum.
+    for (const a of workingTeam(config.agents.team)) ensureAgentThread(forum, a, config.language);
+    const hidden = new Set(config.agents.team.filter(isDraft).map((a) => agentThreadId(a.id)));
     const runs = runStore();
-    const all = forum.list().map((s) => (s.kind === 'run' && s.runId ? { ...s, squad: runs.get(s.runId)?.squad ?? null } : s));
+    const all = forum.list().filter((s) => !hidden.has(s.id)).map((s) => (s.kind === 'run' && s.runId ? { ...s, squad: runs.get(s.runId)?.squad ?? null } : s));
     return typeof squad === 'string' && squad ? all.filter((s) => s.squad === squad) : all;
   });
   ctx.handle('forum:read', (thread: unknown, afterSeq?: unknown, limit?: unknown): ThreadRead | null => {
@@ -107,7 +112,7 @@ export const forumModule: Module = (ctx) => {
   });
   ctx.handle('forum:post', (thread: unknown, text: unknown) => {
     const answered = interceptor && typeof thread === 'string' && typeof text === 'string' && text.trim() && text.length <= MAX_TEXT ? interceptor(thread, text, []) : null;
-    return answered ?? personPost(forum, getConfig().agents.team.map((a) => a.id), thread, text);
+    return answered ?? personPost(forum, mentionableIds(getConfig().agents.team, typeof thread === 'string' ? thread : undefined), thread, text);
   });
   ctx.handle('forum:create', (title: unknown): ThreadSummary => {
     if (typeof title !== 'string') throw new ForumError('bad-title');
@@ -148,7 +153,7 @@ export const forumModule: Module = (ctx) => {
     const refs = list.map((id) => have.find((r) => r.id === id)).filter((r): r is AttachmentRef => !!r);
     // An id the conversation no longer holds is a file the person took out: the message is not written with it silently missing.
     if (refs.length !== list.length) throw new Error(t('main.attachment.gone'));
-    return attachmentPost(forum, getConfig().agents.team.map((a) => a.id), thread, text, refs);
+    return attachmentPost(forum, mentionableIds(getConfig().agents.team, thread), thread, text, refs);
   });
   ctx.handle('forum:attachment-drop', (thread: unknown, ids: unknown): void => {
     if (typeof thread !== 'string') return;

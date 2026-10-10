@@ -1,9 +1,11 @@
+import { unconfinedOf } from '../../shared/unconfined';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
 import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
-import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, parseMentions, runThreadId } from '../../shared/forum';
+import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, mentionableIds, parseMentions, runThreadId } from '../../shared/forum';
+import { runKey } from '../../shared/browser';
 import { ATTACHMENT_KINDS, type AttachmentRef } from '../../shared/attachments';
 import { createTranslator, t } from '../../shared/i18n';
 import {
@@ -46,10 +48,13 @@ import {
   producerOf,
   defaultSendBackTarget,
   sendBackTo,
+  prRecorded,
+  prRetryAnswered,
   recordQa,
   recordEvidence,
   deleteEvidence,
   recordReview,
+  recordProcedures,
   recordUsage,
   addReport,
   emptyUsage,
@@ -89,7 +94,7 @@ import { type RunAgentCommands, countCommands, groupCommands } from '../../share
 import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
 import { ensureSquadChannels } from '../forum-channels';
-import { updateAgent } from '../../shared/config/team';
+import { updateAgent, workingTeam } from '../../shared/config/team';
 import { beginCallActivity, type RunActivity, withActivityContext } from '../activity';
 import { type AgentCall, secretPath } from '../agents';
 import { findClone, git } from '../conflictGit';
@@ -106,11 +111,18 @@ import { CYCLES_DIR, MEMORY_FILE, cycleFolderOf, issueRecord, readArtifact, read
 import { branchStateOf, releaseRecord, releaseRef, releaseTitle } from './release';
 import { DOCS_RUN_FOLDER, dayStamp, docsBranch, docsRecord, docsRef, docsTitle, ensureRunIgnore } from './docs';
 import { crMarkOf } from '../../shared/i18n/terms';
+import { prompt } from '../cyclePrompts';
 import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
+import type { ScreenHub } from '../screen/hub';
+import type { ScreenAsks } from '../browser/asks';
+import type { RecordingOutcome } from '../screen/recorder';
+import type { ScreenSessions } from '../browser/sessions';
+import type { HandoffService } from '../screen/handoff';
 import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../shared/evidence';
 import { dropEvidence, readEvidence } from '../evidence/store';
-import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
+import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, keepScreenRecording, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
+import { type ActivityFront, createSharedMemory, sortedFronts } from './activities';
 import { inboxOf } from './inbox';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree, workBase } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
@@ -118,6 +130,12 @@ import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
+import type { MemoryPort } from '../memory/port';
+import type { MemoryWrite } from '../memory/store';
+import { createNoticeHub } from './notices';
+import type { MemorySession } from '../memory/session';
+import type { ProceduresPort } from '../procedures/port';
+import type { ProcedureOffers } from '../procedures/offers';
 import { runDocsAsk, stageOfRun } from '../harness/deliver';
 import type { MentionPlace } from '../mentions/place';
 import { proposeMention } from '../mentions/propose';
@@ -128,7 +146,7 @@ import type { IssueMade, Publisher } from './publish';
 // for the person waits (to-start, to-accept). Everything goes through the run store and the forum (moveRun), so a restart resumes where the run was.
 // Nothing here writes to the code host: the issue is only read, and what the agents do stays in the worktree.
 
-export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'no-docs-flow', 'bad-docs-mode', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'worktree-gone', 'memory-busy', 'docs-folder-unsafe'] as const;
+export const RUNNER_ERROR_CODES = ['bad-version', 'no-release-flow', 'no-docs-flow', 'bad-docs-mode', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'no-host', 'worktree-gone', 'memory-busy', 'docs-folder-unsafe'] as const;
 export type RunnerErrorCode = (typeof RUNNER_ERROR_CODES)[number];
 
 export class RunnerError extends Error {
@@ -177,7 +195,7 @@ function takeCarried(runId: string, stage: string): AttachmentRef[] | undefined 
 /** The files a person attached, as the runner takes them from a caller: only what holds its own shape, so a hand-made call cannot smuggle anything in. */
 function cleanAttachments(list: readonly AttachmentRef[] | undefined): AttachmentRef[] {
   return (list ?? [])
-    .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && (ATTACHMENT_KINDS as readonly string[]).includes(a.kind) && typeof a.name === 'string')
+    .filter((a) => !!a && typeof a.id === 'string' && /^[a-f0-9]{8,32}$/.test(a.id) && (ATTACHMENT_KINDS as readonly string[]).includes(a.kind) && a.kind !== 'video' && typeof a.name === 'string')
     .map((a) => ({ id: a.id, name: a.name.slice(0, 200), kind: a.kind, bytes: Number(a.bytes) || 0 }))
     .slice(0, 50);
 }
@@ -212,6 +230,13 @@ export interface RunnerDeps {
   commandRunner?: CommandRunner;
   /** Makes the sandboxes of the agents set to `shell: sandbox`. Without it a run whose team has such an agent is refused. */
   sandbox?: SandboxService;
+  /** The live screens of the stages that have a virtual display; without it no stage opens one and no run carries `screen`. */
+  screens?: ScreenHub;
+  /** The screens of the agents that have one (the app's browser) and the questions they ask the person; without them no stage gets a browser. */
+  sessions?: ScreenSessions;
+  asks?: ScreenAsks;
+  /** The hand-off of an agent's screen to the person (#178); without it no agent is offered the tool. */
+  handoff?: HandoffService | null;
   /** Makes one small call to a provider to find out whether its key has budget again. Without it the runs that hit the refusal keep waiting. */
   probeBudget?: BudgetProbeFn;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
@@ -233,6 +258,21 @@ export interface RunnerDeps {
   pluginRelease?(runId: string): void;
   /** What the plugins that are on tell the agents, added to every stage's context; absent: nothing. */
   pluginNotes?(): { name: string; note: string }[];
+  /** The workspace's learned procedures: stages, the agents they call and the answers in a run's thread get their list and tools from here. Absent: none. */
+  procedures?: ProceduresPort;
+  /** The shared memory (#215): stages, the agents they call and the answers in a run's thread get their index and tools from here. Absent: none. */
+  memoryPort?: MemoryPort;
+  /**
+   * How the runner hears that an agent wrote a note in the shared memory (returns the way to stop listening): a run the note concerns is told in its conversation and, when
+   * a stage is working, in the session. Absent: no run is told. The switch decides at every note.
+   */
+  memoryWrites?: (listener: (write: MemoryWrite) => void) => () => void;
+  /** For a test: how long notices that arrive close together are held to be told as one, in ms. */
+  noticeMergeMs?: number;
+  /** Where the offers to keep a procedure are held: a stage and an answer in a run's thread raise them after their last turn (#187). Absent: no last turn. */
+  offers?: ProcedureOffers;
+  /** For a test: the limit of the last turn, in ms. */
+  procedureTurnMs?: number;
 }
 
 export type GateAction = 'approve' | 'reject' | 'skip';
@@ -246,6 +286,11 @@ export interface Runner {
   evidenceBytes(runId: string, id: string): { bytes: Uint8Array; record: EvidenceRecord } | null;
   /** The person removes one piece of evidence (never an agent): the file goes and the run's record with it. */
   removeEvidence(runId: string, id: string): boolean;
+  /**
+   * Keeps the recording of the screen of an agent called in the run's thread as a piece of the run's evidence, as a stage's recording is. `not` when the run is gone or the
+   * recording could not be kept (the thread then says why).
+   */
+  keepCallRecording(runId: string, agent: string, outcome: RecordingOutcome | null): 'kept' | 'not';
   start(ref: string, repoId?: string): Promise<Run>;
   /**
    * Starts the run of a release: its subject is a version, not an issue. The worktree is the run's own (the cycle documents live there); the release steps run in the
@@ -268,6 +313,8 @@ export interface Runner {
   gate(id: string, action: GateAction, reason?: string): Run;
   answer(id: string, text: string, attachments?: AttachmentRef[]): Run;
   retry(id: string): Run;
+  /** The person chose the base and asked for the pull request again (a `pr-retry` question was open): it is opened audited, and the run resumes on it. */
+  retryPr(id: string, base: string): Promise<Run>;
   cancel(id: string): Run;
   /** The person's answer to the command an agent set to `shell: host` waits to run; `commandId` must be the one waiting, so a late click never answers a newer one. */
   command(id: string, commandId: string, decision: CommandDecision, note?: string): Run;
@@ -290,6 +337,10 @@ export interface Runner {
    * working in the worktree, so the person never races an agent for the file. Returns the text as it was written (masked), or null when the run has no worktree.
    */
   editMemory(id: string, text: string): Promise<{ text: string; clipped: boolean } | null>;
+  /** The record of the activities of the workspace, oldest first: what the runs screen shows and what a call reads, without a model call. */
+  activities(): ActivityFront[];
+  /** The person corrected one activity's front: masked, capped, marked as theirs and kept for the next projection. Null when that activity is unknown. */
+  correctActivity(ref: string, text: string): ActivityFront | null;
   /** The person decides the squad of a run that waits for it (the scope rules could not pick one and the front door does not run by itself); null: go on with no squad. */
   setSquad(id: string, squad: string | null): Run;
   /** Removes a squad from the workspace. Its active runs go on with no squad, but only after the person confirms: without `confirm` nothing changes and the runs are listed. */
@@ -331,7 +382,9 @@ export function createRunner(deps: RunnerDeps): Runner {
   const flowNow = (): FlowStage[] => flowOf(squadView(deps.config(), null));
   // A run follows the flow it started with (a copy it carries), with the agents as they are now.
   const flowFor = (run: Run): FlowStage[] => flowOfRun(run, deps.config());
-  const d = { runs: deps.runs, forum: deps.forum };
+  // The record of the activities of the workspace, written where the app keeps its own files (never in a worktree): every move of a run keeps its front.
+  const activities = createSharedMemory(deps.env().dataDir, () => deps.now?.() ?? new Date());
+  const d = { runs: deps.runs, forum: deps.forum, activities };
   /**
    * Records a piece of evidence a stage kept and publishes it, at once, in the run's conversation, as a message of the agent that carries the file: the person sees
    * it live, and the run keeps the record (`Run.evidence`) so the stage and the scenarios can list and cite it. Returns the message, or null when the run is gone.
@@ -347,14 +400,17 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
     void done;
     const media = evidenceViewOf(record).media;
+    // The app's own recording of the screen is the app's: its post is authored by the app, internal (the stage's tracker comment is linked to the latest public
+    // message of the stage, which a recording must never become) and carries the video for the player.
+    const own = !!record.recording;
     const messages = deps.forum.append(runThreadId(runId), {
       kind: 'post',
-      author: { type: 'agent', id: record.by },
-      code: 'runner.evidence.kept',
-      params: { title: record.title, kind: record.kind, description: record.description, id: record.id },
+      author: own ? { type: 'app' } : { type: 'agent', id: record.by },
+      code: own ? 'runner.evidence.recorded' : 'runner.evidence.kept',
+      params: { title: record.title, kind: record.kind, description: record.description, id: record.id, ...(own ? { agent: record.by } : {}) },
       evidence: [{ id: record.id, name: record.name, media, bytes: record.bytes }],
       stage: record.stage,
-      public: true,
+      public: !own,
     });
     return messages[0] ?? null;
   }
@@ -368,7 +424,20 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence };
+  // A run is told when something it concerns is written elsewhere in the memory: by a note of an agent, and by a document of another run's stage.
+  const notices = deps.memoryWrites ? createNoticeHub({ runs: deps.runs, forum: deps.forum, config: deps.config, workingAgent: (run) => workingAgent(run), ...(deps.noticeMergeMs !== undefined ? { mergeMs: deps.noticeMergeMs } : {}) }) : null;
+  deps.memoryWrites?.((write) => notices?.noteWritten(write));
+
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run, narrow) => sharedTextOf(run.issue.ref, [], [], narrow), procedures: deps.procedures, memoryPort: deps.memoryPort, documentsWritten: (run, agent, names) => notices?.documentsWritten(run, agent, names), offers: deps.offers, procedureTurnMs: deps.procedureTurnMs, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
+
+  /** The record of the activities as a call reads it: the front named whole, the others in short. Never a model call, never the file. */
+  function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = [], narrow = false): string {
+    // A call that has the shared memory gets only what it is about or named here; the other activities are lines of its index (divergences 1, 2 and 7).
+    return activities.render(deps.runs, { ref, refs: [...refs], agents: [...agents], ...(narrow ? { onlyNamed: true } : {}) }, deps.config().language);
+  }
+
+  /** What a message of a run's thread names: the agents called on, and the activity references it writes. */
+  const callsOfMention = (message: ForumMessage): string[] => parseMentions(message.text, deps.config().agents.team.map((a) => a.id));
 
   // What goes to the code host is published one thing at a time per run, in the order it happened, without holding the stages back.
   const publishing = new Map<string, Promise<void>>();
@@ -397,6 +466,11 @@ export function createRunner(deps: RunnerDeps): Runner {
   const withCommand = (run: Run | null): Run | null => {
     const c = run ? commands.get(run.id) : undefined;
     return run && c ? { ...run, command: c.pending } : run;
+  };
+  // The live screen of the working stage's display, handed out like the command: never written to the run's file.
+  const withScreen = (run: Run | null): Run | null => {
+    const live = run ? deps.screens?.state(runKey(run.id)) : null;
+    return run && live ? { ...run, screen: live } : run;
   };
 
   // A stage and an agent named in the thread may both want a command at once: the person answers one at a time, in the order they asked.
@@ -680,6 +754,19 @@ export function createRunner(deps: RunnerDeps): Runner {
       ended();
       return;
     }
+    // A pull request linked from outside (the person may have opened it by hand) is resolved and recorded now, so the guard that holds the pr-merged wait
+    // sees it when the flow enters the stage that waits: nothing is forced, without one the wait refuses and the run fails closed.
+    const ensureNextPr = async (): Promise<void> => {
+      if (!deps.publisher) return;
+      const from = flow.find((s) => s.id === stage);
+      const next = from?.next ? flow.find((s) => s.id === from.next) ?? null : null;
+      if (!next || next.type !== 'wait' || next.waitsFor?.kind !== 'pr-merged') return;
+      try {
+        await deps.publisher.ensurePr(run.id);
+      } catch (e) {
+        console.error('[runner] could not look for a linked pull request', run.id, e instanceof Error ? e.message : e);
+      }
+    };
     if (r.kind === 'review') {
       const recorded = moveRun(d, run.id, (x) => recordReview(x, { stage, by, verdict: out.verdict ?? 'approved', summary: out.summary, findings: out.findings, head: r.head }, now()));
       const text = findingsText(out.summary, out.findings);
@@ -688,6 +775,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         ended(recorded.reviews.length);
         return;
       }
+      await ensureNextPr();
       apply((x) => stageDone(x, flow, { summary: text, handoff: out.handoff, artifacts: r.written }, now()));
       ended(recorded.reviews.length);
       return;
@@ -706,6 +794,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       }
     }
     const notes = r.kind === 'qa' ? notesText(out.scenarios) : '';
+    await ensureNextPr();
     apply((x) => stageDone(x, flow, { summary: [out.summary, notes].filter(Boolean).join('\n\n'), handoff: out.handoff, artifacts: r.written }, now()));
     ended();
   }
@@ -766,7 +855,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     const { iid, ref } = refOf(raw);
     if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
     // An agent set to run commands in a sandbox on a computer that cannot make one: said now, before a worktree exists, not when its stage is reached.
-    const sandboxed = config.agents.team.filter((a) => a.shell === 'sandbox' && a.stages.length);
+    const sandboxed = workingTeam(config.agents.team).filter((a) => a.shell === 'sandbox' && a.stages.length);
     if (sandboxed.length) {
       const st = deps.sandbox ? await deps.sandbox.status() : null;
       if (!st?.available) throw new RunnerError('no-sandbox', { agent: sandboxed.map((a) => a.id).join(', '), reason: st ? reasonText(st) : t('main.sandbox.reason.platform') });
@@ -808,6 +897,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     const dest = join(config.runner.worktreesDir ? expandHome(config.runner.worktreesDir, env.home) : join(env.dataDir, 'worktrees'), repo.id, `${iid}-${slug}`);
     const folder = cycleFolderOf(iid, issue.title);
 
+    // Everything the start needs is known: the activity is recorded before the worktree and the run exist, so a start interrupted here leaves a trace of it.
+    activities.ensure({ ref, iid, title: issue.title, url: issue.webUrl || null }, now());
     // The branch and the folder are the issue's, so a run of it that ended without cleaning up is taken over: refusing it would block the issue forever.
     const made = await createWorktree({ clone: repo.path, dest, branch, base: await workBase(repo.path), takeOverLeftover: true }).catch((e) => {
       throw e instanceof WorktreeError ? new RunnerError(e.code, { detail: e.detail }) : e;
@@ -1072,8 +1163,8 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   const api: Runner = {
-    list: () => deps.runs.list().map((r) => withCommand(r) as Run),
-    get: (id) => withCommand(deps.runs.get(id)),
+    list: () => deps.runs.list().map((r) => withScreen(withCommand(r)) as Run),
+    get: (id) => withScreen(withCommand(deps.runs.get(id))),
     evidence: (runId) => {
       const run = deps.runs.get(runId);
       if (!run) return null;
@@ -1087,6 +1178,10 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!run || !record) return null;
       const bytes = readEvidence(deps.env().dataDir, run.id, record);
       return bytes ? { bytes, record } : null;
+    },
+    keepCallRecording: (runId, agent, outcome) => {
+      const run = deps.runs.get(runId);
+      return run ? keepScreenRecording(exec, run, { id: run.stage ?? '' }, { id: agent }, outcome) : 'not';
     },
     removeEvidence: (runId, id) => {
       const run = deps.runs.get(runId);
@@ -1107,6 +1202,20 @@ export function createRunner(deps: RunnerDeps): Runner {
       return gateBy(id, action, reason, 'person');
     },
     retry: (id) => move(id, (r, f, at) => retryMove(r, f, at)),
+    async retryPr(id, base) {
+      const before = need(id);
+      if (before.status !== 'question' || before.question?.kind !== 'pr-retry') throw new RunError('wrong-state', { status: before.status });
+      const branch = String(base ?? '').trim();
+      if (!branch) throw new RunError('empty-reason');
+      if (!deps.publisher) throw new RunnerError('no-host');
+      // The write goes through the publishing queue like every other of the run, and the run is pumped on only after it came back: nothing of the resumed
+      // flow then asks for a pull request while it is not on the host yet, and one or the other is never out of order.
+      publish(id, (p) => p.retryPr(id, branch));
+      const queued = publishing.get(id);
+      if (queued) await queued;
+      pump(id);
+      return need(id);
+    },
     cancel(id) {
       const run = move(id, (r, _f, at) => cancelMove(r, 'person', at));
       aborts.get(id)?.abort();
@@ -1128,6 +1237,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!deps.publisher || !rec || rec.status !== 'published' || rec.noteId === null || key === 'pr') throw new RunnerError('nothing-to-undo', { key: key.slice(0, 48) });
       return deps.publisher.undo(id, key);
     },
+    activities: () => sortedFronts(activities.read(deps.runs, deps.config().language)).reverse(),
+    correctActivity: (ref, text) => activities.correct(ref, text, deps.runs, deps.config().language),
     async editMemory(id, text) {
       const run = need(id);
       // The agent has the worktree: a write now would race it for the file, and the stage's own commit is what carries the memory.
@@ -1138,6 +1249,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!identity) throw new RunnerError('no-identity');
       // The person's own words, masked like every other document; the path guard is `writeMemory`'s.
       writeMemory(run.worktree, run.cycleFolder, redact(text).slice(0, MEMORY_EDIT_MAX));
+      // i18n-ignore-next-line: the subject of a commit in the repository's history: English, like the rest of its commits
       await commitAll(run.worktree, commitMessage(config.runner.commitMessage, 'update the cycle memory', run.issue.iid), identity);
       move(id, (r, _f, at) => memoryEdited(r, at));
       return readArtifact(run.worktree, run.cycleFolder, MEMORY_FILE);
@@ -1208,7 +1320,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       return deps.updateConfig((c) => updateSquad(c, squadId, { autonomy: on }));
     },
     setAutonomous(agentId, on) {
-      if (!deps.config().agents.team.some((a) => a.id === agentId)) throw new RunnerError('unknown-agent', { agent: agentId.slice(0, 48) });
+      // A draft is not on the team that runs: it cannot be switched to autonomous.
+      if (!workingTeam(deps.config().agents.team).some((a) => a.id === agentId)) throw new RunnerError('unknown-agent', { agent: agentId.slice(0, 48) });
       return deps.updateConfig((c) => updateAgent(c, agentId, { autonomous: on }));
     },
     answer(id, text, attachments) {
@@ -1227,9 +1340,9 @@ export function createRunner(deps: RunnerDeps): Runner {
     answerPost(thread, text, attachments) {
       const id = thread.startsWith('run-') ? thread.slice(4) : '';
       const run = id ? deps.runs.get(id) : null;
-      if (!run || run.status !== 'question' || run.question?.kind === 'squad' || !text.trim()) return null;
+      if (!run || run.status !== 'question' || run.question?.kind === 'squad' || run.question?.kind === 'pr-retry' || !text.trim()) return null;
       // Naming an agent asks that agent something; it is not the answer to the question that waits.
-      if (parseMentions(text, deps.config().agents.team.map((a) => a.id)).length) return null;
+      if (parseMentions(text, mentionableIds(deps.config().agents.team, thread)).length) return null;
       // The files the message carries ride on the answer the runner writes, so the message shows them and the retention sees them as referenced.
       api.answer(run.id, text, attachments ?? []);
       const last = deps.forum.read(thread, 0, 2000)?.messages ?? [];
@@ -1252,6 +1365,8 @@ export function createRunner(deps: RunnerDeps): Runner {
         for (const id of message.mentions.slice(0, MAX_MENTIONS)) {
           if (id !== working || toStage >= 1) continue;
           const queued = inbox.post(text, message.waitsForAnswer);
+          // The agent is told that the record of the activities moved only when the message really entered the session: a message handed back in the closing line keeps the person's words.
+          if (queued) inbox.post(`\n${inbox.memory ? prompt('runner.section.sharedMovedMemory') : prompt('runner.section.sharedMoved')}`, false);
           toStage++;
           // The mailbox writes the closing line itself when the stage is already finishing; here only a message that went in is announced.
           if (queued) deps.forum.append(message.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.message.waiting', params: { agent: id, text: text.slice(0, 600) }, stage: run.stage });
@@ -1398,13 +1513,14 @@ export function createRunner(deps: RunnerDeps): Runner {
       engine: deps.engine,
       sandbox: exec.sandbox,
       env: deps.env,
-      openSession: async (p, def, cwd, stage, signal, watch) => {
+      screens: () => (deps.sessions && deps.asks ? { sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff } : null),
+      openSession: async (p, def, cwd, stage, signal, watch, wants) => {
         const r = p.run;
         if (!r || !stage) return null;
         const flowStage = flowFor(r).find((s) => s.id === stage);
         if (!flowStage || !existsSync(r.worktree)) return null;
         const clock: StageClock = { pause: watch.pause, beat: watch.beat, allowed: new Set() };
-        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock);
+        return openStageSandbox(exec, r, flowStage, { ...def, permission: 'read' }, false, signal, clock, false, wants?.display === true, { held: wants?.held, mask: wants?.mask });
       },
       // The line each agent got when the message was accepted goes on in the answer, and the next call of the run may begin when this one ends.
       callOf: (id) => calls.get(callKey(runId, message.seq, id)) ?? null,
@@ -1416,13 +1532,20 @@ export function createRunner(deps: RunnerDeps): Runner {
       },
       // Every write an answer proposes, a run's thread included, goes through the mentions module's own path: the same door of Actions, no publisher in between.
       propose: proposeMention,
+      // What the answer is told of the activities: its own front whole, and whatever else the message named.
+      memory: (_place, msg, narrow) => sharedTextOf(run.issue.ref, callsOfMention(msg), [], narrow),
+      procedures: deps.procedures,
+      memoryPort: deps.memoryPort,
+      // What the message names, for the ranking of the memory's list.
+      named: (_p, msg) => ({ refs: [], agents: callsOfMention(msg) }),
+      offers: deps.offers,
       // An agent named in a run's thread reads only inside that run's worktree; a refusal is told in the thread, like a stage's.
       readRoot: (p, def, _cwd) => {
         const r = p.run;
         if (!r || !existsSync(r.worktree)) return undefined;
         return readConfinement(r.worktree, def.model.role ?? 'deep', (den) => {
           deps.forum.append(runThreadId(r.id), { kind: 'system', author: { type: 'app' }, code: 'runner.denied', params: { agent: def.id, tool: den.tool, target: den.target || '—', reason: t(`main.runner.denied.${den.code}`) }, stage: r.stage });
-        });
+        }, unconfinedOf(deps.config().runner));
       },
     });
   }
@@ -1478,13 +1601,18 @@ export function createRunner(deps: RunnerDeps): Runner {
       const cwd = existsSync(run.worktree) ? run.worktree : env.fallbackCwd;
       // The liaison of a squad may answer with a request to another squad's liaison, when there is one to receive it.
       const own = squadOf(config, holder.squad);
-      const others = squadsOf(config).filter((o) => o.id !== own?.id && o.liaison && config.agents.team.some((a) => a.id === o.liaison && a.squad === o.id));
+      const others = squadsOf(config).filter((o) => o.id !== own?.id && o.liaison && workingTeam(config.agents.team).some((a) => a.id === o.liaison && a.squad === o.id));
       const liaison = own && own.liaison === holder.id && others.length ? { squad: own, others } : undefined;
       let answer: ReturnType<typeof readChain> = null;
       let failure = '';
       let partial = false;
+      // The shared memory, read only: the answer to a question is a verdict, not a conversation, so it keeps no note and makes no folder. Its own run's documents are in the
+      // files the call reads whole.
+      let shared: MemorySession | null = null;
       try {
-        const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison });
+        shared = (await deps.memoryPort?.open({ surface: 'chain', agent: holder, conversation: null, writes: false, tools: true, ref: run.issue.ref, repo: run.repo, runId: run.id })) ?? null;
+        const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison, ...(shared ? { index: shared.list.text, shared: sharedTextOf(run.issue.ref, [], [], true) } : {}) });
+        if (shared?.tools) call.memoryTools = shared.tools;
         // The agent that answers reads what the stage's agent reads of the repository's documentation, at the stage the run is at.
         call.docs = existsSync(run.worktree)
           ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
@@ -1492,7 +1620,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         // The agent that answers a question only reads: what it reads stays in the run's worktree, and a refusal is told in the run's thread.
         call.readRoot = readConfinement(run.worktree, holder.model.role ?? 'deep', (den) => {
           deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: 'runner.denied', params: { agent: holder.id, tool: den.tool, target: den.target || '—', reason: t(`main.runner.denied.${den.code}`) }, stage: run.stage });
-        });
+        }, unconfinedOf(config.runner));
         const abort = new AbortController();
         chainAborts.set(id, abort);
         const watch = watchdog(abort, limitsOf(config, deps));
@@ -1503,6 +1631,8 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (!answer) failure = 'empty-answer';
       } catch (e) {
         failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
+      } finally {
+        shared?.finish();
       }
       // The person (or a cancel) may have answered while the agent thought: then what it said is not used.
       const now = deps.runs.get(id)?.question;
@@ -1547,7 +1677,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     const run = need(id);
     const from = squadOf(config, holder.squad);
     const to = request ? squadOf(config, request.squad) : null;
-    const target = to?.liaison ? config.agents.team.find((a) => a.id === to.liaison && a.squad === to.id) : undefined;
+    const target = to?.liaison ? workingTeam(config.agents.team).find((a) => a.id === to.liaison && a.squad === to.id) : undefined;
     if (!offered || !request || !from || from.liaison !== holder.id || !to || to.id === from.id || !target) return handUp(id, holder.id, 'failed', t('main.runner.request.invalid'));
     ensureSquadChannels(deps.forum, squadsOf(config), config.language);
     const toName = squadName(config, to);
@@ -1558,8 +1688,13 @@ export function createRunner(deps: RunnerDeps): Runner {
     let answer: RequestAnswer | null = null;
     let failure = '';
     let partial = false;
+    // The receiving liaison reads the memory too (read only, no folder): the activity the request is made from, whole, and the rest as lines. The asker's documents are in
+    // the memory's list for it: it does not read the asker's cycle folder.
+    let shared: MemorySession | null = null;
     try {
-      const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run) });
+      shared = (await deps.memoryPort?.open({ surface: 'request', agent: target, conversation: null, writes: false, tools: true, ref: run.issue.ref, repo: run.repo })) ?? null;
+      const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run), ...(shared ? { index: shared.list.text, shared: sharedTextOf(run.issue.ref, [], [], true) } : {}) });
+      if (shared?.tools) call.memoryTools = shared.tools;
       // The liaison that receives the request reads the documentation of its own squad's repository (the run's worktree when it has no repository of its own).
       call.docs = call.cwd === run.worktree
         ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
@@ -1574,6 +1709,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!answer) failure = 'empty-answer';
     } catch (e) {
       failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
+    } finally {
+      shared?.finish();
     }
     // The person (or a cancel) may have answered while the other liaison thought: then what it said is not used (the request stays in the channel as it was).
     const now = deps.runs.get(id)?.question;

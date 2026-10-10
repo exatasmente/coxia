@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { termsFor } from '../shared/cycles/terms';
 import { setLanguage, setTerms, setVoiceEnabled, t } from '../shared/i18n';
 import { migrateConfig } from '../shared/config/migrations';
+import { workingTeam } from '../shared/config/team';
 import type { VcsKind, WorkspaceConfig } from '../shared/config/types';
 import { summarizeIssues, validateConfig } from '../shared/config/validate';
 import { bootstrapConfigs, readConfigFile, writeConfigFile } from './config-bootstrap';
@@ -14,14 +15,15 @@ import { secrets, seedLegacySecrets } from './secrets';
 // The loaded config of the running workspace, and the getters that replaced the constants env.ts used to hold.
 // Modules read `rc()` at call time, never at import time: the config can change while the app runs (Settings, import, the wizard).
 
-let state: { config: WorkspaceConfig; resolved: ResolvedConfig } | null = null;
+// `degraded`: the file on disk did not pass the check and the config in memory is what the migration made of it, not what the person wrote.
+let state: { config: WorkspaceConfig; resolved: ResolvedConfig; degraded: boolean } | null = null;
 let bootstrapped = false;
 let legacyWorkspace = false;
 const listeners = new Set<(config: WorkspaceConfig) => void>();
 
 const context = () => ({ home: HOME, env: process.env, fallbackCwd: ATAS });
 
-function load(): { config: WorkspaceConfig; resolved: ResolvedConfig } {
+function load(): NonNullable<typeof state> {
   const log = (m: string) => console.log(`[config] ${m}`);
   const profile = loadLegacyProfile(process.env, log);
   if (!bootstrapped) {
@@ -46,12 +48,18 @@ function load(): { config: WorkspaceConfig; resolved: ResolvedConfig } {
   setLanguage(config.language);
   setTerms(termsFor(config, config.language));
   setVoiceEnabled(config.voice.enabled);
-  return { config, resolved: resolveConfig(config, context()) };
+  return { config, resolved: resolveConfig(config, context()), degraded: !checked.config };
 }
 
 export function getConfig(): WorkspaceConfig {
   state ??= load();
   return state.config;
+}
+
+/** Whether the config in memory is the one on disk. false: the file was unreadable or invalid and this is a repaired one, so it must not decide what to delete. */
+export function configLoadedCleanly(): boolean {
+  state ??= load();
+  return !state.degraded;
 }
 
 /** The resolved view: absolute paths, the optional integrations that are on, the former constants. */
@@ -66,12 +74,13 @@ export function docsSources(opts?: { claude?: boolean }): ResolvedDocs {
 
 const flowInputs = (c: unknown): string => {
   const x = c as Partial<WorkspaceConfig> | null;
-  // The flow, the flows of the squads, who belongs to which squad, who is its liaison, what its scope is, and who turns to whom.
+  // The flow, the flows of the squads, who belongs to which squad, who is its liaison, what its scope is, and who turns to whom. A draft is not in it: saving or
+  // dropping one is no change to the flow, so a flow with an old problem does not stop the person from testing an agent.
   return JSON.stringify([
     x?.devCycle?.stages ?? null,
     x?.devCycle?.flows ?? null,
     (x?.squads ?? []).map((q) => [q.id, q.liaison ?? null, q.scope ?? null]),
-    (x?.agents?.team ?? []).map((a) => [a.id, a.stages, a.turnsTo ?? null, a.squad ?? null]),
+    workingTeam(x?.agents?.team ?? []).map((a) => [a.id, a.stages, a.turnsTo ?? null, a.squad ?? null]),
   ]);
 };
 
@@ -92,7 +101,7 @@ export function checkConfig(next: unknown): WorkspaceConfig {
 export function saveConfig(next: unknown): WorkspaceConfig {
   const config = checkConfig(next);
   writeConfigFile(ATAS, config);
-  state = { config, resolved: resolveConfig(config, context()) };
+  state = { config, resolved: resolveConfig(config, context()), degraded: false };
   setLanguage(config.language);
   setTerms(termsFor(config, config.language));
   setVoiceEnabled(config.voice.enabled);

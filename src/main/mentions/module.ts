@@ -12,9 +12,13 @@ import { type Module } from '../module';
 import { runStore } from '../runs';
 import { sandbox } from '../sandbox/workspace';
 import { getConfig, rc } from '../workspaceConfig';
+import { memoryPort } from '../memory/runtime';
+import { procedureOffers, proceduresPort } from '../procedures';
 import { answerMentions, type MentionDeps } from './answer';
 import { placeOfThread } from './place';
 import { proposeMention } from './propose';
+import { createSharedMemory } from '../runner/activities';
+import { handoffService, screenAsks, screenSessions } from '../runner/module';
 
 // Mentions answered outside a run's thread: a squad channel, the channel the squads talk in, a conversation a person opened, and the direct conversation of an agent
 // (where every message of the person calls its owner without an `@`). A run's thread stays with the runner (it has the worktree, the cycle folder and the publisher).
@@ -46,6 +50,15 @@ export function ownerOfThread(summary: ThreadSummary | null): string | null {
   return summary?.kind === 'agent' ? (summary.agent ?? summary.squad ?? null) : null;
 }
 
+/** The record of the activities of the running workspace, in the workspace's own folder: the mentions module only reads it. */
+let shared: ReturnType<typeof createSharedMemory> | null = null;
+export const sharedMemory = (): ReturnType<typeof createSharedMemory> => (shared ??= createSharedMemory(ATAS));
+
+/** The takes of an activity reference a message carries: the number `#123`, or a whole reference `group/project#123`. */
+export function refsInMessage(message: ForumMessage): string[] {
+  return [...(message.text ?? '').matchAll(/(?:([\w.-]+\/[\w.-]+))?#(\d{1,6})\b/g)].map((m) => (m[1] ? `${m[1]}#${m[2]}` : (m[2] as string)));
+}
+
 export const mentionsModule: Module = () => {
   const forum = forumStore();
   const deps: MentionDeps = {
@@ -53,8 +66,27 @@ export const mentionsModule: Module = () => {
     config: getConfig,
     engine: (call, commands) => runAgent(call, commands),
     sandbox,
+    // The agents' screens come from the runner's module, which registers before this one: asked for at each answer, since they exist only once it has.
+    screens: () => {
+      const sessions = screenSessions();
+      const asks = screenAsks();
+      return sessions && asks ? { sessions, asks, handoff: handoffService() } : null;
+    },
     env: () => ({ fallbackCwd: rc().projectsRoot ?? ATAS }),
     propose: proposeMention,
+    procedures: proceduresPort(),
+    memoryPort: memoryPort(),
+    // What the message names, for the ranking of the memory's list.
+    named: (place, message) => ({ refs: refsInMessage(message), agents: callsOf(message, ownerOfThread(forum.summary(place.thread))) }),
+    // The last turn of an answer that had trial and error and kept nothing, and the card it may leave (#187).
+    offers: procedureOffers(),
+    // What the answer is told of the activities of the workspace, read from the record of the running workspace and cut by what the message named.
+    memory: (place, message, narrow) => {
+      const run = place.kind === 'run' ? place.run : null;
+      const refs = refsInMessage(message);
+      // A call with the shared memory gets only what the message is about or named; the rest is lines of its index.
+      return sharedMemory().render(runStore(), { ref: run?.issue.ref ?? place.ref ?? null, refs, agents: callsOf(message, ownerOfThread(forum.summary(place.thread))), ...(narrow ? { onlyNamed: true } : {}) }, getConfig().language);
+    },
     // A host command asks the person through the notice every screen shows, as the ceremonies do; a command the agent's rules always allow runs without asking.
     askCommand: (def, command, signal) => {
       const rules = getConfig().agents.team.find((a) => a.id === def.id)?.allowedCommands ?? def.allowedCommands;

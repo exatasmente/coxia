@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { poolFieldsOf } from './pool';
 import { ID } from './schema';
 import { LLM_ROLES, type AgentDef, type AgentModel, type AgentRoleConfig, type AgentShell, type AgentToolsConfig, type AgentTracker, type DevCycleConfig, type LlmRole, type StageDef, type WorkspaceConfig } from './types';
 
@@ -35,6 +36,17 @@ export function systemAgents(roles: Partial<Record<LlmRole, RoleSeed>> = {}): Ag
   return LLM_ROLES.map((r) => systemAgent(r, roles[r] ?? {}));
 }
 
+/** The pool of an agent's own model and what is known of it, only what is there: absent means no fallbacks, as it always was. */
+export function modelPoolOf(m: Partial<AgentModel>): Partial<AgentModel> {
+  return {
+    ...poolFieldsOf(m),
+    ...(m.images !== undefined ? { images: m.images } : {}),
+    ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
+    ...(m.echoReasoning !== undefined ? { echoReasoning: m.echoReasoning } : {}),
+    ...(m.offer ? { offer: { ...m.offer } } : {}),
+  };
+}
+
 /** An agent with every field filled: the id is the only thing that cannot be guessed. A new agent borrows the model of the `deep` role and only reads. */
 export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 'model'>> & { model?: Partial<AgentModel> }): AgentDef {
   const m = partial.model;
@@ -42,7 +54,7 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     id: partial.id,
     name: partial.name ?? partial.id,
     job: partial.job ?? '',
-    model: m ? { role: m.role ?? null, provider: m.provider ?? '', model: m.model ?? '' } : { role: 'deep', provider: '', model: '' },
+    model: m ? { role: m.role ?? null, provider: m.provider ?? '', model: m.model ?? '', ...modelPoolOf(m) } : { role: 'deep', provider: '', model: '' },
     stages: partial.stages ?? [],
     permission: partial.permission ?? 'read',
     // What an agent could do before the two fields existed: an agent that writes ran the commands of the workspace, one that reads ran none and had no say about the host.
@@ -53,10 +65,42 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     autonomous: partial.autonomous ?? false,
     turnsTo: partial.turnsTo ?? null,
     ...(partial.squad !== undefined ? { squad: partial.squad } : {}),
+    // Only a draft carries the mark: every other agent keeps the shape it had before the field existed.
+    ...(partial.draft === true ? { draft: true } : {}),
+    // Absent means off and empty: an agent that never had them keeps the shape it had, and `newAgent` never switches one on by itself.
+    ...(partial.screen === true ? { screen: true } : {}),
+    ...(partial.allowedHosts?.length ? { allowedHosts: [...partial.allowedHosts] } : {}),
+    ...(partial.browserProfile === true ? { browserProfile: true } : {}),
+    // Absent means "the stage's, then the workspace's": only an agent that chose a mode carries it.
+    ...(partial.poolMode ? { poolMode: partial.poolMode } : {}),
     instructions: partial.instructions ?? '',
     system: partial.system ?? false,
   };
 }
+
+/** A lowercase id from a name: letters and digits kept (accents folded), anything else a dash. */
+export function slugOf(text: string): string {
+  const folded = text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const slug = folded.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48).replace(/-+$/, '');
+  return slug;
+}
+
+/** `base`, or `base-2`, `base-3`... the first one `taken` does not hold. */
+export function uniqueId(base: string, taken: Iterable<string>): string {
+  const used = new Set(taken);
+  const root = base || 'item';
+  if (!used.has(root)) return root;
+  for (let n = 2; ; n++) {
+    const candidate = `${root.slice(0, 44)}-${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+}
+
+/** Whether the agent is a draft the AI assistant saved to be tested: it takes no part in the cycle. */
+export const isDraft = (a: Pick<AgentDef, 'draft'>): boolean => a.draft === true;
+
+/** The team that takes part in the cycle: without the drafts. Whoever decides who works, is called or is offered reads the team through this. */
+export const workingTeam = (team: AgentDef[]): AgentDef[] => (team.some(isDraft) ? team.filter((a) => !isDraft(a)) : team);
 
 /** The team with whichever system agent is missing added back (seeded from the roles), so a file can never lose one. */
 export function ensureSystemAgents(team: AgentDef[], roles: Partial<Record<LlmRole, RoleSeed>> = {}): AgentDef[] {
@@ -66,13 +110,13 @@ export function ensureSystemAgents(team: AgentDef[], roles: Partial<Record<LlmRo
 
 /**
  * The agent that works a stage: the one the stage names, else the first agent of the team that lists the stage, else none.
- * A gate and a wait never have one.
+ * A gate and a wait never have one, and a draft never works a stage, even when a file lists it.
  */
 export function stageAgent(team: AgentDef[], stages: StageDef[], stageId: string): AgentDef | null {
   const stage = stages.find((s) => s.id === stageId);
   if (!stage || (stage.type && stage.type !== 'work')) return null;
-  const named = stage.agentId ? team.find((a) => a.id === stage.agentId) : undefined;
-  return named ?? team.find((a) => a.stages.includes(stageId)) ?? null;
+  const named = stage.agentId ? team.find((a) => a.id === stage.agentId && !isDraft(a)) : undefined;
+  return named ?? team.find((a) => a.stages.includes(stageId) && !isDraft(a)) ?? null;
 }
 
 export type AgentPatch = Partial<Omit<AgentDef, 'id' | 'system'>>;
@@ -166,7 +210,7 @@ export const RECOMMENDED: Record<string, { tracker: AgentTracker; shell: AgentSh
   planner: { tracker: 'read', shell: 'sandbox' },
   reviewer: { tracker: 'read', shell: 'sandbox' },
   'release-manager': { tracker: 'read', shell: 'none' },
-  'docs-writer': { tracker: 'none', shell: 'none' },
+  'docs-writer': { tracker: 'none', shell: 'sandbox' },
 };
 
 export interface Recommendation {
@@ -183,7 +227,8 @@ export interface Recommendation {
  */
 export function recommendations(config: WorkspaceConfig, sandbox: boolean): Recommendation[] {
   const out: Recommendation[] = [];
-  for (const a of config.agents.team) {
+  // A draft is left out: its permissions are the assistant's review to propose, with a reason, and its id may be a role's by chance (`qa`, `reviewer`).
+  for (const a of workingTeam(config.agents.team)) {
     const want = RECOMMENDED[a.id];
     if (!want || a.system) continue;
     const shell = sandbox ? want.shell : withoutSandbox(want.shell, a.permission);

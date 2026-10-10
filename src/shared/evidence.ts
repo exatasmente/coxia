@@ -1,11 +1,15 @@
 // Evidence: a file a stage kept as proof of what it saw, with its marks. Pure and Electron-free, because both the renderer and the main process read the same
 // shapes; the store (main/evidence/store.ts) and the drawing (main/evidence/draw.ts) live in the main process.
+import type { RecordingMeta } from './screen';
 
 /** Where a stage's evidence is kept, as the runner's choice: the safe default when the field is absent (a config stored before it existed). */
 export const evidencePlacementOf = (runner: { evidence?: string } | null | undefined): 'app' | 'cycle' => (runner?.evidence === 'cycle' ? 'cycle' : 'app');
 
-/** Kinds of a file the app accepts as evidence, recognised by its content (never by the name or the extension). */
-export const EVIDENCE_KINDS = ['png', 'jpeg', 'gif', 'webp', 'pdf', 'text'] as const;
+/**
+ * Kinds of a file the app accepts as evidence, recognised by its content (never by the name or the extension). `webm` is the app's own recording of an agent's screen:
+ * it never comes out of a content check (`detectKind` still refuses video), only out of `putRecording`.
+ */
+export const EVIDENCE_KINDS = ['png', 'jpeg', 'gif', 'webp', 'pdf', 'text', 'webm'] as const;
 export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
 
 /** The formats a piece of evidence may be, as a person reads them. */
@@ -16,13 +20,27 @@ export const EVIDENCE_KIND_MEDIA: Record<EvidenceKind, string> = {
   webp: 'image/webp',
   pdf: 'application/pdf',
   text: 'text/plain',
+  webm: 'video/webm',
 };
 
 /** The extension each kind is stored under: the content decides it, never the name the model gave. */
-export const EVIDENCE_EXT: Record<EvidenceKind, string> = { png: 'png', jpeg: 'jpg', gif: 'gif', webp: 'webp', pdf: 'pdf', text: 'txt' };
+export const EVIDENCE_EXT: Record<EvidenceKind, string> = { png: 'png', jpeg: 'jpg', gif: 'gif', webp: 'webp', pdf: 'pdf', text: 'txt', webm: 'webm' };
 
 /** Whether the kind is an image, the only ones the marking tool draws on and the code host may embed. */
 export const isEvidenceImage = (kind: EvidenceKind): boolean => kind === 'png' || kind === 'jpeg' || kind === 'gif' || kind === 'webp';
+
+/** The bytes as a `data:` address. The desktop's content policy lets an image come from `data:` but not from `blob:` (the paired browser allows both), so an image of
+ *  evidence is shown this way. */
+export function evidenceDataUrl(bytes: ArrayBuffer | Uint8Array, media: string): string {
+  const all = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  // The native encoder takes a few milliseconds for 8 MiB where the string path takes a third of a second; an older paired browser has only the string path.
+  const native = (all as Uint8Array & { toBase64?: () => string }).toBase64;
+  if (typeof native === 'function') return `data:${media};base64,${native.call(all)}`;
+  let binary = '';
+  // In slices: spreading millions of bytes as arguments overflows the call stack.
+  for (let i = 0; i < all.length; i += 0x8000) binary += String.fromCharCode(...all.subarray(i, i + 0x8000));
+  return `data:${media};base64,${btoa(binary)}`;
+}
 
 /** The largest file the app keeps as evidence. A constant of the code, not a setting: above it the tool refuses and says the ceiling. */
 export const EVIDENCE_MAX_BYTES = 8 * 1024 * 1024;
@@ -53,6 +71,10 @@ export interface EvidenceRecord {
   message: number | null;
   /** The file was also copied into the cycle folder and committed with the stage. */
   inCycle?: boolean;
+  /** Present only on the app's own recording of a stage's screen; it is how the code tells it from what an agent kept (an agent can neither cite nor mark it). */
+  recording?: RecordingMeta;
+  /** The file was removed by the retention sweep; the record stays so the stage says so instead of showing an error. */
+  removed?: 'retention';
 }
 
 /** What the run screen lists for one piece of evidence: the record plus where its bytes may be read. */

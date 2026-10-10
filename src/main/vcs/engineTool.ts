@@ -19,6 +19,7 @@ const message = (e: unknown): string => (e instanceof VcsError ? e.message : (e 
 export function vcsReadToolImpl(provider: () => VcsProvider, allowed: () => readonly string[] = () => [], strict = false): ToolImpl {
   return {
     name: VCS_READ_TOOL_NAME,
+    activity: 'explore',
     description: VCS_READ_DESCRIPTION,
     parameters: VCS_READ_SCHEMA as unknown as Json,
     async run(input, ctx) {

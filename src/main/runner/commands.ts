@@ -39,9 +39,14 @@ export const OUTPUT_LIMIT = 6_000;
 /** The longest one command may run. */
 export const COMMAND_TIMEOUT_MS = 5 * 60_000;
 
+/** An output without its terminal escapes and carriage returns: what a model reads, and what a mask must be matched against. */
+export function plain(text: string): string {
+  return text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\r/g, '');
+}
+
 /** The end of an output, cut at a line where it can be, with the cut said. */
 export function tail(text: string, max = OUTPUT_LIMIT): string {
-  const clean = text.replace(/\x1b\[[0-9;]*[A-Za-z]/g, '').replace(/\r/g, '').trim();
+  const clean = plain(text).trim();
   if (clean.length <= max) return clean;
   const cut = clean.slice(clean.length - max);
   const at = cut.indexOf('\n');

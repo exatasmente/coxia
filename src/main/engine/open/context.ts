@@ -192,6 +192,7 @@ export function docIndex(dirs: string[], limit = 120): string[] {
 export function skillTool(skills: Skill[]): ToolImpl {
   return {
     name: 'Skill',
+    activity: 'explore',
     // i18n-ignore: prompt and tool texts the open engine sends the model: English by design
     description: 'Loads the full instructions of one skill listed in the system prompt. Call it when the task matches the skill description, then follow what it says.',
     parameters: {

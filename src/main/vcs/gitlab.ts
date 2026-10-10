@@ -542,6 +542,8 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
           return [rest('DELETE', `${repoPath(op.project)}/${op.target === 'issue' ? 'issues' : 'merge_requests'}/${checkIid(op.iid)}/notes/${noteNum(op.noteId)}`, {})];
         case 'closeIssue':
           return [rest('PUT', `${repoPath(op.project)}/issues/${checkIid(op.iid)}`, { state_event: 'close' })];
+        case 'reopenIssue':
+          return [rest('PUT', `${repoPath(op.project)}/issues/${checkIid(op.iid)}`, { state_event: 'reopen' })];
         case 'createIssue':
           return [rest('POST', `${repoPath(op.project)}/issues`, { title: checkTitle(op.title), description: op.body, ...(op.labels.length ? { labels: op.labels.map(checkLabel).join(',') } : {}) })];
         case 'createMr':

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mergeDeep, migrateConfig, neutralConfig, validateConfig, withConfigDefaults } from '../src/shared/config';
+import { newAgent } from '../src/shared/config/team';
 import { BUILT_IN_TEMPLATES, DOCS_FLOW_STAGES, RELEASE_FLOW_STAGES, applyTemplate, mergeTemplateTeam, builtInTemplate, cycleOf, exportTemplateText, needsOf, parseTemplate, promptFamilies, sdd, templateFromConfig } from '../src/shared/cycles';
 import { CEREMONY_IDS } from '../src/shared/config/types';
 import { RECOMMENDED, removeAgent } from '../src/shared/config/team';
@@ -329,6 +330,58 @@ describe.each([['agent-flow'], ['agent-flow-engineering']])('the template %s', (
     expect(templateFromConfig(neutralConfig(), { id: 'plain', name: 'Plain', description: '' }).team).toBeUndefined();
   });
 
+  it('never brings a screen, hosts or a logged-in browser: not when applied, not when exported, and the file is told so', () => {
+    const withPowers = [...flow.team!.map((a) => ({ ...a })), { id: 'scout', name: 'Scout', job: '', model: { role: 'deep' as const, provider: '', model: '' }, stages: [], permission: 'read' as const, tracker: 'none' as const, shell: 'none' as const, autonomous: false, turnsTo: null, instructions: '', system: false, screen: true, allowedHosts: ['example.com'], browserProfile: true }];
+    const merged = mergeTemplateTeam(neutralConfig().agents.team, withPowers, cycleOf(flow));
+    const scout = merged.find((a) => a.id === 'scout')!;
+    expect(scout.screen).toBeUndefined();
+    expect(scout.allowedHosts).toBeUndefined();
+    expect(scout.browserProfile).toBeUndefined();
+    expect(scout.name).toBe('Scout');
+    const checked = parseTemplate({ id: 'mine', name: 'Mine', devCycle: {}, team: withPowers });
+    expect(checked.warnings.map((w) => w.path)).toEqual(expect.arrayContaining(['template.team[scout].screen', 'template.team[scout].allowedHosts', 'template.team[scout].browserProfile']));
+    const source = applied();
+    source.agents.team.push(newAgent({ id: 'scout', name: 'Scout', screen: true, allowedHosts: ['example.com'], browserProfile: true }));
+    const exported = templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' });
+    const out = exported.team!.find((a) => a.id === 'scout')!;
+    expect(out).toMatchObject({ id: 'scout', name: 'Scout' });
+    expect('screen' in out || 'allowedHosts' in out || 'browserProfile' in out).toBe(false);
+    expect(JSON.stringify(applyTemplate(neutralConfig(), exported).agents.team)).not.toMatch(/example\.com|browserProfile|"screen"/);
+  });
+
+  it('never brings the fallback models of an agent: they point at providers of one workspace', () => {
+    const pool = { fallbacks: [{ provider: 'anthropic', model: 'haiku' }], activities: { edit: [{ provider: 'gone', model: 'model-a' }] }, images: true, contextWindow: 64_000, echoReasoning: true, offer: { flex: true, effort: true, deprecated: 1790000000, replacedBy: 'model-b' } };
+    const withPool = [{ id: 'scout', name: 'Scout', job: '', model: { role: null, provider: 'anthropic', model: 'sonnet', ...pool }, stages: [], permission: 'read' as const, tracker: 'none' as const, shell: 'none' as const, autonomous: false, turnsTo: null, instructions: '', system: false }];
+    const merged = mergeTemplateTeam(neutralConfig().agents.team, withPool, cycleOf(flow));
+    expect(merged.find((a) => a.id === 'scout')!.model).toEqual({ role: null, provider: 'anthropic', model: 'sonnet' });
+    const checked = parseTemplate({ id: 'mine', name: 'Mine', devCycle: {}, team: withPool });
+    expect(checked.errors).toEqual([]);
+    expect(checked.warnings.map((w) => w.path)).toContain('template.team[scout].model');
+    expect(checked.template?.team?.find((a) => a.id === 'scout')?.model).toEqual({ role: null, provider: 'anthropic', model: 'sonnet' });
+    const source = applied();
+    source.agents.team.push(newAgent({ id: 'scout', name: 'Scout', model: { role: null, provider: 'anthropic', model: 'sonnet', ...pool } }));
+    const exported = templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' });
+    expect(exported.team!.find((a) => a.id === 'scout')!.model).toEqual({ role: null, provider: 'anthropic', model: 'sonnet' });
+    expect(JSON.stringify(applyTemplate(neutralConfig(), exported).agents.team)).not.toMatch(/fallbacks|activities|contextWindow|offer|flex/);
+  });
+
+  it('carries the pool mode of an agent and of a stage, and still never the pool', () => {
+    const source = applied();
+    source.agents.team.push(newAgent({ id: 'scout', name: 'Scout', poolMode: 'switch', model: { role: null, provider: 'anthropic', model: 'sonnet', fallbacks: [{ provider: 'anthropic', model: 'haiku' }] } }));
+    const work = source.devCycle.stages.find((s) => (s.type ?? 'work') === 'work')!;
+    work.poolMode = 'fallback';
+    const exported = templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' });
+    expect(exported.team!.find((a) => a.id === 'scout')!.poolMode).toBe('switch');
+    expect(exported.team!.find((a) => a.id === 'scout')!.model).toEqual({ role: null, provider: 'anthropic', model: 'sonnet' });
+    const check = parseTemplate(JSON.parse(exportTemplateText(exported, new Date('2026-10-02T12:00:00Z'))));
+    expect(check.errors).toEqual([]);
+    const back = applyTemplate(neutralConfig(), check.template!);
+    expect(back.agents.team.find((a) => a.id === 'scout')!.poolMode).toBe('switch');
+    expect(back.devCycle.stages.find((s) => s.id === work.id)!.poolMode).toBe('fallback');
+    // The workspace default is the workspace's, not the template's.
+    expect(JSON.stringify(exported)).not.toMatch(/"llm"/);
+  });
+
   it('lists in the setup wizard with its team', async () => {
     const { listCycleTemplates } = await import('../src/main/cycles');
     const entry = listCycleTemplates('en').find((t) => t.id === id)!;
@@ -635,11 +688,11 @@ describe('the docs-flow template', () => {
     for (const id of ['agent-flow', 'agent-flow-engineering', 'sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'release-flow']) for (const s of cycleOf(builtInTemplate(id)!).stages) expect(ids.has(s.id), `${id}: ${s.id}`).toBe(false);
   });
 
-  it('brings a Documentation writer that changes files, runs nothing and reads no tracker, and a flow that is not offered by the wizard', async () => {
+  it('brings a Documentation writer that changes files and builds the site in a sandbox, and a flow that is not offered by the wizard', async () => {
     const agent = flow.team!.find((a) => a.id === 'docs-writer')!;
-    expect(agent).toMatchObject({ permission: 'worktree', shell: 'none', tracker: 'none', autonomous: true, system: false, turnsTo: null, model: { role: 'deep' } });
+    expect(agent).toMatchObject({ permission: 'worktree', shell: 'sandbox', tracker: 'none', autonomous: true, system: false, turnsTo: null, model: { role: 'deep' } });
     expect(agent.stages.sort()).toEqual(['docs-draft', 'docs-publish']);
-    expect(RECOMMENDED['docs-writer']).toEqual({ tracker: 'none', shell: 'none' });
+    expect(RECOMMENDED['docs-writer']).toEqual({ tracker: 'none', shell: 'sandbox' });
     const { listCycleTemplates } = await import('../src/main/cycles');
     expect(listCycleTemplates('en').map((t) => t.id)).not.toContain('docs-flow');
   });

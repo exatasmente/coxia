@@ -1,13 +1,16 @@
+import { basename, dirname, join } from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { prompt as cp } from '../cyclePrompts';
 import { type DenialCode, WRITE_TOOLS, anchored, checkPath, writeTarget } from '../engine/guard';
 import { noBroadSearch, noSecrets, redactSecretResults, secretPath, shellAllowlist } from '../agents';
+import { ATAS } from '../env';
+import { MEMORY_DIR } from './activities';
 
 // The hooks of an agent that changes files in its run's worktree. They are the same callbacks for both engines (the open engine runs them
 // through policyFromHooks), so a refusal reads the same on either. What they allow: read, search, write and edit inside the worktree, and
 // the exact commands the workspace listed. What they refuse: any path outside it, `.git`, secret files, any other command, the network.
 
-export type RunnerDenialCode = DenialCode | 'command' | 'network';
+export type RunnerDenialCode = DenialCode | 'command' | 'network' | 'document';
 
 export interface Denial {
   tool: string;
@@ -24,10 +27,19 @@ export interface ConfineOptions {
   writeReserved?: readonly string[];
   /** Exact relative file paths the agent may write, when a task has a single-file output. */
   writeAllow?: readonly string[];
+  /**
+   * Folders the app keeps for itself that no file tool of the agent may write, whatever the fence is: the workspace's `memory/` (the notes, the activities, the procedures)
+   * unless a test names others. Only a lifted fence (`anywhere`) could reach them; the guard refuses them there too.
+   */
+  keep?: readonly string[];
   /** The commands the agent may run, each exactly as typed. */
   commands: string[];
+  /** The documents of the cycle and the folder they live in: the app writes them there from the answer, so the agent may not write one of these names anywhere else. */
+  documents?: { folder: string; names: readonly string[] };
   /** Called for every refusal, before the agent is told: the runner posts it to the run's thread. */
   onDenied?: (denial: Denial) => void;
+  /** The workspace lifted the fence of its runs (`runner.unconfined`): read and write anywhere, `.git`, hooks and secrets still refused. A narrow `writeRoot` keeps its fence. */
+  anywhere?: boolean;
 }
 
 export interface ReadConfinementOptions {
@@ -36,6 +48,8 @@ export interface ReadConfinementOptions {
   roots?: string[];
   /** Called for every refusal, before the agent is told: the runner posts it to the run's thread. */
   onDenied?: (denial: Denial) => void;
+  /** The workspace lifted the fence of its runs (`runner.unconfined`): a read anywhere, `.git` and secrets still refused. */
+  anywhere?: boolean;
 }
 
 const escapeRe = (text: string): string => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
@@ -55,7 +69,8 @@ function globBase(pattern: string): string {
 export function confinedHooks(o: ConfineOptions): Hooks {
   const say = (tool: string, target: unknown, code: RunnerDenialCode) => {
     o.onDenied?.({ tool, target: typeof target === 'string' ? target.slice(0, 300) : '', code });
-    return refuse(cp(`runner.denied.${code}`, code === 'command' ? { commands: o.commands.length ? o.commands.join(', ') : cp('runner.denied.noCommands') } : {}));
+    const params: Record<string, string> = code === 'command' ? { commands: o.commands.length ? o.commands.join(', ') : cp('runner.denied.noCommands') } : code === 'document' ? { folder: o.documents?.folder ?? '' } : {};
+    return refuse(cp(`runner.denied.${code}`, params));
   };
 
   const writeGuard: HookCallback = async (input) => {
@@ -66,8 +81,14 @@ export function confinedHooks(o: ConfineOptions): Hooks {
       isSecret: (p) => secretPath(p, o.root),
       ...(narrow ? { fence: o.root, reserved: o.writeReserved } : {}),
       writeAllow: o.writeAllow,
+      keep: o.keep ?? [join(ATAS, MEMORY_DIR)],
+      anywhere: o.anywhere && !o.writeRoot,
     });
-    return check.ok ? {} : say(input.tool_name, target, check.code);
+    if (!check.ok) return say(input.tool_name, target, check.code);
+    // A document of the cycle written by the agent itself lands where its working directory is (the worktree's root) and would go into the pull request.
+    const rel = check.rel.replace(/\\/g, '/');
+    if (o.documents?.names.includes(basename(rel)) && dirname(rel) !== o.documents.folder) return say(input.tool_name, target, 'document');
+    return {};
   };
 
   // The shell is the allow-list of the ceremonies with another list in it: only the commands the workspace named, character for character. The denial is the
@@ -86,7 +107,7 @@ export function confinedHooks(o: ConfineOptions): Hooks {
   return {
     PreToolUse: [
       { matcher: 'Edit|Write|MultiEdit|NotebookEdit', hooks: [writeGuard] },
-      { matcher: 'Read|Grep|Glob', hooks: [noSecrets, readGuardOf({ root: o.root, onDenied: o.onDenied })] },
+      { matcher: 'Read|Grep|Glob', hooks: [noSecrets, readGuardOf({ root: o.root, onDenied: o.onDenied, anywhere: o.anywhere })] },
       { matcher: 'Bash', hooks: [bashGuard] }, // i18n-ignore: the tool's name
       { matcher: 'WebFetch|WebSearch', hooks: [networkGuard] },
     ],
@@ -98,7 +119,7 @@ export function confinedHooks(o: ConfineOptions): Hooks {
  * The guard over `Read`, `Grep` and `Glob`: the one path check, over the worktree and the extra roots a reading agent was given.
  * Reading is confined too, because the agent's own folder is all it needs and a path elsewhere is somebody else's file.
  */
-function readGuardOf(o: Pick<ReadConfinementOptions, 'root' | 'roots' | 'onDenied'>): HookCallback {
+function readGuardOf(o: Pick<ReadConfinementOptions, 'root' | 'roots' | 'onDenied' | 'anywhere'>): HookCallback {
   const say = (tool: string, target: unknown, code: RunnerDenialCode) => {
     const what = typeof target === 'string' ? target.slice(0, 300) : '';
     o.onDenied?.({ tool, target: what, code });
@@ -113,7 +134,7 @@ function readGuardOf(o: Pick<ReadConfinementOptions, 'root' | 'roots' | 'onDenie
     else if (typeof args.path === 'string' && args.path.trim()) wanted.push(args.path);
     if (input.tool_name === 'Glob' && typeof args.pattern === 'string' && /^[/~]|(^|\/)\.\.(\/|$)/.test(args.pattern)) wanted.push(globBase(args.pattern));
     for (const p of wanted) {
-      const check = checkPath(o.root, p, { read: true, roots: o.roots });
+      const check = checkPath(o.root, p, { read: true, roots: o.roots, anywhere: o.anywhere });
       if (!check.ok) return say(input.tool_name, p, check.code);
     }
     return {};

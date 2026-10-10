@@ -2,7 +2,7 @@
 import { neutralDevCycle } from '../cycles/neutral';
 import { newSquad } from './squads';
 import { ensureSystemAgents, newAgent, systemAgents } from './team';
-import { CONFIG_SCHEMA_VERSION, LLM_ROLES, defaultEngine, type AgentRoleConfig, type AutonomyBlock, type DeepPartial, type LlmProvider, type LlmRole, type PluginsConfig, type RoleModel, type RunnerConfig, type RunnerSandbox, type WorkspaceConfig } from './types';
+import { CONFIG_SCHEMA_VERSION, DEFAULT_POOL_MODE, LLM_ROLES, defaultEngine, type AgentRoleConfig, type DeepPartial, type LlmProvider, type LlmRole, type PluginsConfig, type RoleModel, type RunnerConfig, type RunnerSandbox, type TestEnvironment, type WorkspaceAutonomy, type WorkspaceConfig } from './types';
 
 // What a fresh install gets: nothing that belongs to one company or one machine.
 // A person's own values reach a workspace only through the optional legacy profile of the v1 migration (legacy.ts).
@@ -28,18 +28,23 @@ export function neutralSandbox(): RunnerSandbox {
   };
 }
 
-/** The five choices of autonomy, all off: a fresh install waits for the person at every step, as it always did. */
-export function neutralAutonomy(): AutonomyBlock {
-  return { cycle: false, hostCommands: false, gates: false, push: false, pullRequest: false };
+/** The choices of autonomy, all off: a fresh install waits for the person at every step, as it always did. */
+export function neutralAutonomy(): WorkspaceAutonomy {
+  return { cycle: false, hostCommands: false, gates: false, push: false, pullRequest: false, board: false };
 }
 
 export function neutralRunner(): RunnerConfig {
-  return { enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 10 * 60_000, stageMaxMs: 2 * 60 * 60_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, sandbox: neutralSandbox(), autonomy: neutralAutonomy(), evidence: 'app', commitMessage: 'feat: {summary} #{iid}', prTitle: '{title} #{iid}', linkDependencies: true, release: { soleMaintainer: false }, conversations: { roundsPerConversation: 6, perStage: 3 } };
+  return { enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 10 * 60_000, stageMaxMs: 2 * 60 * 60_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, sandbox: neutralSandbox(), autonomy: neutralAutonomy(), evidence: 'app', procedures: true, flex: true, unconfined: false, sharedMemory: true, commitMessage: 'feat: {summary} #{iid}', prTitle: '{title} #{iid}', linkDependencies: true, release: { soleMaintainer: false }, conversations: { roundsPerConversation: 6, perStage: 3 } };
 }
 
 /** A workspace with no plugins: no folder listed, nothing read and nothing offered; an allowed irreversible write is announced for 30 seconds. */
 export function neutralPlugins(): PluginsConfig {
   return { dir: null, list: [], confirmSeconds: 30 };
+}
+
+/** A workspace with a test environment that hands a stage nothing: the person fills it in, per workspace. */
+export function neutralTestEnvironment(): TestEnvironment {
+  return { variables: [], secrets: [] };
 }
 
 export function neutralConfig(): WorkspaceConfig {
@@ -58,6 +63,7 @@ export function neutralConfig(): WorkspaceConfig {
     llm: {
       providers: [{ id: DEFAULT_PROVIDER_ID, kind: 'anthropic', engine: 'claude-sdk', baseUrl: 'https://api.anthropic.com', models: ['haiku', 'sonnet', 'opus'], secretRef: DEFAULT_SECRET_REF, envFile: null, options: {}, capabilities: null, structured: 'auto', headers: {}, maxOutputTokens: null, temperature: null, timeoutMs: null, legacyCustomEndpoint: false }],
       roles: roles<RoleModel>((r) => ({ provider: DEFAULT_PROVIDER_ID, model: NEUTRAL_ROLE_MODELS[r] })),
+      poolMode: DEFAULT_POOL_MODE,
     },
     projects: { roots: [], repos: [], autoDiscover: true, issues: { vcsId: null, project: null, projectId: null, refPrefix: '', cardScope: 'assigned', cardLabels: [] }, verifyCommands: {} },
     vcs: [],
@@ -82,6 +88,8 @@ export function neutralConfig(): WorkspaceConfig {
     },
     runner: neutralRunner(),
     plugins: neutralPlugins(),
+    testEnvironment: neutralTestEnvironment(),
+    mcpState: { enabled: false },
   };
 }
 

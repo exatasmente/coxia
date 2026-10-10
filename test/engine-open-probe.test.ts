@@ -142,3 +142,95 @@ describe('probeOpenAIProvider', () => {
     expect(r.capabilities.streaming).toBe(false);
   });
 });
+
+describe('probeOpenAIProvider: the catalog', () => {
+  it('reads the listing into catalog facts and writes what the probe found over the tested model', async () => {
+    const models = [
+      { id: 'fake-model', metadata: { context_length: 65536, pricing: { input_tokens: 0.3, output_tokens: 1.2, cache_read_tokens: 0.06 }, tags: ['reasoning'] } },
+      { id: 'other', metadata: { context_length: 32768, pricing: { input_tokens: 0.1, output_tokens: 0.4 }, tags: ['vision'] } },
+      { id: 'bare' },
+    ];
+    fake = await fakeOpenAI(capable, { models });
+    const r = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(r.catalog.map((m) => m.id)).toEqual(['fake-model', 'other', 'bare']);
+    // The tested model: tools, schema and image come from the probe, the price from the listing.
+    expect(r.catalog[0]).toMatchObject({ price: { input: 0.3, output: 1.2, cacheRead: 0.06 }, contextWindow: 65536, tools: true, structured: true, vision: true, reasoning: true });
+    // The others keep what the listing said and null for the rest: nobody calls the other models.
+    expect(r.catalog[1]).toMatchObject({ vision: true, tools: null, structured: null });
+    expect(r.catalog[2]).toMatchObject({ price: null, vision: null, tools: null });
+    expect(fake.chats()).toHaveLength(4);
+  });
+
+  it('keeps at most 300 models and survives a listing in another shape', async () => {
+    fake = await fakeOpenAI(capable, { models: Array.from({ length: 320 }, (_, i) => ({ id: `m-${i}` })) });
+    expect((await probeOpenAIProvider(fake.url, '', 'm-0')).catalog).toHaveLength(300);
+    await fake.close();
+    fake = await fakeOpenAI(capable, { models: [{ id: 'fake-model', metadata: 'oops', pricing: 3 }] });
+    const r = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(r.ok).toBe(true);
+    expect(r.catalog).toHaveLength(1);
+  });
+
+  it('leaves the catalog empty when the listing fails', async () => {
+    fake = await fakeOpenAI(capable, { modelsStatus: 500 });
+    const r = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(r.catalog).toEqual([]);
+  });
+});
+
+describe('probeOpenAIProvider: the provider\'s richer listing', () => {
+  const models = [
+    { id: 'fake-model', metadata: { context_length: 65536, tags: ['reasoning', 'reasoning_effort'] } },
+    { id: 'other', metadata: { context_length: 32768, tags: ['vision'] } },
+  ];
+  const rich = [
+    { model_name: 'fake-model', tags: ['flex', 'tools', 'structured-output'], deprecated: null, replaced_by: null },
+    { model_name: 'other', tags: [], deprecated: null, replaced_by: null },
+    { model_name: 'retired-model', tags: ['tools'], deprecated: 1781217521, replaced_by: 'fake-model' },
+  ];
+
+  it('adds flex, the tool and schema tags and the retirement dates to the catalog, with the key sent along', async () => {
+    fake = await fakeOpenAI(capable, { models, rich, auth: 'sk-test' });
+    const r = await probeOpenAIProvider(fake.url, 'sk-test', 'fake-model', { catalogUrl: fake.richUrl });
+    expect(r.ok).toBe(true);
+    expect(r.catalog[0]).toMatchObject({ id: 'fake-model', flex: true, effort: true, tools: true, structured: true });
+    expect(r.catalog[1]).toMatchObject({ id: 'other', flex: false });
+    // the retired model is not in the standard listing, and still comes with its date and substitute
+    expect(r.catalog.map((m) => m.id)).toEqual(['fake-model', 'other']);
+    expect(r.deprecations).toEqual({ 'retired-model': { at: 1781217521, replacedBy: 'fake-model' } });
+    expect(fake.requests.filter((q) => q.url.endsWith('/models/list'))).toHaveLength(1);
+    expect(fake.requests.find((q) => q.url.endsWith('/models/list'))?.headers.authorization).toBe('Bearer sk-test');
+  });
+
+  it('says in the lines of the test when the tested model is the retired one, naming the substitute', async () => {
+    fake = await fakeOpenAI(capable, { models: [{ id: 'retired-model' }], rich });
+    const r = await probeOpenAIProvider(fake.url, '', 'retired-model', { catalogUrl: fake.richUrl, lang: 'en' });
+    expect(r.messages.join('\n')).toContain('marks retired-model as obsolete (date: 2026-06-11)');
+    expect(r.messages.join('\n')).toContain('suggests fake-model');
+  });
+
+  it('is not read without an address, and never from another origin: the key stays where it was configured', async () => {
+    fake = await fakeOpenAI(capable, { models, rich });
+    const none = await probeOpenAIProvider(fake.url, '', 'fake-model');
+    expect(none.deprecations).toEqual({});
+    expect(none.catalog[0].flex).toBeNull();
+    const away = await probeOpenAIProvider(fake.url, 'sk-secret', 'fake-model', { catalogUrl: 'http://127.0.0.2:9/models/list', lang: 'en' });
+    expect(away.ok).toBe(true);
+    expect(away.catalog[0].flex).toBeNull();
+    expect(away.messages.join('\n')).toContain('richer model listing could not be read');
+    expect(fake.requests.filter((q) => q.url.endsWith('/models/list'))).toHaveLength(0);
+  });
+
+  it('a listing that fails or is not an array does not fail the test: a line says what was not updated', async () => {
+    fake = await fakeOpenAI(capable, { models, rich, richStatus: 500 });
+    const failed = await probeOpenAIProvider(fake.url, '', 'fake-model', { catalogUrl: fake.richUrl, lang: 'en' });
+    expect(failed.ok).toBe(true);
+    expect(failed.messages.join('\n')).toContain('richer model listing could not be read');
+    expect(failed.catalog[0].flex).toBeNull();
+    await fake.close();
+    fake = await fakeOpenAI(capable, { models, rich: { oops: true } as never });
+    const odd = await probeOpenAIProvider(fake.url, '', 'fake-model', { catalogUrl: fake.richUrl });
+    expect(odd.ok).toBe(true);
+    expect(odd.deprecations).toEqual({});
+  });
+});

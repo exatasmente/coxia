@@ -19,6 +19,8 @@ function confined(input: unknown, ctx: ToolContext): string {
     ...(narrow ? { fence: ctx.cwd } : {}),
     reserved: ctx.writeReserved,
     writeAllow: ctx.writeAllow,
+    keep: ctx.writeKeep,
+    anywhere: ctx.writeAnywhere && !narrow,
   });
   if (!check.ok) throw new ToolError(t(`main.engine.text.write.denied.${check.code}`));
   return check.path;
@@ -37,6 +39,7 @@ async function writeFile(path: string, content: string): Promise<void> {
 
 export const writeTool: ToolImpl = {
   name: 'Write', // i18n-ignore: the tool's name
+  activity: 'edit',
   // i18n-ignore-next-line: prompt and tool texts the open engine sends the model: English by design
   description: 'Writes a file inside the working directory, creating it (and its folders) or replacing it. file_path is relative to the working directory or absolute inside it.',
   parameters: {
@@ -60,6 +63,7 @@ export const writeTool: ToolImpl = {
 
 export const editTool: ToolImpl = {
   name: 'Edit', // i18n-ignore: the tool's name
+  activity: 'edit',
   // i18n-ignore-next-line: prompt and tool texts the open engine sends the model: English by design
   description: 'Replaces text in a file inside the working directory. old_string must appear exactly once unless replace_all is true.',
   parameters: {

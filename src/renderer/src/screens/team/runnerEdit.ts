@@ -1,5 +1,8 @@
-import type { AutonomyBlock, RunnerConfig, RunnerConversations, RunnerEvidence, RunnerSandbox } from '../../../../shared/config/types';
+import type { RunnerConfig, RunnerConversations, RunnerEvidence, RunnerSandbox, WorkspaceAutonomy } from '../../../../shared/config/types';
+import { proceduresOn } from '../../../../shared/procedures';
 import { soleMaintainerOf } from '../../../../shared/release';
+import { memoryOn } from '../../../../shared/memory';
+import { unconfinedOf } from '../../../../shared/unconfined';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../../../../shared/sandboxPaths';
 
 // The runner settings, as pure functions: the draft a person types into, the checks shown while typing (the ones the config validator holds, in words of this
@@ -31,8 +34,16 @@ export interface RunnerDraft {
   /** Where a stage's evidence is kept: with the run only (the default) or also in the cycle folder (desktop only, it decides what enters a commit). */
   evidence: RunnerEvidence;
   /** The autonomy block of the workspace (desktop only: a paired browser cannot raise it). */
-  autonomy: AutonomyBlock;
+  autonomy: WorkspaceAutonomy;
   linkDependencies: boolean;
+  /** Agents keep what they learned as procedures and read them (desktop only: it gives every agent a write into a store other agents' prompts read). */
+  procedures: boolean;
+  /** Calls nobody waits for ask for the flex tier where the provider and the model have it (desktop only). */
+  flex: boolean;
+  /** The file tools of a run's agents reach the whole machine, not only the run's worktree (desktop only: it lifts the fence of every run). */
+  unconfined: boolean;
+  /** Agents keep notes per conversation and read a short list of them wherever they run (the computer and a paired browser both change it). */
+  sharedMemory: boolean;
   /** The person is the repository's only maintainer: their yes on a merge of a release stands for the review (desktop only). */
   soleMaintainer: boolean;
   /** The limits of a conversation between team agents inside a run: carried as stored, with no field of their own on this screen. */
@@ -59,6 +70,10 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     evidence: r.evidence ?? 'app',
     autonomy: structuredClone(r.autonomy),
     linkDependencies: r.linkDependencies !== false,
+    procedures: proceduresOn({ runner: r }),
+    flex: r.flex !== false,
+    unconfined: unconfinedOf(r),
+    sharedMemory: memoryOn({ runner: r }),
     soleMaintainer: soleMaintainerOf(r),
     conversations: { ...r.conversations },
   };
@@ -81,6 +96,10 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     commitMessage: d.commitMessage,
     prTitle: d.prTitle,
     linkDependencies: d.linkDependencies,
+    procedures: d.procedures,
+    flex: d.flex,
+    unconfined: d.unconfined,
+    sharedMemory: d.sharedMemory,
     release: { soleMaintainer: d.soleMaintainer },
     conversations: { ...d.conversations },
   };
@@ -91,7 +110,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
  * whether the person's yes stands for a review are the stored ones whatever the draft says, because only the computer changes them (the save is refused otherwise).
  */
 export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig {
-  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', release: stored.release && { ...stored.release }, conversations: { ...stored.conversations } };
+  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', procedures: stored.procedures, flex: stored.flex, unconfined: stored.unconfined, release: stored.release && { ...stored.release }, conversations: { ...stored.conversations } };
 }
 
 export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage' | 'prTitle' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxBrowsers' | 'sandboxLimits';

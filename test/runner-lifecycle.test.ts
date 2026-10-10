@@ -1,6 +1,6 @@
 // The ways a run can stop, wait and be redirected: refusals at the start, a stage that fails, times out or is cancelled, the person sending work
 // back, agents that wait for the person, the review limit, a restart in the middle of a stage and the runs the app starts by itself.
-import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { applyTemplate, kanban } from '../src/shared/cycles';
@@ -144,6 +144,64 @@ describe('a stage that goes wrong', () => {
     expect(b.runner.get(run.id)!.stages.find((s) => s.stage === 'refine')?.attempts).toBe(2);
   });
 
+  it('fails like any other stage, naming the pool and when the first model is back, when every model of it was busy; it is not a wait, and trying again goes on', async () => {
+    const b = await boot();
+    easy(b);
+    const { ProviderBusyError } = await import('../src/main/engine/contract');
+    const back = Date.now() + 10 * 60_000;
+    b.engine.script('refiner', () => {
+      throw new ProviderBusyError('deep', 'open', ['model-a', 'model-b'], back, 'Rate limit reached');
+    }, () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    let run = await b.runner.start('app#101');
+    await b.settle();
+    run = b.runner.get(run.id)!;
+    expect(run).toMatchObject({ status: 'failed', stage: 'refine', error: { code: 'stage-failed' }, wait: null });
+    expect(run.error?.detail).toContain('deep');
+    expect(run.error?.detail).toContain('model-a, model-b');
+    expect(run.error?.detail).toContain(new Date(back).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+    expect(b.notices.at(-1)?.title).toContain('a etapa falhou');
+    b.runner.retry(run.id);
+    await b.settle();
+    expect(b.runner.get(run.id)).toMatchObject({ status: 'gate', error: null });
+  });
+
+  it('says in the thread of the run that a stage moved to another model of its pool, with the model that was busy and when it is back, and does not fail the stage', async () => {
+    const b = await boot();
+    easy(b);
+    const back = Date.parse('2026-01-01T14:05:00');
+    b.engine.script('refiner', (call) => {
+      call.onPool?.({ from: { label: 'model-a', provider: 'prov-a' }, to: { label: 'model-b', provider: 'prov-a' }, reason: 'rate_limit', until: back, activity: 'write' });
+      call.onPool?.({ from: { label: 'model-b', provider: 'prov-a' }, to: { label: 'model-c', provider: 'prov-b' }, reason: 'activity', until: null, activity: 'shell' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    const lines = b.thread(run).filter((m) => m.code?.startsWith('runner.model.'));
+    expect(lines.map((m) => m.code)).toEqual(['runner.model.switched', 'runner.model.moved']);
+    expect(lines[0]).toMatchObject({ kind: 'system', stage: 'refine', params: { agent: 'refiner', from: 'model-a', to: 'model-b' } });
+    expect(messageText(lines[0])).toContain(new Date(back).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+    expect(messageText(lines[0])).toContain('model-a');
+    // The provider is named only where the two models come from different ones.
+    expect(lines[1].params).toMatchObject({ from: 'model-b (prov-a)', to: 'model-c (prov-b)' });
+    expect(b.runner.get(run.id)!.status).toBe('gate');
+  });
+
+  it('says in the thread of the run that the main model handed work to a sub-agent on another model', async () => {
+    const b = await boot();
+    easy(b);
+    b.engine.script('refiner', (call) => {
+      call.onPool?.({ from: { label: 'model-a', provider: 'prov-a' }, to: { label: 'model-b', provider: 'prov-a' }, reason: 'delegate', until: null, activity: 'shell' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    const lines = b.thread(run).filter((m) => m.code?.startsWith('runner.model.'));
+    expect(lines.map((m) => m.code)).toEqual(['runner.model.delegated']);
+    expect(lines[0]).toMatchObject({ kind: 'system', stage: 'refine', params: { agent: 'refiner', from: 'model-a', to: 'model-b', work: 'os comandos' } });
+    expect(messageText(lines[0])).toContain('subagente');
+    expect(b.runner.get(run.id)!.status).toBe('gate');
+  });
+
   it('fails when the agent ran past the limit, stopping it', async () => {
     const b = await boot({ timeoutMs: 40 });
     easy(b);
@@ -217,7 +275,7 @@ describe('a stage that goes wrong', () => {
       return never();
     }, (call) => {
       call.onUsage?.({ promptTokens: 300, completionTokens: 30, cachedTokens: 0 });
-      call.onUsage?.({ promptTokens: 200, completionTokens: 20, cachedTokens: 0, costUsd: 0.001 });
+      call.onUsage?.({ promptTokens: 200, completionTokens: 20, cachedTokens: 0, costUsd: 0.001, costEstimated: false });
       return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
     });
     let run = await b.runner.start('app#101');
@@ -423,13 +481,15 @@ describe('a stage that goes wrong', () => {
   it('fails, without taking a half answer for a finished stage, when the documents are missing, the answer is empty or the turns ran out', async () => {
     const b = await boot();
     easy(b);
-    b.engine.script('refiner', () => work('No document.'), () => ({ summary: '', question: null }), async () => {
+    // The answer with no document is asked once for it (the round answers without it too) before the stage fails for it.
+    b.engine.script('refiner', () => work('No document.'), () => work('Still none.'), () => ({ summary: '', question: null }), async () => {
       const { MaxTurnsError } = await import('../src/main/engine/contract');
       throw new MaxTurnsError('s', []);
     });
     const run = await b.runner.start('app#101');
     await b.settle();
     expect(b.runner.get(run.id)!.error?.detail).toContain('1_SPEC.md');
+    expect(b.thread(run).filter((m) => m.code === 'runner.artifacts.repair')).toHaveLength(1);
     b.runner.retry(run.id);
     await b.settle();
     expect(b.runner.get(run.id)!.error?.detail).toMatch(/sem dizer o que fez/);
@@ -447,6 +507,34 @@ describe('a stage that goes wrong', () => {
     await b.settle();
     expect(existsSync(join(run.worktree, run.cycleFolder, '9_EXTRA.md'))).toBe(false);
     expect(b.thread(run).find((m) => m.code === 'runner.artifactIgnored')?.params).toMatchObject({ agent: 'refiner', name: '9_EXTRA.md' });
+  });
+
+  it('keeps a document the agent wrote itself outside the cycle folder out of the commit and says so', async () => {
+    const b = await boot();
+    easy(b);
+    b.deps.updateConfig((c) => ({ ...c, agents: { ...c.agents, team: c.agents.team.map((a) => (a.id === 'refiner' ? { ...a, permission: 'worktree' as const } : a)) } }));
+    const refused: (string | null)[] = [];
+    b.engine.script('refiner', async (call, tools) => {
+      // its own Write is refused; what the shell writes gets past the hook and is cleaned before the commit
+      refused.push(await tools.write('1_SPEC.md', '# Spec\n'));
+      refused.push(await tools.write(`${call.cwd}/docs/1_SPEC.md`, '# Spec\n'));
+      writeFileSync(join(call.cwd, '1_SPEC.md'), '# Spec\n');
+      mkdirSync(join(call.cwd, 'notes'));
+      writeFileSync(join(call.cwd, 'notes/0_ISSUE.md'), '# Issue\n');
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    expect(refused.every((r) => r && /docs\/cycles\/101-/.test(r))).toBe(true);
+    expect(b.thread(run).filter((m) => m.code === 'runner.denied')).toHaveLength(2);
+    const stray = b.thread(run).filter((m) => m.code === 'runner.artifactStray');
+    expect(stray).toHaveLength(1);
+    expect(stray[0].params).toMatchObject({ agent: 'refiner', files: '1_SPEC.md, notes/0_ISSUE.md', folder: run.cycleFolder });
+    expect(existsSync(join(run.worktree, '1_SPEC.md'))).toBe(false);
+    expect(existsSync(join(run.worktree, run.cycleFolder, '1_SPEC.md'))).toBe(true);
+    const files = git(run.worktree, 'log', '--name-only', '--format=', 'main..HEAD').split('\n').filter(Boolean);
+    expect(files.filter((f) => !f.startsWith(`${run.cycleFolder}/`))).toEqual([]);
+    expect(git(run.worktree, 'log', '--format=%s', '-1')).toBe('feat: add the refine documents #101');
   });
 });
 

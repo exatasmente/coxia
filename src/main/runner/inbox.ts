@@ -8,6 +8,8 @@ import type { ForumStore } from '../forum-core';
 export interface StageInbox {
   /** The agent whose stage this mailbox belongs to: what a message of another agent is routed by. */
   readonly agent: string;
+  /** Whether the stage's session opened the shared memory: what the sentence after a message about the activities may name (the tools exist only then). */
+  readonly memory: boolean;
   /**
    * The next message to hand over, or null when none is queued: never waits. The engines ask it when the model finished a step, and null is what lets them ask
    * for the final answer; a door that waited for a message would hold a stage that has nothing more to hear until its idle limit.
@@ -23,7 +25,17 @@ export interface StageInbox {
   readonly isClosing: boolean;
   /** Queues a message for the agent without waiting for a step; false when the stage is already finishing (the message comes back in the closing line). */
   post(text: string, asked?: boolean): boolean;
+  /**
+   * Queues the notice of something new in the memory, behind the messages addressed to the agent; `seq` is the line of the notice in the thread. Handing it over writes the
+   * line that marks it read, so the next stage does not show it again. False, with nothing written, when the stage is already finishing: the line is in the thread and
+   * the next stage reads it back.
+   */
+  notice(text: string, seq: number): boolean;
 }
+
+/** The lines of the thread that carry a notice of the shared memory and the mark that a stage read it (see notices.ts). */
+export const NOTICE_CODE = 'runner.sharedMemory.notice';
+export const READ_CODE = 'runner.sharedMemory.noticeRead';
 
 /** The answer type of a message nobody expects an answer from: what a stage that closes says about it. */
 const SAY = { message: 'runner.message.afterClose', asks: 'runner.message.afterCloseAsk' } as const;
@@ -37,11 +49,13 @@ export function inboxOf(runId: string): StageInbox | null {
 }
 
 /**
- * Opens the mailbox of one attempt at a stage. `forum` is where the delivery and the closing lines are written; `now` gives the time they carry.
+ * Opens the mailbox of one attempt at a stage. `forum` is where the delivery and the closing lines are written; `now` gives the time they carry; `memory`: the stage
+ * has the shared memory's session.
  */
-export function openInbox(runId: string, stage: string, agent: string, forum: ForumStore, now: () => string): StageInbox {
+export function openInbox(runId: string, stage: string, agent: string, forum: ForumStore, now: () => string, memory = false): StageInbox {
   const thread = runThreadId(runId);
   const queued: string[] = [];
+  const notices: { text: string; seq: number }[] = [];
   let closed = false;
   let closing = false;
   const append = (draft: ForumDraft): void => {
@@ -57,8 +71,15 @@ export function openInbox(runId: string, stage: string, agent: string, forum: Fo
   };
   const inbox: StageInbox = {
     agent,
+    memory,
     take() {
-      return closed || closing ? null : (queued.shift() ?? null);
+      if (closed || closing) return null;
+      const message = queued.shift();
+      if (message !== undefined) return message;
+      const notice = notices.shift();
+      if (!notice) return null;
+      append({ kind: 'system', author: { type: 'app' }, code: READ_CODE, params: { agent, n: 1, seqs: String(notice.seq) }, stage });
+      return notice.text;
     },
     delivered(text) {
       append({ kind: 'system', author: { type: 'app' }, code: 'runner.message.delivered', params: { agent, at: now(), text: text.slice(0, 600) }, stage });
@@ -72,6 +93,8 @@ export function openInbox(runId: string, stage: string, agent: string, forum: Fo
       // Whatever is still queued is not handed over; the stage ends with what it has and the thread says why.
       const left = queued.splice(0);
       for (const text of left) missed(text, false);
+      // A notice that was not handed over is not announced as missed: its line is in the thread and no marker was written, so the next stage shows it.
+      notices.length = 0;
     },
     post(text, asked = false) {
       if (closing) {
@@ -80,6 +103,11 @@ export function openInbox(runId: string, stage: string, agent: string, forum: Fo
         return false;
       }
       queued.push(text);
+      return true;
+    },
+    notice(text, seq) {
+      if (closing || closed) return false;
+      notices.push({ text, seq });
       return true;
     },
     close() {
