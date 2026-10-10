@@ -30,6 +30,11 @@ export interface CheckOptions {
   home?: string;
   /** Absolute folders outside `root` a read may still reach (the documentation the config lists); ignored for a write, and for a root that is not a folder. */
   roots?: string[];
+  /**
+   * The workspace lifted the fence of its runs (`runner.unconfined`): a path anywhere on the machine passes, read or write. What is refused inside the worktree is
+   * refused everywhere: `.git`, the hook folders and git's own files, a secret, a dangling link.
+   */
+  anywhere?: boolean;
 }
 
 const GIT_DIR = '.git';
@@ -100,8 +105,9 @@ export function checkPath(root: string, input: unknown, options: CheckOptions = 
   if (typeof input !== 'string' || !input.trim() || input.includes('\0') || input.length > 4096) return { ok: false, code: 'no-path' };
   const raw = input.trim();
   if (options.fence && !realFolderIn(root, options.fence)) return { ok: false, code: 'outside' };
-  // A `..` is refused wherever it stands: after a link it would climb out of the link's target, not out of the folder it was written in.
-  if (raw.split(/[\\/]+/).includes('..')) return { ok: false, code: 'traversal' };
+  // A `..` is refused wherever it stands: after a link it would climb out of the link's target, not out of the folder it was written in. Without a fence there is
+  // nothing to climb out of.
+  if (!options.anywhere && raw.split(/[\\/]+/).includes('..')) return { ok: false, code: 'traversal' };
   const home = options.home ?? homedir();
   const expanded = raw === '~' || raw.startsWith('~/') ? home + raw.slice(1) : raw;
   const base = real(root);
@@ -117,8 +123,9 @@ export function checkPath(root: string, input: unknown, options: CheckOptions = 
   let judge = base;
   if (!place.startsWith(base + sep)) {
     const hit = extra.find((r) => place === r || place.startsWith(r + sep));
-    if (!hit) return { ok: false, code: 'outside' };
-    judge = hit;
+    if (!hit && !options.anywhere) return { ok: false, code: 'outside' };
+    // Outside every root, the path is judged whole, from the top of the file system: a `.git` anywhere in it counts.
+    judge = hit ?? sep;
   }
   if (place === judge && options.read) return { ok: true, path: place, rel: '' };
   const rel = relative(judge, place);

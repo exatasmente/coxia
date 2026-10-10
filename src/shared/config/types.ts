@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 24): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 25): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 24;
+export const CONFIG_SCHEMA_VERSION = 25;
 
 /** The local read-only state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
@@ -860,6 +860,12 @@ export interface RunnerConfig {
    * lists, edits and deletes. A workspace that existed before it was added has it off (the migration), a new one has it on. Optional: absent reads as off (`proceduresOn`).
    */
   procedures?: boolean;
+  /**
+   * The file tools of a run's agents (a stage, a conversation, a question, a mention in the run's thread) read, and write when the agent writes, anywhere on the machine
+   * instead of only in the run's worktree. `.git`, hook folders and secret files stay refused. The shell is not affected: its sandbox has its own folders. Only the
+   * computer changes it; a workspace that existed before it was added has it off (the migration). Optional: absent reads as off (`unconfinedOf`).
+   */
+  unconfined?: boolean;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
   /** The title of the pull request a run opens; `{title}` (the agent's title, or the issue's) and `{iid}` are replaced. */

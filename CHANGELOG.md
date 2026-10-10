@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A run's agents can read and write outside the worktree.** A switch in Settings › Runner, on the computer only and off by default, lifts the fence of the file tools of a run's agents on both engines: a reader reads any folder of the computer and a writer writes any folder, instead of only the run's worktree. The agent's permission does not change, nor does the commands' sandbox; `.git` folders, hook folders and secret files stay refused. Configuration schema 25: an existing workspace keeps the fence.
+
 ## [0.9.0-beta.12] - 2026-10-09
 
 ### Added
