@@ -15,7 +15,7 @@ import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind
 import { currentActivity, withActivityContext } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import { rc } from '../workspaceConfig';
-import { type AgentCall, extraReadRoots } from '../agents';
+import { type AgentCall, extraReadRoots, secretPath } from '../agents';
 import { MaxTurnsError, ProviderBudgetError, ProviderBusyError, type ReadConfinement, poolBusyParams, poolNoticeLine } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
@@ -63,6 +63,8 @@ import { grantsFor, withheldText } from '../browser/guard';
 import { type CallHandoffOffer, type CallScreen, beginHandoff, modelSeesImages, offerHandoff, openCallScreen, promptFor } from '../browser/callScreen';
 import type { HandoffService } from '../screen/handoff';
 import type { ScreenAsks } from '../browser/asks';
+import type { TurnAsks } from '../turnAsks-core';
+import { turnAsker } from '../turnLimit';
 import type { ScreenSessions } from '../browser/sessions';
 
 // One attempt at one stage: build what the agent reads, run it, write the documents it returned into the cycle folder and commit what it did.
@@ -126,6 +128,8 @@ export interface ExecutorDeps {
   sharedMemory?: (run: Run, narrow: boolean) => string;
   /** The workspace's data folder: where a run's evidence is stored. */
   dataDir: () => string;
+  /** The questions at a turn limit (#246): a stage and its sub-agents wait here for the person when they use their last turn. Absent: they stop at the limit as they always did. */
+  turnAsks?: TurnAsks;
   /** The live screens of the stages that have a virtual display; absent: none is opened. */
   screens?: ScreenHub;
   /** The workspace's learned procedures: a stage and the agents it calls get their list and tools from here. Absent, or the workspace's switch off: none. */
@@ -709,7 +713,7 @@ type Answered = { sessionId: string | null; engine: ResolvedRole['engine'] };
  * `incoming` is left out: a message of the person is not what the round waits for. Null when the round fails: the answer before it then stands.
  */
 async function askAgain(d: ExecutorDeps, call: AgentCall, commands: string[], watch: Watchdog, text: string, first: Answered): Promise<{ data: unknown; answered: Answered } | null> {
-  const round: AgentCall = { ...call, prompt: first.sessionId ? text : `${call.prompt}\n\n${text}`, ...(first.sessionId ? { resume: { session: first.sessionId, engine: first.engine } } : {}), incoming: undefined };
+  const round: AgentCall = { ...call, prompt: first.sessionId ? text : `${call.prompt}\n\n${text}`, ...(first.sessionId ? { resume: { session: first.sessionId, engine: first.engine } } : {}), incoming: undefined, turnLimit: undefined };
   try {
     // One link, one idle clock: the round runs inside the caller's `guard`, as the first call did, so the attempt's cap of wall-clock counts once.
     const r = await watch.guard(d.engine(round, commands));
@@ -1040,6 +1044,29 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const watch = watchdog(abort, limitsOf(config, d));
   if (clock) clock.watch = watch;
   call.beat = watch.beat;
+  // Using the last turn asks the person instead of failing: the stage's agent and the sub-agents it starts. The clocks stand still while the question waits. Without the store
+  // (a test, a build without screens) the stage stops at its limit as it always did.
+  const asker = d.turnAsks
+    ? (who: AgentDef, own: boolean, thread: string): AgentCall['turnLimit'] => ({
+        own,
+        ask: turnAsker({
+          store: d.turnAsks as TurnAsks,
+          place: { run: run.id, thread, stage: stage.id, ref: run.issue.ref, issue: run.issue.iid },
+          agent: { id: who.id, name: agentLabel(config.agents.team, who.id) },
+          say: (code, params) => {
+            try {
+              d.forum.append(thread, { kind: 'system', author: { type: 'app' }, code, params, stage: stage.id });
+            } catch (e) {
+              console.error('[runner] could not record a turn limit line', run.id, e instanceof Error ? e.message : e);
+            }
+          },
+          pause: watch.pause,
+          signal: abort.signal,
+          isSecretPath: (token) => secretPath(token, wt),
+        }),
+      })
+    : undefined;
+  call.turnLimit = asker?.(agent, true, threadId);
   call.onUsage = procedures ? procedures.wrapUsage(usage) : usage;
   // A move to another model of the pool is said in the thread of the run, with the model that was busy and when it is back.
   call.onPool = (notice) => {
@@ -1130,6 +1157,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
             }
           : undefined,
         abort,
+        // A sub-agent of the called agent that reaches its limit asks too, and the stage's clocks stand still meanwhile (the called agent has none of its own).
+        turnAsks: d.turnAsks,
+        pause: watch.pause,
         chain,
         place,
         // The called agent's own screen, as a mentioned agent's (a docs run has none, as its stages have none).

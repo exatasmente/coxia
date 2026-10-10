@@ -57,3 +57,27 @@ Deviations from the plan:
 - `test/agent-turn-limit-open.test.ts` is a file the plan did not list: it pins the part of `runAgent` that commit 3 adds (the node's states around the wait, the failure
   of "finish now", the wrap-up that never asks). The part of the plan's `test/agent-turn-limit-sdk.test.ts` that is about the Claude engine stays for commit 7.
 - `test/activity-turn-wait.test.ts` holds the log's part now (the tree model's part comes with commit 6).
+
+## Commit 4: ask the person when a stage or a sub-agent reaches its turn limit
+
+`main/turnLimit.ts` (`turnAsker`: the record, the two lines of the conversation, the masked task, the caller's clocks stood still for the whole wait on every outcome, one signal
+from the engine's and the caller's); the three callers wired: the stage (`executor.ts`, `ExecutorDeps.turnAsks`, `RunnerDeps.turnAsks`, the runner module passing the process
+store), the agent a stage calls (`ConversationDeps.turnAsks` and `.pause`, filled from the stage's watchdog) and an answer in a conversation outside a run (`MentionDeps.turnAsks`,
+the mentions module passing the process store; not for a ceremony place); `askAgain` (so the QA repair, the evidence round and the missing-documents round) without the question;
+the six conversation lines and their catalogs; the corrected hint of the stage's turns and the same sentence in the hint of the sub-agents' turns; the CHANGELOG line.
+
+Deviations from the plan:
+
+- **The CHANGELOG line is in this commit, but the buttons come in commit 5.** From this commit the question is filed, said in the conversation and notified, and it waits with no
+  timer; the card that answers it (the stack on every screen and on the phone) is commit 5. Commits 4 and 5 are meant to be read, merged and shipped together: a build at commit 4
+  alone would leave a stage waiting for an answer nobody can give (only `turnAsks:answer` over the wire could).
+- A mention answered in a **run's thread** is not wired (the runner's own `answerMentions` call in `service.ts` passes no `turnAsks`): rule 21 lists the stage, the agent a stage
+  calls and an answer in a conversation outside a run. `answer.ts` handles `place.run` when a caller does pass the store, so wiring it is one line in `service.ts`.
+- The lines name the agent by the name the team gives it (`agentLabel`), not by its id, which is what the command lines use.
+- The record's `agent` is the id and `name` the team's name for both the stage and the called agent; for an answer in a conversation it is the agent that answers.
+- `test/helpers/runner.ts` gained `BootOptions.turnAsks` (the runner tests hand the store to `createRunner`).
+- `test/runner-turn-limit.test.ts` drives the executor with the scripted engine of the runner tests (the responder calls `call.turnLimit.ask` as the open engine would, and throws
+  `MaxTurnsError` on "finish now"), not the open engine on `fakeOpenAI` as the plan wrote: the loop's side is `test/engine-open-turn-limit.test.ts`. The clocks are real here
+  (150 ms idle, 500 ms cap, a wait of one second); the fake-timer version of acceptance 6 and 7 is `test/turn-limit-ask.test.ts` on the real watchdog.
+- The wait test found that a question asked before the watchdog's `guard` begins cannot pause it; the real engine always reaches its limit after at least one model call, so the
+  tests let the responder take a moment first.

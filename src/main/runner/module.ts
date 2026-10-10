@@ -48,6 +48,7 @@ import { type NativeImageLike, createFrameEncoder } from '../screen/frame';
 import { type EncoderHost, createEncoderHost } from '../screen/encoderHost';
 import { realEncoderEnv } from '../screen/encoderWindow';
 import { type HandoffService, createHandoffService } from '../screen/handoff';
+import { turnAsks } from '../turnAsks';
 import { type ScreenHub, createScreenHub } from '../screen/hub';
 import { type GateAction, type IssueSource, type Runner, RunnerError, createRunner } from './service';
 
@@ -252,6 +253,7 @@ export const runsModule: Module = (ctx) => {
     sessions: openSessions,
     asks: askStore,
     handoff: handoffs,
+    turnAsks,
     // One small call to a provider whose key ran out of budget, by the sweep: it goes through the engines, so the same refusal mapping applies.
     probeBudget: async (providerId) => {
       const result = await probeProviderBudget(providerId);

@@ -3,7 +3,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { type ForumStore, createForumStore } from '../src/main/forum-core';
 import type { AgentDef } from '../src/shared/config/types';
 import { neutralConfig } from '../src/shared/config';
@@ -288,5 +288,43 @@ describe('a conversation between two agents', () => {
     // Every model call of the conversation reports on the same accumulator the calling stage reads, so the sums happen by construction.
     expect(used.length).toBeGreaterThan(0);
     expect(used[0]).toMatchObject({ promptTokens: 10, completionTokens: 5 });
+  });
+});
+
+describe('a called agent and the turn limit', () => {
+  const deps = (over: Record<string, unknown> = {}) => ({ run, stage: { id: 'implement' } as never, caller: agent('developer'), called: agent('qa'), forum, config: () => neutralConfig(), engine: async () => ({ data: { texto: 'done' } }), commands: [] as string[], abort: new AbortController(), chain: ['developer'], place: 'run' as const, title: 'talk', ...over });
+
+  it('asks only for the sub-agents it starts, through the question of the stage, with the stage\'s clocks stopped meanwhile', async () => {
+    const { createTurnAsks } = await import('../src/main/turnAsks-core');
+    const store = createTurnAsks({ changed: () => undefined });
+    const clocks: string[] = [];
+    let seen: AgentCall | null = null;
+    let rounds = 0;
+    const engine = async (call: AgentCall) => {
+      seen = call;
+      if (rounds++) return { data: { texto: 'nothing more' } };
+      const decision = await call.turnLimit!.ask({ of: 'sub', role: 'qa:explore', kind: 'explore', name: null, task: 'read the logs', used: 12, round: 12, granted: 0, canContinue: true });
+      return { data: { texto: `the sub-agent was ${decision}` } };
+    };
+    const ex = exchange(['first']);
+    const running = runConversation(deps({ engine, turnAsks: store, pause: () => (clocks.push('paused'), () => void clocks.push('resumed')) }) as never, ex.ex);
+    await vi.waitFor(() => expect(store.list()).toHaveLength(1));
+    // its own limit is fixed and ends in a partial answer: only its sub-agents ask
+    expect(seen!.turnLimit?.own).toBe(false);
+    expect(seen!.maxTurns).toBe(12);
+    expect(clocks).toEqual(['paused']);
+    expect(store.list()[0]).toMatchObject({ of: 'sub', run: 'r1', thread: runThreadId('r1'), stage: 'implement', agent: 'qa', kind: 'explore', task: 'read the logs' });
+    store.answer(store.list()[0].id, 'finish', 'window');
+    await running;
+    expect(clocks).toEqual(['paused', 'resumed']);
+    const thread = forum.read(runThreadId('r1'), 0, 500)?.messages ?? [];
+    expect(thread.map((m) => m.code).filter((c) => c?.startsWith('runner.turns'))).toEqual(['runner.turns.ask.sub', 'runner.turns.finish.sub']);
+    expect(ex.answered[0]).toBe('the sub-agent was finish');
+  });
+
+  it('gives the call no question when no store was wired, as before', async () => {
+    let seen: AgentCall | null = null;
+    await runConversation(deps({ engine: async (call: AgentCall) => ((seen = call), { data: { texto: 'done' } }) }) as never, exchange(['first']).ex);
+    expect(seen!.turnLimit).toBeUndefined();
   });
 });

@@ -8,7 +8,7 @@ import { t } from '../../shared/i18n';
 import type { Run } from '../../shared/runs';
 import { mentionJob } from '../../shared/activity';
 import { type RunActivity, beginActivity, currentActivity, withActivityContext } from '../activity';
-import type { AgentCall } from '../agents';
+import { type AgentCall, secretPath } from '../agents';
 import { type ReadConfinement, ProviderBusyError, poolBusyParams, poolNoticeLine } from '../engine/contract';
 import { callKey } from '../../shared/browser';
 import { type CallScreen, type CallScreenRequest, type ScreenPorts, beginHandoff, modelSeesImages, offerHandoff, openCallScreen, promptFor } from '../browser/callScreen';
@@ -25,6 +25,8 @@ import { dependencyFolders } from '../runner/dependencies';
 import type { SandboxService, SandboxSession } from '../sandbox';
 import { readFolder, type FolderFile } from '../runner/cycleFolder';
 import { limitsOf, watchdog, type StageEngine } from '../runner/executor';
+import type { TurnAsks } from '../turnAsks-core';
+import { turnAsker } from '../turnLimit';
 import { mentionCall, readProposedWrites, type ProposedWrite } from './call';
 import { conversationCallTool } from './converse';
 import { type ProposalOutcome } from './propose';
@@ -70,6 +72,11 @@ export interface MentionDeps {
   kept?: KeptSessions;
   /** Where a running answer can be stopped by the person (default: this process's). */
   stops?: CallStops;
+  /**
+   * The questions at a turn limit (#246): a sub-agent of the answer that uses its last turn asks the person here, and the answer's clocks stand still meanwhile. The answer's own
+   * limit keeps ending in a partial answer, and a ceremony's answer (recorded elsewhere, with no conversation to ask in) never asks. Absent: sub-agents stop at their limit as before.
+   */
+  turnAsks?: TurnAsks;
   /**
    * The line a caller opened for an agent's call when the message was accepted (a run's thread), and whether it waited its turn there: the answer goes on in it,
    * so the engine reports only how it ends. Absent, or null for an agent: the engine opens its own line when it starts.
@@ -352,6 +359,20 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       // Its working folder is the same folder as the guard's root, so a relative path is judged and read against one folder, never two.
       call.readRoot = deps.readRoot?.(place, def, call.cwd);
       call.beat = watch.beat;
+      if (deps.turnAsks && place.kind !== 'ceremony') {
+        call.turnLimit = {
+          own: false,
+          ask: turnAsker({
+            store: deps.turnAsks,
+            place: { run: place.run?.id ?? null, thread: place.thread, stage, ref: ref ?? null, ...(place.run ? { issue: place.run.issue.iid } : {}) },
+            agent: { id, name: agentLabel(config.agents.team, id) },
+            say: note,
+            pause: watch.pause,
+            signal: abort.signal,
+            isSecretPath: (token) => secretPath(token, call.cwd),
+          }),
+        };
+      }
       // The agent may bring another agent of the team into the conversation (not in a ceremony, whose answers are recorded elsewhere): the other answers here, read
       // only, and the answer comes back to it. The caller's clocks stop while the other answers, as they do while a command waits for the person.
       if (place.kind !== 'ceremony') {
