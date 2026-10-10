@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { migrateConfig } from '../src/shared/config/migrations';
+import { memoryOn } from '../src/shared/memory';
 import { proceduresOn } from '../src/shared/procedures';
 import { unconfinedOf } from '../src/shared/unconfined';
 import { neutralConfig, neutralRunner, newProvider, withConfigDefaults } from '../src/shared/config/defaults';
@@ -16,8 +17,8 @@ import { V1_SETTINGS, exampleProfile } from './helpers/config';
 const quiet = { log: () => undefined, now: () => new Date('2026-10-02T12:00:00Z') };
 let root: string;
 
-// A migrated file is a workspace that existed: the learned procedures are off for it, where a new workspace has them on (schema 22).
-const existing = (c: ReturnType<typeof neutralConfig>): ReturnType<typeof neutralConfig> => ({ ...c, runner: { ...c.runner, procedures: false } });
+// A migrated file is a workspace that existed: the learned procedures (schema 22) and the shared memory (schema 27) are off for it, where a new workspace has them on.
+const existing = (c: ReturnType<typeof neutralConfig>): ReturnType<typeof neutralConfig> => ({ ...c, runner: { ...c.runner, procedures: false, sharedMemory: false } });
 
 function put(rel: string, content: string): void {
   const file = join(root, rel);
@@ -157,7 +158,7 @@ describe('migrateConfig', () => {
       expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.projects.issues).toMatchObject({ project: 'group/app', refPrefix: 'app#', cardScope: 'labels', cardLabels: ['ready', 'sprint 12'] });
       expect(r.config.agents.team.map((a) => a.id)).toEqual([...LLM_ROLES]);
-      expect(r.config.runner).toEqual({ ...neutralRunner(), procedures: false });
+      expect(r.config.runner).toEqual({ ...neutralRunner(), procedures: false, sharedMemory: false });
       expect(r.config.devCycle.comments).toEqual({});
       expect(r.config.devCycle.stages).toEqual(file.devCycle.stages);
       expect(r.config).toMatchObject({ language: 'en', userName: 'Ana', devCycle: { priority: { labels: ['^P0$', '^P1$'] } } });
@@ -237,7 +238,7 @@ describe('migrateConfig', () => {
       const r = migrateConfig(v8({ stageTimeoutMs: 1_800_000, enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3 }), { legacyInstall: false });
       expect(r.config.runner).toMatchObject({ enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3 });
       const bare = migrateConfig(v8(undefined), { legacyInstall: false });
-      expect(bare.config.runner).toEqual({ ...neutralConfig().runner, procedures: false });
+      expect(bare.config.runner).toEqual({ ...neutralConfig().runner, procedures: false, sharedMemory: false });
     });
   });
 
@@ -335,7 +336,7 @@ describe('migrateConfig', () => {
       expect({ ...r.config, runner: { ...r.config.runner, commitMessage: undefined, prTitle: undefined }, schemaVersion: 0 }).toEqual({
         ...neutralConfig(),
         language: 'en',
-        runner: { ...neutralConfig().runner, procedures: false, commitMessage: undefined, prTitle: undefined },
+        runner: { ...neutralConfig().runner, procedures: false, sharedMemory: false, commitMessage: undefined, prTitle: undefined },
         schemaVersion: 0,
       });
     });
@@ -482,7 +483,7 @@ describe('migrateConfig', () => {
       const before = v20();
       const r = migrateConfig(structuredClone(before), { legacyInstall: false });
       expect(r.config.agents.team).toEqual(before.agents.team);
-      expect({ ...r.config, schemaVersion: 20, runner: { ...r.config.runner, procedures: undefined } }).toEqual({ ...before, runner: { ...before.runner, procedures: undefined } });
+      expect({ ...r.config, schemaVersion: 20, runner: { ...r.config.runner, procedures: undefined, sharedMemory: undefined } }).toEqual({ ...before, runner: { ...before.runner, procedures: undefined, sharedMemory: undefined } });
     });
 
     it('keeps a screen, hosts and a profile a file already carries, and is idempotent', () => {
@@ -523,7 +524,7 @@ describe('migrateConfig', () => {
         runner.triggerLabel = 'auto';
       });
       const r = migrateConfig(structuredClone(before), { legacyInstall: false });
-      expect({ ...r.config, schemaVersion: 21, runner: { ...r.config.runner, procedures: undefined } }).toEqual({ ...before, runner: { ...before.runner, procedures: undefined } });
+      expect({ ...r.config, schemaVersion: 21, runner: { ...r.config.runner, procedures: undefined, sharedMemory: undefined } }).toEqual({ ...before, runner: { ...before.runner, procedures: undefined, sharedMemory: undefined } });
     });
 
     it('is off for a file that came from the first versions too, whatever the chain seeded on the way', () => {
@@ -646,7 +647,8 @@ describe('migrateConfig', () => {
     it('changes nothing else: the rest of the file is exactly as it was', () => {
       const before = v25();
       const r = migrateConfig(structuredClone(before), { legacyInstall: false });
-      expect({ ...r.config, schemaVersion: 25 }).toEqual(before);
+      // The switch of the next step is the only thing the chain adds past this one.
+      expect({ ...r.config, schemaVersion: 25, runner: { ...r.config.runner, sharedMemory: undefined } }).toEqual({ ...before, runner: { ...before.runner, sharedMemory: undefined } });
     });
 
     it('keeps a pool a file already carries, and a second start changes nothing', () => {
@@ -665,7 +667,7 @@ describe('migrateConfig', () => {
       const c = v25();
       c.llm.roles.deep = { provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'gone', model: 'model-b' }, { provider: 'spare', model: 'model-c' }], activities: { edit: [{ provider: 'spare', model: 'model-b' }, { provider: 'spare', model: 'model-b' }] } };
       c.agents.team[c.agents.team.length - 1].model.fallbacks = [{ provider: 'gone', model: 'model-b' }];
-      c.schemaVersion = 26;
+      c.schemaVersion = CONFIG_SCHEMA_VERSION;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.changed).toBe(true);
       expect(r.config.llm.roles.deep).toEqual({ provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'spare', model: 'model-c' }], activities: { edit: [{ provider: 'spare', model: 'model-b' }] } });
@@ -678,7 +680,7 @@ describe('migrateConfig', () => {
       c.llm.roles.turn.fallbacks = 'model-b';
       c.llm.roles.turn.images = 'yes';
       c.llm.scoreOverrides = { floors: { shell: 120 } };
-      c.schemaVersion = 26;
+      c.schemaVersion = CONFIG_SCHEMA_VERSION;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.config.llm.roles.turn).toEqual(c.llm.roles.turn && { provider: c.llm.roles.turn.provider, model: c.llm.roles.turn.model });
       expect(r.config.llm.scoreOverrides).toBeUndefined();
@@ -702,7 +704,7 @@ describe('migrateConfig', () => {
       c.agents.team[c.agents.team.length - 1].poolMode = 'fallback';
       c.devCycle.stages[0].poolMode = 'delegate';
       c.devCycle.flows = { release: [{ ...c.devCycle.stages[0], poolMode: 'switch' }] };
-      c.schemaVersion = 26;
+      c.schemaVersion = CONFIG_SCHEMA_VERSION;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.changed).toBe(false);
       expect(r.config.llm.poolMode).toBe('switch');
@@ -719,7 +721,7 @@ describe('migrateConfig', () => {
       writer.poolMode = 3;
       c.devCycle.stages[0].poolMode = 'sometimes';
       c.devCycle.flows = { release: [{ ...c.devCycle.stages[0], poolMode: 'x' }] };
-      c.schemaVersion = 26;
+      c.schemaVersion = CONFIG_SCHEMA_VERSION;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.changed).toBe(true);
       expect(r.config.llm.poolMode ?? 'delegate').toBe('delegate');
@@ -770,7 +772,7 @@ describe('migrateConfig', () => {
       c.llm.roles.turn.offer = { flex: true };
       c.agents.team[c.agents.team.length - 1].model.offer = { effort: 3 };
       c.runner.flex = 'on';
-      c.schemaVersion = 26;
+      c.schemaVersion = CONFIG_SCHEMA_VERSION;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.config.llm.providers[last]).toMatchObject({ id: 'spare', baseUrl: 'http://example.com/v1', features: { failFast: true } });
       expect(r.config.llm.providers[last].features?.serviceTier).toBeUndefined();
@@ -787,16 +789,81 @@ describe('migrateConfig', () => {
       const c = v25();
       const last = c.llm.providers.length - 1;
       c.llm.providers[last].features = { serviceTier: true, catalogUrl: 'https://elsewhere.example.net/models/list' };
-      c.schemaVersion = 26;
+      c.schemaVersion = CONFIG_SCHEMA_VERSION;
       const r = migrateConfig(c, { legacyInstall: false });
       expect(r.config.llm.providers[last].features).toEqual({ serviceTier: true });
       expect(r.config.llm.providers[last].baseUrl).toBe('http://example.com/v1');
       expect(validateConfig(r.config).ok).toBe(true);
     });
 
-    it('is the newest step: 26 is current and 27 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(26);
-      expect(() => migrateConfig({ schemaVersion: 27 }, { legacyInstall: false })).toThrow(/newer app/);
+  });
+
+  describe('schema 26 to 27: the shared memory switch and the roadmap pointer', () => {
+    const v26 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 26;
+      delete c.runner.sharedMemory;
+      change(c);
+      return c;
+    };
+
+    it('sets the switch off for a workspace that existed, bumps the version, leaves a note and yields a valid file', () => {
+      const r = migrateConfig(v26(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(26);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.runner.sharedMemory).toBe(false);
+      expect(memoryOn(r.config)).toBe(false);
+      expect(r.notes.join(' ')).toContain('the shared memory is off for a workspace that existed');
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('writes it off even when the file already says on, and never raises anything else', () => {
+      const r = migrateConfig(v26((c) => (c.runner.sharedMemory = true)), { legacyInstall: false });
+      expect(r.config.runner.sharedMemory).toBe(false);
+      expect(r.config.runner.unconfined).toBe(false);
+      expect(r.config.runner.autonomy).toEqual(neutralRunner().autonomy);
+    });
+
+    it('touches nothing else of the file, and keeps the roadmap pointer a file carries', () => {
+      const before = v26((c) => {
+        c.runner.enabled = true;
+        c.docs.roadmapFile = '~/project/ROADMAP.md';
+      });
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect(r.config.docs.roadmapFile).toBe('~/project/ROADMAP.md');
+      expect({ ...r.config, schemaVersion: 26, runner: { ...r.config.runner, sharedMemory: undefined } }).toEqual({ ...before, runner: { ...before.runner, sharedMemory: undefined } });
+    });
+
+    it('only bumps a document whose runner is not an object, and a file without a roadmap pointer stays without one', () => {
+      const r = migrateConfig(v26((c) => (c.runner = 'broken')), { legacyInstall: false });
+      expect(r.fromVersion).toBe(26);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(migrateConfig(v26(), { legacyInstall: false }).config.docs.roadmapFile).toBeUndefined();
+    });
+
+    it('is off for a file that came from the first versions too, and on for a new workspace; the app reads an absent switch as off', () => {
+      expect(migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false }).config.runner.sharedMemory).toBe(false);
+      expect(migrateConfig(undefined, { legacyInstall: true }).config.runner.sharedMemory).toBe(false);
+      expect(neutralRunner().sharedMemory).toBe(true);
+      expect(migrateConfig(undefined, { legacyInstall: false }).config.runner.sharedMemory).toBe(true);
+      expect(memoryOn(neutralConfig())).toBe(true);
+      expect(memoryOn({ runner: {} })).toBe(false);
+      expect(memoryOn(null)).toBe(false);
+    });
+
+    it('a file already at 27 keeps its choice, and a second start changes nothing', () => {
+      const on = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      expect(migrateConfig(on, { legacyInstall: false }).config.runner.sharedMemory).toBe(true);
+      const once = migrateConfig(v26(), { legacyInstall: false });
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+    it('is the newest step: 27 is current and 28 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(27);
+      expect(() => migrateConfig({ schemaVersion: 28 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

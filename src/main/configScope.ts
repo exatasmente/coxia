@@ -8,7 +8,9 @@ import { ACTIVITIES, type AgentDef, type ModelRef, type WorkspaceConfig } from '
 // configuration against the one the app holds, so what the client says it changed does not matter: a full config with a sneaky change elsewhere is refused.
 //
 // `runner.evidence` is deliberately absent from the list, like `runner.worktreesDir`, `runner.commands`, `runner.identity`, `runner.sandbox` and
-// `runner.release`: it decides what enters a commit and only the computer changes it (see RunnerSection.tsx).
+// `runner.release`: it decides what enters a commit and only the computer changes it (see RunnerSection.tsx). `runner.sharedMemory` is in the list on purpose: the
+// maintainer decided the paired phone has the desktop's capabilities over the memory, the switch included (nothing leaves the machine, and it opens no tool or host).
+// `docs.roadmapFile` is not: it names a file of the computer.
 
 /** The paths (a path and everything under it) a paired browser may change. */
 export const WEB_EDITABLE = [
@@ -28,6 +30,7 @@ export const WEB_EDITABLE = [
   'runner.commitMessage',
   'runner.prTitle',
   'runner.linkDependencies',
+  'runner.sharedMemory',
   'attachments',
 ] as const;
 

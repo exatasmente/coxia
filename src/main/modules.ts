@@ -17,6 +17,7 @@ import { forumModule } from './forum';
 import { register as gitlabQuick } from './gitlabQuick';
 import { register as glossary } from './glossary';
 import { minutes } from './minutes';
+import { memoryModule } from './memory/module';
 import { mentionsModule } from './mentions/module';
 import { mcpStateModule } from './mcp-state/module';
 import { pluginsModule } from './plugins/module';
@@ -56,6 +57,7 @@ const ALL: Module[] = [
   forumModule,
   gitlabQuick,
   glossary,
+  memoryModule,
   mentionsModule,
   minutes,
   pluginsModule,

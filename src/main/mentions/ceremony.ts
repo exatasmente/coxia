@@ -3,6 +3,7 @@ import { MAX_MENTIONS, mentionableIds, parseMentions, type Author, type ForumMes
 import { t } from '../../shared/i18n';
 import { partialHint } from '../../shared/partial';
 import { runAgent } from '../agents';
+import { openCeremonyMemory } from '../memory/ceremony';
 import { text as cycleWord } from '../cyclePrompts';
 import { getConfig } from '../workspaceConfig';
 import { mentionCall } from './call';
@@ -53,6 +54,8 @@ export async function answerCeremonyMentions(text: string, ctx: CeremonyContext)
     const def = config.agents.team.find((a) => a.id === id);
     if (!def) continue;
     const name = nameOf(def);
+    // The shared memory, read only: the list and the tools to open an entry, no tool that writes, no folder and no line in any thread. Cache-only facts: a voice turn waits for no git.
+    const memory = await openCeremonyMemory({ agent: { ...def, permission: 'read' }, tools: true });
     try {
       const call = mentionCall({
         agent: { ...def, permission: 'read' },
@@ -66,7 +69,9 @@ export async function answerCeremonyMentions(text: string, ctx: CeremonyContext)
         place: 'ceremony',
         shell: undefined,
         proposals: false,
+        ...(memory ? { index: memory.list.text } : {}),
       });
+      if (memory?.tools) call.memoryTools = memory.tools;
       const r = await runAgent<{ text?: unknown }>(call, []);
       const said = typeof (r.data as { text?: unknown })?.text === 'string' ? (r.data as { text: string }).text.trim() : '';
       if (!said) throw new Error(t('main.runner.error.empty-answer'));
@@ -74,6 +79,8 @@ export async function answerCeremonyMentions(text: string, ctx: CeremonyContext)
     } catch (e) {
       const reason = (e instanceof Error ? e.message : String(e)).slice(0, 300);
       out.push({ agent: id, name, text: t('main.mentions.ceremony.failed', { agent: name, reason }), speech: t('main.mentions.ceremony.failed', { agent: name, reason }) });
+    } finally {
+      memory?.finish();
     }
   }
   return out;

@@ -35,6 +35,7 @@ function MoreSheet({ go, onClose }: { go: (s: Screen) => void; onClose: () => vo
     { label: t('ui.board.nav'), screen: { name: 'board' } },
     { label: t('ui.forum.nav'), screen: { name: 'forum' }, badge: unread, badgeLabel: t('ui.forum.list.unreadAll', { count: unread }) },
     { label: t('ui.procedures.nav'), screen: { name: 'procedures' } },
+    { label: t('ui.memory.nav'), screen: { name: 'memory' } },
     { label: t('ui.nav.cost'), screen: { name: 'custo' } },
     { label: t('ui.nav.radar'), screen: { name: 'radar' } },
     { label: t('ui.nav.health'), screen: { name: 'saude' }, badge: badge.total, badgeLabel: badgeTitle(badge) },

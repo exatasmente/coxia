@@ -32,6 +32,8 @@ import { type Binding, type BindingCell, type KeptSessions, type KeptShell, type
 import { type CallStops, callStops } from './stop';
 import { reposOnDisk, runRepo, type MentionPlace } from './place';
 import { type DocsAsk, runDocsAsk, stageOfRun } from '../harness/deliver';
+import type { MemoryPort } from '../memory/port';
+import type { MemorySession } from '../memory/session';
 import type { ProceduresPort } from '../procedures/port';
 import type { ProcedureOffers } from '../procedures/offers';
 import { raiseOffers, runWrapUp } from '../procedures/wrapup';
@@ -101,11 +103,16 @@ export interface MentionDeps {
   chain?: readonly string[];
   /**
    * What an answer is told of the activities of the workspace, by the names the message carries: the front named whole, or the short list of what is
-   * in progress. The caller renders it (the runner has the store, the mentions module reads it too); absent: the answer gets no such section.
+   * in progress. The caller renders it (the runner has the store, the mentions module reads it too); absent: the answer gets no such section. `narrow`: the answer has the
+   * shared memory, whose index carries the other activities, so the section holds only what the message is about or named.
    */
-  memory?: (place: MentionPlace, message: ForumMessage) => string;
+  memory?: (place: MentionPlace, message: ForumMessage, narrow: boolean) => string;
   /** The workspace's learned procedures: an answer outside a ceremony gets their list and tools, and what it read is marked in the thread. Absent: none. */
   procedures?: ProceduresPort;
+  /** The shared memory (#215): an answer gets the index and, outside a ceremony, tools to read it and to keep notes of its own. Absent, or the workspace's switch off: none. */
+  memoryPort?: MemoryPort;
+  /** What the message names, for the ranking of the memory's list: the activities (numbers or references) and the agents. Absent: nothing was named. */
+  named?: (place: MentionPlace, message: ForumMessage) => { refs: string[]; agents: string[] };
   /**
    * Where the offers to keep a procedure are held (#187). With it, an answer whose work had trial and error and kept no procedure gets one last turn once the answer is
    * posted, detached from the thread's queue. Absent: no last turn.
@@ -214,6 +221,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
     let ran = false;
     // The procedures the answer is given (none in a ceremony), and whether the engine ended in an answer: what a failed call read is no use of a procedure.
     let procedures: ProcedureSession | null = null;
+    // The memory session of the answer, closed where the procedures' one is.
+    let shared: MemorySession | null = null;
     let answered = false;
     // The last turn took over closing the procedures: its task does, once it is over.
     let detached = false;
@@ -252,25 +261,43 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       // A session kept for the screen holds the commands of the earlier answers too: this answer's are the ones numbered after the last one it found.
       const shell = session;
       const startN = shell ? shell.log.reduce((top, e) => Math.max(top, e.n), 0) : 0;
+      // The call's screen as the procedures and the memory read it: the steps of its browser for a draft, and the hand-off's seams for the check of what the person typed.
+      const pscreen = screen?.toolset ? procedureScreen({ key: callKey(place.thread, id), sessions: ports?.sessions, typed: screen.toolset.typed, handoff: ports?.handoff, active: () => screen?.toolset?.handoff?.active() === true, browser: !!screen.toolset.browser }) : undefined;
+      const surface = deps.chain?.length ? 'called' : place.kind === 'run' ? 'run-thread' : place.kind === 'general' ? 'forum' : place.owner ? 'direct' : 'channel';
+      const note = (code: string, params: Record<string, string | number>): void => {
+        try {
+          deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code, params, stage });
+        } catch (e) {
+          console.error('[mentions] could not record a note', e instanceof Error ? e.message : e);
+        }
+      };
       if (place.kind !== 'ceremony') {
         procedures =
           deps.procedures?.open({
-            surface: deps.chain?.length ? 'called' : place.kind === 'run' ? 'run-thread' : place.kind === 'general' ? 'forum' : place.owner ? 'direct' : 'channel',
+            surface,
             agent: reader,
             ref: place.kind === 'run' && place.run ? place.run.issue.ref : place.thread,
             issue: place.run?.issue.iid,
             repos: info.repos,
             requests: true,
-            screen: screen?.toolset ? procedureScreen({ key: callKey(place.thread, id), sessions: ports?.sessions, typed: screen.toolset.typed, handoff: ports?.handoff, active: () => screen?.toolset?.handoff?.active() === true, browser: !!screen.toolset.browser }) : undefined,
+            screen: pscreen,
             commands: shell ? { entries: () => shell.log.filter((e) => e.n > startN) } : undefined,
-            note: (code, params) => {
-              try {
-                deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code, params, stage });
-              } catch (e) {
-                console.error('[mentions] could not record a note', e instanceof Error ? e.message : e);
-              }
-            },
+            note,
           }) ?? null;
+        // The shared memory: the index the answer is told and the tools it uses, in its own folder of the place's thread (a run's, a channel's, the general or a direct one).
+        shared =
+          (await deps.memoryPort?.open({
+            surface,
+            agent: reader,
+            conversation: place.thread,
+            writes: true,
+            tools: true,
+            ref: place.kind === 'run' && place.run ? place.run.issue.ref : place.ref,
+            ...(place.run ? { repo: place.run.repo, runId: place.run.id, issue: place.run.issue.iid } : {}),
+            named: deps.named?.(place, message),
+            screen: pscreen,
+            note,
+          })) ?? null;
       }
       // The files the message carries go to the agent only when the workspace gives them: the person still attaches and opens them, the agent is told why not.
       const attachments = deps.config().attachments?.agents === false ? null : attachmentsFor(deps, place.thread, message);
@@ -293,15 +320,17 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         autonomous: autonomyOf(config, def),
         attachments: attachments ?? undefined,
         // What the app knows of the activities: the section is text only, so no tool of the call changes and no folder of it is opened.
-        memory: deps.memory?.(place, message) || undefined,
+        memory: deps.memory?.(place, message, shared !== null) || undefined,
         procedures: procedures?.list.text,
         proceduresGui: procedures?.has.screen === true,
         proceduresCmd: procedures?.has.commands === true,
+        ...(shared ? { index: shared.list.text, indexWrite: shared.writes } : {}),
       });
       if (procedures) {
         call.procedures = procedures.tools;
         call.onUsage = procedures.wrapUsage();
       }
+      if (shared?.tools) call.memoryTools = shared.tools;
       if (attachments === null && message.attachments.length) {
         // The workspace turned attachments to agents off: the conversation says so, once per answer, so the person knows why the agent did not read them.
         deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'main.attachment.agentsOff', stage });
@@ -370,6 +399,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       else if (e instanceof ProviderBusyError) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.model.allBusy', params: { agent: id, ...poolBusyParams(e) }, stage });
       else deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
     } finally {
+      shared?.finish();
       if (!detached) procedures?.finish(answered ? 'done' : 'failed');
       unregister();
       // A hand-off still open ends first, with no result; the typed values are forgotten with the answer.

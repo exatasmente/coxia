@@ -12,6 +12,7 @@ Start with the [project README](../README.md). These documents go deeper. Severa
 | [Development cycles](cycles.md) | The cycle templates (SDD, Scrum, Kanban, GitHub Flow, Minimal), stages, prompts, making and sharing your own | pt-BR, en |
 | [The runner](runner.md) | How an issue goes through the agent cycle: the worktree, the stages, the guard on an agent that writes, the commits, autonomy, the scheduler, what was not verified | pt-BR, en |
 | [Learned procedures](procedures.md) | What agents keep about a recurring task for the next one: the record and its kinds, the tools, the screen draft, what never goes in, the switch, the Procedures view, the comparison | pt-BR, en |
+| [Shared memory](memory.md) | What every agent can learn of the whole app without loading it: the notes agents keep per conversation, the short list and its tools, the version and the roadmap, the notice to a running run, the Memory view, the switch, what protects the rest | pt-BR, en |
 | [Project instructions for agents](harness.md) | The root `AGENTS.md` format, how agents receive it, and the documentation run that creates or updates it | pt-BR, en |
 | [Voice](voice.md) | Voice is optional: what "off" means, the call/chat wording, the voice setup, Edge and Kokoro engines | en |
 | [Plugins](plugins/README.md) | The plugin kit: the declaration, the fixed event catalog, the boundary and the example (web search for the agents) | pt-BR, en |

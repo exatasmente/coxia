@@ -159,6 +159,9 @@ export function RunnerSection({ config, save }: SectionProps) {
       <Toggle checked={draft.linkDependencies} onChange={(linkDependencies) => set({ linkDependencies })} label={t('ui.runner.linkDeps')} />
       <p className="small muted">{t('ui.runner.linkDepsHint')}</p>
 
+      <Toggle checked={draft.sharedMemory} onChange={(sharedMemory) => set({ sharedMemory })} label={t('ui.runner.sharedMemory')} />
+      <p className="small muted">{t('ui.runner.sharedMemoryHint')}</p>
+
       {!web && (
         <>
           <Toggle checked={draft.soleMaintainer} onChange={(soleMaintainer) => set({ soleMaintainer })} label={t('ui.runner.soleMaintainer')} />

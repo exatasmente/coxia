@@ -49,6 +49,14 @@ describe('web policy for the runs', () => {
     expect(webRefusal('actions:approve', true)).toBeNull();
   });
 
+  it('keeps runs:memory and runs:activitySave open to a paired browser, and the audit records the door of each correction', () => {
+    const text = source('module.ts');
+    expect(text).toMatch(/op: 'activity-correct'/);
+    expect(text).toMatch(/op: 'cycle-memory-edit'/);
+    expect(text).toMatch(/callOrigin\(\) === 'web' \? 'paired' : 'window'/);
+    for (const channel of ['runs:memory', 'runs:activitySave']) expect(webAccess(channel), channel).toBe('allow');
+  });
+
   it('are exactly the channels the module serves, each one classified here', () => {
     const served = [...source('module.ts').matchAll(/ctx\.handle\('(runs:[\w-]+)'/g)].map((m) => m[1]);
     expect(served.sort()).toEqual([...OPEN, ...EXTERNAL].sort());

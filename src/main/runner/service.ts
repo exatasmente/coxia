@@ -130,6 +130,10 @@ import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
+import type { MemoryPort } from '../memory/port';
+import type { MemoryWrite } from '../memory/store';
+import { createNoticeHub } from './notices';
+import type { MemorySession } from '../memory/session';
 import type { ProceduresPort } from '../procedures/port';
 import type { ProcedureOffers } from '../procedures/offers';
 import { runDocsAsk, stageOfRun } from '../harness/deliver';
@@ -256,6 +260,15 @@ export interface RunnerDeps {
   pluginNotes?(): { name: string; note: string }[];
   /** The workspace's learned procedures: stages, the agents they call and the answers in a run's thread get their list and tools from here. Absent: none. */
   procedures?: ProceduresPort;
+  /** The shared memory (#215): stages, the agents they call and the answers in a run's thread get their index and tools from here. Absent: none. */
+  memoryPort?: MemoryPort;
+  /**
+   * How the runner hears that an agent wrote a note in the shared memory (returns the way to stop listening): a run the note concerns is told in its conversation and, when
+   * a stage is working, in the session. Absent: no run is told. The switch decides at every note.
+   */
+  memoryWrites?: (listener: (write: MemoryWrite) => void) => () => void;
+  /** For a test: how long notices that arrive close together are held to be told as one, in ms. */
+  noticeMergeMs?: number;
   /** Where the offers to keep a procedure are held: a stage and an answer in a run's thread raise them after their last turn (#187). Absent: no last turn. */
   offers?: ProcedureOffers;
   /** For a test: the limit of the last turn, in ms. */
@@ -411,11 +424,16 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run) => sharedTextOf(run.issue.ref), procedures: deps.procedures, offers: deps.offers, procedureTurnMs: deps.procedureTurnMs, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
+  // A run is told when something it concerns is written elsewhere in the memory: by a note of an agent, and by a document of another run's stage.
+  const notices = deps.memoryWrites ? createNoticeHub({ runs: deps.runs, forum: deps.forum, config: deps.config, workingAgent: (run) => workingAgent(run), ...(deps.noticeMergeMs !== undefined ? { mergeMs: deps.noticeMergeMs } : {}) }) : null;
+  deps.memoryWrites?.((write) => notices?.noteWritten(write));
+
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run, narrow) => sharedTextOf(run.issue.ref, [], [], narrow), procedures: deps.procedures, memoryPort: deps.memoryPort, documentsWritten: (run, agent, names) => notices?.documentsWritten(run, agent, names), offers: deps.offers, procedureTurnMs: deps.procedureTurnMs, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
 
   /** The record of the activities as a call reads it: the front named whole, the others in short. Never a model call, never the file. */
-  function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = []): string {
-    return activities.render(deps.runs, { ref, refs: [...refs], agents: [...agents] }, deps.config().language);
+  function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = [], narrow = false): string {
+    // A call that has the shared memory gets only what it is about or named here; the other activities are lines of its index (divergences 1, 2 and 7).
+    return activities.render(deps.runs, { ref, refs: [...refs], agents: [...agents], ...(narrow ? { onlyNamed: true } : {}) }, deps.config().language);
   }
 
   /** What a message of a run's thread names: the agents called on, and the activity references it writes. */
@@ -1348,7 +1366,7 @@ export function createRunner(deps: RunnerDeps): Runner {
           if (id !== working || toStage >= 1) continue;
           const queued = inbox.post(text, message.waitsForAnswer);
           // The agent is told that the record of the activities moved only when the message really entered the session: a message handed back in the closing line keeps the person's words.
-          if (queued) inbox.post(`\n${prompt('runner.section.sharedMoved')}`, false);
+          if (queued) inbox.post(`\n${inbox.memory ? prompt('runner.section.sharedMovedMemory') : prompt('runner.section.sharedMoved')}`, false);
           toStage++;
           // The mailbox writes the closing line itself when the stage is already finishing; here only a message that went in is announced.
           if (queued) deps.forum.append(message.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.message.waiting', params: { agent: id, text: text.slice(0, 600) }, stage: run.stage });
@@ -1515,8 +1533,11 @@ export function createRunner(deps: RunnerDeps): Runner {
       // Every write an answer proposes, a run's thread included, goes through the mentions module's own path: the same door of Actions, no publisher in between.
       propose: proposeMention,
       // What the answer is told of the activities: its own front whole, and whatever else the message named.
-      memory: (_place, msg) => sharedTextOf(run.issue.ref, callsOfMention(msg)),
+      memory: (_place, msg, narrow) => sharedTextOf(run.issue.ref, callsOfMention(msg), [], narrow),
       procedures: deps.procedures,
+      memoryPort: deps.memoryPort,
+      // What the message names, for the ranking of the memory's list.
+      named: (_p, msg) => ({ refs: [], agents: callsOfMention(msg) }),
       offers: deps.offers,
       // An agent named in a run's thread reads only inside that run's worktree; a refusal is told in the thread, like a stage's.
       readRoot: (p, def, _cwd) => {
@@ -1585,8 +1606,13 @@ export function createRunner(deps: RunnerDeps): Runner {
       let answer: ReturnType<typeof readChain> = null;
       let failure = '';
       let partial = false;
+      // The shared memory, read only: the answer to a question is a verdict, not a conversation, so it keeps no note and makes no folder. Its own run's documents are in the
+      // files the call reads whole.
+      let shared: MemorySession | null = null;
       try {
-        const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison });
+        shared = (await deps.memoryPort?.open({ surface: 'chain', agent: holder, conversation: null, writes: false, tools: true, ref: run.issue.ref, repo: run.repo, runId: run.id })) ?? null;
+        const call = chainCall({ run, holder, asker: q.by, question: q.text, config, thread: deps.forum.read(runThreadId(id), 0, 2000)?.messages ?? [], files: existsSync(run.worktree) ? readFolder(run.worktree, run.cycleFolder) : [], cwd, liaison, ...(shared ? { index: shared.list.text, shared: sharedTextOf(run.issue.ref, [], [], true) } : {}) });
+        if (shared?.tools) call.memoryTools = shared.tools;
         // The agent that answers reads what the stage's agent reads of the repository's documentation, at the stage the run is at.
         call.docs = existsSync(run.worktree)
           ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
@@ -1605,6 +1631,8 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (!answer) failure = 'empty-answer';
       } catch (e) {
         failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
+      } finally {
+        shared?.finish();
       }
       // The person (or a cancel) may have answered while the agent thought: then what it said is not used.
       const now = deps.runs.get(id)?.question;
@@ -1660,8 +1688,13 @@ export function createRunner(deps: RunnerDeps): Runner {
     let answer: RequestAnswer | null = null;
     let failure = '';
     let partial = false;
+    // The receiving liaison reads the memory too (read only, no folder): the activity the request is made from, whole, and the rest as lines. The asker's documents are in
+    // the memory's list for it: it does not read the asker's cycle folder.
+    let shared: MemorySession | null = null;
     try {
-      const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run) });
+      shared = (await deps.memoryPort?.open({ surface: 'request', agent: target, conversation: null, writes: false, tools: true, ref: run.issue.ref, repo: run.repo })) ?? null;
+      const call = requestCall({ run, holder: target, asker: holder.id, from, to, kind: request.kind, text: request.text, config, thread: deps.forum.read(SQUADS_CHANNEL, 0, 2000)?.messages ?? [], cwd: squadCwd(to, run), ...(shared ? { index: shared.list.text, shared: sharedTextOf(run.issue.ref, [], [], true) } : {}) });
+      if (shared?.tools) call.memoryTools = shared.tools;
       // The liaison that receives the request reads the documentation of its own squad's repository (the run's worktree when it has no repository of its own).
       call.docs = call.cwd === run.worktree
         ? await runDocsAsk({ wt: run.worktree, base: run.base, cycleFolder: run.cycleFolder, stage: stageOfRun(run, config), texts: readFolder(run.worktree, run.cycleFolder).map((f) => f.text) })
@@ -1676,6 +1709,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!answer) failure = 'empty-answer';
     } catch (e) {
       failure = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
+    } finally {
+      shared?.finish();
     }
     // The person (or a cancel) may have answered while the other liaison thought: then what it said is not used (the request stays in the channel as it was).
     const now = deps.runs.get(id)?.question;

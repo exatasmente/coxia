@@ -3,6 +3,7 @@
   "ui.audit.filterLabel": "Filtrar por issue",
   "ui.audit.filterPlaceholder": "Filtrar por issue (ex.: 101)",
   "ui.audit.kind.exec": "Comando na sandbox",
+  "ui.audit.kind.memory": "Memória compartilhada",
   "ui.audit.kind.minutes": "Atas",
   "ui.audit.kind.noteEdit": "Edição de nota",
   "ui.audit.kind.pluginRequest": "Requisição de plugin",

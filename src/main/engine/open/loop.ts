@@ -99,6 +99,8 @@ export interface OpenRunParams {
   writeAllow?: readonly string[];
   // The workspace lifted the fence of its runs: Write and Edit may land anywhere, `.git`, hooks and secrets still refused.
   writeAnywhere?: boolean;
+  // Folders the app keeps for itself: Write and Edit refuse them even with the fence lifted.
+  writeKeep?: readonly string[];
   hooks?: SdkHooks;
   // Tools the app itself provides (in-process, not shell or MCP); one is offered when its name is in allowedTools.
   extraTools?: ToolImpl[];
@@ -366,6 +368,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
   // Sub-agents that change something (edit, shell, screen) run one at a time, in the order they were asked: a chain of promises per loop.
   let mutating: Promise<unknown> = Promise.resolve();
   const delegatedTo = new Set<string>();
+  const principalOnly = new Set((p.extraTools ?? []).filter((x) => x.principalOnly).map((x) => x.name));
   const inOrder = <R,>(work: () => Promise<R>): Promise<R> => {
     const result = mutating.then(work);
     mutating = result.catch(() => undefined);
@@ -390,7 +393,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         prompt,
         schema: undefined,
         resume: undefined,
-        allowedTools: p.allowedTools.filter((t) => t !== 'Agent'),
+        // `Agent` is the principal's alone, and so is every tool that writes into the principal's place (the memory's write tools): a sub-agent reads.
+        allowedTools: p.allowedTools.filter((t) => t !== 'Agent' && !principalOnly.has(t)),
         systemAppend: [def?.body, kind ? subagentNote(kind) : undefined].filter(Boolean).join('\n\n') || undefined,
         maxTurns: kind ? KIND_TURNS[kind] : 12,
         sessionsDir: null,
@@ -431,6 +435,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     writeReserved: p.writeReserved,
     writeAllow: p.writeAllow,
     writeAnywhere: p.writeAnywhere,
+    writeKeep: p.writeKeep,
     outputMax,
     env: { ...(p.writeRoot ? scrubbedEnv(process.env) : (process.env as Record<string, string>)), ...p.shellEnv },
     bashPrefixes: bashPrefixesOf(p.allowedTools),

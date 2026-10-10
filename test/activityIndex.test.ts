@@ -19,6 +19,7 @@ import {
   renderFronts,
   selectFronts,
   sortedFronts,
+  thumbnailsOf,
   writeIndex,
   type ActivityIndex,
 } from '../src/main/runner/activities';
@@ -146,6 +147,52 @@ describe('what a call is told', () => {
     expect(text.length).toBeLessThan(4000);
     expect(text).toContain('did not fit');
     expect(text).not.toContain('xxx…');
+  });
+
+  it('with onlyNamed, holds only what was named: nothing named is nothing, and the default path is what it was', () => {
+    const index = emptyIndex();
+    index.fronts['app#101'] = frontOfActivity(played(finished), undefined, LANG);
+    expect(selectFronts(index, { onlyNamed: true })).toEqual([]);
+    expect(selectFronts(index, { refs: ['999'], onlyNamed: true })).toEqual([]);
+    expect(selectFronts(index, { ref: 'app#101', onlyNamed: true }).map((f) => f.ref)).toEqual(['app#101']);
+    expect(selectFronts(index, { refs: ['101'], onlyNamed: true })).toHaveLength(1);
+    // Off (the flag absent): in progress still stands in for a name that matched nothing.
+    expect(selectFronts(index, { refs: ['999'] })).toHaveLength(1);
+  });
+
+  it('renders only the named agents\' thumbnails with onlyNamed, and every thumbnail without it (divergence 7)', () => {
+    const d = dir();
+    const memory = createSharedMemory(d);
+    const store = withStore(d);
+    const run = played(finished);
+    store.create(run);
+    memory.upsert(null, run, LANG);
+    const index = readIndex(d) as ActivityIndex;
+    index.agents.stranger = { ref: 'app#999', stage: 'Review', at: at(1) };
+    writeIndex(d, index);
+    const named = [index.fronts['app#101'].lastAgent ?? ''];
+    expect(Object.keys(thumbnailsOf(index, named))).not.toContain('stranger');
+    expect(memory.render(store, { ref: 'app#101', agents: named }, LANG)).toContain('stranger');
+    expect(memory.render(store, { ref: 'app#101', agents: named, onlyNamed: true }, LANG)).not.toContain('stranger');
+  });
+
+  it('lists the run files once, and not at all when the caller hands it the snapshot', () => {
+    const d = dir();
+    const store = withStore(d);
+    const run = played(finished);
+    store.create(run);
+    let lists = 0;
+    const counting = { ...store, list: () => (lists++, store.list()) };
+    const memory = createSharedMemory(d);
+    memory.upsert(null, run, LANG);
+    memory.read(counting, LANG);
+    // One listing however many fronts the record holds (it was one per front, and one more at the end).
+    expect(lists).toBe(1);
+    lists = 0;
+    const snapshot = store.list();
+    memory.read(counting, LANG, snapshot);
+    expect(lists).toBe(0);
+    expect(Object.keys(memory.read(counting, LANG, snapshot).fronts)).toEqual(['app#101']);
   });
 
   it('says one line per activity in progress when nothing was named', () => {

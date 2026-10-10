@@ -12,6 +12,7 @@ import { type Module } from '../module';
 import { runStore } from '../runs';
 import { sandbox } from '../sandbox/workspace';
 import { getConfig, rc } from '../workspaceConfig';
+import { memoryPort } from '../memory/runtime';
 import { procedureOffers, proceduresPort } from '../procedures';
 import { answerMentions, type MentionDeps } from './answer';
 import { placeOfThread } from './place';
@@ -74,13 +75,17 @@ export const mentionsModule: Module = () => {
     env: () => ({ fallbackCwd: rc().projectsRoot ?? ATAS }),
     propose: proposeMention,
     procedures: proceduresPort(),
+    memoryPort: memoryPort(),
+    // What the message names, for the ranking of the memory's list.
+    named: (place, message) => ({ refs: refsInMessage(message), agents: callsOf(message, ownerOfThread(forum.summary(place.thread))) }),
     // The last turn of an answer that had trial and error and kept nothing, and the card it may leave (#187).
     offers: procedureOffers(),
     // What the answer is told of the activities of the workspace, read from the record of the running workspace and cut by what the message named.
-    memory: (place, message) => {
+    memory: (place, message, narrow) => {
       const run = place.kind === 'run' ? place.run : null;
       const refs = refsInMessage(message);
-      return sharedMemory().render(runStore(), { ref: run?.issue.ref ?? place.ref ?? null, refs, agents: callsOf(message, ownerOfThread(forum.summary(place.thread))) }, getConfig().language);
+      // A call with the shared memory gets only what the message is about or named; the rest is lines of its index.
+      return sharedMemory().render(runStore(), { ref: run?.issue.ref ?? place.ref ?? null, refs, agents: callsOf(message, ownerOfThread(forum.summary(place.thread))), ...(narrow ? { onlyNamed: true } : {}) }, getConfig().language);
     },
     // A host command asks the person through the notice every screen shows, as the ceremonies do; a command the agent's rules always allow runs without asking.
     askCommand: (def, command, signal) => {

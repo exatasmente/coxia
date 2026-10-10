@@ -1,6 +1,7 @@
 // The draft agent the assistant saves so a person can try it in a conversation: made by the main process, inert by construction whatever the screen sends, with the
 // permissions held to what exists, its direct conversation made fresh, and cleaned up by "conclude" and "discard", which touch nothing that is not a draft.
 import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ASSIST_LIMITS } from '../src/shared/agentAssist';
 import { neutralConfig } from '../src/shared/config';
@@ -18,6 +19,8 @@ const { sandbox } = await import('../src/main/sandbox/workspace');
 const { forumStore, forumModule } = await import('../src/main/forum');
 const { attachmentStore } = await import('../src/main/attachments');
 const { ATAS } = await import('../src/main/env');
+const { memoryStore } = await import('../src/main/memory/instance');
+const { conversationsPath } = await import('../src/main/memory/store');
 const assist = await import('../src/main/agentAssist');
 const actions = await import('../src/main/actions');
 
@@ -309,6 +312,29 @@ describe('discarding', () => {
     // The stored file agrees: a reload does not bring it back.
     reloadConfig();
     expect(agent(id)).toBeUndefined();
+  });
+
+  it('takes the memory folder its conversation made with it, and leaves the memory of every other conversation alone', async () => {
+    const { id } = await assist.saveAssistDraft(body());
+    const memory = memoryStore();
+    const kept = { conversation: 'general', agent: 'writer' };
+    expect(memory.save({ scope: { conversation: agentThreadId(id), agent: id }, kind: 'note', title: 'Tried it', text: 'Written during the test of the draft.' }).ok).toBe(true);
+    expect(memory.save({ scope: kept, kind: 'note', title: 'Kept', text: 'Written in another conversation.' }).ok).toBe(true);
+    expect(existsSync(join(conversationsPath(ATAS), agentThreadId(id)))).toBe(true);
+
+    assist.discardAssistDraft(id);
+    expect(existsSync(join(conversationsPath(ATAS), agentThreadId(id)))).toBe(false);
+    expect(memory.list({ conversation: 'general' }).notes).toHaveLength(1);
+    memory.removeConversation('general');
+  });
+
+  it('takes it too when the conversation is concluded and begun again', async () => {
+    const { id } = await assist.saveAssistDraft(body());
+    const memory = memoryStore();
+    expect(memory.save({ scope: { conversation: agentThreadId(id), agent: id }, kind: 'note', title: 'Tried it', text: 'Written during the test of the draft.' }).ok).toBe(true);
+    assist.concludeAssistDraft(id);
+    expect(memory.list({ conversation: agentThreadId(id) }).notes).toEqual([]);
+    assist.discardAssistDraft(id);
   });
 
   it('refuses an agent of the person, a system agent and an id nobody has, and deletes nothing', () => {

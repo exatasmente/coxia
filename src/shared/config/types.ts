@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 26): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 27): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 26;
+export const CONFIG_SCHEMA_VERSION = 27;
 
 /** The local read-only state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
@@ -265,6 +265,11 @@ export interface DocsConfig {
   mcpConfigFiles: string[];
   /** Folder that holds one subfolder per issue (specs, plans, quizzes). null: the app writes no spec files. */
   specsDir: string | null;
+  /**
+   * A Markdown file whose headings are the roadmap the agents can learn the priorities from ("~/" expands). Absent or null: the agents are told there is none.
+   * Only the computer changes it: it names a file of this machine.
+   */
+  roadmapFile?: string | null;
 }
 
 export const CEREMONY_IDS = ['preDaily', 'unblock', 'gate', 'qaHandoff', 'retro', 'releaseConflicts'] as const;
@@ -967,6 +972,12 @@ export interface RunnerConfig {
    * computer changes it; a workspace that existed before it was added has it off (the migration). Optional: absent reads as off (`unconfinedOf`).
    */
   unconfined?: boolean;
+  /**
+   * The shared, indexed memory: agents keep notes per conversation and read a short list of them wherever they run. Off: no tool, no prompt section, no folder and no
+   * notice, and no agent writes; the Memory view still lists, edits and removes what exists. The computer and a paired browser change it; a workspace that existed before
+   * it was added has it off (the migration). Optional: absent reads as off (`memoryOn`).
+   */
+  sharedMemory?: boolean;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
   /** The title of the pull request a run opens; `{title}` (the agent's title, or the issue's) and `{iid}` are replaced. */

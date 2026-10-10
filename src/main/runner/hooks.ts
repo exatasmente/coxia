@@ -1,8 +1,10 @@
-import { basename, dirname } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { prompt as cp } from '../cyclePrompts';
 import { type DenialCode, WRITE_TOOLS, anchored, checkPath, writeTarget } from '../engine/guard';
 import { noBroadSearch, noSecrets, redactSecretResults, secretPath, shellAllowlist } from '../agents';
+import { ATAS } from '../env';
+import { MEMORY_DIR } from './activities';
 
 // The hooks of an agent that changes files in its run's worktree. They are the same callbacks for both engines (the open engine runs them
 // through policyFromHooks), so a refusal reads the same on either. What they allow: read, search, write and edit inside the worktree, and
@@ -25,6 +27,11 @@ export interface ConfineOptions {
   writeReserved?: readonly string[];
   /** Exact relative file paths the agent may write, when a task has a single-file output. */
   writeAllow?: readonly string[];
+  /**
+   * Folders the app keeps for itself that no file tool of the agent may write, whatever the fence is: the workspace's `memory/` (the notes, the activities, the procedures)
+   * unless a test names others. Only a lifted fence (`anywhere`) could reach them; the guard refuses them there too.
+   */
+  keep?: readonly string[];
   /** The commands the agent may run, each exactly as typed. */
   commands: string[];
   /** The documents of the cycle and the folder they live in: the app writes them there from the answer, so the agent may not write one of these names anywhere else. */
@@ -74,6 +81,7 @@ export function confinedHooks(o: ConfineOptions): Hooks {
       isSecret: (p) => secretPath(p, o.root),
       ...(narrow ? { fence: o.root, reserved: o.writeReserved } : {}),
       writeAllow: o.writeAllow,
+      keep: o.keep ?? [join(ATAS, MEMORY_DIR)],
       anywhere: o.anywhere && !o.writeRoot,
     });
     if (!check.ok) return say(input.tool_name, target, check.code);

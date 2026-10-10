@@ -290,6 +290,8 @@ export interface EngineRequest {
   runnerTools?: import('./open/tools/types').ToolImpl[];
   /** The workspace's procedure tools (list, get, save, stale) of a call that has a session of work: the engines offer them under their own server, `coxia_procedures`. */
   procedures?: import('../procedures/tools').ProcedureTools;
+  /** The shared memory's tools (list, read, and save and remove for a session that writes) of a call that has one: the engines offer them under their own server, `coxia_memory`. */
+  memoryTools?: import('../memory/tools').MemoryTools;
   /** The agent's screen: the app's browser tools and the confirmation tool, offered by both engines by their names. Absent: the call has none. */
   screen?: ScreenToolset;
 }

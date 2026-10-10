@@ -49,6 +49,17 @@ describe('config schema', () => {
     expect(validateConfig({ ...neutralConfig(), runner: { ...neutralConfig().runner, procedures: 'yes' } }).errors.map((e) => e.path)).toEqual(['runner.procedures']);
   });
 
+  it('has the shared memory switch in the type, the schema and the defaults: on for a new workspace, a boolean, and the roadmap pointer is an optional path', () => {
+    expect(neutralConfig().runner.sharedMemory).toBe(true);
+    expect(CONFIG_SCHEMA.properties?.runner?.properties?.sharedMemory?.type).toBe('boolean');
+    expect(validateConfig({ ...neutralConfig(), runner: { ...neutralConfig().runner, sharedMemory: false } }).config?.runner.sharedMemory).toBe(false);
+    expect(validateConfig({ ...neutralConfig(), runner: { ...neutralConfig().runner, sharedMemory: 'yes' } }).errors.map((e) => e.path)).toEqual(['runner.sharedMemory']);
+    expect(neutralConfig().docs.roadmapFile).toBeUndefined();
+    expect(validateConfig({ ...neutralConfig(), docs: { ...neutralConfig().docs, roadmapFile: '~/project/ROADMAP.md' } }).config?.docs.roadmapFile).toBe('~/project/ROADMAP.md');
+    expect(validateConfig({ ...neutralConfig(), docs: { ...neutralConfig().docs, roadmapFile: null } }).ok).toBe(true);
+    expect(validateConfig({ ...neutralConfig(), docs: { ...neutralConfig().docs, roadmapFile: 3 } }).errors.map((e) => e.path)).toEqual(['docs.roadmapFile']);
+  });
+
   it('reads a config stored without the conversation limits as the defaults, and refuses a limit outside its range', () => {
     const { conversations: _gone, ...runner } = neutralConfig().runner;
     const r = validateConfig({ ...neutralConfig(), runner });
@@ -65,7 +76,7 @@ describe('config schema', () => {
   it('keeps the documentation sources as they were: the same fields and types, and autoDetect on by default', () => {
     // What autoDetect does with them is the app's behaviour; the format of the file did not change, so there is no migration step for them.
     const docs = CONFIG_SCHEMA.properties?.docs;
-    expect(Object.keys(docs?.properties ?? {})).toEqual(['autoDetect', 'claudeMdRoots', 'skillsDirs', 'rulesDirs', 'agentsDirs', 'knowledgeDirs', 'mcpConfigFiles', 'specsDir']);
+    expect(Object.keys(docs?.properties ?? {})).toEqual(['autoDetect', 'claudeMdRoots', 'skillsDirs', 'rulesDirs', 'agentsDirs', 'knowledgeDirs', 'mcpConfigFiles', 'specsDir', 'roadmapFile']);
     expect(docs?.properties?.autoDetect.type).toBe('boolean');
     expect(neutralConfig().docs).toEqual({ autoDetect: true, claudeMdRoots: [], skillsDirs: [], rulesDirs: [], agentsDirs: [], knowledgeDirs: [], mcpConfigFiles: [], specsDir: null });
     const filled = { ...neutralConfig(), docs: { autoDetect: true, claudeMdRoots: ['~/a'], skillsDirs: ['~/b'], rulesDirs: [], agentsDirs: [], knowledgeDirs: [], mcpConfigFiles: [], specsDir: null } };
@@ -85,7 +96,8 @@ describe('config schema', () => {
     // Fields that only appear when a list has items, or whose default is an empty list: the schema may know more than the defaults hold.
     // The pool of a role and the score overrides are absent from every default (absent = no fallbacks); a test below holds them to the schema.
     const optionalPool = (k: string) => k.startsWith('llm.scoreOverrides') || /^llm\.roles\.[a-z]+\.(fallbacks|activities|images|contextWindow|echoReasoning|offer)(\.|$)/.test(k) || k.startsWith('llm.effort');
-    const optionalOnlyInItems = [...declared].filter((k) => !holds.has(k) && !k.includes('[]') && !optionalPool(k));
+    // The roadmap pointer is absent from every default (absent = the agents are told there is no roadmap).
+    const optionalOnlyInItems = [...declared].filter((k) => !holds.has(k) && !k.includes('[]') && !optionalPool(k) && k !== 'docs.roadmapFile');
     expect(optionalOnlyInItems).toEqual([]);
   });
 

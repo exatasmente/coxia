@@ -78,8 +78,17 @@ const REASON: Record<RefusalCode, string> = {
   size: `is more than ${LIMITS.content} characters in all`,
 };
 
-// C0, C1, the line separators, every format character (zero width, bidi overrides, joiners) and the tag block: all of them can hide text from the person who reviews it.
-const CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029\p{Cf}\u{E0000}-\u{E007F}]/u;
+// Every format character (zero width, bidi overrides, joiners) and the tag block: they hide text from the person who reviews it.
+const INVISIBLE_CLASS = '\\p{Cf}\\u{E0000}-\\u{E007F}';
+const INVISIBLE = new RegExp(`[${INVISIBLE_CLASS}]`, 'u');
+// Those, C0, C1 and the line separators.
+const CONTROL = new RegExp(`[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029${INVISIBLE_CLASS}]`, 'u');
+// The same for prose (a note): a line break and a tab are text there, and a lone carriage return is not (a CRLF is read as a line break first).
+const PROSE_CONTROL = new RegExp(`[\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\u2028\\u2029${INVISIBLE_CLASS}]`, 'u');
+
+/** Whether a text holds an invisible or direction-changing character: the one check of a person's note that does not depend on who wrote it. */
+export const hasInvisible = (s: string): boolean => INVISIBLE.test(s);
+
 const TITLE_CHARS = /^[\p{L}\p{N} .,\-/()']+$/u;
 const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/;
 const DIGIT_RUN = /\d(?:[\s.-]?\d){5,}/;
@@ -126,6 +135,9 @@ function hasPasswordFlag(s: string): boolean {
   return false;
 }
 
+// A full commit hash (or any hex run of 32+ characters): the `redact` net masks it as a key, so a note refuses it and says what to write instead.
+const LONG_HEX = /(?<![0-9a-f])[0-9a-f]{32,}(?![0-9a-f])/i;
+
 const hasOpaqueToken = (text: string): boolean => text.split(/\s+/).some((w) => w.length >= 20 && /\d/.test(w) && /\p{L}/u.test(w));
 
 // Pairs of quotation marks. A single quote counts as one only when it is not inside a word, so "don't" and "user's" do not pair up.
@@ -150,6 +162,11 @@ interface TextRule {
   free?: boolean;
   /** A `gui` record: a long quotation is page content. */
   gui?: boolean;
+  /**
+   * Prose, not a procedure's field: line breaks and tabs are allowed, and the shapes that are specific to a step (a URL with a query, a 20-character mixed string) are
+   * not judged; the named classes of secret, the digit run and the `redact` net still are.
+   */
+  prose?: boolean;
 }
 
 /** One text field: its type, size, characters and the classes of secret. Returns the trimmed text, or null when it was refused. */
@@ -158,7 +175,7 @@ function text(out: Out, field: string, value: unknown, rule: TextRule, home: str
     refuse(out, field, 'type', 'must be a string');
     return null;
   }
-  const s = value.trim();
+  const s = (rule.prose ? value.replace(/\r\n/g, '\n') : value).trim();
   if (!s) {
     refuse(out, field, 'empty');
     return null;
@@ -168,8 +185,8 @@ function text(out: Out, field: string, value: unknown, rule: TextRule, home: str
     refuse(out, field, 'too-long', `is ${s.length} characters; the most is ${rule.max}`);
     ok = false;
   }
-  if (CONTROL.test(s)) {
-    refuse(out, field, 'control');
+  if ((rule.prose ? PROSE_CONTROL : CONTROL).test(s)) {
+    refuse(out, field, 'control', rule.prose ? 'holds a control or an invisible character' : undefined);
     ok = false;
   }
   if (rule.title && !TITLE_CHARS.test(s)) {
@@ -180,15 +197,15 @@ function text(out: Out, field: string, value: unknown, rule: TextRule, home: str
   const plain = withoutPinsAndDates(s);
   if (EMAIL.test(plain)) refuse(out, field, 'email');
   if (home && home !== '/' && s.includes(home)) refuse(out, field, 'home');
-  if (URL_QUERY.test(s)) refuse(out, field, 'url-query');
+  if (!rule.prose && URL_QUERY.test(s)) refuse(out, field, 'url-query');
   if (rule.free !== false && DIGIT_RUN.test(plain)) refuse(out, field, 'digits');
-  if (rule.free !== false && hasOpaqueToken(plain)) refuse(out, field, 'token');
+  if (rule.free !== false && !rule.prose && hasOpaqueToken(plain)) refuse(out, field, 'token');
   if (hasPasswordFlag(s)) refuse(out, field, 'credential');
   if (rule.gui && quotesTooMuch(s)) refuse(out, field, 'quote');
   // What `redact` would change and no class above named: a credential-shaped string, an assignment to a secret-looking name.
   // A placeholder after `=` or `:` is what the refusals ask for, so the net reads the text without it.
   const net = plain.replace(/[=:](?:<[^<>]*>|\$\{\w+\}|\$\w+)(?=["']?(?:\s|$))/g, ' ');
-  if (out.refusals.length === before && redact(net, home) !== net) refuse(out, field, 'credential');
+  if (out.refusals.length === before && redact(net, home) !== net) refuse(out, field, 'credential', rule.prose && LONG_HEX.test(net) ? `${REASON.credential}; a full commit hash counts as one, so write its short form (7 to 12 characters)` : undefined);
   return ok && out.refusals.length === before ? s : null;
 }
 
@@ -202,6 +219,25 @@ export type TextLimits = Pick<TextRule, 'max' | 'title' | 'free' | 'gui'>;
 export function acceptsText(value: unknown, limits: TextLimits, home: string = homedir()): boolean {
   const out: Out = { refusals: [] };
   return text(out, 'text', value, limits, home) !== null;
+}
+
+/** What a note's text and title are held to: the size, and whether it is one line (a title) or prose. */
+export interface ProseLimits {
+  max: number;
+  /** One line, like a title; the default is prose with line breaks. */
+  line?: boolean;
+  /** The person's home folder; the default is the machine's. */
+  home?: string;
+}
+
+/**
+ * Checks one text of a note against the same classes of secret as a procedure (a password flag, the `redact` net, an email, the home folder, a run of digits) and the
+ * same refusals: by field, with the reason and never the value. Returns the trimmed text, or every refusal at once.
+ */
+export function checkProse(value: unknown, field: string, limits: ProseLimits): Checked<string> {
+  const out: Out = { refusals: [] };
+  const s = text(out, field, value, { max: limits.max, prose: !limits.line }, limits.home ?? homedir());
+  return s === null || out.refusals.length ? { ok: false, refusals: out.refusals } : { ok: true, value: s };
 }
 
 function key(out: Out, kind: ProcedureKind, value: unknown, ctx: CheckContext, home: string): string | null {
