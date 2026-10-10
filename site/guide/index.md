@@ -1,13 +1,13 @@
 # The guide
 
-Four steps, in order. Each one says what you should see at the end of it.
+Four steps, in order. Each one says what you should see at the end of it: a numbered list of the steps of this guide, each linking to the page of that step, and the label of a link in English when the linked page serves one. Only the links to the pages of this guide carry a label; every other link of the site carries none.
 
 | Step | What it gets you to |
 |---|---|
-| [Install](/guide/install) | The app running on your machine. |
-| [Your first workspace](/guide/workspace) | The app pointed at a repository, with a model it can talk to. |
-| [Your first ceremony](/guide/ceremony) | A stand-up run by voice or text, with the minutes written. |
-| [Your first run](/guide/run) | An issue through the agent cycle, up to a pull request waiting for your yes. |
+| [Install](/guide/install "Install") | The app running on your machine. |
+| [Your first workspace](/guide/workspace "Your first workspace") | The app pointed at a repository, with a model it can talk to. |
+| [Your first ceremony](/guide/ceremony "Your first ceremony") | A stand-up run by voice or text, with the minutes written. |
+| [Your first run](/guide/run "Your first run") | An issue through the agent cycle, up to a pull request waiting for your yes. |
 
 If you would rather read the manual first, the [reference](/reference/) is the same documentation
 the app's own agents read, and it is a page of this site.

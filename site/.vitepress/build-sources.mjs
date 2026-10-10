@@ -6,12 +6,13 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { blocksOf, pageFor, referencePages, titleOf } from '../scripts/docs-pages.mjs';
+import { blocksOf, pageFor, pagePath, referencePages, referenceRoute, titleOf } from '../scripts/docs-pages.mjs';
 import { blogPosts, changelogOf, historyPage, postPage, versionOf } from '../scripts/changelog.mjs';
 
 const here = fileURLToPath(new URL('.', import.meta.url));
 const root = resolve(here, '..', '..');
 const docs = join(root, 'docs');
+const README_AT_END = /README\.md$/;
 export const sources = join(root, 'site', 'generated');
 
 // The repository is public and its address is already in `package.json`: a document that links to a file of the
@@ -22,10 +23,10 @@ const repositoryUrl = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'
 /** The pages of the site, by the document they come from: what a link inside `docs/` can reach without leaving it. */
 const referenceRoutes = new Map();
 for (const path of referencePages(docs)) {
-  const bare = path.replace(/\.md$/, '').replace(/(^|\/)README$/i, '$1index');
-  referenceRoutes.set(path, `/reference/${bare}`);
-  referenceRoutes.set(path.replace(/README\.md$/, ''), `/reference/${bare}`);
-  if (!pageFor(docs, path).single) referenceRoutes.set(path.replace(/\.md$/, '.pt-br') || path, `/reference/${bare}.pt-br`);
+  const route = referenceRoute(path);
+  referenceRoutes.set(path, route);
+  referenceRoutes.set(path.replace(README_AT_END, ''), route);
+  if (!pageFor(docs, path).single) referenceRoutes.set(path.replace(/\.md$/, '.pt-br') || path, pagePath(path, 'pt-BR'));
 }
 
 /** The address of a post's page, in the language it is read in. */
@@ -62,14 +63,23 @@ function rewriteLinks(body, from) {
 /** A generated page: its front matter, and its body handed over as the generator's own text container. */
 const rendered = (title, body) => `---\ntitle: ${JSON.stringify(title)}\neditLink: false\n---\n\n${escapeTags(body)}\n`;
 
-/** One reference document as a page: its title, its body, and whether the repository writes it in one language only. */
+/** The words the link to the other language of a page carries, which is the language it leads to. */
+const OTHER_LANGUAGES = [{ lang: 'pt-BR', word: 'Português' }, { lang: 'en', word: 'English' }];
+
+/**
+ * One reference document as a page: its title, its body, and whether the repository writes it in one language only.
+ * A document the repository writes in both opens a page per language, and each names the other with a link: the
+ * address language of a page is built here, and the site's check reads the same link to see that the pair is there.
+ */
 function view(path, want) {
   const text = readFileSync(join(docs, path), 'utf8');
   const blocks = blocksOf(text);
   const pt = blocks.find((b) => b.lang === 'pt-BR');
   const en = blocks.find((b) => b.lang === 'en')?.body ?? text;
   const body = want === 'pt-BR' ? pt?.body : en;
-  return { title: titleOf(path, text, want), body: rewriteLinks(body ?? '', path), single: !pt };
+  const other = OTHER_LANGUAGES.find((o) => o.lang !== want);
+  const pair = pt ? `\n\n---\n\n[${other.word}](${pagePath(path, other.lang)} "${other.word}")\n` : '';
+  return { title: titleOf(path, text, want), body: `${rewriteLinks(body ?? '', path)}${pair}`, single: !pt };
 }
 
 /**
@@ -80,7 +90,7 @@ function view(path, want) {
 export function rewritesOf() {
   const rules = {};
   for (const path of referencePages(docs)) {
-    const bare = path.replace(/\.md$/, '').replace(/(^|\/)README$/i, '$1index');
+    const bare = referenceRoute(path).replace(/^\/reference\//, '');
     rules[`generated/reference/${bare}.md`] = `reference/${bare}.md`;
     if (!pageFor(docs, path).single) rules[`generated/reference/${bare}.pt-br.md`] = `reference/${bare}.pt-br.md`;
   }
@@ -101,7 +111,7 @@ export function writeSources() {
 
   for (const path of referencePages(docs)) {
     const page = pageFor(docs, path);
-    const bare = path.replace(/\.md$/, '').replace(/(^|\/)README$/i, '$1index');
+    const bare = referenceRoute(path).replace(/^\/reference\//, '');
     for (const want of page.single ? [page.lang] : ['en', 'pt-BR']) {
       const { title, body, single } = view(path, want);
       const target = join(sources, 'reference', `${bare}${want === 'pt-BR' ? '.pt-br' : ''}.md`);

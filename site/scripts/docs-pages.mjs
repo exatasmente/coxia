@@ -91,14 +91,43 @@ export function pageFor(root, path) {
   const pt = blocks.find((b) => b.lang === 'pt-BR');
   const en = blocks.find((b) => b.lang === 'en');
   const body = { 'pt-BR': pt?.body ?? null, en: en?.body ?? text };
-  return { path, lang, single: !pt, title: titleOf(path, blocks.length ? text : text, lang), body };
+  return { path, lang, single: !pt, title: titleOf(path, text, lang), body };
 }
 
-/** The address of a document's page, derived from its path: a new document needs no list to be reachable. */
+/**
+ * The address of a document's page, derived from its path: a new document needs no list to be reachable. This is the
+ * one place the rule lives — the configuration of the site and the generator of its sources both ask for it, so a
+ * document whose name changes case cannot get a sidebar address that differs from the page the build serves.
+ */
 export function pagePath(path, lang) {
+  return `${referenceRoute(path)}${lang === 'pt-BR' ? '.pt-br' : ''}`;
+}
+
+/** The address of a document's page without its address language: what every other address of the site builds on. */
+export function referenceRoute(path) {
   const slug = path
     .replace(/\.md$/, '')
     .replace(/(^|\/)README$/i, '$1index')
     .toLowerCase();
-  return `/reference/${slug}${lang === 'pt-BR' ? '.pt-br' : ''}`;
+  return `/reference/${slug}`;
+}
+
+/**
+ * The label of a link that leads to the other language of the page that carries it: the word of that language, which
+ * is what the bilingual documents of the repository open their halves with and what the generated reference pages
+ * write on their link to their pair. Null when the text carries no such link.
+ */
+export function otherLanguageLink(text) {
+  for (const m of text.matchAll(/<a\b[^>]*\bhref="([^"]+)"[^>]*\btitle="([^"]*)"/g)) {
+    if (langOfWord(m[2])) return { href: m[1], lang: langOfWord(m[2]), label: m[2] };
+  }
+  return null;
+}
+
+/** The language a word names: `Português`, `English` and their short forms, or null. */
+export function langOfWord(text) {
+  const lower = text.trim().toLowerCase();
+  if (/^(portugu[eê]s|pt-br)\b/.test(lower)) return 'pt-BR';
+  if (/^(english|en)\b/.test(lower)) return 'en';
+  return null;
 }

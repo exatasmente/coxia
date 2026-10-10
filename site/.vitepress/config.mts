@@ -2,6 +2,7 @@
 // the blog. Everything that can come from the repository's own files does: the reference is read where the documents
 // already are, and the history and the blog come from `CHANGELOG.md` at build time. Nothing here is a second copy.
 import { defineConfig } from 'vitepress';
+import { pagePath } from '../scripts/docs-pages.mjs';
 import { contentOf, postPath, rewritesOf, writeSources } from './build-sources.mjs';
 
 // VitePress scans its pages when it resolves its configuration, before any hook of the build, so the generated
@@ -10,8 +11,6 @@ import { contentOf, postPath, rewritesOf, writeSources } from './build-sources.m
 writeSources();
 
 const { pages, posts, version } = contentOf();
-
-const referencePath = (path) => `/reference/${path.replace(/\.md$/, '').replace(/(^|\/)README$/i, '$1index').toLowerCase()}`;
 
 const navigation = [
   { text: 'Guide', link: '/guide/' },
@@ -50,7 +49,7 @@ export default defineConfig({
         { text: 'The paired phone approves', link: '/use-cases/phone' },
       ] }],
       // Derived from the folder on every build: a document that lands in `docs/` needs no list edited here.
-      '/reference/': [{ text: 'Reference', items: pages.map((p) => ({ text: p.page.title, link: referencePath(p.path) })) }],
+      '/reference/': [{ text: 'Reference', items: pages.map((p) => ({ text: p.page.title, link: pagePath(p.path, 'en') })) }],
       '/blog/': [{ text: 'Blog', items: [{ text: 'All posts', link: '/blog/' }, ...posts.map((p) => ({ text: p.title, link: postPath(p, 'en') }))] }],
     },
     socialLinks: [],
