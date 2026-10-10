@@ -330,10 +330,12 @@ describe('channels refused over the web', () => {
   });
 
   it('policy lists', () => {
-    expect([...DESKTOP_ONLY].sort()).toEqual(['actions:freeBranch', 'autostart:set', 'claude:continue', 'clipboard:copy', 'conflicts:verify-set', 'jobs:notify', 'plugins:answer', 'plugins:revoke', 'plugins:revoke-write', 'plugins:set-enabled', 'plugins:set-secret', 'plugins:set-setting', 'plugins:settings', 'retention:apply', 'sandbox:probe', 'suggestions:edited', 'suggestions:reject', 'suggestions:suggest', 'update:busy', 'update:check', 'update:flushed', 'update:info', 'update:install', 'update:run', 'update:seen', 'update:settings-save', 'update:status', 'vcs:probe', 'workspace:delete', 'workspace:test']);
+    expect([...DESKTOP_ONLY].sort()).toEqual(['actions:freeBranch', 'autostart:set', 'claude:continue', 'clipboard:copy', 'conflicts:verify-set', 'jobs:notify', 'plugins:revoke', 'plugins:revoke-write', 'plugins:set-enabled', 'plugins:set-secret', 'plugins:set-setting', 'plugins:settings', 'retention:apply', 'sandbox:probe', 'suggestions:edited', 'suggestions:reject', 'suggestions:suggest', 'update:busy', 'update:check', 'update:flushed', 'update:info', 'update:install', 'update:run', 'update:seen', 'update:settings-save', 'update:status', 'vcs:probe', 'workspace:delete', 'workspace:test']);
     expect([...EXTERNAL_EFFECT]).toEqual(['actions:approve', 'runs:command', 'runs:startRelease', 'runs:screenAnswer', 'runs:retryPr']);
     expect(webAccess('web:configure')).toBe('deny');
     expect(webAccess('web:pair')).toBe('deny');
+    // Answering a plugin's request is open here only for what a call from a conversation opened: the service refuses the rest by the call's origin.
+    expect(webAccess('plugins:answer')).toBe('allow');
     expect(webAccess('state:load')).toBe('allow');
     expect(webRefusal('actions:approve', true)).toBeNull();
     expect(webRefusal('claude:continue', true)).not.toBeNull();

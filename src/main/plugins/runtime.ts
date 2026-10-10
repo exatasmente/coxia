@@ -37,7 +37,8 @@ export interface RunnablePlugin {
   id: string;
   /**
    * The text of the entry script, read by the app from the plugin folder. It is handed to the sandbox as the command itself: the plugin folder is never
-   * mounted (it may sit in the app's data, which no sandbox sees), and the script reads the event as `$1`.
+   * mounted (it may sit in the app's data, which no sandbox sees), and the script reads the event as `$1`, the question of a call from a conversation as
+   * `$2` and that conversation as `$3` (both empty on the four events of a cycle).
    */
   script: string;
   /** Document types it declares, with the title each document is written under. */
@@ -63,15 +64,23 @@ const DOCUMENT_MAX = 40_000;
 export interface PluginTarget {
   worktree: string;
   cycleFolder: string;
+  /** Whether the document a plugin returns is written into the cycle folder. A call from a conversation outside a run hands over an empty folder of its own and writes nothing. */
+  documents?: boolean;
+}
+
+/** What one call was asked: a call from a conversation carries the question and the conversation; a cycle event carries neither. */
+export interface PluginCall {
+  asked?: string;
+  thread?: string;
 }
 
 const fail = (plugin: string, refused: string): PluginRun => ({ plugin, ok: false, text: '', refused, document: null });
 
 /**
- * Runs one plugin's entry script inside the stage sandbox, with the event name as its argument, and applies what it returned: the text comes back as
+ * Runs one plugin's entry script inside the stage sandbox, with the event name as its arguments, and applies what it returned: the text comes back as
  * material for the caller, and the first document type of the plugin gets the document, written by the app through the guard of the cycle folder.
  */
-export async function runPlugin(deps: PluginRuntimeDeps, plugin: RunnablePlugin, event: string, target: PluginTarget): Promise<PluginRun> {
+export async function runPlugin(deps: PluginRuntimeDeps, plugin: RunnablePlugin, event: string, target: PluginTarget, call: PluginCall = {}): Promise<PluginRun> {
   if (!plugin.script.trim()) return fail(plugin.id, 'the plugin has no entry script');
   let session: Awaited<ReturnType<SandboxService['open']>>;
   try {
@@ -81,7 +90,8 @@ export async function runPlugin(deps: PluginRuntimeDeps, plugin: RunnablePlugin,
   }
   let text: string;
   try {
-    const command = `set -- ${shellQuote(event)}\n${plugin.script}`;
+    // The event is `$1`; on a call from a conversation the question is `$2` and the conversation `$3` (empty on the four events of a cycle).
+    const command = `set -- ${shellQuote(event)} ${shellQuote(call.asked ?? '')} ${shellQuote(call.thread ?? '')}\n${plugin.script}`;
     const result = await session.exec(command);
     if (result.refused) return fail(plugin.id, `the command was not run (${result.refused})`);
     if (result.exitCode !== 0) return fail(plugin.id, `the plugin ended with code ${result.exitCode ?? '—'}`);
@@ -103,6 +113,8 @@ export async function runPlugin(deps: PluginRuntimeDeps, plugin: RunnablePlugin,
  * the folder takes; the path goes through the same guard as any document of a stage, so a name can never lead anywhere else.
  */
 export function writePluginDocument(target: PluginTarget, type: { name: string; title: string }, input: { plugin: string; event: string; text: string }): { path: string; name: string } | null {
+  // The only new write this adds: a call from a conversation outside a run writes nothing anywhere.
+  if (target.documents === false) return null;
   const content = pluginDocumentText({ title: type.title, body: input.text.slice(0, DOCUMENT_MAX), plugin: input.plugin, event: input.event });
   if (!content) return null;
   if (!ARTIFACT_NAME.test(type.name)) return null;
@@ -210,6 +222,9 @@ const ctx = Object.freeze({
   event: input.event,
   issue: input.issue,
   stage: input.stage,
+  asked: input.asked ?? null,
+  thread: input.thread ?? null,
+  runId: input.runId ?? null,
   round: input.round,
   settings: Object.freeze({ ...input.settings }),
   async readCycleFile(name) {
@@ -258,7 +273,7 @@ export function harnessResult(text: string | null): HarnessResult | null {
  * Runs a JavaScript plugin for one event: up to `JS_ROUNDS` rounds in one session, the reads it asked made by the app between them. The document it
  * returned is written into the run's cycle folder through the guard of a stage's documents; the writes it asked come back for the permission contract.
  */
-export async function runJsPlugin(deps: JsRuntimeDeps, plugin: JsPlugin, event: string, context: { issue: number; stage?: string }, target: PluginTarget): Promise<JsPluginRun> {
+export async function runJsPlugin(deps: JsRuntimeDeps, plugin: JsPlugin, event: string, context: { issue: number; stage?: string; asked?: string; thread?: string; runId?: string }, target: PluginTarget): Promise<JsPluginRun> {
   const failJs = (refused: string): JsPluginRun => ({ ...fail(plugin.id, refused), writes: [] });
   const exeDir = dirname(deps.executable);
   let session: Awaited<ReturnType<SandboxService['open']>>;
@@ -274,7 +289,7 @@ export async function runJsPlugin(deps: JsRuntimeDeps, plugin: JsPlugin, event: 
     const answers: JsAnswer[] = [];
     let result: HarnessResult | null = null;
     for (let round = 1; round <= JS_ROUNDS; round++) {
-      const input = session.put(`input-${round}.json`, JSON.stringify({ event, issue: context.issue, stage: context.stage ?? null, round, settings: plugin.settings, cycleDir: join(target.worktree, target.cycleFolder), entry: plugin.entry, answers }));
+      const input = session.put(`input-${round}.json`, JSON.stringify({ event, issue: context.issue, stage: context.stage ?? null, asked: context.asked ?? null, thread: context.thread ?? null, runId: context.runId ?? null, round, settings: plugin.settings, cycleDir: join(target.worktree, target.cycleFolder), entry: plugin.entry, answers }));
       const resultName = `plugin-result-${round}.json`;
       const command = `ELECTRON_RUN_AS_NODE=1 ${shellQuote(deps.executable)} ${shellQuote(harness)} ${shellQuote(input)} ${shellQuote(bundle)} ${shellQuote(`${OUT}/${resultName}`)}`;
       const ran = await session.exec(command);

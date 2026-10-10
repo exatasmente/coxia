@@ -34,6 +34,7 @@
   "ui.plugins.documents": "Documents: {names}",
   "ui.plugins.empty": "No plugin in this folder.",
   "ui.plugins.enabled": "On",
+  "ui.plugins.event.conversationCalled": "it was called from a conversation",
   "ui.plugins.event.gateDecided": "a gate was decided",
   "ui.plugins.event.runFinished": "the run finished",
   "ui.plugins.event.stageEntered": "a stage was entered",

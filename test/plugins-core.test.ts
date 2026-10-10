@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PLUGIN_CONTRACT, readPluginDeclaration } from '../src/shared/plugins/declaration';
 import { PLUGIN_EVENTS } from '../src/shared/plugins/events';
+import { conversationCommand } from '../src/shared/plugins/calls';
 import { pluginsDirOf, pluginViews, readPlugins, withChoice } from '../src/main/plugins/read';
+import { pluginCallOf } from '../src/main/plugins/conversation';
 import { neutralPlugins } from '../src/shared/config/defaults';
 
 // The plugin core is pure: it reads the text of a declaration and the folder a plugin lives in, and judges it. The folder read is
@@ -65,6 +67,12 @@ describe('the plugin declaration', () => {
   it('accepts every event of the catalog', () => {
     const r = readPluginDeclaration(declaration({ offers: { events: [...PLUGIN_EVENTS] } }), '/p');
     expect(r.declaration?.offers.events).toEqual([...PLUGIN_EVENTS]);
+  });
+
+  it('accepts the event of a call made from a conversation', () => {
+    const r = readPluginDeclaration(declaration({ offers: { events: ['conversation-called'] } }), '/p');
+    expect(r.refused).toBeNull();
+    expect(r.declaration?.offers.events).toEqual(['conversation-called']);
   });
 
   it('refuses a document name the cycle folder would not take', () => {
@@ -199,5 +207,44 @@ describe('the plugins folder of a workspace', () => {
     expect(pluginsDirOf(neutralPlugins(), '/home/ana', '/data/ws')).toBe('/data/ws/plugins');
     expect(pluginsDirOf({ ...neutralPlugins(), dir: '~/my-plugins' }, '/home/ana', '/data/ws')).toBe('/home/ana/my-plugins');
     expect(pluginsDirOf({ ...neutralPlugins(), dir: '/opt/plugins' }, '/home/ana', '/data/ws')).toBe('/opt/plugins');
+  });
+});
+
+describe('the command a message writes to call a plugin', () => {
+  it('is a bar, the plugin id and the question that follows it', () => {
+    expect(conversationCommand('/web-search how does replay work?')).toEqual({ command: 'web-search', asked: 'how does replay work?' });
+    expect(conversationCommand('  /web-search   how does replay work?  ')).toEqual({ command: 'web-search', asked: 'how does replay work?' });
+    expect(conversationCommand('/x.one-y\nand the rest')).toEqual({ command: 'x.one-y', asked: 'and the rest' });
+  });
+
+  it('is nothing without a question after the name', () => {
+    expect(conversationCommand('/web-search')).toBeNull();
+    expect(conversationCommand('/web-search   ')).toBeNull();
+    expect(conversationCommand('/web-search/')).toBeNull();
+  });
+
+  it('is nothing when the name is not a plugin id: an agent, a path, capitals or no bar at all', () => {
+    expect(conversationCommand('@developer what do you think?')).toBeNull();
+    expect(conversationCommand('/@developer what do you think?')).toBeNull();
+    expect(conversationCommand('/usr/lib what is this')).toBeNull();
+    expect(conversationCommand('/Web-Search how does replay work?')).toBeNull();
+    expect(conversationCommand('web-search how does replay work?')).toBeNull();
+    expect(conversationCommand('plain words')).toBeNull();
+    expect(conversationCommand('')).toBeNull();
+  });
+});
+
+describe('the message a plugin call is read from', () => {
+  it('is a post that names no agent and was not written by the app', () => {
+    const call = { kind: 'post', author: { type: 'person' }, mentions: [], text: '/web-search how does replay work?' } as never;
+    expect(pluginCallOf(call)).toEqual({ command: 'web-search', asked: 'how does replay work?' });
+  });
+
+  it('is never a message with a mention, a line the app words, or anything that is not a command', () => {
+    expect(pluginCallOf({ kind: 'post', author: { type: 'person' }, mentions: ['developer'], text: '/web-search how does replay work?' } as never)).toBeNull();
+    expect(pluginCallOf({ kind: 'system', author: { type: 'app' }, mentions: [], text: '/web-search how does replay work?' } as never)).toBeNull();
+    expect(pluginCallOf({ kind: 'post', author: { type: 'app' }, mentions: [], text: '/web-search how does replay work?' } as never)).toBeNull();
+    expect(pluginCallOf({ kind: 'answer', author: { type: 'person' }, mentions: [], text: '/web-search how does replay work?' } as never)).toBeNull();
+    expect(pluginCallOf({ kind: 'post', author: { type: 'agent', id: 'developer' }, mentions: [], text: 'plain words' } as never)).toBeNull();
   });
 });

@@ -33,7 +33,7 @@ Um plugin publica `plugin.json`:
 | `offers.network` | destinos que o plugin declara precisar, por nome de host |
 | `offers.write` | a escrita externa: `{ "to": "<nome>", "reversible": true\|false }`, para a caixa de saída do plugin neste espaço de trabalho (um destino neutro, nunca um serviço de terceiro). Sem `reversible`, conta como irreversível |
 | `offers.agents` | uma nota curta (até 1000 caracteres) que entra no contexto de todas as etapas enquanto o plugin está ligado, marcada como a palavra do plugin: o que ele oferece aos agentes |
-| `offers.entry` | script de shell da pasta do plugin, rodado quando um acontecimento observado acontece; o aplicativo lê o texto dele e o entrega à sandbox como o próprio comando (a pasta não é montada), com o acontecimento em `$1`; o que ele imprime é o resultado |
+| `offers.entry` | script de shell da pasta do plugin, rodado quando um acontecimento observado acontece; o aplicativo lê o texto dele e o entrega à sandbox como o próprio comando (a pasta não é montada), com o acontecimento em `$1`, e numa chamada feita de uma conversa a pergunta em `$2` e a conversa em `$3` (vazios nos quatro acontecimentos do ciclo); o que ele imprime é o resultado |
 
 A leitura é uma função pura: o mesmo caminho roda no Linux, no macOS e no Windows, e nada no plugin depende de
 um carregador de biblioteca nativa.
@@ -45,7 +45,8 @@ Lista fixa e pública:
 - `stage-entered` — uma etapa do ciclo entrou;
 - `stage-finished` — uma etapa do ciclo terminou;
 - `gate-decided` — um gate foi decidido;
-- `run-finished` — uma execução terminou.
+- `run-finished` — uma execução terminou;
+- `conversation-called` — uma pessoa ou um agente chamou o plugin de uma conversa.
 
 Um acontecimento fora da lista é recusado com o motivo. Isto não é o canal de interface entre a janela e o
 navegador pareado: é um ponto de extensão à parte.
@@ -53,6 +54,17 @@ navegador pareado: é um ponto de extensão à parte.
 O aplicativo dispara cada um no lugar onde ele já acontece: `stage-entered` quando uma execução entra numa
 etapa, `stage-finished` quando uma etapa conclui, `gate-decided` quando a pessoa decide um gate e `run-finished`
 quando uma execução termina. Um plugin que falha não derruba a execução nem o aplicativo.
+
+### A chamada feita de uma conversa
+
+Uma conversa chama um plugin com uma mensagem que começa com barra, o id do plugin e a pergunta
+(`/web-search como funciona o replay?`); depois do nome é preciso haver uma pergunta, e o `@` continua nomeando um
+agente (a mesma mensagem não é lida das duas maneiras). A resposta volta para a mesma conversa, entre as marcas de
+material e com as fontes, e nunca é lida como instrução. Quando a conversa é a de uma execução, a chamada leva a
+execução ao plugin e o mesmo texto é gravado também como documento na pasta do ciclo; numa conversa qualquer, o plugin
+recebe uma pasta vazia própria e nada é escrito. O contexto traz o que foi pedido (`$2` no shell, `ctx.asked` no
+JavaScript), a conversa (`$3`, `ctx.thread`) e a execução quando há (`ctx.runId`); nos quatro acontecimentos do ciclo
+esses três campos são vazios.
 
 ### A fronteira
 
@@ -158,7 +170,7 @@ A plugin publishes `plugin.json`:
 | `offers.network` | destinations the plugin declares it needs, by host name |
 | `offers.write` | the external write: `{ "to": "<name>", "reversible": true\|false }`, to the plugin's outbox in this workspace (a neutral destination, never a third-party service). Without `reversible`, it counts as irreversible |
 | `offers.agents` | a short note (up to 1000 characters) added to every stage's context while the plugin is on, marked as the plugin's words: what it offers the agents |
-| `offers.entry` | a shell script of the plugin folder, run when an observed event happens; the app reads its text and hands it to the sandbox as the command itself (the folder is not mounted), with the event as `$1`; what it prints is its result |
+| `offers.entry` | a shell script of the plugin folder, run when an observed event happens; the app reads its text and hands it to the sandbox as the command itself (the folder is not mounted), with the event as `$1` and, on a call made from a conversation, the question as `$2` and that conversation as `$3` (both empty on the four events of a cycle); what it prints is its result |
 
 The reading is a pure function: the same path runs on Linux, macOS and Windows, and nothing in the plugin
 depends on a native library loader.
@@ -170,7 +182,8 @@ Fixed and public list:
 - `stage-entered` — a cycle stage was entered;
 - `stage-finished` — a cycle stage finished;
 - `gate-decided` — a gate was decided;
-- `run-finished` — a run finished.
+- `run-finished` — a run finished;
+- `conversation-called` — a person or an agent called the plugin from a conversation.
 
 An event outside the list is refused with the reason. This is not the interface channel between the window and
 the paired browser: it is a separate extension point.
@@ -178,6 +191,17 @@ the paired browser: it is a separate extension point.
 The app fires each one where it already happens: `stage-entered` when a run enters a stage, `stage-finished`
 when a stage concludes, `gate-decided` when the person decides a gate and `run-finished` when a run finishes. A
 plugin that fails brings down neither the run nor the app.
+
+### A call made from a conversation
+
+A conversation calls a plugin with a message that starts with a bar, the plugin's id and the question
+(`/web-search how does replay work?`); there must be a question after the name, and `@` keeps naming an agent (one
+message is never read both ways). The answer comes back in the same conversation, inside the material markers and with
+its sources, and is never read as instruction. When the conversation is a run's, the call carries the run to the plugin
+and the same text is also written as a document in the run's cycle folder; in any other conversation the plugin gets an
+empty folder of its own and nothing is written. The context carries what was asked (`$2` in shell, `ctx.asked` in
+JavaScript), the conversation (`$3`, `ctx.thread`) and the run when there is one (`ctx.runId`); on the four events of a
+cycle those three fields are empty.
 
 ### The boundary
 
