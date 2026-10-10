@@ -4,21 +4,21 @@
 
 - Triagem: pedido de funcionalidade (enhancement), sem duplicatas, sem pergunta. Relacionadas: #208 (esta é o 1º passo), #204 (continua depois), #205 (paralela), #206 (depois de #204 e #205). Prioridade proposta: priority:high — aceite ou recusa é só da pessoa.
 - Plano (2_PLAN.md) seguido na codificação: portas lidas no momento do uso, valores de caminho viram funções; um único arquivo novo importa o runtime do desktop e é chamado antes de `installProcessHandlers()`; sem porta preenchida a criptografia fica em recusa fechada; chave-mestre AES-256-GCM, 32 bytes em hex mais quebra de linha, validada em cada operação sem cache; o arquivo da chave nunca é criado nesta mudança; motivo da recusa vem de campo opcional da porta, com a chave `main.secrets.keyFile` nos dois catálogos; nenhuma mudança de configuração e nenhuma entrada no registro de versões.
-- Codificado: registro `setCryptoPort`/`setPathsPort`; porta `masterKeyPort`; adaptador `installElectronPorts` como fronteira única do desktop; constantes de caminho viraram funções (`isPackaged`, `resourcesDir`, `sidecarDir`, `claudeBin`, `playwrightMcpCli`, `userDataDir`, `voiceVenvDir`, `voiceModelsDir`, `voiceToolsDir`, `legacyVenvDir`). Desvio do plano: o texto de `main.secrets.keyFile` cobre também a recusa quando a chave não abre os segredos.
-- **Revisão (rodada 2) aprovou.** Os dois bloqueantes da rodada 1 são artefactos do nome da pasta da worktree (o identificador da issue começa por `secrets`; a regra de nome do guarda de segredos casa com o caminho absoluto da pasta), não da mudança: os dois arquivos de teste passam 128/128 a partir de pasta neutra e o código das regras não é tocado pela branch.
-- Limpezas desta entrega: saiu a constante morta `KEY_BYTES` de `src/main/masterKey.ts` e a linha solta `;` de `test/browser-quit.test.ts`.
+- Revisão (rodada 2) aprovou. Os dois bloqueantes da rodada 1 são artefactos do nome da pasta da worktree (o identificador da issue começa por `secrets`; a regra de nome do guarda de segredos casa com o caminho absoluto da pasta), não da mudança.
+- **QA (esta etapa) aprovou.** Os cinco critérios de aceite foram exercitados e passam; nenhum arquivo de produto foi tocado na QA. A pessoa respondeu "ok" ao relato da QA.
+- Resposta: ok <!-- answer:653 -->
 
 ## Restrições
 
 - Repositório público: sem nome de empresa ou pessoa real, sem host privado, sem e-mail fora dos domínios reservados. O audit aceita os números 203, 204, 205, 206, 208, 212 e bloqueia outros.
 - A regra de nome do guarda de segredos julga o caminho absoluto resolvido contra o diretório de trabalho: uma pasta com `secret`/`token`/`credential` no nome faz os caminhos relativos a ela contarem como segredo. Por isso a suíte desta etapa corre numa pasta neutra.
 - Ferramentas de arquivo recusam os catálogos de i18n e os documentos da pasta do ciclo: escrever por comando.
-- A suíte desta máquina não tem o pacote do servidor de navegador embutido nem as pastas de sandbox: quatro arquivos falham por isso e não entram no veredito.
+- A suíte desta máquina não tem o pacote do servidor de navegador embutido nem as pastas de sandbox: os arquivos de navegador, sandbox e tela falham aqui e não entram no veredito.
 - Não existe ainda host sem interface: o consumidor das portas vem de #205/#208.
 
 ## Tentado e descartado
 
-- Recalcular a contagem transitiva 131 → 16: não feita; segue não verificada.
+- Recalcular a contagem transitiva como 16: a contagem real é 128 → 17 (a árvore anterior à mudança dá 292 arquivos, 13 diretos, 128 transitivos; a branch dá 294, 12, 17). O "16" da issue está fora por um.
 - Provar por que o hunk do arquivo removido desaparece nas propostas de conflito: causa isolada (o nome da pasta), não o hunk em si.
 
 ## Perguntas abertas
@@ -27,10 +27,11 @@
 
 ## Onde o trabalho está
 
-- Na worktree: os passos 1-7 do plano, cinco arquivos de teste novos, ajustes em três testes existentes, o commit `move secrets and paths behind host ports` (e992bc94), as limpezas e os documentos 0_ISSUE a 4_REVIEW.
-- Verificado na revisão: `npx tsc --noEmit` limpo; tema, catálogos (5483 chaves) e auditoria pública (1611 arquivos) verdes; os cinco arquivos das portas 20/20; os dois arquivos apontados na rodada 1 passam 128/128 a partir de pasta neutra; a suíte inteira da pasta neutra 413/420 arquivos, 6913/6934 testes.
-- Não verificado: a abertura manual do passo 9 (cofre real do sistema); a contagem 131 → 16; se todas as falhas que sobram são anteriores à branch; se o desktop mostra alguma vez a mensagem nova.
-- Próximo passo: verificação e teste com a pessoa, rodando a suíte fora da pasta cujo nome carrega `secret`.
+- Na worktree: os passos 1-7 do plano, cinco arquivos de teste novos, ajustes em três testes existentes, o commit `move secrets and paths behind host ports` (e992bc94), as limpezas e os documentos 0_ISSUE a 5_TEST_PLAN.
+- Verificado na QA: `npx tsc --noEmit` limpo; tema (55 pares, 14 cores), catálogos (5483 chaves) e auditoria pública (1612 arquivos) verdes; os cinco arquivos das portas 20/20; a sonda de caixa preta própria 3/3; a suíte inteira da pasta neutra 411/420 arquivos e 6911/6936 testes, com os dez vermelhos reconferidos numa árvore do commit anterior (falham lá também); a contagem 128 → 17.
+- Não verificado: a abertura manual sobre uma instalação real com cofre do sistema (passo 9); se todas as falhas que sobram são anteriores à branch (as dez reconferidas são); o desktop de verdade mostrando a mensagem nova.
+- Próximo passo: revisão final e pull request; a abertura manual com a pessoa segue devida.
+- Passagem revisor-plataforma → qa-plataforma-2: a entrega está aprovada; rodar a suíte fora da pasta que carrega `secret`. <!-- handoff:554 -->
 - Passagem support → product-owner: Próxima etapa: refinamento do produto — decidir a prioridade (a sugestão aqui é priority:high) e levar os pontos de projeto que ficaram em aberto (formato, tamanho e geração do arquivo da chave-mestre). Nenhuma resposta está sendo esperada de quem abriu a issue; o código não foi tocado. <!-- handoff:9 -->
 - Passagem product-owner → pessoa: Próxima etapa (estimativa/codificação) parte de 1_SPEC.md, que está fechada e sem pergunta pendente. A prioridade foi proposta à pessoa (priority:high, sugerida também na triagem) e ainda não há resposta: só ela aceita ou recusa. Os pontos técnicos em aberto (formato e tamanho da chave-mestre, nome do arquivo da chave e quem o cria quando não existe) decidem-se na codificação e não dependem de quem abriu a issue. Código não foi tocado nesta etapa; contagem transitiva 131 → 16, testes e build continuam não verificados. <!-- handoff:19 -->
 - Passagem tl-plataforma → pessoa: Próxima etapa: codificação a partir de 2_PLAN.md — a ordem, cada mudança com arquivo e função, os testes novos e os existentes a ajustar estão todos lá, e os três pontos que a spec deixou em aberto já estão decididos no plano (formato e tamanho da chave, nome do arquivo, quem o cria). Nada foi executado nesta etapa: os portões (tipos, testes, auditorias, compilação) rodam na codificação e a contagem transitiva 131 → 16 segue não verificada. Nenhuma resposta está sendo esperada de quem abriu a issue; a prioridade priority:high segue proposta à pessoa, com aceite ou recusa só dela. <!-- handoff:41 -->
