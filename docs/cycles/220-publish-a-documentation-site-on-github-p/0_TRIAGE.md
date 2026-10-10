@@ -39,6 +39,16 @@ Nada aqui depende de quem abriu a issue: o comportamento, a aceitação e as dú
 
 `Plataforma`. O que o pedido mexe é o runtime e a infraestrutura do repositório: um novo fluxo de integração contínua, a pasta de site no mesmo git, o agente com sandbox encaminhado por squad, a auditoria do repositório e a checagem de CI. Nada aqui é tela do aplicativo nem texto de interface (o site não passa pela regra de `t()` da interface do desktop).
 
+## Dúvidas de refino fechadas em 2026-10-10
+
+- **Gerador:** VitePress (a triagem não decidiu; a issue deixava em aberto).
+- **Pasta do site:** `site/` (a triagem e a spec coincidem).
+- **Referência:** incluída de `docs/`, nunca copiada (a preferência que a própria issue declara; a triagem e a spec coincidem).
+- **Agente de documentação encaminhado por squad:** a spec deixa em aberto; a recomendação está lá (agente novo da plataforma encaminhado à pasta do site), a decisão é de quem planeja.
+- **Domínio próprio:** a spec o declara fora do escopo; fica para uma decisão separada.
+
+O que segue abaixo é o que a triagem registrou na época e não foi reescrito.
+
 ## Prioridade sugerida
 
 `priority:medium`, como sugestão a quem decide. A falta do site não quebra nenhuma instalação: hoje há índice e README. Mas o pedido é grande (gerador, seis seções em duas línguas, workflow, checagem de CI, blog por release, mudança da linha de status) e a documentação pública atual está desatualizada e espalhada, o que pesa mais que uma melhoria pequena. Não é `high` porque nada está defeituoso nem bloqueado.
