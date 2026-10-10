@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error plain ESM module, no declaration file
-import { baseOf, candidatesOf, checkLanguages, checkLinks, checkSite, linksOf, targetOf, walkHtml } from '../site/scripts/check.mjs';
+import { baseOf, candidatesOf, checkAssets, checkLanguages, checkLinks, checkSite, linksOf, targetOf, walkHtml } from '../site/scripts/check.mjs';
 // @ts-expect-error plain ESM module, no declaration file
 import { otherLanguageLink, pagePath, referenceRoute } from '../site/scripts/docs-pages.mjs';
 
@@ -21,11 +21,12 @@ const tree = (files: Record<string, string>): string => {
   return dir;
 };
 
-// What a build under an address base looks like: the pages are written under the plain folder, and every address they
-// carry names the site under the base the host serves it from.
+// What a build under an address base looks like: the pages are written under the plain folder, every address they
+// carry names the site under the base the host serves it from, and the page at the root is the one the base is read
+// off — which is what `assets/style.css` is there for.
 const underBase = (base: string): string =>
   tree({
-    'index.html': `<a href="${base}guide/">Guide</a> <a href="${base}reference/runner.html">Runner</a> <link href="${base}assets/style.css">`,
+    'index.html': `<a href="${base}guide/">Guide</a> <a href="${base}reference/runner.html">Runner</a> <link rel="stylesheet" href="${base}assets/style.css">`,
     'guide/index.html': `<a href="${base}guide/install">Install</a> <a href="${base}reference/runner.html#x">Runner</a>`,
     'guide/install.html': `<a href="${base}">Home</a>`,
     'reference/runner.html': '<p>x</p>',
@@ -61,11 +62,17 @@ describe('the links of the built site', () => {
   });
 
   it('still fails on a link of that build that points at a page the site does not have', () => {
+    // One address of a build that carries a base leads nowhere, and it is the only failure: the base is read off the
+    // build, so every other address of it has to resolve before this one is named.
     const dir = tree({
-      'index.html': '<a href="/cerimonias/guide/">Guide</a> <a href="/cerimonias/reference/nowhere.html">Nowhere</a>',
+      'index.html': '<a href="/cerimonias/guide/">Guide</a> <a href="/cerimonias/reference/nowhere.html">Nowhere</a> <link rel="stylesheet" href="/cerimonias/assets/app.js">',
       'guide/index.html': '<p>x</p>',
+      'assets/app.js': '',
     });
-    expect(checkLinks(dir)).toEqual([{ page: 'index.html', href: '/cerimonias/reference/nowhere.html', missing: 'reference/nowhere.html' }]);
+    expect(baseOf(dir)).toBe('/cerimonias/');
+    expect(checkLinks(dir)).toEqual([
+      { page: 'index.html', href: '/cerimonias/reference/nowhere.html', missing: 'reference/nowhere.html' },
+    ]);
   });
 
   it('takes the base off an address before it looks it up', () => {
@@ -98,9 +105,17 @@ describe('the links of the built site', () => {
   });
 });
 
+// A page of the site carries the `Português | English` link at its top, which is how a reader leaves it; a page whose
+// pair exists and whose text names nothing has lost its other language as far as the check is concerned.
+const named = (href: string, title: string, body = 'x') => `<a href="${href}" title="${title}">${title}</a>\n\n${body}`;
+
 describe('the languages of the pages', () => {
-  it('passes when every page the site writes has its pair', () => {
-    const dir = tree({ 'index.md': 'x', 'index.pt-BR.md': 'x', 'guide/install.md': 'x', 'guide/install.pt-BR.md': 'x' });
+  it('passes when every page the site writes carries both languages, in either shape', () => {
+    const dir = tree({
+      'index.md': named('/pt-br/index', 'Português'), 'pt-br/index.md': named('/index', 'English'),
+      'guide/install.md': named('/guide/pt-br/install', 'Português'), 'guide/pt-br/install.md': named('/guide/install', 'English'),
+      'runner.md': named('/reference/runner.pt-br', 'Português'), 'runner.pt-br.md': named('/reference/runner', 'English'),
+    });
     expect(checkLanguages(dir)).toEqual([]);
   });
 
@@ -108,36 +123,63 @@ describe('the languages of the pages', () => {
     // The guide, the use cases, the blog and the landing page of this site are written this way, and the check has to
     // accept them: the `.pt-BR.md` mark on the same name is the other shape, not the only one.
     const dir = tree({
-      'index.md': 'x', 'pt-br/index.md': 'x',
-      'guide/index.md': 'x', 'guide/pt-br/index.md': 'x',
-      'use-cases/team.md': 'x', 'use-cases/pt-br/team.md': 'x',
+      'index.md': named('/pt-br/index', 'Português'), 'pt-br/index.md': named('/index', 'English'),
+      'guide/index.md': named('/guide/pt-br/index', 'Português'), 'guide/pt-br/index.md': named('/guide/index', 'English'),
+      'use-cases/team.md': named('/use-cases/pt-br/team', 'Português'), 'use-cases/pt-br/team.md': named('/use-cases/team', 'English'),
     });
     expect(checkLanguages(dir)).toEqual([]);
-    expect(candidatesOf('use-cases/team.md')).toEqual(['use-cases/team.pt-BR.md', 'use-cases/pt-br/team.md']);
+    expect(candidatesOf('use-cases/team.md')).toEqual(['use-cases/team.pt-BR.md', 'use-cases/team.pt-br.md', 'use-cases/pt-br/team.md']);
+    expect(candidatesOf('use-cases/pt-br/team.md')).toEqual(['use-cases/team.md']);
   });
 
   it('fails on a page of the site that exists in one language only, in either shape, and names the one missing', () => {
     const dir = tree({
-      'index.md': 'x', 'pt-br/index.md': 'x',
-      'guide/index.md': 'x', 'guide/pt-br/index.md': 'x',
-      'use-cases/team.md': 'x', 'use-cases/pt-br/index.md': 'x',
+      'index.md': named('/pt-br/index', 'Português'), 'pt-br/index.md': named('/index', 'English'),
+      'use-cases/team.md': 'x',
+      'use-cases/pt-br/index.md': 'x',
     });
-    expect(checkLanguages(dir)).toEqual([{ page: 'use-cases/team.md', missing: 'use-cases/team.pt-BR.md' }]);
+    // Two pages lost their pair. Which name it would have follows from the shape its own section is written in: the
+    // `pt-br/` folder beside an English page, and the name it mirrors beside the Portuguese half of a pair.
+    expect(checkLanguages(dir)).toEqual([
+      { page: 'use-cases/pt-br/index.md', missing: 'use-cases/index.md' },
+      { page: 'use-cases/team.md', missing: 'use-cases/pt-br/team.md' },
+    ]);
+  });
+
+  it('takes the pair beside the page as its second language even when the page names nothing', () => {
+    // The navigation reaches the pair, so a page whose pair is beside it passes with no link of its own — that is how
+    // the pages of this site are written today. What is not allowed is naming a pair that is not the page's own.
+    const dir = tree({ 'guide/index.md': '# Guide\n', 'guide/pt-br/index.md': '# Guia\n' });
+    expect(checkLanguages(dir)).toEqual([]);
+    const wrong = tree({
+      'guide/index.md': named('/use-cases/pt-br/team', 'Português'),
+      'guide/pt-br/index.md': named('/use-cases/team', 'English'),
+    });
+    expect(checkLanguages(wrong)).toEqual([
+      { page: 'guide/index.md', missing: 'the link to the other language points at /use-cases/pt-br/team, not at /guide/pt-br/index' },
+      { page: 'guide/pt-br/index.md', missing: 'the link to the other language points at /use-cases/team, not at /guide/index' },
+    ]);
   });
 
   it('accepts a page built from a document that names its other language with a link, and catches one that lies', () => {
     // A reference page is built from the document it comes from, so its sources are not `x.md`/`pt-br/x.md`; it names
     // its pair with a link labelled in the language it leads to, and that link has to lead to its own pair.
-    const good = tree({ 'runner.md': '<a href="/reference/runner.pt-br" title="Português">Português</a>', 'runner.pt-br.md': 'x' });
+    const good = tree({
+      'runner.md': named('/reference/runner.pt-br', 'Português'),
+      'runner.pt-br.md': named('/reference/runner', 'English'),
+    });
     expect(checkLanguages(good)).toEqual([]);
-    const lying = tree({ 'voice.md': '<a href="/reference/screen.pt-br" title="Português">Português</a>' });
+    const lying = tree({ 'voice.md': named('/reference/screen.pt-br', 'Português'), 'voice.pt-br.md': named('/reference/voice', 'English') });
     expect(checkLanguages(lying)).toEqual([
-      { page: 'voice.md', missing: 'the link to the other language points at /reference/screen.pt-br, not at /reference/voice' },
+      { page: 'voice.md', missing: 'the link to the other language points at /reference/screen.pt-br, not at /reference/voice.pt-br' },
     ]);
   });
 
   it('accepts a page the repository itself writes in one language only, when it says so', () => {
-    const dir = tree({ 'index.md': 'x', 'index.pt-BR.md': 'x', 'voice.md': 'Voice.\n\n<!-- site: one-language: the repository writes this document in one language only -->\n' });
+    const dir = tree({
+      'index.md': named('/pt-br/index', 'Português'), 'pt-br/index.md': named('/index', 'English'),
+      'voice.md': 'Voice.\n\n<!-- site: one-language: the repository writes this document in one language only -->\n',
+    });
     expect(checkLanguages(dir)).toEqual([]);
   });
 });
@@ -164,9 +206,9 @@ describe('both checks at once', () => {
     const bad = checkSite(sources, built);
     expect(bad.ok).toBe(false);
     expect(bad.links).toHaveLength(1);
-    expect(bad.languages).toEqual([{ page: 'index.md', missing: 'index.pt-BR.md' }]);
+    expect(bad.languages).toEqual([{ page: 'index.md', missing: 'pt-br/index.md' }]);
     const good = tree({ 'index.html': '<p>x</p>' });
-    const pair = tree({ 'index.md': 'x', 'index.pt-BR.md': 'x' });
-    expect(checkSite(pair, good)).toMatchObject({ ok: true, links: [], languages: [] });
+    const both = tree({ 'index.md': named('/pt-br/index', 'Português'), 'pt-br/index.md': named('/index', 'English') });
+    expect(checkSite(both, good)).toMatchObject({ ok: true, links: [], languages: [] });
   });
 });

@@ -1,6 +1,6 @@
 # O guia
 
-Quatro passos, na ordem. Cada um diz o que você deve ver no fim dele: uma lista numerada com os passos deste guia, cada um levando à página daquele passo, e o rótulo de um link escrito em português quando a página apontada tem uma versão nessa língua. Só os links para as páginas deste guia levam rótulo; qualquer outro link do site não leva nenhum.
+Quatro passos, na ordem. Cada um diz o que você deve ver no fim dele.
 
 | Passo | Aonde ele leva |
 |---|---|

@@ -1,61 +1,71 @@
-# A checagem de links do site passou a resolver os links do endereço em que ele é publicado
+# A checagem de línguas passou a nomear o par que a página tem, e um documento de uma língua só ganhou as duas páginas
 
-A revisão devolveu esta etapa com um bloqueante: a checagem de links do site não resolvia um único link quando o site
-é construído com o prefixo de publicação que o fluxo define — o único endereço em que o site existe de verdade. Esta
-passada corrige isso, cobre com teste, e corrige uma falha que só apareceu ao exercitar a checagem na construção
-publicada. O que segue não verificado está dito no fim.
+A revisão devolveu esta etapa com um bloqueante — o arquivo da checagem do site com três casos vermelhos e a regra que
+nomeava um par que o site nunca escreve — e uma observação menor sobre um documento escrito só em português que a
+construção lançava como página em inglês. A passada seguinte arruma só isso: a regra do par, os testes dela, e a forma
+como a construção reconhece um documento escrito numa língua só. O que foi e o que não foi verificado está dito no fim.
 
-## O bloqueante, e o que a correção mudou
+## O bloqueante, e o que mudou na regra do par
 
-A checagem é a que confere os links do site construído e as duas línguas de cada página. Ela juntava o endereço de um
-link direto à pasta construída: com `SITE_BASE=/cerimonias/`, todo link interno carrega esse prefixo e a pasta não, e
-cada um era dado como quebrado.
+A checagem de línguas olha as fontes do site e diz, de cada página, se ela carrega as duas línguas. Ela nomeava o par
+pela marca `.pt-BR.md` numa página cujo par a seção escreve na pasta `pt-br/` ao lado, e por isso pedia, na mensagem,
+que fosse criado um nome que o site nunca escreve. O nome agora segue a forma que a seção usa de fato:
 
-A correção não pede variável nenhuma a quem roda a checagem: **ela lê o prefixo da própria construção que confere**,
-dos endereços de `assets/` que a página construída carrega, e o retira antes de procurar o arquivo. Duas construções
-com prefixos diferentes podem ficar lado a lado e cada uma é conferida com o seu. A regra de endereço e a checagem
-também pararam de supor que o endereço de publicação é o nome do repositório.
+- uma página escrita à mão, cujo par vive na pasta `pt-br/` da seção, é nomeada pela pasta — é o que as páginas do
+  guia, das seções e da abertura escrevem;
+- uma página que já é a metade em português de um par é nomeada pela página da qual ela espelha o nome, sem voltar a
+  saltar para uma marca;
+- uma página gerada a partir de um documento é nomeada pela marca `.pt-br` e pelo endereço que o site serve,
+  sob `/reference/…`.
 
-## A falha que a checagem não via
+O endereço que o par serve em cada caso passou a sair de uma função só (`pairRouteOf`), que lê da própria página se
+ela escreve a forma de pasta ou a de marca. A checagem de links continua resolvendo endereços com o prefixo de
+publicação lido da construção (`baseOf`, `withinBase`, `targetOf`), e os três casos da checagem de línguas e da base
+ficaram verdes.
 
-As páginas de referência são geradas: não existem como arquivo em `site/`, então o par de línguas não estava no nome
-delas e o link entre as duas metades não existia em página nenhuma — cada documento bilíngue virava duas páginas que
-não se alcançavam. Medido na construção publicada: as dezesseis páginas de referência inglesas não linkavam nenhum
-endereço `.pt-br`.
+Também foi reforçado o que a checagem reprova: uma página cujo texto desenha a outra língua com um link que leva a uma
+página que não é o par dela reprova, mesmo que o par exista na árvore. Uma página cujo par existe ao lado e que não
+desenha link algum continua passando, porque a navegação é o que leva até o par — é o comportamento que as páginas do
+site já escritas têm, e exigir esse link ficou como sugestão aberta.
 
-O gerador passou a escrever, no pé de cada página de referência, o link para a outra língua com o rótulo da língua que
-ele leva, e a checagem de línguas passou a ler esse rótulo e a exigir que o endereço seja o par da própria página.
-Antes, a checagem tratava essas páginas pelo marcador de língua única ou por uma alternativa de nome que não é a que o
-site usa.
+A checagem dos arquivos que a página construída carrega (`assetsOf`, `checkAssets`) passou a contar no veredito junto
+de links e línguas, então uma construção que perde uma folha de estilo ou um script reprova em vez de servir uma
+página em branco.
 
-## As sugestões que entravam
+## O documento de uma língua só
 
-- A regra que transforma o caminho de um documento no endereço da página estava escrita em três lugares (a função
-  pura, a configuração do site e o gerador). Agora vive em uma só (`referenceRoute`), de onde as outras duas derivam.
-- A checagem de línguas não tinha caso para a forma que o site usa: o par na pasta `pt-br/` ao lado da página, e não
-  só o `x.pt-BR.md` no mesmo nome.
-- O ternário que repetia a mesma expressão nos dois ramos saiu.
-- Os quatro links do guia passaram a nomear a língua que levam, e o guia é a única página escrita à mão nessa forma de
-  par.
-- A checagem de links passou a conferir também os arquivos que a página construída carrega (folha de estilo, script,
-  fonte) contra a pasta construída.
+Havia um documento escrito em português cuja metade inglesa vinha depois, sob um segundo título
+`# … (English)` no mesmo arquivo. A construção não separava as duas metades e tratava o documento inteiro como a
+página em inglês de um par inexistente. A separação passou a reconhecer a forma de um título por metade —
+`# … (Português)` e `# … (English)`, ao lado da forma `## Português` / `## English` que os documentos bilíngues já
+usam — e o texto que vem antes do segundo título fica com a língua que ele mesmo é. A página gerada escreve o título
+de cada metade e as duas carregam, no fim, o link para a outra língua.
+
+Com isso, o documento que era lançado numa língua só passou a ter as duas páginas, e a checagem de línguas as vê. A
+tradução de um documento que hoje é escrito só em inglês continua fora do escopo, como estava.
 
 ## O que foi rodado, e o resultado
 
 | Comando | Resultado |
 |---|---|
-| `SITE_BASE=/cerimonias/ npx vitepress build site` | Constrói; a pasta construída carrega os endereços com o prefixo. |
-| `node site/scripts/cli.mjs check` sobre essa construção | `site: every link resolves and every page carries its two languages`, saída 0 (antes do conserto: saída 1 com 2242 linhas de link quebrado). |
-| Contagem dos links internos da construção com prefixo | 2238 links, 0 quebrados. |
-| `npx vitest run test/site-check.test.ts` | 18 casos, 15 passam e 3 falham — os três são a expectativa das fixtures que escrevi, não o comportamento do código. |
+| `npx vitest run test/site-check.test.ts` | 20 casos, todos verdes (eram três vermelhos antes da passada) |
+| `npx vitest run test/site-docs-pages.test.ts` | 8 casos, todos verdes, com um caso novo para a forma de dois títulos |
+| `npx vitest run test/site-changelog.test.ts` | 11 casos, todos verdes |
+| `npx tsc --noEmit` | sai 0 |
+| `node scripts/theme-audit.mjs` | sai 0 |
+| `npm run i18n:lint` | sai 0 |
+| `node scripts/public-audit.mjs` | sai 0, 1733 arquivos |
+| `SITE_BASE=/cerimonias/ npm run docs:build` e `npm run docs:check` sobre essa construção | a construção passa e a checagem diz que todo link resolve e toda página carrega as duas línguas |
 
-O prefixo lido da construção foi `/cerimonias/`, o mesmo valor que o fluxo deriva do nome do repositório.
+Depois de exercitar, a construção foi removida da árvore (`site/generated/`, `site/.vitepress/dist/`,
+`site/.vitepress/cache/`): nada que a construção gera entra no commit.
 
 ## O que não foi verificado
 
-- **A suíte inteira.** Nesta passada rodou-se só o arquivo de teste da checagem do site; os outros portões
-  (typecheck, suíte completa, auditoria de tema, lint de idiomas, auditoria pública, construção do aplicativo) não
-  foram rodados depois destas mudanças.
-- **A construção sem prefixo** depois desta passada, e a prévia local no navegador.
-- **A publicação no host**, o Pages ligado, uma mudança posterior em `docs/` ou no `CHANGELOG.md` atualizando o site na
-  mesclagem, o `npm ci` do fluxo e o agente de documentação construindo o site com um modelo de verdade.
+- O site no ar, o Pages ligado na configuração do repositório, uma mudança posterior em `docs/` ou no `CHANGELOG.md`
+  atualizando o site na mesclagem, o `npm ci` do fluxo de publicação e o agente de documentação construindo o site com
+  um modelo de verdade: nenhum depende desta árvore.
+- A suíte inteira: nesta passada correram os três arquivos de teste do site, o typecheck e os portões de tema, idiomas
+  e auditoria pública, não os milhares de casos do restante do repositório.
+- A sugestão da revisão de ligar as duas línguas por link nas páginas escritas à mão continua sem ser comportamento
+  coberto: a navegação leva ao par, e a checagem só reprova quando o texto da página troca esse par por outro.

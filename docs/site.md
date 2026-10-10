@@ -23,6 +23,17 @@ Nada de `docs/` é copiado nem movido: a pasta continua sendo a fonte que os age
 execução. A documentação em que o repositório escreve uma língua só aparece naquela língua — a checagem de línguas
 respeita isso.
 
+### As duas línguas de uma página
+
+A abertura, as páginas de seção, as do guia, as dos casos de uso e as do blog trazem, no topo, `Português | English`
+com o link para a outra língua. Um documento bilíngue de `docs/` abre as duas metades com `## Português` e `## English`,
+ou com um título por metade terminado em `(Português)` / `(English)`, e a página gerada diz a outra língua no fim; uma
+página que vem de um documento escrito numa língua só não tem par.
+
+A checagem de línguas lê o nome das fontes e esse link: uma página cujo texto desenha a outra língua tem de desenhar o
+par dela mesma, e um link que leve a outra página reprova o pedido de merge. Uma página que tem o par ao lado e não
+desenha nenhum link passa — a navegação é que leva até ele.
+
 ### Construir, prévia e checagem
 
 ```bash
@@ -67,6 +78,17 @@ maintained by an agent of the team through the normal documentation cycle, like 
 
 Nothing in `docs/` is copied or moved: the folder stays the source the app's agents read at run time. A document the
 repository writes in one language only appears in that language — the language check respects that.
+
+### The two languages of a page
+
+The landing page, the section pages, the guide, the use cases and the blog carry `Português | English` at the top,
+linking to the other language. A bilingual document of `docs/` opens its halves with `## Português` and `## English`,
+or with one title per half ending in `(Português)` / `(English)`, and the page it becomes names the other language at
+the foot; a page that comes from a document written in one language only has no pair.
+
+The language check reads the name of the sources and that link: a page whose text draws the other language has to draw
+its own pair, and a link that leads elsewhere fails the pull request. A page that has its pair beside it and draws no
+link passes — the navigation is what leads there.
 
 ### Building, preview and checks
 

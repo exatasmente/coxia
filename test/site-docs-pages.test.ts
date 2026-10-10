@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error plain ESM module, no declaration file
-import { blocksOf, pageFor, pagePath, referencePages, titleOf } from '../site/scripts/docs-pages.mjs';
+import { blocksOf, langOf, pageFor, pagePath, referencePages, titleOf } from '../site/scripts/docs-pages.mjs';
 
 const docs = (files: Record<string, string>): string => {
   const dir = mkdtempSync(join(tmpdir(), 'site-docs-'));
@@ -61,6 +61,20 @@ describe('the languages of a document', () => {
     expect(titleOf('configuration.md', BILINGUAL, 'en')).toBe('Configuration');
     expect(titleOf('voice.md', '# Voice is optional\n', 'en')).toBe('Voice is optional');
     expect(pageFor(dir, 'voice.md').title).toBe('Voice is optional');
+  });
+
+  it('splits a document written in one title per half, the whole text before the second title keeping its own language', () => {
+    // The shape of a document the repository writes in Portuguese then turns to English under a second title: it is
+    // not two half pages of the `## Português`/`## English` shape, and the text before the second title is what the
+    // check looks at; without it the page would be served as the English half of a pair the document does not have.
+    const half = `# Comandos de verificação\n\nUm comando por projeto.\n\n## De quem é\n\nDo workspace.\n\n# Conflict verification commands (English)\n\nA command per project.\n\n## Whose it is\n\nThe workspace's.\n`;
+    expect(blocksOf(half)).toEqual([
+      { lang: 'pt-BR', body: '# Comandos de verificação\n\nUm comando por projeto.\n\n## De quem é\n\nDo workspace.' },
+      { lang: 'en', body: 'A command per project.\n\n## Whose it is\n\nThe workspace\'s.' },
+    ]);
+    expect(langOf('verify-commands.md', half)).toBe('pt-BR');
+    expect(titleOf('verify-commands.md', half, 'pt-BR')).toBe('Comandos de verificação');
+    expect(titleOf('verify-commands.md', half, 'en')).toBe('Conflict verification commands');
   });
 
   it('gives each document a page with its title and its own text, and keeps the file where it is', () => {

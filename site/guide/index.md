@@ -1,6 +1,6 @@
 # The guide
 
-Four steps, in order. Each one says what you should see at the end of it: a numbered list of the steps of this guide, each linking to the page of that step, and the label of a link in English when the linked page serves one. Only the links to the pages of this guide carry a label; every other link of the site carries none.
+Four steps, in order. Each one says what you should see at the end of it.
 
 | Step | What it gets you to |
 |---|---|

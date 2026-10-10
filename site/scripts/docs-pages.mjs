@@ -32,29 +32,51 @@ function langOfHeading(heading) {
   return null;
 }
 
-/** The language a document is written in: the `## Português` it carries, else English, the language the repository writes first. */
+/**
+ * The language a heading opens a half with. A heading names the language it opens either in the words themselves
+ * (`## Português`, `## English`) or at its end, in the parenthesis a document written in one title per half carries
+ * (`# Conflict verification commands (English)`, `# … (Português)`).
+ */
+function langOfMark(heading) {
+  const direct = langOfHeading(heading);
+  if (direct) return direct;
+  const tag = /\((english|portugu[eê]s|pt-br)\)\s*$/i.exec(heading.trim());
+  if (!tag) return null;
+  return /^english$/i.test(tag[1]) ? 'en' : 'pt-BR';
+}
+
+/** The words a title carries when it names its language at the end: the title without that name. */
+const bareTitle = (title) => title.replace(/\s*\((english|portugu[eê]s|pt-br)\)\s*$/i, '').trim();
+
+/** The language a document is written in: the half it opens with, else English, the language the repository writes first. */
 export function langOf(path, text) {
-  const heading = /^##\s+(.+?)\s*$/m.exec(text.replace(/\r\n/g, '\n'));
-  return heading && langOfHeading(heading[1]) === 'pt-BR' ? 'pt-BR' : 'en';
+  return blocksOf(text)[0]?.lang ?? 'en';
 }
 
 /**
  * The blocks of one document, in the order it writes them. A document that carries `## Português` and `## English`
- * becomes one block per language, each holding the text that follows its heading; a document written in a single
- * language stays one block, in English.
+ * becomes one block per language, each holding the text that follows its heading; a document written in one half per
+ * title (`# … (Português)` then `# … (English)`) becomes one block per half, the text before the first title staying
+ * with the half of the language the titles are written in; a document written in a single language stays one block,
+ * in English.
  */
 export function blocksOf(text) {
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   const blocks = [];
+  let prelude = [];
   let current = null;
+  let titled = false;
   for (const line of lines) {
-    const heading = /^##\s+(.+?)\s*$/.exec(line);
-    const lang = heading ? langOfHeading(heading[1]) : null;
+    const heading = /^(#{1,2})\s+(.+?)\s*$/.exec(line);
+    const lang = heading ? langOfMark(heading[2]) : null;
     if (lang) {
+      if (heading[1] === '#') titled = true;
       current = { lang, lines: [] };
       blocks.push(current);
     } else if (current) {
       current.lines.push(line);
+    } else {
+      prelude.push(line);
     }
   }
   const trim = (list) => {
@@ -65,22 +87,31 @@ export function blocksOf(text) {
     return list.slice(a, b).join('\n');
   };
   if (!blocks.length) return [{ lang: 'en', body: trim(lines) }];
+  // A document written in one title per half leaves the text before its first title with the half of the language the
+  // titles are written in, which is the other one of the pair — the shape of a document the repository writes in one
+  // language only gets a page of that language instead of being served as the English half of a pair it does not have.
+  if (titled && prelude.some((l) => l.trim())) {
+    blocks.unshift({ lang: blocks[0].lang === 'pt-BR' ? 'en' : 'pt-BR', lines: prelude });
+  }
+  prelude = [];
   return blocks.map((b) => ({ lang: b.lang, body: trim(b.lines) }));
 }
 
-/** The title of a document: its first `#` heading, else its first line, else the file's own name. */
+/** The title of a document: the `#` heading of the half the page shows, else the file's own name. */
 export function titleOf(path, text, lang) {
+  const headings = [];
   for (const line of text.replace(/\r\n/g, '\n').split('\n')) {
     const heading = /^#\s+(.+?)\s*$/.exec(line);
-    // A bilingual document titles the file `Configuração / Configuration`, one title for its two halves: the page
-    // shows the half that is its own, and keeps the whole title when the halves are not of one language each.
-    if (heading) {
-      const parts = heading[1].split(/\s+\/\s+/).map((p) => p.trim());
-      return parts.length > 1 ? (lang === 'pt-BR' ? parts[0] : parts[parts.length - 1]) : heading[1];
-    }
-    if (line.trim() && !line.startsWith('---')) break;
+    if (heading) headings.push(heading[1]);
   }
-  return path.replace(/\.md$/, '').split('/').pop();
+  if (!headings.length) return path.replace(/\.md$/, '').split('/').pop();
+  // A document written in one title per half titles each half with its own; anything else carries one title for both,
+  // and a bilingual one writes it `Configuração / Configuration`, one title for its two halves: the page shows the
+  // half that is its own, and keeps the whole title when the halves are not of one language each.
+  const mine = headings.length > 1 ? headings.find((t) => langOfMark(t) === lang) : null;
+  const title = mine ? bareTitle(mine) : headings[0];
+  const parts = title.split(/\s+\/\s+/).map((p) => p.trim());
+  return parts.length > 1 ? (lang === 'pt-BR' ? parts[0] : parts[parts.length - 1]) : title;
 }
 
 /** The page of a document: what the site shows of it — one title and one body per language it carries. */
