@@ -415,7 +415,7 @@ describe('a sub-agent as a node', () => {
       starts.push(s);
       notes.push(`open ${tag}`);
       return {
-        events: { onToolUse: (name) => notes.push(`${tag} tool ${name}`), onInterim: (text) => notes.push(`${tag} says ${text}`) },
+        events: { onToolUse: (name) => notes.push(`${tag} tool ${name}`), onInterim: (text) => notes.push(`${tag} says ${text}`), onThought: (text) => notes.push(`${tag} thinks ${text}`) },
         within: (fn) => where.run(tag, fn),
         state: (state) => notes.push(`${tag} ${state}`),
         end: (failure) => notes.push(failure === undefined ? `${tag} end` : `${tag} end ${failure}`),
@@ -495,6 +495,24 @@ describe('a sub-agent as a node', () => {
     expect(notes.filter((n) => n.includes(' end'))).toHaveLength(1);
     expect(switches).toMatchObject([{ reason: 'delegate', activity: 'explore' }]);
     expect(notes.some((n) => n.includes('delegate'))).toBe(false);
+  });
+
+  it('reports the reasoning of each turn once to whoever took the turn: the parent\'s to the parent, a sub-agent\'s to its own handle', async () => {
+    const { notes, onSubAgent } = caller();
+    const a = await server([many([{ kind: 'explore', description: 'think about it', prompt: 'p' }]), textStep('principal done', { usageTokens: [10, 2], reasoning: 'The principal concludes.' })]);
+    const b = await server((req: FakeRequest) => (req.body?.messages.at(-1).role === 'tool' ? textStep('sub done', { usageTokens: [10, 2] }) : toolStep([{ id: 'c', name: 'look', args: {} }], { usageTokens: [10, 2], reasoning: ['The sub-agent ', 'looks first.'] })));
+    const parent: string[] = [];
+    await run({ primary: member(a, 'a'), activities: { explore: [member(b, 'b')] }, tools: [watching('look')], over: { events: { onThought: (text) => parent.push(text), onSubAgent } } });
+    expect(parent).toEqual(['The principal concludes.']);
+    expect(notes.filter((n) => n.includes(' thinks '))).toEqual(['explore#0 thinks The sub-agent looks first.']);
+  });
+
+  it('does not hand a sub-agent\'s reasoning to the parent when the caller made no node for it', async () => {
+    const a = await server([many([{ kind: 'explore', prompt: 'p' }]), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server((req: FakeRequest) => (req.body?.messages.at(-1).role === 'tool' ? textStep('sub done', { usageTokens: [10, 2] }) : toolStep([{ id: 'c', name: 'look', args: {} }], { usageTokens: [10, 2], reasoning: 'Private to the sub-agent.' })));
+    const parent: string[] = [];
+    await run({ primary: member(a, 'a'), activities: { explore: [member(b, 'b')] }, tools: [watching('look')], over: { events: { onThought: (text) => parent.push(text) } } });
+    expect(parent).toEqual([]);
   });
 
   it('behaves as before for a caller that does not follow sub-agents', async () => {

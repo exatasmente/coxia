@@ -63,7 +63,7 @@ export interface SubAgentStart {
 /** The caller's side of one sub-agent: where its own steps go and when it starts, waits its turn and ends. */
 export interface SubAgentHandle {
   /** What the sub-agent's own turns report to, instead of the parent's. The model-switch notice, usage and the sign of life stay the parent's. */
-  events: Pick<RunEvents, 'onToolUse' | 'onInterim'>;
+  events: Pick<RunEvents, 'onToolUse' | 'onInterim' | 'onThought'>;
   /** Runs the sub-agent with its node as the current one, so what it starts (an agent it calls) hangs under it. */
   within<T>(fn: () => T): T;
   /** `queued`: another sub-agent that changes things is ahead of it; `started`: it runs. */
@@ -80,6 +80,8 @@ export interface RunEvents {
   onText?: (text: string) => void;
   // A piece of the model's reasoning stream: a sign of life while it thinks before it says anything.
   onReasoning?: (text: string) => void;
+  // The reasoning of one completed model turn, whole, once per turn that reasoned (whichever way the server sent it); never a piece of a stream.
+  onThought?: (text: string) => void;
   // What the model said alongside tool calls it is about to make (its narration between steps); never the final answer.
   onInterim?: (text: string) => void;
   // The call moved to another model of the role's pool (it was busy, or the turn is for an activity the first one does not serve).
@@ -443,8 +445,9 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         depth: (p.depth ?? 0) + 1,
         ...(own ? { client: own.client, capabilities: own.capabilities, params: own.params, pool: own.pool, poolClient: undefined } : { poolClient: pool }),
         startActivity: 'explore',
-        // The sub-agent's own steps go to its node; a model-switch notice, usage and the sign of life stay with the parent.
-        ...(kind ? { kind, incoming: undefined, events: { ...events, ...handle?.events, onUsage: (u) => { model = u.model; events.onUsage?.(u); } } } : handle ? { events: { ...events, ...handle.events } } : {}),
+        // The sub-agent's own steps go to its node; a model-switch notice, usage and the sign of life stay with the parent. Without a node its thoughts are not the parent's.
+        events: { ...events, onThought: undefined, ...handle?.events, ...(kind ? { onUsage: (u) => { model = u.model; events.onUsage?.(u); } } : {}) },
+        ...(kind ? { kind, incoming: undefined } : {}),
       });
     const inside = (): Promise<OpenRunResult<string>> => (handle ? handle.within(sub) : sub());
     let ended = false;
@@ -589,6 +592,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         if (c.reasoning) msg.reasoning_content = c.reasoning;
         pool.stamp(msg, member);
         write(msg, u, member.client.cfg.model, c.meta);
+        // One line per turn, after the turn is whole and before its narration and tools are handled; a retry after a full context threw before this point.
+        if (c.reasoning?.trim()) events.onThought?.(c.reasoning);
         return c;
       } catch (e) {
         if (e instanceof EngineError && e.kind === 'context' && !compacted && compact(messages, 1, 600)) {

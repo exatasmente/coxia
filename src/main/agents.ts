@@ -434,6 +434,7 @@ function openSubAgent(parent: RunActivity, req: EngineRequest, s: SubAgentStart)
         child.tool(lineOf(name, input));
       },
       onInterim: (text) => child.text(text),
+      onThought: (text) => child.thought(text),
     },
     within: (fn) => withActivityParent(child.id, fn),
     state: (state) => child.status(state),
@@ -708,6 +709,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
       // A call in the flex tier waits in the server's queue without a word: that is not a stage that stopped.
       onWait: () => req.beat?.(),
       onInterim: (text) => req.activity?.text(text),
+      onThought: (text) => req.activity?.thought(text),
       // A switch of model shows on the live line and, when the caller keeps a thread, there.
       onSwitch: (e) => {
         req.activity?.tool(poolNoticeText(e));
@@ -855,9 +857,17 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     for (const node of nodes.values()) node.status(state);
     nodes.clear();
   };
+  // The thinking of the turn being read: the SDK sends one message per content block, all with the same message id, so the blocks of one turn are joined and shown as a
+  // single thought, flushed before that turn's text and tool uses (and so before their lines). Nothing is asked of the SDK beyond what it already sends.
+  let held: { owner: RunActivity | undefined; id: string | undefined; text: string[] } | null = null;
+  const flushThought = (): void => {
+    if (held) held.owner?.thought(held.text.join('\n\n'));
+    held = null;
+  };
   try {
     for await (const m of q) {
       req.beat?.();
+      if (m.type !== 'assistant') flushThought();
       if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt, req.resume !== undefined);
       if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
       if (m.type === 'assistant') {
@@ -872,7 +882,19 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         // What a sub-agent of this call produced goes to its node; anything else (the agent's own turn, or a sub-agent the call has no node for) to the call's activity.
         const parentId = (m as { parent_tool_use_id?: string | null }).parent_tool_use_id;
         const owner = (parentId ? nodes.get(parentId) : undefined) ?? req.activity;
+        // Another turn (another message id) or another node ends the thought being held.
+        if (held && (held.owner !== owner || held.id === undefined || held.id !== id)) flushThought();
         for (const block of m.message.content) {
+          if (block.type === 'thinking') {
+            // An empty or withheld thinking block makes no line.
+            const thinking = typeof block.thinking === 'string' ? block.thinking.trim() : '';
+            if (thinking && owner) {
+              held ??= { owner, id, text: [] };
+              held.text.push(thinking);
+            }
+            continue;
+          }
+          flushThought();
           if (block.type === 'text') {
             if (owner === req.activity) assistantText.push(block.text);
             owner?.text(block.text);
@@ -933,6 +955,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     throw new Error('agent ended without a result');
   } finally {
     // A call that ends by an error, an abort or a refusal leaves no sub-agent shown as working.
+    flushThought();
     closeNodes('failed');
   }
 }

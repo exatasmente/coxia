@@ -84,3 +84,23 @@ Deviations from the plan:
 - Tests: `test/activity-calls.test.ts` (A, B and C over the real `askAgent` and the fake server; path C there uses a hand-made `callAgent` that calls `runConversation`, as the executor's
   does); the executor's own refusal lines are in `test/runner-send-call.test.ts`, with the stage's node made by hand (its engine there is the fake one, which does not set the parent).
   `agent-activity-core.test.ts` gains the `get` case and `bindActivityParent`; the SDK file one `CallAgent` line case.
+
+## Commit 5: the reasoning of each turn as one closed line
+
+The open loop calls `onThought` once with `Completion.reasoning` when a turn is complete (after the assistant message is written, before its narration and tools are handled), and the
+agents module hands it to the call's activity or, for a sub-agent, to its handle (`SubAgentHandle.events.onThought`). The Claude SDK loop joins the `thinking` blocks of one message
+id and flushes them as one line on the node that took the turn (the call's, or the sub-agent's by `parent_tool_use_id`), before the turn's text and tool uses; an empty, blank or
+`redacted_thinking` block makes none. The masking, the 2,000-character cut, the 20,000-character scan bound and the switch were already in the log (commit 2); the request to the SDK is
+not changed.
+
+Deviations from the plan:
+
+- A sub-agent started by a caller that made no node for it (no `onSubAgent`) does not hand its thoughts to the parent's `onThought`: the nested events are the parent's with `onThought`
+  cleared, then the handle's. Tool lines and narration of such a sub-agent still land on the parent's, as before. This is the one place the nested `events` object was rewritten
+  (it is now always set, with the same members as before for everything but `onThought`).
+- The SDK loop also flushes a held thought in its `finally`, so a call that ends by an error after a thinking block still shows the line.
+- The test plan's single `test/activity-thoughts.test.ts` is two files, `test/activity-thoughts.test.ts` (open engine, through `askAgent`) and `test/activity-thoughts-sdk.test.ts`
+  (scripted `query`), because the SDK module is replaced for a whole file. `toolStep` in `test/helpers/fakeOpenAI.ts` gained `reasoning` (a string or pieces) and `reasoningField`.
+- "No file holds the marker of a thought" cannot run the open session with `sessionsDir: null` through `askAgent`; the test walks the data folder and skips `open-sessions`, the one
+  place the principal's reasoning already was.
+- No SDK `thinking` option or `forwardSubagentText` is set: a sub-agent's thought shows on the Claude engine only if the SDK forwards it (Q3 and question 3 of the plan).
