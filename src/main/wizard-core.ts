@@ -181,7 +181,7 @@ export function scanDocsFallback(bases: string[], d: Pick<ScanDeps, 'home' | 'ex
 
 export const SDK_PKG = '@anthropic-ai/claude-agent-sdk';
 /** The range the app was built against (package.json); a test keeps the two in step. */
-export const SDK_RANGE = '^0.3.287';
+export const SDK_RANGE = '^0.3.292';
 
 export interface NpmRun {
   child: ChildProcess;
