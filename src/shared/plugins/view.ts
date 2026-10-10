@@ -26,6 +26,19 @@ export interface PluginView {
   /** Requests of this plugin waiting for the person in Actions. */
   waiting: number;
   refused: string | null;
+  /** How its last call since the app opened ended, or null when it was not called yet. */
+  last?: PluginLastCall | null;
+}
+
+/** The last call of a plugin: when, for which event and stage of which issue, and how it ended (with the reason when it did not run). */
+export interface PluginLastCall {
+  state: 'ok' | 'failed' | 'waiting';
+  event: string;
+  stage: string | null;
+  issue: number;
+  reason: string | null;
+  document: string | null;
+  at: string;
 }
 
 /** The plugins section the interface shows: the folder, the deadline of the warning and the list. */

@@ -50,14 +50,20 @@ export interface PluginContext {
    * refused the call (not declared, setting empty, not allowed).
    */
   request(id: string, options?: RequestOptions): Promise<RequestAnswer>;
-  /** Asks for a write the plugin declared. It follows the person's permission after the plugin ends: it may go out, be announced first, or wait. */
+  /**
+   * Asks for a write the plugin declared. It follows the person's permission after the plugin ends: it may go out, be announced first, or wait. One
+   * call hands on at most 5 writes, the first ones asked; the rest are dropped.
+   */
   write(id: string, options?: RequestOptions): void;
   /** A line for the log of the run of the plugin. */
   log(...parts: unknown[]): void;
 }
 
 export interface PluginResult {
-  /** The text of the document the plugin declared, written by the app into the run's cycle folder. Nothing is written when absent or empty. */
+  /**
+   * The text of the document the plugin declared, written by the app into the run's cycle folder (20,000 characters at most). Nothing is written when
+   * absent or empty. Only what is shaped like a credential is masked; the query of a link and an email address are kept.
+   */
   document?: string;
 }
 
