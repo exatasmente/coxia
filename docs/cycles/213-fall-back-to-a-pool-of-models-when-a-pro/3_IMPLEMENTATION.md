@@ -289,3 +289,13 @@ Com a sugestão, as listas de `shell` e `edit` trazem os mesmos modelos da lista
 ## Corrida única da suíte inteira, depois do commit 20
 
 Por pedido do coordenador, a suíte inteira só rodou uma vez, depois do commit 20 (`npx vitest run --maxWorkers=4 --testTimeout=20000`): 433 arquivos, 7269 testes, **1 falha**: `runner-config` ("is off by default…") comparava `neutralConfig().runner` com um objeto que não tinha o `flex: true` que o commit 17 pôs no neutro. Corrigido num commit `fix:` à parte (sem rebase), com a repetição só do arquivo e depois da suíte inteira de novo.
+
+Segunda corrida da suíte inteira, depois do `fix:`: 433 arquivos, 7269 testes, todos verdes; typecheck, theme-audit, i18n:lint e public-audit também.
+
+### Quando cada gate rodou (parte 3)
+
+| Commit | Gates |
+|---|---|
+| 15 e 16 | typecheck, vitest da **suíte inteira** (430 arquivos, 7171 e 7184 testes; no 15 uma primeira corrida com 5 testes que estouraram o tempo sob carga alta da máquina e passaram com `--testTimeout=20000`), theme-audit, i18n:lint, public-audit |
+| 17 a 20 | typecheck, vitest só nos arquivos que o commit toca ou acrescenta (23, 60, 12 e 17 arquivos), theme-audit, i18n:lint, public-audit (pedido do coordenador, para poupar a máquina) |
+| depois do 20 | suíte inteira uma vez (1 falha em `runner-config`, corrigida no `fix:`), e de novo (verde) |
