@@ -308,11 +308,6 @@ export interface VcsProvider {
 
   /** Describes a write as the commands that would run, reading what it needs to be exact. Runs nothing. */
   planWrite(op: VcsWriteOp): Promise<VcsCommand[]>;
-  /**
-   * The credential an upload of evidence carries in its own headers, right before the call (the proposal itself never holds it). Null when the provider
-   * talks to its host through a CLI instead (GitLab's `glab` posts the file itself, with its own login).
-   */
-  uploadToken(): Promise<string | null>;
   /** Checks that a command (possibly read back from disk) has a shape this provider may run. Throws the reason. */
   validateCommand(command: VcsCommand): void;
 }

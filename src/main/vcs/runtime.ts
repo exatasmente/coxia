@@ -82,13 +82,17 @@ function headersFor(s: VcsSettings, token: () => string): () => Record<string, s
 export function buildRuntime(s: VcsSettings, deps: RuntimeDeps): VcsRuntime {
   checkHost(s.host);
   const installed = deps.cliInstalled ?? (() => true);
-  const cli = useCli(s, installed, (deps.hasToken ?? ((x: VcsSettings) => !!x.secretRef))(s));
+  const hasToken = deps.hasToken ?? ((x: VcsSettings) => !!x.secretRef);
+  const cli = useCli(s, installed, hasToken(s));
   const apiUrl = s.apiUrl || defaultApiUrl(s.kind, s.host);
   const http = (baseUrl: string) =>
     new HttpClient({ host: s.host, baseUrl, headers: headersFor(s, () => deps.token(s)), timeoutMs: deps.timeoutMs, deps: { fetch: deps.fetch, sleep: deps.sleep, now: deps.now } });
   const client = cli ? null : http(apiUrl);
   const graphqlBase = (): string => new URL('..', apiUrl.endsWith('/') ? apiUrl : `${apiUrl}/`).toString();
   const graphqlClient = cli || s.kind === 'bitbucket' ? null : http(graphqlBase());
+  // GitHub takes an image on its own uploads host, which the API client refuses (another origin): a client of its own, the API token in its headers. It is
+  // built under the CLI preference too, but only when the person set a token for the integration; github.com only, so an Enterprise token never leaves its host.
+  const uploadClient = s.kind === 'github' && s.host === 'github.com' && (!cli || hasToken(s)) ? http('https://uploads.github.com/') : null;
 
   if (s.kind === 'gitlab') {
     const env = () => ({ ...deps.env(), GITLAB_HOST: s.host });
@@ -110,8 +114,8 @@ export function buildRuntime(s: VcsSettings, deps: RuntimeDeps): VcsRuntime {
     return {
       settings: s,
       api: client,
-      provider: createGitHubProvider({ id: s.id, host: s.host, transport, token: () => ((deps.hasToken ?? ((x: VcsSettings) => !!x.secretRef))(s) ? deps.token(s) : null) }),
-      exec: githubExecutor({ host: s.host, command: s.cli, env, run: deps.run, client, graphqlClient, validate: validateGitHubCommand }),
+      provider: createGitHubProvider({ id: s.id, host: s.host, transport, token: () => (hasToken(s) ? deps.token(s) : null) }),
+      exec: githubExecutor({ host: s.host, command: s.cli, env, run: deps.run, client, graphqlClient, uploadClient, validate: validateGitHubCommand }),
     };
   }
   const options: BitbucketOptions = { id: s.id, host: s.host, client: client as HttpClient, repos: s.repos };

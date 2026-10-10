@@ -25,6 +25,7 @@
   "vcs.error.server": "{host} respondeu com erro {status}.",
   "vcs.error.timeout": "{host} não respondeu em {seconds} s.",
   "vcs.error.unsupported": "{kind} não oferece isto: {what}",
+  "vcs.error.upload_needs_api": "Enviar uma comprovação ao {kind} exige a API com um token, e este workspace fala com o {kind} pela CLI, sem token configurado para ela. Configure o token da integração em Configurações, ou a comprovação fica só no app.",
   "vcs.exec.refused": "{host} recusou: {detail}",
   "vcs.exec.responded": "{host} respondeu {code}: {body}",
   "vcs.health.api": "API de {host}: autenticado como {user}.",

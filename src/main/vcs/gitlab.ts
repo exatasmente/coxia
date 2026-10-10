@@ -577,8 +577,6 @@ export function createGitLabProvider(o: GitLabOptions): VcsProvider {
     },
 
     validateCommand: validateGitLabCommand,
-    // GitLab takes the file with `glab`'s own login or with the API client's headers: no extra credential is put on the upload.
-    uploadToken: async () => null,
   };
   return provider;
 }

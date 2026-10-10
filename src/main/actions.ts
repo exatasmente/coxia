@@ -36,7 +36,7 @@ import { cycle, formatTime, prompt as cp } from './cyclePrompts';
 import { ATAS } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
-import { VcsError } from './vcs/errors';
+import { VcsError, scrubSecrets } from './vcs/errors';
 import { testEnvScanActive, testEnvTextProblem, activeTestEnvForms } from './testEnv';
 
 /** The text one command carries (its body, its fields, its endpoint): what a value could ride out inside. */
@@ -305,21 +305,6 @@ function runtimeFor(c: VcsCommand): VcsRuntime {
 
 async function runVcs(c: VcsCommand, meta: ExecMeta = {}): Promise<string> {
   return runtimeFor(c).exec.run(c, meta);
-}
-
-/**
- * Fills the headers an upload of evidence sends but a proposal never stores (the credential of the host, resolved at the moment it runs) and rejects one
- * whose host or transport cannot carry a file: the proposal stays for the person to see, and the write says why instead of running half of it.
- */
-async function withUploadHeaders(c: VcsCommand): Promise<VcsCommand> {
-  if (!c.bodyFile) return c;
-  const runtime = runtimeFor(c);
-  const token = await runtime.provider.uploadToken();
-  if (!token && runtime.provider.kind === 'github') throw new VcsError('unsupported', { kind: 'GitHub', what: t('vcs.write.evidenceUpload') });
-  const headers = token ? { ...(c.headers ?? {}), Authorization: `Bearer ${token}` } : (c.headers ?? {});
-  const filled: VcsCommand = { ...c, headers };
-  runtime.provider.validateCommand(filled);
-  return filled;
 }
 
 const isVcsAction = (a: ReleaseAction): boolean => (a.kind === 'gitlab' || a.kind === 'vcs') && !!a.command;
@@ -592,20 +577,26 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       // The address each upload answered with, in the order the group has run so far: what the comment's body embeds just before it goes up.
       const uploadedAt = new Map<number, string>();
       for (let i = a.done ?? 0; i < all.length; i++) {
-        // An upload of evidence carries its header only at the moment it runs: the proposal never stores the credential.
-        const raw = all[i];
-        assertNoTestEnvLeak(raw);
-        let c = await withUploadHeaders(raw);
+        // The credential of an upload is never on the command: the client that sends the file holds it, so the proposal has nothing to store.
+        let c = all[i];
+        assertNoTestEnvLeak(c);
         // The comment that cites evidence takes up the addresses the uploads of the same group just answered with; without an image the body goes as written.
         if (evidence && i === evidence.bodyAt) c = withEvidenceEmbeds(c, evidence, uploadedAt);
         let response: unknown;
-        outputs.push(
-          await audited(originOf(a), { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
-            const out = await runVcs(c, meta);
-            response = meta.response;
-            return out;
-          }),
-        );
+        try {
+          outputs.push(
+            await audited(originOf(a), { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
+              const out = await runVcs(c, meta);
+              response = meta.response;
+              return out;
+            }),
+          );
+        } catch (e) {
+          // An image that did not go up never blocks what cites it: the failure is already in the audit log, the group goes on without that address and the
+          // runner counts the piece (and says why) when it reads the answers back.
+          if (!evidence?.positions.includes(i)) throw e;
+          response = { uploadError: scrubSecrets(String((e as Error).message)).slice(0, 300) };
+        }
         responses.push(response);
         if (evidence && evidence.positions.includes(i)) {
           const url = embedUrlOfResponse(response);

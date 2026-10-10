@@ -128,7 +128,7 @@ export interface GitHubOptions {
   id: string;
   host: string;
   transport: RestTransport;
-  /** The API credential an upload of evidence carries; null on the CLI transport, which is refused for an upload. */
+  /** The API token of the integration, or null when it has none: what decides whether an upload of evidence can be planned on the CLI transport. */
   token?: () => string | null;
 }
 
@@ -155,6 +155,14 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
   const web = `https://${o.host}`;
   let me: Promise<VcsUser> | null = null;
   const repo = (project: string): string => `repos/${checkRepo(project)}`;
+  // A token that cannot be read is no token: the caller only needs to know whether an upload has a credential to go with.
+  const tokenOf = (): string | null => {
+    try {
+      return o.token?.() ?? null;
+    } catch {
+      return null;
+    }
+  };
 
   const currentUser = (): Promise<VcsUser> => {
     me ??= tr.get<GhUser>('user').then(user);
@@ -594,6 +602,11 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
         case 'uploadAttachment': {
           // GitHub has no "attach a file to an issue" call: its own editor sends the image to the repository's uploads host, which answers the address a
           // comment embeds (`https://github.com/user-attachments/assets/...`). The token and the User-Agent go in the headers; the body is the file itself.
+          // `gh api` is documented for the REST API's own paths and cannot be told to authenticate against the uploads host, nor can its answer be checked
+          // here, so the file always goes by the API client, which carries the token in its headers and never on a command line. Under the CLI preference that
+          // needs a token the person set for the integration; without one nothing is planned that could only fail later with a misleading "not configured".
+          if (o.host !== 'github.com') throw new VcsError('unsupported', { kind: 'GitHub', what: t('vcs.write.evidenceUpload') });
+          if (tr.kind === 'cli' && !tokenOf()) throw new VcsError('upload_needs_api', { kind: 'GitHub' });
           const name = /^[\w.-]{1,120}$/.test(op.name) ? op.name : t('vcs.write.evidenceUploadName');
           const [owner, project] = op.project.split('/');
           const q = `?repository_id=${enc(`${owner}/${project}`)}&name=${enc(name)}&content_type=${enc(op.media)}`;
@@ -603,8 +616,6 @@ export function createGitHubProvider(o: GitHubOptions): VcsProvider {
     },
 
     validateCommand: validateGitHubCommand,
-    // Only the API transport can carry a file to the uploads host; the CLI one is refused when an upload is planned.
-    uploadToken: async () => (tr.kind === 'api' ? (o.token?.() ?? null) : null),
   };
   return provider;
 }

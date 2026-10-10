@@ -358,15 +358,21 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const dir = mkdtempSync(join(tmpdir(), 'coxia-evidence-'));
     return (async () => {
       const uploads: PendingUpload[] = [];
-      for (const image of images) {
-        const name = uploadNameOf({ id: image.id, media: image.media });
-        const at = join(dir, name);
-        writeFileSync(at, image.bytes, { mode: 0o600 });
-        const op: VcsWriteOp = { op: 'uploadAttachment', project: projects(run).repo, path: at, name, media: image.media };
-        const commands = await provider.planWrite(op);
-        // A host that plans nothing for the file is one that cannot take it: the piece is counted as missing, never embedded, and the comment goes on.
-        if (!commands.some((c) => c.bodyFile)) continue;
-        uploads.push({ id: image.id, title: image.title, media: image.media, path: at, commands, at: 0 });
+      try {
+        for (const image of images) {
+          const name = uploadNameOf({ id: image.id, media: image.media });
+          const at = join(dir, name);
+          writeFileSync(at, image.bytes, { mode: 0o600 });
+          const op: VcsWriteOp = { op: 'uploadAttachment', project: projects(run).repo, path: at, name, media: image.media };
+          const commands = await provider.planWrite(op);
+          // A host that plans nothing for the file is one that cannot take it: the piece is counted as missing, never embedded, and the comment goes on.
+          if (!commands.some((c) => c.bodyFile)) continue;
+          uploads.push({ id: image.id, title: image.title, media: image.media, path: at, commands, at: 0 });
+        }
+      } catch (e) {
+        // The caller never gets the folder of a plan that refused: the copies of the images are removed here, and the refusal (which says why) goes on.
+        dropUploads(dir);
+        throw e;
       }
       // The pieces with no command at all, plus the citations that name nothing the run still has: both are counted in the text.
       return { body, uploads, dir, missing: total - uploads.length };
@@ -395,6 +401,37 @@ export function createPublisher(deps: PublisherDeps): Publisher {
   /** Removes the throwaway folder an upload was written into; the run's own evidence is the only copy that stays. */
   function dropUploads(dir: string | null): void {
     if (dir) rmSync(dir, { recursive: true, force: true });
+  }
+
+  /**
+   * Sends the planned images one call each, under the autonomy of whoever posts. A host that refuses one stops the rest (it will not take the others, and a
+   * wait per piece would only delay the text) and never blocks what cites them: the thread says how many stayed behind and why. Returns the pieces that came
+   * back with an address.
+   */
+  async function postUploads(run: Run, meta: { issue: number; key: string; summary: string; by: string }, uploads: PendingUpload[]): Promise<{ title: string; url: string }[]> {
+    const uploaded: { title: string; url: string }[] = [];
+    let reason = '';
+    for (const [i, u] of uploads.entries()) {
+      try {
+        const answers = await door.post(uploads.length > 1 ? { ...meta, key: `${meta.key}#${i + 1}` } : meta, u.commands);
+        const url = embedUrlOf(answers[0]);
+        if (url) uploaded.push({ title: u.title, url });
+        else reason ||= tr('main.runner.evidence.noAddress');
+      } catch (e) {
+        reason = message(e);
+        break;
+      }
+    }
+    if (uploaded.length < uploads.length) say(run, 'runner.evidence.notUploaded', { count: uploads.length - uploaded.length, reason });
+    return uploaded;
+  }
+
+  /** The images of a group the person approved that came back with no address: counted in the thread with what the call or the host answered. */
+  function sayMissedUploads(run: Run, evidence: { positions: number[] }, responses: readonly unknown[]): void {
+    const lost = evidence.positions.map((at) => responses[at]).filter((r) => !embedUrlOf(r));
+    if (!lost.length) return;
+    const failed = lost.map((r) => rec(r).uploadError).find((m): m is string => typeof m === 'string' && m !== '');
+    say(run, 'runner.evidence.notUploaded', { count: lost.length, reason: failed ?? tr('main.runner.evidence.noAddress') });
   }
 
   // ---- the forum links to what was posted ------------------------------------------------------------------------------------------
@@ -488,7 +525,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       try {
         planned = await planEvidence(run, provider, x.body, ids);
       } catch (e) {
-        say(run, 'runner.evidence.uploadFailed', { title: x.title, reason: message(e) });
+        say(run, 'runner.evidence.notUploaded', { count: ids.length, reason: message(e) });
         planned = { body: x.body, uploads: [], dir: null, missing: ids.length };
       }
     }
@@ -524,14 +561,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     try {
       // The images go up first, by themselves, under the same autonomy; the comment waits for their addresses and follows them. Nothing here is a group the
       // person approved, so the upload and the comment are two calls of one run: the audit log gets a line for each.
-      const uploaded: { title: string; url: string }[] = [];
-      if (uploadCommands.length) {
-        const answers = await door.post({ ...meta, key: `comment:${runId}:${x.key}` }, uploadCommands);
-        for (const u of uploads) {
-          const url = embedUrlOf(answers[u.at]);
-          if (url) uploaded.push({ title: u.title, url });
-        }
-      }
+      const uploaded = await postUploads(run, { ...meta, key: `comment:${runId}:${x.key}` }, uploads);
       // The body is rebuilt from the text without any count, so the pieces no command carries are counted again here, and one the host took no address
       // from is counted too instead of disappearing.
       const body = uploads.length ? withEvidenceImages(planned.body, uploaded, planMissing + uploads.length - uploaded.length) : plannedBody;
@@ -927,7 +957,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       try {
         planned = await planEvidence(run, provider, written, ids);
       } catch (e) {
-        say(run, 'runner.evidence.uploadFailed', { title: run.issue.title, reason: message(e) });
+        say(run, 'runner.evidence.notUploaded', { count: total, reason: message(e) });
         planned = { body: written, uploads: [], dir: null, missing: total };
       }
     }
@@ -942,14 +972,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     // Nothing here is a group the person approved, so the upload and the pull request are two calls of one run: the audit log gets a line for each.
     const meta = { key: `pr:${run.id}`, issue: run.issue.iid, summary: title, by: 'app' };
     try {
-      const uploaded: { title: string; url: string }[] = [];
-      if (uploadCommands.length) {
-        const answers = await door.post(meta, uploadCommands);
-        for (const u of uploads) {
-          const url = embedUrlOf(answers[u.at]);
-          if (url) uploaded.push({ title: u.title, url });
-        }
-      }
+      const uploaded = await postUploads(run, meta, uploads);
       // The pieces no command carried were counted already; one the host took no address from is counted too instead of disappearing.
       const body = uploads.length ? withEvidenceImages(planned.body, uploaded, planMissing + uploads.length - uploaded.length) : plannedBody;
       const responses = await door.post(meta, await createMr(body));
@@ -1065,7 +1088,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
         try {
           planned = await planEvidence(run, provider, written, ids);
         } catch (e) {
-          say(run, 'runner.evidence.uploadFailed', { title: run.issue.title, reason: message(e) });
+          say(run, 'runner.evidence.notUploaded', { count: total, reason: message(e) });
           planned = { body: written, uploads: [], dir: null, missing: total };
         }
       }
@@ -1100,6 +1123,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     // An autonomous pull request records the description it posted (with its images already embedded); a proposal embeds them now, from the group's answers.
     const written = posted ?? run.comments.pr?.body ?? '';
     const body = evidence ? evidenceBody(written, evidence, responses) : written;
+    if (evidence) sayMissedUploads(run, evidence, responses);
     const after = moveRun(d, runId, (r) => recordCommentPublished(r, 'pr', { target: 'mr', noteId: made.iid as number, url: made.url, bodyHash: hashOf(body), body }, now()));
     say(after, 'runner.pr.created', { url: made.url ?? '' });
     await flush(runId);
@@ -1208,6 +1232,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
       // host did not take (or the run no longer has) stay counted in the text.
       const draftBody = draft?.body ?? '';
       const body = a.evidence ? evidenceBody(draftBody, a.evidence, responses) : draftBody;
+      if (a.evidence) sayMissedUploads(run, a.evidence, responses);
       await afterPosted(runId, {
         key,
         stage: String(unit.stage ?? key),
