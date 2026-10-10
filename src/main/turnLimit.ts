@@ -22,17 +22,24 @@ export interface TurnAskerDeps {
   isSecretPath?: (token: string) => boolean;
 }
 
-/** One signal for either of two: the engine's own and the caller's. */
-function either(a: AbortSignal, b?: AbortSignal): AbortSignal {
-  if (!b || b === a) return a;
+/** One signal for either of two: the engine's own and the caller's. `release` takes the listeners off both, which would otherwise stay on the caller's long-lived signal. */
+function either(a: AbortSignal, b?: AbortSignal): { signal: AbortSignal; release(): void } {
+  if (!b || b === a) return { signal: a, release: () => undefined };
   const ac = new AbortController();
-  const stop = (): void => ac.abort();
+  const release = (): void => {
+    a.removeEventListener('abort', stop);
+    b.removeEventListener('abort', stop);
+  };
+  function stop(): void {
+    release();
+    ac.abort();
+  }
   if (a.aborted || b.aborted) ac.abort();
   else {
     a.addEventListener('abort', stop, { once: true });
     b.addEventListener('abort', stop, { once: true });
   }
-  return ac.signal;
+  return { signal: ac.signal, release };
 }
 
 export function turnAsker(d: TurnAskerDeps): TurnLimit['ask'] {
@@ -42,6 +49,7 @@ export function turnAsker(d: TurnAskerDeps): TurnLimit['ask'] {
     const what = stop.kind ? (task ? `${stop.kind}: ${task}` : stop.kind) : task || '-';
     const params = { agent: d.agent.name, what, used: stop.used, round: stop.round };
     const resume = d.pause();
+    const ends = either(d.signal, signal);
     try {
       d.say(`runner.turns.ask.${stop.of}`, params);
       const outcome = await d.store.ask(
@@ -61,12 +69,13 @@ export function turnAsker(d: TurnAskerDeps): TurnLimit['ask'] {
           granted: stop.granted,
           canContinue: stop.canContinue,
         },
-        either(d.signal, signal),
+        ends.signal,
       );
       // A cancel or a stop is not an answer: the conversation claims nothing the person did not choose.
       if (outcome.by === 'person') d.say(`runner.turns.${outcome.decision}.${stop.of}`, params);
       return outcome.decision;
     } finally {
+      ends.release();
       resume();
     }
   };

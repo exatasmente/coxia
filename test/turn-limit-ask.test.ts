@@ -70,6 +70,43 @@ describe('the asker', () => {
     expect(store.list()).toEqual([]);
   });
 
+  it('takes its listeners off both signals when the question settles, and when either signal fires', async () => {
+    // the abort listeners a signal holds, as the code under test added and removed them
+    const held = (t: EventTarget): { size: number } => {
+      const live = new Set<unknown>();
+      const add = t.addEventListener.bind(t);
+      const remove = t.removeEventListener.bind(t);
+      t.addEventListener = ((type: string, fn: never, ...rest: never[]) => (live.add(fn), add(type, fn, ...rest))) as typeof add;
+      t.removeEventListener = ((type: string, fn: never, ...rest: never[]) => (live.delete(fn), remove(type, fn, ...rest))) as typeof remove;
+      return { get size() { return live.size; } };
+    };
+    // answered: nothing stays on the long-lived signals
+    const answered = setup();
+    const own = new AbortController();
+    const [onCaller, onEngine] = [held(answered.ac.signal), held(own.signal)];
+    const waiting = answered.ask(stop(), own.signal);
+    expect([onCaller.size, onEngine.size]).toEqual([1, 1]);
+    answered.store.answer(answered.store.list()[0].id, 'continue', 'window');
+    await waiting;
+    expect([onCaller.size, onEngine.size]).toEqual([0, 0]);
+    // the engine's signal fires: the caller's loses its listener too
+    const fired = setup();
+    const engine = new AbortController();
+    const [c2, e2] = [held(fired.ac.signal), held(engine.signal)];
+    const ended = fired.ask(stop(), engine.signal);
+    engine.abort();
+    await expect(ended).resolves.toBe('finish');
+    expect([c2.size, e2.size]).toEqual([0, 0]);
+    // the caller's signal fires: the engine's loses its listener too
+    const last = setup();
+    const other = new AbortController();
+    const [c3, e3] = [held(last.ac.signal), held(other.signal)];
+    const gone = last.ask(stop(), other.signal);
+    last.ac.abort();
+    await expect(gone).resolves.toBe('finish');
+    expect([c3.size, e3.size]).toEqual([0, 0]);
+  });
+
   it('masks and clips the task like an activity line: a secret, a secret file and a very long task', async () => {
     const { store, ask } = setup({ isSecretPath: (token) => token.endsWith('.env') });
     void ask(stop({ task: `read ./config/.env with sk-or-v1-abcdefghijklmnop then ${'word '.repeat(80)}` }));
