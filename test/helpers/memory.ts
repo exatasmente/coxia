@@ -34,8 +34,9 @@ export interface MemoryWorld {
   runWith(id: string, ref: string, docs?: Record<string, string>, over?: { repo?: string }): string;
 }
 
-export function memoryWorld(): MemoryWorld {
-  const ws = mkdtempSync(join(tmpdir(), 'coxia-memory-world-'));
+/** `ws` is a workspace folder the test already has (a runner's data folder, say): the memory then lives in it, beside its `runs/`. */
+export function memoryWorld(over: { ws?: string } = {}): MemoryWorld {
+  const ws = over.ws ?? mkdtempSync(join(tmpdir(), 'coxia-memory-world-'));
   let counter = 0;
   const clock = { now: T0 };
   const config = neutralConfig();

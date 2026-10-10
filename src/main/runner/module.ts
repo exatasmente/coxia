@@ -22,6 +22,7 @@ import { vcsProvider, vcsReady } from '../vcs';
 import { getConfig, onConfigChange, rc, updateConfig } from '../workspaceConfig';
 import { createSandboxService } from '../sandbox';
 import { sandbox } from '../sandbox/workspace';
+import { memoryPort } from '../memory/runtime';
 import { procedureOffers, proceduresPort } from '../procedures';
 import { firePluginEvent, liveContext, pluginHold, pluginNotes, pluginRunHooks, releasePluginAsks } from '../plugins/module';
 import { readArtifact } from './cycleFolder';
@@ -297,6 +298,7 @@ export const runsModule: Module = (ctx) => {
     pluginRelease: (runId) => releasePluginAsks(runId),
     pluginNotes: () => pluginNotes(),
     procedures: proceduresPort(),
+    memoryPort: memoryPort(),
     offers: procedureOffers(),
   });
   current = r;

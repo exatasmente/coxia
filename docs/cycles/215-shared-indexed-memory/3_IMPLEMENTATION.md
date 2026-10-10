@@ -140,3 +140,30 @@ Deviations and additions:
 - **The `withPool` retry** is covered by running two calls over the same tools with a server that cannot be built (one thread line), not by forcing a busy refusal through the pool; both go through
   the same `unavailable()` that the retry would call.
 - **Not done here, by the plan's order:** the singleton `memoryPort()` over the running workspace (commit 7, with the first call site) and `setCeremonyMemory` with the `runOnce` seam (commit 8).
+
+## Commit 7: the memory read in stages, mentions and called agents
+
+`src/main/memory/runtime.ts` (the running workspace's `memoryFacts()`, `memoryIndex()` and `memoryPort()`, kept apart from `instance.ts` so the screens' channels do not load the agents'
+side); the prompt keys in both catalogs (`runner.rules.sharedMemory`, `runner.rules.sharedMemoryWrite`, `runner.section.sharedIndex`, `runner.section.sharedOne`,
+`runner.section.sharedMovedMemory`); `StageInput.index`/`indexWrite` and `MentionInput.index`/`indexWrite` with the rules and sections in `systemText`, `stagePrompt` and `mentionCall`;
+the three call sites (`executor.ts` for the stage, `mentions/answer.ts` for a mention and an agent called by another, `conversation.ts` for the agent a stage called) and the wiring
+through `service.ts`, `runner/module.ts` and `mentions/module.ts`; divergences 1, 2, 5 and 7; a `CHANGELOG.md` line. Tests: `memory-surfaces`, `memory-prompts`, three cases of
+`activityIndex` (commit 5) and the existing goldens as the proof.
+
+Deviations and additions:
+
+- **A fifth prompt key, `runner.section.sharedOne`.** The old activities section says "It is the record of every activity, not only the one you are in"; with the memory on the section
+  holds one activity and the others are in the index, so that sentence would be false. A call with a session gets the new wording, a call without keeps the old one. The plan listed four
+  keys for the commit.
+- **`narrow` decides the activities cut, not the switch.** The plan reads "the memory on" for divergences 1, 2 and 7; the executor and the mentions pass `narrow` = "this call got a memory session"
+  (`ExecutorDeps.sharedMemory(run, narrow)`, `MentionDeps.memory(place, message, narrow)`), so a call whose memory could not be opened (or whose switch is off) keeps the section it always had,
+  whole, with its old wording, instead of losing the other activities with nothing to replace them. `sharedTextOf` takes the flag.
+- **The sentence of divergence 5 follows the switch** (`memoryOn(config)`), as the working agent's session is not known where the message is posted (`service.ts`): with the memory on, the
+  inbox gets `sharedMovedMemory`; off, the old sentence, byte for byte.
+- **A named agent's ranking**: the stage ranks by its run (conversation `run-<id>`, activity, repository); a mention ranks with the agents the message named and, outside a run, the activity
+  references it wrote (`MentionDeps.named`, set by the runner and by the mentions module). The runner passes no references for a run's thread (its own activity is the call's `ref`).
+- **The ceremony place is untouched**: `answerMentions` opens a memory session only outside a ceremony, as it does for procedures; commit 8 gives the ceremony its read-only one.
+- **`pscreen` is hoisted** in the stage and in `answerMentions` (one `procedureScreen` adapter used by both the procedures and the memory session), a refactor with no change of behaviour.
+- **The conversation a called agent writes in** is the thread it was called in: the run's own for `place: 'run'`, the `run-<id>-talk-<agent>-<time>` thread for a new one. An id past 64 characters
+  (a long agent id) makes the session a reader, as for any invalid conversation id (commit 6).
+- **Goldens**: none regenerated. `test/prompts-screen.test.ts`, `test/cycle-prompts.test.ts` and `test/golden/*` ran unchanged with this commit.

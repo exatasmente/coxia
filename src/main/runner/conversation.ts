@@ -15,6 +15,7 @@ import { type RunnerTools, calledAgentTools } from './tools';
 import { screenRules } from './screenPrompt';
 import { confinedHooks } from './hooks';
 import type { Denial } from './hooks';
+import type { MemoryPort } from '../memory/port';
 import type { ProceduresPort } from '../procedures/port';
 import { prompt as cp } from '../cyclePrompts';
 import { fence } from './prompt';
@@ -73,6 +74,8 @@ export interface ConversationDeps {
   commit?: (message: string) => Promise<string | null>;
   /** The workspace's learned procedures: the called agent gets the list and the tools, and its uses are marked on this conversation. Absent: none. */
   procedures?: ProceduresPort;
+  /** The shared memory: the called agent gets the index and the tools, and keeps notes in its own folder of the conversation it was called in. Absent, or the switch off: none. */
+  memoryPort?: MemoryPort;
   /** The abort of the run: it ends the conversation with everything else. */
   abort: AbortController;
   /** The chain of calls that brought the run here (the caller first): the cycle is refused against it. */
@@ -289,7 +292,9 @@ async function turnOf(
     requests: true,
     note: (code, params) => say({ kind: 'system', author: { type: 'app' }, code, params, stage: deps.stage.id }),
   });
-  const listed = procedures?.list.text ? cp('runner.section.procedures', { text: fence(procedures.list.text) }) : '';
+  // The memory of the thread the conversation happens in: the run's own thread, or the new one linked to it. A called agent keeps notes like any agent of a conversation.
+  const shared = (await deps.memoryPort?.open({ surface: 'called', agent: deps.called, conversation: thread, writes: true, tools: true, ref: deps.run.issue.ref, repo: deps.run.repo, runId: deps.run.id, issue: deps.run.issue.iid, note: (code, params) => say({ kind: 'system', author: { type: 'app' }, code, params, stage: deps.stage.id }) })) ?? null;
+  const listed = [procedures?.list.text ? cp('runner.section.procedures', { text: fence(procedures.list.text) }) : '', shared?.list.text ? cp('runner.section.sharedIndex', { text: fence(shared.list.text) }) : ''].filter(Boolean).join('\n\n');
   const call: AgentCall = {
     agent: deps.called,
     prompt: [writes ? t('main.runner.conversation.systemWrite', { called: deps.called.name, caller: deps.caller.name }) : t('main.runner.conversation.system', { called: deps.called.name, caller: deps.caller.name }), listed].filter(Boolean).join('\n\n'),
@@ -297,6 +302,8 @@ async function turnOf(
     system: [
       t('main.runner.conversation.role', { called: deps.called.name }),
       procedures ? cp('runner.rules.procedures') : '',
+      shared ? cp('runner.rules.sharedMemory') : '',
+      shared?.writes ? cp('runner.rules.sharedMemoryWrite') : '',
       held ? screenRules(promptFor(held.screen, deps.called, deps.config().runner.sandbox, grantsFor(deps.called), false)) : '',
     ].filter(Boolean).join('\n\n'),
     cwd: deps.run.worktree,
@@ -308,6 +315,7 @@ async function turnOf(
     abort: held?.abort ?? deps.abort,
     runnerTools: calledAgentTools(tools),
     procedures: procedures?.tools,
+    ...(shared?.tools ? { memoryTools: shared.tools } : {}),
     onUsage: procedures ? procedures.wrapUsage(deps.onUsage) : deps.onUsage,
     onPool: (notice) => say({ kind: 'system', author: { type: 'app' }, ...poolNoticeLine(deps.called.id, notice), stage: deps.stage.id }),
     ...(held?.screen.toolset ? { screen: held.screen.toolset } : {}),
@@ -317,9 +325,11 @@ async function turnOf(
     r = await deps.engine(call, deps.commands);
   } catch (e) {
     procedures?.finish('failed');
+    shared?.finish();
     throw e;
   }
   procedures?.finish('done');
+  shared?.finish();
   if (ended) return null;
   const text = typeof (r.data as { texto?: unknown })?.texto === 'string' ? (r.data as { texto: string }).texto.trim() : '';
   // What the agent said through the tool is already posted; the final text is its closing word, if any.

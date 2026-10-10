@@ -43,6 +43,7 @@ import { prompt as cp } from '../cyclePrompts';
 import { type StageInbox, inboxOf, openInbox } from './inbox';
 import { type RunnerTools, runnerTools } from './tools';
 import type { ProcedureUse } from '../../shared/procedures';
+import type { MemoryPort } from '../memory/port';
 import type { ProceduresPort } from '../procedures/port';
 import { procedureScreen } from '../procedures/screen';
 import type { WrapUpPlan } from '../procedures/session';
@@ -117,14 +118,19 @@ export interface ExecutorDeps {
   keepEvidence?: (runId: string, record: EvidenceRecord) => ForumMessage | null;
   /** Updates a piece of evidence already recorded (the copy that went into the cycle folder): the run's record changes, nothing is published again. */
   updateEvidence?: (runId: string, record: EvidenceRecord) => void;
-  /** What the section of the activities says for one run: its own activity whole, the others in short. Absent: the stage gets no such section. */
-  sharedMemory?: (run: Run) => string;
+  /**
+   * What the section of the activities says for one run: its own activity whole, the others in short. `narrow`: the stage has the shared memory, whose index carries the
+   * others, so the section holds only its own. Absent: the stage gets no such section.
+   */
+  sharedMemory?: (run: Run, narrow: boolean) => string;
   /** The workspace's data folder: where a run's evidence is stored. */
   dataDir: () => string;
   /** The live screens of the stages that have a virtual display; absent: none is opened. */
   screens?: ScreenHub;
   /** The workspace's learned procedures: a stage and the agents it calls get their list and tools from here. Absent, or the workspace's switch off: none. */
   procedures?: ProceduresPort;
+  /** The shared memory of the workspace (#215): a stage, and the agents it calls, get their index and tools from here. Absent, or the workspace's switch off: none. */
+  memoryPort?: MemoryPort;
   /** Where the offers to keep a procedure are held (#187): a stage whose work earned the last turn raises them here. Absent: the turn is not given. */
   offers?: WrapUpDeps['offers'];
   /** For a test: the limit of the stage's last turn, in ms. */
@@ -825,6 +831,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
       console.error('[runner] could not record a note', e instanceof Error ? e.message : e);
     }
   };
+  // The stage's screen as the procedures and the memory read it: the steps of its browser for a draft, and the hand-off's seams for the check of what the person typed.
+  const pscreen = screen?.toolset ? procedureScreen({ key: runKey(run.id), sessions: d.sessions, typed: screen.toolset.typed, handoff: d.handoff, active: () => screen?.toolset?.handoff?.active() === true, browser: !!screen.toolset.browser }) : undefined;
   // The procedures the workspace learned: the list this stage is told and the tools it uses.
   const procedures = d.procedures?.open({
     surface: 'stage',
@@ -834,12 +842,15 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     stage: stage.kind,
     repos: [run.repo],
     agentsMd: documented ? new Set([run.repo]) : undefined,
-    // The stage's screen as the procedures read it: the steps of its browser for a draft, and the hand-off's seams for the check of what the person typed.
-    screen: screen?.toolset ? procedureScreen({ key: runKey(run.id), sessions: d.sessions, typed: screen.toolset.typed, handoff: d.handoff, active: () => screen?.toolset?.handoff?.active() === true, browser: !!screen.toolset.browser }) : undefined,
+    screen: pscreen,
     // What the agent ran in its shell: not the commands the app ran before QA (they come first in the log), and the stage's exact-value mask for the test environment.
     commands: session ? { entries: () => session.log.filter((e) => e.n > (ran?.length ?? 0)), ...(mask ? { mask } : {}) } : undefined,
     note: noteInThread,
   });
+
+  // The shared memory: the index this stage is told and the tools it uses, in its own folder of the run's conversation. Opened after the procedures and before the prompt is
+  // built; a memory that cannot be opened is a stage without it, never a failed stage.
+  const sharedIdx = (await d.memoryPort?.open({ surface: 'stage', agent, conversation: threadId, writes: true, tools: true, ref: run.issue.ref, repo: run.repo, runId: run.id, issue: run.issue.iid, screen: pscreen, ...(mask ? { mask } : {}), note: noteInThread })) ?? null;
 
   // A sandbox and a host session that tests an interface both declare where the stage's evidence lives; a host session without one keeps what it has today.
   const evidenceRoot = session?.outputDir;
@@ -855,10 +866,11 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     files: readFolder(wt, run.cycleFolder, stage.reads ?? null),
     memory: { over: memoryOver(memory), max: MEMORY_MAX },
     // What a stage is told of the record: its own activity whole, and the others in short. Nothing when the record has nothing to say.
-    shared: d.sharedMemory?.(run) ?? '',
+    shared: d.sharedMemory?.(run, sharedIdx !== null) ?? '',
     procedures: procedures?.list.text,
     proceduresGui: procedures?.has.screen === true,
     proceduresCmd: procedures?.has.commands === true,
+    ...(sharedIdx ? { index: sharedIdx.list.text, indexWrite: sharedIdx.writes } : {}),
     docsKeep: documented && writes,
     plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),
@@ -1009,6 +1021,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     background: true,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
     procedures: procedures?.tools,
+    ...(sharedIdx?.tools ? { memoryTools: sharedIdx.tools } : {}),
     abort,
     // The files of the answer the stage waits for: the agent opens them with the read-only tool, scoped to the run's conversation. They come from the
     // message the answer recorded (a run file never holds them); when this turn is running the stage the answer just resumed, from the move that recorded it.
@@ -1095,6 +1108,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         commands,
         onUsage: usage,
         procedures: d.procedures,
+        memoryPort: d.memoryPort,
         // A called agent that writes changes the worktree: what it changed is committed with the calling stage before the stage commits its own work.
         commit: writes
           ? async (message) => {
@@ -1212,6 +1226,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     throw e;
   } finally {
     // What the call read becomes uses, and what it created gets its baseline; each use is a line in the thread.
+    sharedIdx?.finish();
     const uses = procedures?.finish(called ? 'done' : 'failed') ?? [];
     if (uses.length) {
       try {

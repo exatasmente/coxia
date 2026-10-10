@@ -353,6 +353,8 @@ export interface BootOptions {
   pluginNotes?: RunnerDeps['pluginNotes'];
   /** The workspace's learned procedures (a port over a folder of the test's); none by default. */
   procedures?: RunnerDeps['procedures'];
+  /** The shared memory of the workspace (a port over a folder of the test's); none by default. */
+  memoryPort?: RunnerDeps['memoryPort'];
   /** Where the offers to keep a procedure are held (#187); none by default, and then no stage is given a last turn. */
   offers?: RunnerDeps['offers'];
   /** The limit of a stage's last turn, in ms. */
@@ -405,6 +407,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     pluginRelease: options.pluginRelease,
     pluginNotes: options.pluginNotes,
     procedures: options.procedures,
+    memoryPort: options.memoryPort,
     offers: options.offers,
     procedureTurnMs: options.procedureTurnMs,
   };

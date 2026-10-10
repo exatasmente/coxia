@@ -50,6 +50,10 @@ export interface MentionInput {
   proceduresGui?: boolean;
   /** The call has the app's shell, so it is also given the draft of its commands: the rules say to keep a task fought with commands with `procedures_draft`. Only with `procedures`. */
   proceduresCmd?: boolean;
+  /** The shared memory, as in a stage's input: a string means the call has a session, and the string is the list its prompt carries. Absent: the memory is off. */
+  index?: string;
+  /** The session writes (a mention may keep and remove notes of its own); a call of a ceremony reads only. */
+  indexWrite?: boolean;
 }
 
 /** An issue the answer proposes, read leniently: a title and a body are needed, labels are optional. */
@@ -186,6 +190,8 @@ export function mentionCall(i: MentionInput): AgentCall {
     i.procedures !== undefined ? cp('runner.rules.procedures') : '',
     i.procedures !== undefined && i.proceduresGui ? cp('runner.rules.proceduresGui') : '',
     i.procedures !== undefined && i.proceduresCmd ? cp('runner.rules.proceduresCmd') : '',
+    i.index !== undefined ? cp('runner.rules.sharedMemory') : '',
+    i.index !== undefined && i.indexWrite ? cp('runner.rules.sharedMemoryWrite') : '',
     agents.persona.trim(),
     agents.extraInstructions.trim(),
     cycleWord(i.agent.instructions).trim(),
@@ -195,7 +201,8 @@ export function mentionCall(i: MentionInput): AgentCall {
   const sections = [
     ...i.files.map((f) => cp('runner.section.file', { name: f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') })),
     // What the app knows of the activities, before the thread: material to consult, under its own tags, so a call about an activity is answered from it.
-    i.memory ? cp('runner.section.shared', { text: fence(i.memory) }) : '',
+    i.memory ? (i.index !== undefined ? cp('runner.section.sharedOne', { text: fence(i.memory) }) : cp('runner.section.shared', { text: fence(i.memory) })) : '',
+    i.index ? cp('runner.section.sharedIndex', { text: fence(i.index) }) : '',
     i.procedures ? cp('runner.section.procedures', { text: fence(i.procedures) }) : '',
     // The files of the message the agent was called in: the warning names them by the ref the tool takes, and never a path.
     i.attachments?.refs.length ? cp('runner.mention.attachment.list', { text: fence(attachmentsSection(i.attachments.refs)) }) : '',

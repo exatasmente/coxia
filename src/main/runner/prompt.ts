@@ -87,6 +87,13 @@ export interface StageInput {
   proceduresGui?: boolean;
   /** The call has the app's shell, so it is also given the draft of its commands: the rules say to keep a task fought with commands with `procedures_draft`. Only with `procedures`. */
   proceduresCmd?: boolean;
+  /**
+   * The shared memory (#215): the call has a session when this is a string, and the string is the list its prompt carries, already built (the rules are in the system text;
+   * the section is absent when the list is ""). Absent: the memory is off or could not be opened, and the prompt is what it always was.
+   */
+  index?: string;
+  /** The session writes: the call may also keep and remove notes of its own. Only with `index`. */
+  indexWrite?: boolean;
   /** The stage changes the branch and the repository has AGENTS.md instructions that must stay true. */
   docsKeep?: boolean;
   /** The stage carries the workspace's test environment: it is told what that means (masked values, blocked images). */
@@ -171,6 +178,8 @@ export function systemText(i: StageInput): string {
     i.procedures !== undefined ? cp('runner.rules.procedures') : '',
     i.procedures !== undefined && i.proceduresGui ? cp('runner.rules.proceduresGui') : '',
     i.procedures !== undefined && i.proceduresCmd ? cp('runner.rules.proceduresCmd') : '',
+    i.index !== undefined ? cp('runner.rules.sharedMemory') : '',
+    i.index !== undefined && i.indexWrite ? cp('runner.rules.sharedMemoryWrite') : '',
     // The folder of the stage's evidence is named as this stage has it: the sandbox's `/coxia/out`, or the real folder a host session saves in.
     i.evidence ? cp(i.sandbox?.host && i.sandbox.gui?.out ? 'runner.rules.evidence.host' : 'runner.rules.evidence', { out: i.sandbox?.gui?.out ?? OUT }) : '',
     i.docsKeep ? cp('runner.docs.keep') : '',
@@ -268,7 +277,9 @@ export function stagePrompt(i: StageInput): string {
   }
   if (i.commandResults) sections.push(commandsSection(i.commandResults, i.numberedCommands));
   // What the app knows of the other activities, and of this one whole: material to consult, under its own tags (specification rules 5 to 7).
-  if (i.shared) sections.push(cp('runner.section.shared', { text: fence(i.shared) }));
+  // With the shared memory on, this section holds the activity the call is about, whole; the others are lines of the index just below.
+  if (i.shared) sections.push(i.index !== undefined ? cp('runner.section.sharedOne', { text: fence(i.shared) }) : cp('runner.section.shared', { text: fence(i.shared) }));
+  if (i.index) sections.push(cp('runner.section.sharedIndex', { text: fence(i.index) }));
   if (i.procedures) sections.push(cp('runner.section.procedures', { text: fence(i.procedures) }));
   if (i.release) sections.push(i.release);
   if (i.plugins?.length) sections.push(cp('runner.section.plugins', { text: fence(i.plugins.map((p) => `${p.name}: ${p.note}`).join('\n')) }));
