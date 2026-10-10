@@ -151,12 +151,15 @@ export function searchEntries(entries: readonly MemoryEntry[], view: ListView): 
 // --- lines -------------------------------------------------------------------------------------------------------------------------
 
 const ACTIVITY_LINE_MAX = 200;
+const VERSION_LINE_MAX = 200;
 const clip = (s: string, max: number): string => (s.length > max ? `${s.slice(0, max - 1)}…` : s);
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
 /** One entry as one line: its pointer, then what it is and where it came from. Never its text. */
 export function lineOf(e: MemoryEntry): string {
-  if (e.id === 'sys:version' || e.id === 'sys:roadmap') return `- ${e.id} ${e.title}`;
+  // The roadmap line is clipped where it is made; the version line grows with the repositories, so it is clipped here (`memory_read('sys:version')` has the whole of it).
+  if (e.id === 'sys:version') return `- ${e.id} ${clip(e.title, VERSION_LINE_MAX)}`;
+  if (e.id === 'sys:roadmap') return `- ${e.id} ${e.title}`;
   if (e.kind === 'activity') return clip(`- ${e.id} ${e.title}`, ACTIVITY_LINE_MAX + e.id.length + 3);
   const where = [e.origin.by === 'person' ? 'edited by the person' : e.origin.by === 'agent' ? (e.origin.agent ?? 'agent') : 'app', e.origin.conversation ?? e.origin.ref, day(e.origin.at)].filter(Boolean);
   return `- ${e.id} ${e.kind}: ${oneLine(e.title)} (${where.join(', ')})`;

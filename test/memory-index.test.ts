@@ -121,6 +121,33 @@ describe('the lines and the caps', () => {
     expect(lines[2]).toMatch(/^- m-[0-9a-f]{8} decision:/);
   });
 
+  it('clips the version line however many repositories there are, and the whole of it is still one read away', async () => {
+    const dirs = Array.from({ length: 30 }, (_, i) => {
+      const dir = join(ws, `repo-${i}`);
+      mkdirSync(dir, { recursive: true });
+      return { id: `service-number-${i}`, path: dir };
+    });
+    const many = neutralConfig();
+    many.projects.repos = dirs.map((d) => ({ ...d, remoteUrl: null, vcsId: null, projectPath: null }));
+    const idx = createMemoryIndex({
+      store,
+      runs,
+      activities: createSharedMemory(ws, () => new Date(clock)),
+      facts: createFacts({ config: () => many, secret: () => false, home: HOME, tags: async () => ['v1.2.3'] }),
+      language: () => 'en',
+      now: () => clock,
+    });
+    note(dev);
+    const list = await idx.list(opts(), {}, { ...PROMPT_CAPS, tool: true });
+    const [line, second] = list.text.split('\n');
+    expect(line.startsWith('- sys:version Version: service-number-0 ')).toBe(true);
+    expect(line.endsWith('…')).toBe(true);
+    expect(line.length).toBeLessThanOrEqual('- sys:version '.length + 200);
+    expect(second).toMatch(/^- sys:roadmap /);
+    const whole = await idx.open(opts(), 'sys:version');
+    expect(whole.status === 'ok' && whole.text).toContain('service-number-29');
+  });
+
   it('keeps hundreds of entries within 40 lines and 3,000 characters and says how many were left out', async () => {
     for (let a = 0; a < 6; a++) {
       const scope: Scope = { conversation: `thread-${a}`, agent: 'developer' };
