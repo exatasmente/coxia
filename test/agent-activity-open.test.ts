@@ -69,6 +69,9 @@ describe('activity from the open engine', () => {
     ]);
     expect(entries.every((e) => e.jobId === 'deep:#7:ask' && e.role === 'deep' && e.runId === entries[0].runId)).toBe(true);
 
+    // a run that started no sub-agent and called no agent is one root: none of the optional fields of a tree appears on its lines, and no line is a thought or an answer
+    expect(entries.every((e) => !('parent' in e) && !('node' in e) && e.kind !== 'thought' && e.kind !== 'answer')).toBe(true);
+
     const wire = JSON.stringify(entries);
     for (const leaked of ['conteudo-secreto-da-nota', 'should-never-leak', 'glpat-abcdefghij', 'resposta-final-secreta']) expect(wire).not.toContain(leaked);
   });

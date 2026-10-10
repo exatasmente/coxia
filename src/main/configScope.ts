@@ -10,6 +10,7 @@ import { ACTIVITIES, type AgentDef, type ModelRef, type WorkspaceConfig } from '
 // `runner.evidence` is deliberately absent from the list, like `runner.worktreesDir`, `runner.commands`, `runner.identity`, `runner.sandbox` and
 // `runner.release`: it decides what enters a commit and only the computer changes it (see RunnerSection.tsx). `runner.sharedMemory` is in the list on purpose: the
 // maintainer decided the paired phone has the desktop's capabilities over the memory, the switch included (nothing leaves the machine, and it opens no tool or host).
+// `runner.showReasoning` is in on purpose too: the maintainer decided the phone changes it (it only hides or shows a line of the activity, and opens no tool, host or file).
 // `docs.roadmapFile` is not: it names a file of the computer.
 
 /** The paths (a path and everything under it) a paired browser may change. */
@@ -31,6 +32,7 @@ export const WEB_EDITABLE = [
   'runner.prTitle',
   'runner.linkDependencies',
   'runner.sharedMemory',
+  'runner.showReasoning',
   'attachments',
 ] as const;
 

@@ -969,7 +969,14 @@ describe('the thread', () => {
       ['refiner', first.seq, thread, 'started'],
       ['qa', second.seq, thread, 'queued'],
     ]);
+    // Each line is headed by the words of the message that named the agent, under no one.
+    expect(lines.map((e) => [e.node?.type, e.node?.label, e.parent])).toEqual(lines.map((e) => ['call', e.call?.agent === 'refiner' ? '@refiner what is the scope?' : '@qa and you?', undefined]));
+    const excerpts: string[] = [];
+    activityLog.setSink((e) => void (e.kind === 'answer' && excerpts.push(e.label)));
     await b.settle();
+    // What the thread shows of each answer is what the call's line shows of it.
+    expect(excerpts).toEqual(['The scope is the X case.', 'Looks fine.']);
+    activityLog.setSink(null);
     // The engine ran each call under the very activity the line belongs to, one after the other.
     expect(b.engine.calls.slice(before).map((c) => [c.agent.id, c.activity?.id])).toEqual([
       ['refiner', lines[0].runId],

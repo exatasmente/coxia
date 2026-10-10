@@ -109,7 +109,7 @@ export const mentionsModule: Module = () => {
     let ahead = !!prior;
     for (const id of calls) {
       if (!team.some((a) => a.id === id) || callLines.has(lineKey(message.thread, message.seq, id))) continue;
-      const activity = beginCallActivity(id, { jobId: mentionJob(message.thread), call: { agent: id, thread: message.thread, message: message.seq }, isSecretPath: (p) => secretPath(p, root) });
+      const activity = beginCallActivity(id, { jobId: mentionJob(message.thread), call: { agent: id, thread: message.thread, message: message.seq }, node: { type: 'call', label: message.text }, isSecretPath: (p) => secretPath(p, root) });
       activity.status(ahead ? 'queued' : 'started');
       callLines.set(lineKey(message.thread, message.seq, id), { activity, queued: ahead });
       ahead = true;

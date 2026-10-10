@@ -1,5 +1,5 @@
 // What an agent run is doing right now, as short redacted lines. Main emits them, the window and the browser show them.
-export type ActivityKind = 'tool' | 'text' | 'status';
+export type ActivityKind = 'tool' | 'text' | 'thought' | 'answer' | 'status';
 /** `queued` is a call that was accepted while another one of the same run still runs: it is alive, and it has not started. */
 export type ActivityState = 'queued' | 'started' | 'resumed' | 'finished' | 'failed' | 'blocked';
 
@@ -14,6 +14,14 @@ export interface ActivityCall {
   thread: string;
   /** The sequence of the message that named the agent: two calls of the same agent are two calls. */
   message: number;
+}
+
+/** What heads a node that is not an agent's own run: a sub-agent an agent started, or an agent it called. */
+export type ActivityNodeType = 'sub' | 'call';
+/** Type and the words that head the node (the kind and task of a sub-agent, the topic of a call); masked and cut in the main process. */
+export interface ActivityNode {
+  type: ActivityNodeType;
+  label: string;
 }
 
 export interface ActivityEntry {
@@ -31,6 +39,10 @@ export interface ActivityEntry {
   state?: ActivityState;
   /** Present on the lines of a run an `@` call asked for, and only on those. */
   call?: ActivityCall;
+  /** The run id of the node this one hangs under. Absent: a root of its job (a stage's agent, a ceremony's, an `@` call). Present on every line of the node. */
+  parent?: string;
+  /** Present on every line of a sub-agent or a called agent: its type and the words that head it. Absent on an agent's own run. */
+  node?: ActivityNode;
 }
 
 export const ACTIVITY_EVENT = 'agent:activity';
@@ -40,6 +52,15 @@ export const EVENTS_RECONNECTED = 'cerimonias:events-reconnected';
 export const ACTIVITY_RING = 200;
 export const ACTIVITY_TEXT_MAX = 200;
 export const ACTIVITY_LABEL_MAX = 240;
+/** A thought is the model's reasoning of one turn, masked and then cut at the end. */
+export const ACTIVITY_THOUGHT_MAX = 2000;
+/** The excerpt of a called agent's answer, masked and then cut at the end. */
+export const ACTIVITY_ANSWER_MAX = 400;
+/** The words that head a node (the task of a sub-agent, the topic of a call), and the same clip inside a tool line that names them. */
+export const ACTIVITY_NODE_MAX = 120;
+
+/** The switch of the reasoning in the activity: absent (a config stored before it) reads as on. */
+export const reasoningOn = (config: { runner?: { showReasoning?: boolean } | null } | null | undefined): boolean => config?.runner?.showReasoning !== false;
 
 const CTX_KEY = '$ctx';
 const JOB_ID = /^[\w#:.@!/ -]{1,160}$/;

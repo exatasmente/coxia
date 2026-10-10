@@ -2,7 +2,7 @@ export { type BridgeArgs, type OpenEngineSelection, type PoolMemberSpec, type Se
 export { ChatClient, type ProviderConfig, normalizeBaseUrl } from './client';
 export type { DocSources } from './context';
 export { EngineError, type ErrorKind } from './errors';
-export { type Capabilities, OpenMaxTurnsError, type OpenRunParams, type OpenRunResult, StructuredOutputError, runOpen } from './loop';
+export { type Capabilities, OpenMaxTurnsError, type OpenRunParams, type OpenRunResult, type SubAgentHandle, type SubAgentStart, StructuredOutputError, runOpen } from './loop';
 export type { Lang } from './messages';
 export type { PoolSwitch } from './pool';
 export { restKey, restRegistry } from './rest';

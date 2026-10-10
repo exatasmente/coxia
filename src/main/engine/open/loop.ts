@@ -48,6 +48,30 @@ export interface Capabilities {
   images?: boolean;
 }
 
+/** What the loop tells the caller about a sub-agent it is about to run, so the caller can show it as a node of its own. */
+export interface SubAgentStart {
+  /** The role the sub-agent's usage is recorded under (`<role>:<kind or definition name>`). */
+  role: string;
+  /** The kind of a delegated sub-agent (`explore`, `edit`, `shell`, `screen`); null for a plain one. */
+  kind: string | null;
+  /** The `subagent_type` the model asked for (the name of an agent definition), when it gave one. */
+  name: string | null;
+  description: string;
+  prompt: string;
+}
+
+/** The caller's side of one sub-agent: where its own steps go and when it starts, waits its turn and ends. */
+export interface SubAgentHandle {
+  /** What the sub-agent's own turns report to, instead of the parent's. The model-switch notice, usage and the sign of life stay the parent's. */
+  events: Pick<RunEvents, 'onToolUse' | 'onInterim' | 'onThought'>;
+  /** Runs the sub-agent with its node as the current one, so what it starts (an agent it calls) hangs under it. */
+  within<T>(fn: () => T): T;
+  /** `queued`: another sub-agent that changes things is ahead of it; `started`: it runs. */
+  state(state: 'queued' | 'started'): void;
+  /** The sub-agent ended; a failure carries the reason. */
+  end(failure?: string): void;
+}
+
 export interface RunEvents {
   onSession?: (id: string) => void;
   onToolUse?: (name: string, input: Json) => void;
@@ -56,12 +80,16 @@ export interface RunEvents {
   onText?: (text: string) => void;
   // A piece of the model's reasoning stream: a sign of life while it thinks before it says anything.
   onReasoning?: (text: string) => void;
+  // The reasoning of one completed model turn, whole, once per turn that reasoned (whichever way the server sent it); never a piece of a stream.
+  onThought?: (text: string) => void;
   // What the model said alongside tool calls it is about to make (its narration between steps); never the final answer.
   onInterim?: (text: string) => void;
   // The call moved to another model of the role's pool (it was busy, or the turn is for an activity the first one does not serve).
   onSwitch?: (e: PoolSwitch) => void;
   // A call waits in the server's queue (the flex tier): a sign of life every so often, though the model says nothing.
   onWait?: () => void;
+  // A sub-agent is about to run. Called synchronously, in the order the tool calls were run, before anything else of the sub-agent happens.
+  onSubAgent?: (s: SubAgentStart) => SubAgentHandle | undefined;
 }
 
 export interface OpenRunParams {
@@ -171,11 +199,17 @@ interface Delegation {
   kinds: SubKind[];
 }
 
+/** What the model wrote about a sub-agent besides its prompt: the three to five words of the task and the agent definition it named. */
+interface SubAgentAbout {
+  description?: string;
+  type?: string;
+}
+
 async function buildTools(
   p: OpenRunParams,
   skills: ReturnType<typeof loadSkills>,
   agents: AgentDef[],
-  runAgent: (a: AgentDef | null, prompt: string, kind?: SubKind) => Promise<string>,
+  runAgent: (a: AgentDef | null, prompt: string, kind?: SubKind, about?: SubAgentAbout) => Promise<string>,
   mode: PoolMode,
   delegation: Delegation,
 ): Promise<ToolImpl[]> {
@@ -228,12 +262,13 @@ async function buildTools(
       },
       async run(input, ctx) {
         const def = agents.find((a) => a.name === input.subagent_type) ?? null;
+        const about: SubAgentAbout = { description: typeof input.description === 'string' ? input.description : undefined, type: typeof input.subagent_type === 'string' ? input.subagent_type : undefined };
         let text: string;
         if (kinds.length) {
           if (!isSubKind(input.kind) || !kinds.includes(input.kind)) throw new ToolError(t('main.engine.text.subKind', { kind: String(input.kind ?? ''), kinds: kinds.join(', ') }));
-          text = await runAgent(def, String(input.prompt ?? ''), input.kind);
+          text = await runAgent(def, String(input.prompt ?? ''), input.kind, about);
         } else {
-          text = await runAgent(def, String(input.prompt ?? ''));
+          text = await runAgent(def, String(input.prompt ?? ''), undefined, about);
         }
         return { response: text, render: (r) => String(r).slice(0, ctx.outputMax) };
       },
@@ -374,22 +409,44 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     mutating = result.catch(() => undefined);
     return result;
   };
-  const runAgent = async (def: AgentDef | null, prompt: string, kind?: SubKind): Promise<string> => {
+  // Sub-agents of a kind that change something wait for each other: how many are asked and have not ended, to tell the one that waits from the one that runs.
+  let mutatingOpen = 0;
+  const runAgent = async (def: AgentDef | null, prompt: string, kind?: SubKind, about: SubAgentAbout = {}): Promise<string> => {
+    const role = `${p.role}:${def?.name ?? kind ?? 'agent'}`;
+    // Told first and synchronously, so the nodes under a parent come in the order the tool calls were run, whatever each one then waits for.
+    const handle = events.onSubAgent?.({ role, kind: kind ?? null, name: about.type?.trim() || null, description: about.description ?? '', prompt });
+    const mutates = !!kind && MUTATING_KINDS.has(kind);
+    const waits = mutates && mutatingOpen > 0;
+    let ended = false;
+    const finish = (failure?: string): void => {
+      if (ended) return;
+      ended = true;
+      handle?.end(failure);
+    };
     // A sub-agent of a kind runs on the list of its own activity when the pool has one; without it, and for a plain sub-agent, on the principal's pool.
-    const own = kind ? modelOfKind(kind, p.pool) : null;
-    let model = own?.pool.primary.label ?? pool.member.label;
-    // The thread hears when a sub-agent runs on another model than the main one: once per kind and model in the session.
-    if (own && own.pool.primary.key !== pool.member.key) {
-      const told = `${kind}|${own.pool.primary.key}`;
-      if (!delegatedTo.has(told)) {
-        delegatedTo.add(told);
-        events.onSwitch?.({ from: { label: pool.member.label, provider: pool.member.provider }, to: { label: own.pool.primary.label, provider: own.pool.primary.provider }, reason: 'delegate', until: null, activity: kind as SubKind });
+    let own: ReturnType<typeof modelOfKind> = null;
+    let model = pool.member.label;
+    // Once the node exists, anything that throws before the run ends it: a listener that throws must not leave it "started".
+    try {
+      handle?.state(waits ? 'queued' : 'started');
+      own = kind ? modelOfKind(kind, p.pool) : null;
+      model = own?.pool.primary.label ?? pool.member.label;
+      // The thread hears when a sub-agent runs on another model than the main one: once per kind and model in the session.
+      if (own && own.pool.primary.key !== pool.member.key) {
+        const told = `${kind}|${own.pool.primary.key}`;
+        if (!delegatedTo.has(told)) {
+          delegatedTo.add(told);
+          events.onSwitch?.({ from: { label: pool.member.label, provider: pool.member.provider }, to: { label: own.pool.primary.label, provider: own.pool.primary.provider }, reason: 'delegate', until: null, activity: kind as SubKind });
+        }
       }
+    } catch (e) {
+      finish(e instanceof Error ? e.message : String(e));
+      throw e;
     }
     const sub = async (): Promise<OpenRunResult<string>> =>
       runOpen<string>({
         ...p,
-        role: `${p.role}:${def?.name ?? kind ?? 'agent'}`,
+        role,
         prompt,
         schema: undefined,
         resume: undefined,
@@ -402,10 +459,20 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         depth: (p.depth ?? 0) + 1,
         ...(own ? { client: own.client, capabilities: own.capabilities, params: own.params, pool: own.pool, poolClient: undefined } : { poolClient: pool }),
         startActivity: 'explore',
-        ...(kind ? { kind, incoming: undefined, events: { ...events, onUsage: (u) => { model = u.model; events.onUsage?.(u); } } } : {}),
+        // The sub-agent's own steps go to its node; a model-switch notice, usage and the sign of life stay with the parent. Without a node its thoughts are not the parent's.
+        events: { ...events, onThought: undefined, ...handle?.events, ...(kind ? { onUsage: (u) => { model = u.model; events.onUsage?.(u); } } : {}) },
+        ...(kind ? { kind, incoming: undefined } : {}),
       });
+    const inside = (): Promise<OpenRunResult<string>> => (handle ? handle.within(sub) : sub());
+    if (mutates) mutatingOpen++;
     try {
-      const r = await (kind && MUTATING_KINDS.has(kind) ? inOrder(sub) : sub());
+      const r = await (mutates
+        ? inOrder(async () => {
+            if (waits) handle?.state('started');
+            return inside();
+          })
+        : inside());
+      finish();
       usage.promptTokens += r.usage.promptTokens;
       usage.completionTokens += r.usage.completionTokens;
       usage.cachedTokens += r.usage.cachedTokens;
@@ -413,8 +480,11 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       return r.data;
     } catch (e) {
       // Out of turns is the sub-agent's failure, not the principal's: the principal reads it and decides (what the sub-agent did on disk stays).
-      if (kind && e instanceof OpenMaxTurnsError) throw new ToolError(t('main.engine.text.subTurns', { kind, turns: KIND_TURNS[kind] }));
-      throw e;
+      const failure = kind && e instanceof OpenMaxTurnsError ? new ToolError(t('main.engine.text.subTurns', { kind, turns: KIND_TURNS[kind] })) : e;
+      finish(failure instanceof Error ? failure.message : String(failure));
+      throw failure;
+    } finally {
+      if (mutates) mutatingOpen--;
     }
   };
   const toolsAllowed = client.learned.noTools !== true && p.capabilities?.tools !== false;
@@ -530,6 +600,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         if (c.reasoning) msg.reasoning_content = c.reasoning;
         pool.stamp(msg, member);
         write(msg, u, member.client.cfg.model, c.meta);
+        // One line per turn, after the turn is whole and before its narration and tools are handled; a retry after a full context threw before this point.
+        if (c.reasoning?.trim()) events.onThought?.(c.reasoning);
         return c;
       } catch (e) {
         if (e instanceof EngineError && e.kind === 'context' && !compacted && compact(messages, 1, 600)) {

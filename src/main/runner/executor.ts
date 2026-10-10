@@ -4,7 +4,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { docsFlowOf, flowStagesOf, releaseFlowOf, squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
-import { workingTeam } from '../../shared/config/team';
+import { agentLabel, workingTeam } from '../../shared/config/team';
 import type { AgentDef, PoolMode, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
@@ -12,7 +12,7 @@ import { runKey } from '../../shared/browser';
 import { type ModelRole } from '../../shared/settings';
 import { t } from '../../shared/i18n';
 import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind, type Run, type Scenario, type StageOutput, backEvidence, outputKindOf, outputSchema, priorityStageOf, pushesAt, readOutput, testPlanWithResults } from '../../shared/runs';
-import { withActivityContext } from '../activity';
+import { currentActivity, withActivityContext } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import { rc } from '../workspaceConfig';
 import { type AgentCall, extraReadRoots } from '../agents';
@@ -1080,7 +1080,11 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
       const called = team.find((a) => a.id === to);
       if (!called) return t('main.runner.tools.unknownAgent', { to, list: teamIds.join(', ') });
       const refusal = callRefusal({ called: to, chain, opened: openedIn(run.id, stage.id), perStage: config.runner.conversations.perStage });
-      if (refusal) return t(refusal === 'cycle' ? 'main.runner.tools.callRefusedCycle' : 'main.runner.tools.callRefusedCap', { called: to, cap: config.runner.conversations.perStage });
+      if (refusal) {
+        // Said on the caller's line as well, and no node is made for it.
+        currentActivity()?.tool(t(refusal === 'cycle' ? 'activity.callRefused.cycle' : 'activity.callRefused.cap', { called: agentLabel(team, to), cap: config.runner.conversations.perStage }));
+        return t(refusal === 'cycle' ? 'main.runner.tools.callRefusedCycle' : 'main.runner.tools.callRefusedCap', { called: to, cap: config.runner.conversations.perStage });
+      }
       countOpen(run.id, stage.id);
       chain.push(to);
       const pending: string[] = [topic];

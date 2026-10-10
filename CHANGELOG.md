@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The activity panel is a tree of runs, agents, sub-agents and called agents.** The floating button of running work and its "Agent tasks" panel list one entry per run or conversation that has something working (and one per agent for work that belongs to neither), and under it the agent that works, the sub-agents it started (each named by its kind and task, with only its own steps, parallel ones never mixed) and the agents it called with `CallAgent` (named, with the topic, their own work, and a masked excerpt of their answer, at any depth). An `@` mention, a `CallAgent` inside an answer and a `CallAgent` from a stage all end under whoever called; a refused call says so on the caller's line. Every level opens and closes, keeps what you chose while new lines arrive, and shows its state while it works. The same tree is on the run screen, in the panels of the ceremonies and on the paired phone.
+- **Each model turn that reasoned leaves one closed "Thought" line**, before that turn's steps, on both engines (the open engine from the completion's reasoning, the Claude engine from its thinking blocks). Closed it says only the word; open it shows the text, masked like every activity line and cut at 2,000 characters. It is not stored: it lives in memory like the rest of the activity.
+- **A switch for it in Settings › Runner** (`runner.showReasoning`; the computer and a paired browser change it). It is **on** in new workspaces and in the ones that already existed (the update raises the configuration to schema 28 and says so); turn it off if the reasoning of your agents may quote what you do not want shown. Off, no thought is made, stored or sent, to the window or to the phone.
+
+### Changed
+
+- **The generic "Agent" card of the panel is gone**, and the badge counts only the top entries (runs, conversations, and activities with neither), never what runs inside them.
+
 ## [0.9.0-beta.16] - 2026-10-10
 
 ### Fixed

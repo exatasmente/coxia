@@ -70,8 +70,10 @@ export interface FakeCall {
 }
 
 // A streamed answer with tool calls: id and name first, then the arguments in two pieces, like OpenAI.
-export function toolStep(calls: FakeCall[], opts: { text?: string; usageTokens?: [number, number]; cost?: number; extras?: UsageExtras; tier?: string; requestId?: string; finish?: string } = {}): Step {
+// `reasoning` is what the model thought before the calls, sent in pieces (an array) or as one, in the field a server names it (`reasoning_content` or `reasoning`).
+export function toolStep(calls: FakeCall[], opts: { text?: string; usageTokens?: [number, number]; cost?: number; extras?: UsageExtras; tier?: string; requestId?: string; finish?: string; reasoning?: string | string[]; reasoningField?: string } = {}): Step {
   const chunks: object[] = [chunk({ role: 'assistant', content: opts.text ?? null })];
+  for (const piece of [opts.reasoning ?? []].flat()) chunks.push(chunk({ [opts.reasoningField ?? 'reasoning_content']: piece }));
   calls.forEach((c, index) => {
     const args = typeof c.args === 'string' ? c.args : JSON.stringify(c.args);
     const mid = Math.max(1, Math.floor(args.length / 2));

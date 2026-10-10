@@ -204,6 +204,8 @@ const REMOVED: Record<string, string> = {
   'ui.retro.entry.proposal': 'the proposal line of the copied improvement entry has no caller any more (rule 1)',
   'ui.retro.problem': 'the problem label of the retro improvement entry has no caller any more (rule 1)',
   'ui.retro.proposal': 'the proposal label of the retro improvement entry has no caller any more (rule 1)',
+  // The panel of running work is a tree: no activity is folded into one generic "Agent" card, each is an entry named for its agent.
+  'activity.generic': 'the dock no longer has a generic card for the runs no job owns: each one is an entry of its own, named for its agent',
 };
 
 // What the callers of main passed as params for a GitLab workspace on SDD with its defaults (the same values the terms give now): a text

@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatClient } from '../src/main/engine/open/client';
-import { type OpenRunParams, runOpen } from '../src/main/engine/open/loop';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { type OpenRunParams, type SubAgentHandle, type SubAgentStart, runOpen } from '../src/main/engine/open/loop';
 import type { PoolMember, PoolSwitch } from '../src/main/engine/open/pool';
 import { restRegistry } from '../src/main/engine/open/rest';
 import { readSession, type UsageRecord } from '../src/main/engine/open/session';
@@ -397,6 +398,139 @@ describe('the fence of the run, under a sub-agent', () => {
     await run({ primary: member(a, 'a'), activities: { edit: [member(b, 'b')], explore: [member(b, 'b')] }, tools: [tool('look', 'explore')], over: { allowedTools: ['Agent', 'Read', 'Write', 'Edit', 'look'] } });
     expect(agentTool(a.chats()[0])!.parameters.properties.kind.enum).toEqual(['explore']);
     expect(names(b.chats()[0])).toEqual(['Read', 'look']);
+  });
+});
+
+// A sub-agent is told to the caller before it runs, so the caller can show it as a node: one handle each, in the order the tool calls ran.
+describe('a sub-agent as a node', () => {
+  const where = new AsyncLocalStorage<string>();
+  const seen: string[] = [];
+
+  // What a caller would do: note every call of the handle, and run the sub-agent with its tag as the async context.
+  function caller() {
+    const notes: string[] = [];
+    const starts: SubAgentStart[] = [];
+    const onSubAgent = (s: SubAgentStart): SubAgentHandle => {
+      const tag = `${s.kind ?? s.name ?? 'agent'}#${starts.length}`;
+      starts.push(s);
+      notes.push(`open ${tag}`);
+      return {
+        events: { onToolUse: (name) => notes.push(`${tag} tool ${name}`), onInterim: (text) => notes.push(`${tag} says ${text}`), onThought: (text) => notes.push(`${tag} thinks ${text}`) },
+        within: (fn) => where.run(tag, fn),
+        state: (state) => notes.push(`${tag} ${state}`),
+        end: (failure) => notes.push(failure === undefined ? `${tag} end` : `${tag} end ${failure}`),
+      };
+    };
+    return { notes, starts, onSubAgent };
+  }
+  const watching = (name: string, wait = 0): ToolImpl => ({
+    ...tool(name, name === 'look' ? 'explore' : name === 'Sh' ? 'shell' : 'edit', wait),
+    async run() {
+      seen.push(`${name} in ${where.getStore() ?? 'none'}`);
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      return { response: 'ok', render: () => `${name} done` };
+    },
+  });
+  const sub = (name: string) => (req: FakeRequest): Step => (req.body?.messages.at(-1).role === 'tool' ? textStep('sub done', { usageTokens: [10, 2] }) : toolStep([{ id: 'c', name, args: {} }], { usageTokens: [10, 2] }));
+  const many = (calls: { kind?: SubKind; description?: string; prompt: string }[]) => toolStep(calls.map((c, i) => ({ id: `call_${i}`, name: 'Agent', args: c })), { usageTokens: [10, 2] });
+
+  it('hands the caller one handle per sub-agent, in order, with the kind and the task, and the sub-agent\'s own steps go to it and not to the parent', async () => {
+    seen.length = 0;
+    const { notes, starts, onSubAgent } = caller();
+    const a = await server([many([{ kind: 'explore', description: 'first task', prompt: 'p1' }, { kind: 'explore', description: 'second task', prompt: 'p2' }]), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server(sub('look'));
+    const parent: string[] = [];
+    await run({ primary: member(a, 'a'), activities: { explore: [member(b, 'b')] }, tools: [watching('look')], over: { events: { onToolUse: (name) => parent.push(name), onSubAgent } } });
+    expect(starts).toEqual([
+      { role: 'deep:explore', kind: 'explore', name: null, description: 'first task', prompt: 'p1' },
+      { role: 'deep:explore', kind: 'explore', name: null, description: 'second task', prompt: 'p2' },
+    ]);
+    expect(notes.slice(0, 4)).toEqual(['open explore#0', 'explore#0 started', 'open explore#1', 'explore#1 started']);
+    // each sub-agent's tool use reached its own handle, once, and the parent heard only of the Agent calls
+    expect(notes.filter((n) => n === 'explore#0 tool look' || n === 'explore#1 tool look')).toHaveLength(2);
+    expect(notes.filter((n) => n.endsWith('tool look')).map((n) => n.split(' ')[0]).sort()).toEqual(['explore#0', 'explore#1']);
+    expect(parent).toEqual(['Agent', 'Agent']);
+    expect(notes.filter((n) => n.includes(' end'))).toHaveLength(2);
+    expect(notes.some((n) => n.includes('end ') && n.length > 'explore#0 end'.length)).toBe(false);
+    // the tool ran inside the handle's own context, so what a sub-agent starts hangs under its node
+    expect([...seen].sort()).toEqual(['look in explore#0', 'look in explore#1']);
+  });
+
+  it('heads a plain sub-agent with the definition it named, or nothing, and hands the parent\'s tools nothing of its own', async () => {
+    const { starts, notes, onSubAgent } = caller();
+    const a = await server([many([{ description: 'look around', prompt: 'p1' }]), textStep('principal done', { usageTokens: [10, 2] })]);
+    await run({ primary: member(a, 'a'), activities: {}, mode: 'fallback', over: { events: { onSubAgent }, allowedTools: ['Agent', 'Read'] } });
+    expect(starts).toEqual([{ role: 'deep:agent', kind: null, name: null, description: 'look around', prompt: 'p1' }]);
+    expect(notes).toEqual(['open agent#0', 'agent#0 started', 'agent#0 end']);
+  });
+
+  it('puts a sub-agent that changes things on hold while another is ahead of it, and runs explore ones together', async () => {
+    seen.length = 0;
+    const { notes, onSubAgent } = caller();
+    const a = await server([many([{ kind: 'edit', prompt: 'e' }, { kind: 'shell', prompt: 's' }, { kind: 'explore', prompt: 'x' }]), textStep('principal done', { usageTokens: [10, 2] })]);
+    const eb = await server(sub('Ed'));
+    const sb = await server(sub('Sh'));
+    const xb = await server(sub('look'));
+    await run({
+      primary: member(a, 'a'),
+      activities: { edit: [member(eb, 'e')], shell: [member(sb, 's')], explore: [member(xb, 'x')] },
+      tools: [watching('Ed', 40), watching('Sh', 10), watching('look', 10)],
+      write: true,
+      over: { events: { onSubAgent } },
+    });
+    // the first of them runs at once, the second waits; the explore one never waits
+    expect(notes.filter((n) => /^(edit|shell|explore)#\d (queued|started)$/.test(n))).toEqual(['edit#0 started', 'shell#1 queued', 'explore#2 started', 'shell#1 started']);
+    expect(notes.indexOf('edit#0 end')).toBeLessThan(notes.indexOf('shell#1 started'));
+    expect(notes.filter((n) => n.startsWith('open'))).toEqual(['open edit#0', 'open shell#1', 'open explore#2']);
+  });
+
+  it('ends a sub-agent that ran out of turns as failed with the reason, and leaves the model-switch notice with the parent', async () => {
+    const { notes, onSubAgent } = caller();
+    const a = await server([many([{ kind: 'explore', prompt: 'p' }]), textStep('split it then', { usageTokens: [10, 2] })]);
+    const forever = await server(() => toolStep([{ id: 'c', name: 'look', args: {} }], { usageTokens: [10, 2] }));
+    const switches: PoolSwitch[] = [];
+    await run({ primary: member(a, 'a'), activities: { explore: [member(forever, 'f')] }, tools: [watching('look')], over: { events: { onSubAgent, onSwitch: (e) => switches.push(e) } } });
+    const end = notes.find((n) => n.startsWith('explore#0 end '));
+    expect(end).toContain(String(KIND_TURNS.explore));
+    expect(notes.filter((n) => n.includes(' end'))).toHaveLength(1);
+    expect(switches).toMatchObject([{ reason: 'delegate', activity: 'explore' }]);
+    expect(notes.some((n) => n.includes('delegate'))).toBe(false);
+  });
+
+  it('ends the node as failed when the model-switch notice throws before the sub-agent runs, once, and never runs the sub-agent', async () => {
+    seen.length = 0;
+    const { notes, onSubAgent } = caller();
+    const a = await server([many([{ kind: 'explore', prompt: 'p' }]), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server(sub('look'));
+    await run({ primary: member(a, 'a'), activities: { explore: [member(b, 'b')] }, tools: [watching('look')], over: { events: { onSubAgent, onSwitch: () => { throw new Error('listener broke'); } } } });
+    expect(notes.filter((n) => n.startsWith('open'))).toEqual(['open explore#0']);
+    expect(notes.filter((n) => n.includes(' end'))).toEqual(['explore#0 end listener broke']);
+    expect(seen).toEqual([]);
+  });
+
+  it('reports the reasoning of each turn once to whoever took the turn: the parent\'s to the parent, a sub-agent\'s to its own handle', async () => {
+    const { notes, onSubAgent } = caller();
+    const a = await server([many([{ kind: 'explore', description: 'think about it', prompt: 'p' }]), textStep('principal done', { usageTokens: [10, 2], reasoning: 'The principal concludes.' })]);
+    const b = await server((req: FakeRequest) => (req.body?.messages.at(-1).role === 'tool' ? textStep('sub done', { usageTokens: [10, 2] }) : toolStep([{ id: 'c', name: 'look', args: {} }], { usageTokens: [10, 2], reasoning: ['The sub-agent ', 'looks first.'] })));
+    const parent: string[] = [];
+    await run({ primary: member(a, 'a'), activities: { explore: [member(b, 'b')] }, tools: [watching('look')], over: { events: { onThought: (text) => parent.push(text), onSubAgent } } });
+    expect(parent).toEqual(['The principal concludes.']);
+    expect(notes.filter((n) => n.includes(' thinks '))).toEqual(['explore#0 thinks The sub-agent looks first.']);
+  });
+
+  it('does not hand a sub-agent\'s reasoning to the parent when the caller made no node for it', async () => {
+    const a = await server([many([{ kind: 'explore', prompt: 'p' }]), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server((req: FakeRequest) => (req.body?.messages.at(-1).role === 'tool' ? textStep('sub done', { usageTokens: [10, 2] }) : toolStep([{ id: 'c', name: 'look', args: {} }], { usageTokens: [10, 2], reasoning: 'Private to the sub-agent.' })));
+    const parent: string[] = [];
+    await run({ primary: member(a, 'a'), activities: { explore: [member(b, 'b')] }, tools: [watching('look')], over: { events: { onThought: (text) => parent.push(text) } } });
+    expect(parent).toEqual([]);
+  });
+
+  it('behaves as before for a caller that does not follow sub-agents', async () => {
+    const a = await server([many([{ kind: 'explore', prompt: 'p' }]), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server([textStep('sub done', { usageTokens: [10, 2] })]);
+    const r = await run({ primary: member(a, 'a'), activities: { explore: [member(b, 'b')] }, tools: [watching('look')] });
+    expect(r.data).toBe('principal done');
   });
 });
 
