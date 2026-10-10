@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.15] - 2026-10-10
+
 ### Added
 
 - **A Memory screen and the switch of the shared memory of the agents.** The new Memory screen (a button in the header, under More on the phone) lists the notes kept for each conversation, grouped by the agent that wrote them (decisions, findings and notes), opens each one with who wrote it and when, and lets you edit it, mark it reviewed or remove it, and remove an agent's folder or a whole conversation's, from the computer and from a paired phone alike. An edit makes the note yours: the agent that wrote it can no longer replace or remove it. Settings › Runner has the new switch (off for a workspace that existed, on for a new one, and changeable from the phone), Settings › Documentation a field for the roadmap file the agents will read the priorities from, and the audit log records which door each change came through. What the agents do with it is in the two entries below, and the whole of it is described in the new [Shared memory](docs/memory.md) document.
@@ -485,7 +487,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.14...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.15...HEAD
+[0.9.0-beta.15]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.14...v0.9.0-beta.15
 [0.9.0-beta.14]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.13...v0.9.0-beta.14
 [0.9.0-beta.13]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.12...v0.9.0-beta.13
 [0.9.0-beta.12]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.11...v0.9.0-beta.12
