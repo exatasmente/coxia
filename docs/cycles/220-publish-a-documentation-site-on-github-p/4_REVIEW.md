@@ -1,85 +1,83 @@
-# A correção do bloqueante da rodada anterior chegou, mas a passada não está fechada
+# A correção do bloqueante da rodada anterior chegou; sobra uma falha que a checagem de línguas não alcança
 
 ## Veredito
 
-**Mudanças pedidas.** Um bloqueante: a correção que a rodada anterior pediu deixou três casos do arquivo de teste da checagem do site vermelhos, e um deles aponta uma regra da checagem de línguas que agora contradiz a forma que o próprio site usa (o par na pasta `pt-br/` ao lado da página). Também há um defeito pequeno, de pé desde a primeira implementação: um documento escrito só em português vira a página da língua errada, e a checagem de línguas o aceita. O bloqueante da rodada anterior — a checagem de links não resolver os links do endereço publicado — está corrigido e foi conferido aqui: na construção publicada, a construção passa e a checagem sai 0. Os portões que esta etapa rodou: tipos, auditoria de tema, lint de idiomas e auditoria pública passam; a suíte não (3 de 7674 casos falham, num arquivo).
+**Mudanças pedidas.** Um bloqueante: a checagem de línguas nunca olha as páginas de referência. Elas são geradas dentro de `site/generated/`, pasta que `checkLanguages` pula, então nenhuma página construída a partir de `docs/` é conferida — e um documento bilíngue que perca a metade portuguesa constrói sem erro e passa na checagem, que é a falha que o critério de aceitação 13 diz que ela existe para pegar. O bloqueante da rodada 2 — a checagem nomear um par que o site não escreve — está corrigido e foi conferido: os três casos vermelhos ficaram verdes, a mensagem aponta a forma que o site escreve, e a suíte inteira passa. Os portões rodados nesta revisão passam: tipos, auditoria de tema, lint de idiomas, auditoria pública e, sobre a construção com o endereço de publicação, a construção e a checagem (0).
 
 ## Como esta revisão foi feita
 
-Rodada 2. A rodada 1 pediu como bloqueio que a checagem de links resolvesse os links de uma construção com o endereço de publicação, e listou sugestões. A revisão desta rodada conferiu primeiro se aquilo foi atendido, e depois o que a correção introduziu de novo — é onde estão o achado bloqueante e dois outros.
-
-Lido: o diff inteiro da rodada (a checagem de links, a geração das páginas de referência, a regra de endereço, o fluxo de publicação, a checagem do site no fluxo de verificação, os testes do site). Executado, nesta máquina, na árvore de trabalho:
+Rodada 3. As duas rodadas anteriores pediram bloqueantes; aqui confiro primeiro se o bloqueante da rodada 2 foi atendido, e depois o que a regra nova deixou de fora. Lido: a checagem, a geração das páginas, os testes do site, o fluxo de publicação e a mudança do agente de documentação. Executado nesta máquina, na árvore de trabalho:
 
 | O que se rodou | O que aconteceu |
 |---|---|
+| `npx vitest run test/site-check.test.ts test/site-docs-pages.test.ts test/site-changelog.test.ts test/readme-status.test.ts` | 4 arquivos, 38 casos, todos verdes |
+| `npx vitest run` | 456 arquivos passam, 1 pulado; 7673 casos passam, 3 pulados, 0 falham |
 | `npx tsc --noEmit` | sai 0 |
-| `npx vitest run` | 3 falham, 7668 passam, 3 pulados (de 7674); um arquivo vermelho: o da checagem do site |
 | `node scripts/theme-audit.mjs` | sai 0 |
-| `npm run i18n:lint` | 5739 chaves nas duas línguas, sai 0 |
+| `npm run i18n:lint` | sai 0 |
 | `node scripts/public-audit.mjs` | 1733 arquivos, nada, sai 0 |
-| `SITE_BASE=/cerimonias/ npx vitepress build site` e a checagem sobre essa construção | a construção passa e a checagem diz que todo link resolve e toda página carrega as duas línguas, saída 0 |
-| a checagem de links e a de assets sobre a construção publicada | 0 links quebrados; 483 arquivos carregados por página, 85 distintos, nenhum faltando — as fontes que VitePress escreve separadas entram na contagem |
-| a geração dos documentos de referência a partir de uma cópia da árvore no primeiro commit do site | 4 dos 5 links de host da página do histórico apontam para um caminho que não existe no repositório |
+| `SITE_BASE=/cerimonias/ npm run docs:build` e `npm run docs:check` | a construção passa e a checagem diz que todo link resolve e toda página carrega as duas línguas, saída 0 |
+| a checagem de links sobre essa construção com um link para uma página que não existe | reprova e nomeia `reference/nowhere.html`, lendo o prefixo da própria construção |
+| a checagem de línguas sobre as fontes reais do site, e sobre uma cópia com a metade `guide/pt-br/index.md` removida | antes: nada faltando; depois: aponta `guide/index.md` sem `guide/pt-br/index.md` — a forma que o site escreve |
+| a geração de páginas de `docs/` para cada documento | 14 documentos; 11 pares (pt-BR), 3 de uma língua só (en): `i18n.md`, `images/README.md`, `voice.md`; `verify-commands.md` agora é par, pela forma de um título por metade |
+| remover a metade `## Português` de `docs/memory.md` e reconstruir | a construção sai 0, `reference/memory.html` existe e `reference/memory.pt-br.html` **não** existe; `docs:check` informa que toda página carrega as duas línguas, saída 0 — **o defeito bloqueante**; o arquivo foi restaurado em seguida, sem diferença |
 
 O que não foi verificado: a publicação no host e o site no ar; o Pages ligado na configuração do repositório; uma mudança posterior em `docs/` ou no `CHANGELOG.md` atualizando o site na mesclagem; e o agente de documentação construindo o site com um modelo de verdade.
 
 ## O bloqueante
 
-### A correção deixou vermelho o arquivo de teste da própria checagem, e uma regra nova contradiz a forma que o site usa
+### As páginas de referência não passam pela checagem de línguas
 
-O recado da rodada anterior pedia três coisas: a fixture `underBase` com um endereço `/assets/` para a checagem ler o prefixo, o caso de uma língua só com a expectativa decidida, e o `runner.pt-br.md` com o link de volta de título `English`. Rodei o arquivo: **3 dos 18 casos falham**. O caso do endereço base passou (é o que mais importa: a checagem agora lê o prefixo da própria construção, e na construção publicada ela sai 0). O que segue vermelho:
+A checagem de línguas anda por `site/` e pula a pasta `generated` (`site/scripts/check.mjs:127`: `if (name !== 'scripts' && name !== 'public' && name !== 'generated') walk(full)`). Todas as páginas que o site constrói a partir de `docs/` — a seção de referência inteira — são escritas justamente dentro de `site/generated/`, e por isso **nenhuma delas é conferida**. A checagem só enxerga as páginas escritas à mão em `site/**/*.md`.
 
-1. **O caso de uma língua só produz duas entradas.** A pasta de teste tem `use-cases/team.md` sem par e `use-cases/pt-br/index.md` sem o par dela. A checagem acusa as duas — e acusa a segunda pedindo `use-cases/pt-br/index.pt-BR.md`, um nome que a forma que o site usa nunca cria. A expectativa do caso não decidiu qual das duas entradas é a falha.
-2. **O caso do link entre as duas línguas.** A página `runner.pt-br.md` da pasta de teste não carrega o link de volta, então a checagem a acusa de não ter par. O recado já dizia que ela precisava do link com título `English`; não foi feito.
-3. **O caso do link quebrado de uma construção com prefixo** mede o estado intermediário de uma construção pela metade, e não a regra que a checagem deve seguir (ver a primeira sugestão abaixo).
+Consequência, verificada nesta revisão: removendo a metade portuguesa de um documento bilíngue de referência (`docs/memory.md`), a construção passa e escreve `reference/memory.html` sem `reference/memory.pt-br.html`, e `docs:check` sai 0 dizendo que toda página carrega as duas línguas. É exatamente a falha que a regra 10 da spec e o critério de aceitação 13 dizem que a checagem deve pegar: "uma página que existe só numa das línguas reprova a checagem do site". Hoje ela reprova isso só para as páginas escritas à mão; para a referência — a maioria das páginas do site — não reprova nada.
 
-O que faz disso um bloqueante é o (1) e o (2): o teste da checagem do site não está verde, e a rodada anterior pediu isso explicitamente. O vermelho não é cosmético — o candidato `use-cases/pt-br/index.pt-BR.md` é o sintoma de uma regra que empurra uma página de português para fora do par que ela de fato tem. Uma pasta de teste que misture páginas com par e sem par é a que o repositório vai ter; enquanto a checagem pedir ali um nome que o site não escreve, ela não está dizendo o que quer dizer, e o que ela acusa é um nome errado.
+O fato é desta rodada: a mudança desta rodada passou a decidir, por documento, se ele vira uma página só ou um par (`single`), e a entrega afirma que a checagem de línguas vê as duas páginas geradas. Não vê: a pasta onde elas nascem está fora do alcance da checagem. O defeito estava latente porque os documentos de `docs/` hoje têm as duas línguas que declaram; ele aparece no primeiro documento que perder uma metade — uma edição normal pelo ciclo, que a checagem deveria barrar.
+
+**Correção sugerida:** a checagem precisa olhar o que a construção escreveu, não só as fontes escritas à mão. A forma mais direta é conferir as páginas geradas pelo que o próprio gerador decidiu: para cada documento de `docs/` que o gerador marcou como par, exigir que a página em português exista na construção (ou que a fonte gerada `.pt-br` tenha sido escrita). O marcador `<!-- site: one-language -->` já vai nas páginas geradas de um documento de uma língua só (`site/.vitepress/build-sources.mjs:119`) e é o que diz que a ausência de par ali é legítima; hoje esse marcador nunca é lido para a referência. Uma leitura de `docs/` por `checkLanguages`, com a mesma regra de par de `docs-pages.mjs`, fecharia o buraco sem uma segunda lista.
 
 ## Sugestões
 
-### A checagem de links mede o estado do gerador em vez da regra que deve seguir
+### A checagem de links não lê o que a página carrega
 
-O caso testa que um link para uma página que não existe reprova **numa construção com prefixo**, mas a construção que ele monta é a de uma pasta em que só uma parte das páginas foi escrita. O que a checagem deve seguir é a regra: tirar o prefixo do endereço e procurar o arquivo que o servidor serviria; que a construção esteja completa é assunto de quem a escreve. Hoje o caso prende a expectativa ao que o gerador escreve dentro da pasta construída, e é por isso que ele fica vermelho quando o gerador muda. Um caso que monte a construção inteira, ou que confira a regra pela função que a aplica, pegaria a falha de verdade — um link para uma página que não existe — sem depender de quantas páginas a pasta tem.
+`linksOf` (`site/scripts/check.mjs:42`) lê os `href` e os links em Markdown, não os `src`. Nenhuma página carrega imagem hoje, então nada está errado; mas a checagem de ativos (`checkAssets`, agora ligada em `checkSite`) cobre os arquivos sob `/assets/`, não uma imagem de conteúdo que uma página venha a referenciar. Quando o pedido das imagens chegar, um endereço errado de imagem não seria pego.
 
-### O que a checagem ignora dos links de uma página construída
+### O endereço da linha de status dos README não é conferido entre os dois arquivos
 
-A checagem lê os endereços de `href` e os links em Markdown, e não lê os de `src`. Não é um defeito hoje (nenhuma página carrega imagem), mas é a razão de existir da função que confere os arquivos carregados pela página, que o gerador também não chama. Enquanto isso não for decidido, a checagem do site confere a página e não o que ela carrega, e uma imagem com endereço errado passaria.
+`test/readme-status.test.ts:31` aceita qualquer endereço externo (`/https:\/\/[a-z0-9.-]+\/[^\s)]+/`). Um endereço trocado ou velho mantém a suíte verde, enquanto a pessoa cai noutro lugar. Comparar o endereço dos dois README entre si (o português é o mesmo com o segmento de língua) diria o que o teste quer dizer. É a mesma sugestão da rodada 1, ainda não atendida e não bloqueante.
 
-### O botão de idioma da abertura e das páginas de seção não existe
+### Nenhum link próprio liga as duas línguas nas páginas escritas à mão
 
-A regra 3 pede que a página em inglês e a em português sejam alcançáveis uma da outra, e a checagem de línguas aceita o par pela pasta `pt-br/` ao lado — mas isso confere que o par existe, não que se chega a ele. Nas páginas de referência o gerador escreve um link para o outro idioma; nas escritas à mão (a abertura, o guia, os casos de uso, o blog) não há link nenhum entre as duas versões, e a barra de navegação não troca de endereço entre as línguas. Quem chega à abertura em inglês chega ao português pela URL, ou não chega. É o mesmo ponto que a rodada 1 levantou como "duas convenções" e deixou como sugestão; aqui ele fica dito pelo efeito: a página em português existe e não é alcançável.
-
-### Quatro links do site publicado apontam para um caminho que não existe no repositório
-
-Este defeito é do primeiro commit do site e **não é da rodada**: fica registrado, não bloqueia. A página do histórico, no site publicado, carrega `https://github.com/exatasmente/coxia/blob/main/docs/RELEASING.md` (correto) e quatro endereços com `docs` duas vezes — `blob/main/docs/docs/memory.md`, `blob/main/docs/docs/runner.md`, `blob/main/docs/docs/runner.md#a-release`, `blob/main/docs/docs/cycles.md#...#...`. A pasta `docs/docs` não existe: os quatro levam a uma página de erro. O primeiro leva o leitor à página do próprio documento de memória compartilhada que a entrada do histórico diz ser nova; o mesmo endereço errado aparece na página do blog daquela versão. Não é pego pela checagem de links porque é um endereço de outro site.
+A regra 3 pede que a página em inglês e a em português sejam alcançáveis uma da outra. Nas páginas de referência o gerador escreve esse link; nas escritas à mão (abertura, guia, casos de uso, blog) não há link nenhum entre as duas versões, e a navegação não troca de endereço entre as línguas. O par existe e a checagem o aceita pela pasta, mas quem chega à abertura em inglês só chega ao português pela URL. É sugestão, como nas rodadas anteriores, e não foi reaberta como bloqueante.
 
 ## Critérios de aceitação
 
 | Critério | Onde se confere |
 |---|---|
-| A mudança traz o site, o fluxo de publicação e a checagem; os portões passam | O site, o fluxo e a checagem estão na árvore. Auditoria pública, tipos, tema e idiomas passam aqui; a suíte não (3 casos vermelhos no arquivo da checagem) |
-| O site constrói, os links resolvem e as duas línguas têm todas as páginas | **Atendido na construção publicada**: com o endereço de publicação a construção passa e a checagem sai 0, sem nenhum link quebrado. As duas línguas de cada página também passam |
-| Abertura, guia, referência, casos de uso, blog e histórico existem nas duas línguas | Atendido para existir; a abertura, o guia, os casos de uso e o blog têm o par na outra língua, e a checagem os vê pela pasta. Que a pessoa chegue ao par por um link da página, não (ver sugestão) |
-| Cada documento da documentação de referência é alcançável do site | Atendido: a lista da referência é a travessia da pasta, e cada documento ganha endereço pelo próprio caminho |
-| A página do histórico segue o arquivo | Atendido: a página é montada na construção a partir do histórico, e nenhuma segunda cópia é versionada |
-| O blog abre com o texto da versão estável | Atendido: a versão estável mais recente é a que tem seção no histórico, e as betas não viram texto |
+| A mudança traz o site, o fluxo e a checagem; os portões passam | Atendido: o site, o fluxo e a checagem estão na árvore, e tipos, tema, idiomas, auditoria pública e a suíte inteira (7673 casos, 0 falham) passam aqui |
+| O site constrói, os links resolvem e as duas línguas têm todas as páginas | Atendido na construção publicada (com o endereço de publicação, construção e checagem saem 0). **Não atendido para as páginas de referência**: a checagem de línguas não as inspeciona (ver o bloqueante) |
+| Abertura, guia, referência, casos de uso, blog e histórico existem nas duas línguas | Atendido para existir: as 14 páginas de referência saem como par quando o documento tem as duas línguas; as escritas à mão têm o par na pasta `pt-br/` |
+| Cada documento da referência é alcançável do site | Atendido: a lista é a travessia de `docs/`, e cada documento ganha endereço pelo próprio caminho |
+| A página do histórico segue o arquivo | Atendido: é montada na construção a partir do histórico, sem segunda cópia versionada |
+| O blog abre com o texto da versão estável | Atendido: a versão estável mais recente é a que tem seção; as betas não viram texto |
 | O site não usa imagem real nenhuma | Atendido: as páginas que pedem imagem mostram texto e espaço reservado |
-| A publicação está declarada e o aplicativo não mexeu em configuração de repositório | Atendido: o fluxo de publicação está no repositório e nenhum arquivo da mudança escreve configuração no host |
+| A publicação está declarada e o aplicativo não mexeu em configuração de repositório | Atendido: o fluxo de publicação está no repositório e nenhum arquivo escreve configuração no host |
 | A linha de status dos dois README diz a versão atual e leva ao site | Atendido: os dois citam a versão do arquivo de versão e trazem o endereço publicado |
 | O site responde no endereço dentro da execução do fluxo | Não verificado: depende do host, depois da mesclagem |
 | O site publicado é conferido de dentro do aplicativo | Não verificado: depende do site no ar e da lista de hosts do agente |
-| Uma mudança posterior atualiza o site na mesclagem | Não verificado: o caminho está construído, mas não foi exercitado |
-| A checagem do site pega as duas falhas que ela existe para pegar | Parcialmente atendido: a checagem de links agora passa na construção publicada e reprova um link para uma página que não existe; a checagem de línguas reprova uma página sem par, e é o próprio caso dela que está vermelho |
-| O agente de documentação trabalha a pasta do site pelo ciclo normal | O agente tem sandbox e permissão de escrita, e um caso novo cobre as recusas de cerca de um agente que escreve; nenhum modelo real percorreu o fluxo |
+| Uma mudança posterior atualiza o site na mesclagem | Não verificado: o caminho está construído, não foi exercitado |
+| A checagem do site pega as duas falhas que ela existe para pegar | Parcialmente: pega um link quebrado (inclusive com o prefixo de publicação) e uma página escrita à mão sem par; **não pega** uma página de referência que perca uma língua (ver o bloqueante) |
+| O agente de documentação trabalha a pasta do site pelo ciclo normal | O agente tem sandbox e permissão de escrita, e um caso cobre as recusas de cerca de um agente que escreve; nenhum modelo real percorreu o fluxo |
 
 ## O que foi conferido por leitura, e o que não foi
 
-Conferido:
+Conferido por leitura e execução nesta revisão:
 
-- A cerca de escrita do agente de documentação não mudou: a permissão continua a de antes, só a capacidade de rodar comandos na sandbox foi acrescentada, e o caso novo cobre as recusas de um agente que escreve fora da execução de documentação (o git, uma pasta de gancho, um arquivo de segredo e um caminho que sai por link continuam recusados).
-- Nenhuma porta nova de escrita no host foi criada, e nada no aplicativo passou a escrever configuração de repositório ou de publicação.
-- Nenhum segredo, nome de empresa, de pessoa ou endereço privado entrou no diff: a auditoria rodou sobre a árvore inteira, com os arquivos do site dentro da varredura, e não acusou nada. O endereço publicado do próprio projeto aparece na linha de status dos dois README, e é a decisão que a spec tomou (a linha leva ao site); não é um endereço de outra pessoa nem um segredo.
-- As dependências do gerador são de desenvolvimento e presas por versão exata, e o que o aplicativo carrega não mudou.
-- As páginas que pedem imagem usam espaço reservado, e nenhuma captura real entrou.
+- A mensagem de falha da checagem de línguas nomeia a forma que o site escreve, não um nome novo: uma página escrita à mão sem par é apontada com o caminho `pt-br/` ao lado (`use-cases/pt-br/team.md`), a metade portuguesa com o nome que ela espelha (`use-cases/index.md`), e uma página gerada com o endereço `/reference/…` mais a marca `.pt-br`. Um link que desenha um par que não é o da página reprova; uma página cujo par existe ao lado e não escreve link passa.
+- Um documento escrito só em português, com o inglês sob um segundo título, vira duas páginas, cada uma com o título da sua língua; um documento de uma língua só continua uma página só.
+- Nenhum segredo, nome de empresa, de pessoa ou endereço privado entrou no diff: a auditoria pública rodou sobre a árvore inteira, com os arquivos do site na varredura, e não acusou nada. O endereço publicado do próprio projeto aparece só nas duas linhas de status dos README, e é a decisão que a spec tomou (a linha leva ao site).
+- Nada gerado entrou no commit: `site/generated/`, `site/.vitepress/dist/` e `site/.vitepress/cache/` estão ignorados, e os arquivos gerados não são versionados.
+- A cerca de escrita do agente de documentação não mudou: só a capacidade de rodar comandos na sandbox foi acrescentada; onde a máquina não tem sandbox, o modelo baixa para o que o agente podia antes.
+- O texto do corpo de um documento passa por um escape de tags na geração, então um `<script>` num documento vira texto.
 
-Não conferido nesta revisão: a publicação no host, o site no ar, uma mudança posterior atualizando o site na mesclagem e um agente de documentação construindo o site com um modelo de verdade. Nada disso é verificável sem o host, e a execução já os relata como não verificados.
+Não conferido nesta revisão: a publicação no host, o site no ar, uma mudança posterior atualizando o site na mesclagem e um agente de documentação construindo o site com um modelo de verdade. Nada disso é verificável sem o host.
