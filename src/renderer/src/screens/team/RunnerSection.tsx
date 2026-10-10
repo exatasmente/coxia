@@ -3,6 +3,7 @@ import type { RunnerConfig, SandboxNetwork } from '../../../../shared/config/typ
 import { SANDBOX_LIMIT_RANGES } from '../../../../shared/sandboxPaths';
 import { proceduresOn } from '../../../../shared/procedures';
 import { soleMaintainerOf } from '../../../../shared/release';
+import { unconfinedOf } from '../../../../shared/unconfined';
 import { isFlowCycle } from '../../../../shared/runs/flow';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
@@ -164,6 +165,8 @@ export function RunnerSection({ config, save }: SectionProps) {
           <p className="small muted">{t('ui.runner.soleMaintainerHint')}</p>
           <Toggle checked={draft.procedures} onChange={(procedures) => set({ procedures })} label={t('ui.runner.procedures')} />
           <p className="small muted">{t('ui.runner.proceduresHint')}</p>
+          <Toggle checked={draft.unconfined} onChange={(unconfined) => set({ unconfined })} label={t('ui.runner.unconfined')} />
+          <p className="small muted">{t('ui.runner.unconfinedHint')}</p>
         </>
       )}
 
@@ -201,6 +204,8 @@ function WebOnComputer({ runner }: { runner: RunnerConfig }) {
       <dd className="small">{t(soleMaintainerOf(runner) ? 'ui.runner.soleMaintainerOn' : 'ui.runner.soleMaintainerOff')}</dd>
       <dt className="wz-label">{t('ui.runner.procedures')}</dt>
       <dd className="small">{t(proceduresOn({ runner }) ? 'ui.runner.proceduresOn' : 'ui.runner.proceduresOff')}</dd>
+      <dt className="wz-label">{t('ui.runner.unconfined')}</dt>
+      <dd className="small">{t(unconfinedOf(runner) ? 'ui.runner.unconfinedOn' : 'ui.runner.unconfinedOff')}</dd>
       <dt className="wz-label">{t('ui.runner.evidence')}</dt>
       <dd className="small">{t(runner.evidence === 'cycle' ? 'ui.runner.evidenceCycle' : 'ui.runner.evidenceApp')}</dd>
     </dl>

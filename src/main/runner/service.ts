@@ -1,3 +1,4 @@
+import { unconfinedOf } from '../../shared/unconfined';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -1523,7 +1524,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (!r || !existsSync(r.worktree)) return undefined;
         return readConfinement(r.worktree, def.model.role ?? 'deep', (den) => {
           deps.forum.append(runThreadId(r.id), { kind: 'system', author: { type: 'app' }, code: 'runner.denied', params: { agent: def.id, tool: den.tool, target: den.target || '—', reason: t(`main.runner.denied.${den.code}`) }, stage: r.stage });
-        });
+        }, unconfinedOf(deps.config().runner));
       },
     });
   }
@@ -1593,7 +1594,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         // The agent that answers a question only reads: what it reads stays in the run's worktree, and a refusal is told in the run's thread.
         call.readRoot = readConfinement(run.worktree, holder.model.role ?? 'deep', (den) => {
           deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: 'runner.denied', params: { agent: holder.id, tool: den.tool, target: den.target || '—', reason: t(`main.runner.denied.${den.code}`) }, stage: run.stage });
-        });
+        }, unconfinedOf(config.runner));
         const abort = new AbortController();
         chainAborts.set(id, abort);
         const watch = watchdog(abort, limitsOf(config, deps));

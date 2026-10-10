@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { migrateConfig } from '../src/shared/config/migrations';
 import { proceduresOn } from '../src/shared/procedures';
+import { unconfinedOf } from '../src/shared/unconfined';
 import { neutralConfig, neutralRunner } from '../src/shared/config/defaults';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
@@ -579,9 +580,43 @@ describe('migrateConfig', () => {
       expect(twice.config).toEqual(once.config);
     });
 
-    it('is the newest step: 24 is current and 25 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(24);
-      expect(() => migrateConfig({ schemaVersion: 25 }, { legacyInstall: false })).toThrow(/newer app/);
+  });
+
+  describe('schema 24 to 25: the fence of the runs\' file tools', () => {
+    const v24 = (change: (runner: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 24;
+      delete c.runner.unconfined;
+      change(c.runner);
+      return c;
+    };
+
+    it('keeps the fence of a workspace that existed, bumps the version and yields a valid file', () => {
+      const r = migrateConfig(v24(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(24);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.runner.unconfined).toBe(false);
+      expect(unconfinedOf(r.config.runner)).toBe(false);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('never lifts the fence on its own, whatever the file says, and a second start changes nothing', () => {
+      const once = migrateConfig(v24((runner) => (runner.unconfined = true)), { legacyInstall: false });
+      expect(once.config.runner.unconfined).toBe(false);
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+    });
+
+    it('a new workspace is born with the fence, and a runner stored without the field reads as fenced', () => {
+      expect(neutralRunner().unconfined).toBe(false);
+      expect(unconfinedOf({})).toBe(false);
+      expect(unconfinedOf(null)).toBe(false);
+      expect(unconfinedOf({ unconfined: true })).toBe(true);
+    });
+
+    it('is the newest step: 25 is current and 26 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(25);
+      expect(() => migrateConfig({ schemaVersion: 26 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

@@ -1,3 +1,4 @@
+import { unconfinedOf } from '../../shared/unconfined';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import { runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
@@ -298,7 +299,7 @@ async function turnOf(
       held ? screenRules(promptFor(held.screen, deps.called, deps.config().runner.sandbox, grantsFor(deps.called), false)) : '',
     ].filter(Boolean).join('\n\n'),
     cwd: deps.run.worktree,
-    confine: writes ? { root: deps.run.worktree, hooks: confinedHooks({ root: deps.run.worktree, commands: deps.commands, onDenied: denied }) } : undefined,
+    confine: writes ? { root: deps.run.worktree, anywhere: unconfinedOf(deps.config().runner), hooks: confinedHooks({ root: deps.run.worktree, commands: deps.commands, onDenied: denied, anywhere: unconfinedOf(deps.config().runner) }) } : undefined,
     exec: session ?? undefined,
     label: deps.called.id,
     maxTurns: 12,
