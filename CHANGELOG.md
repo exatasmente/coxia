@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A plugin's document keeps its links and addresses.** Only what is shaped like a credential is masked in it now (a key, a token, an authorization header, a JWT, an address with a password); the query of a link such as a contact link, an email address and a long id go through. The answers to a plugin's requests stay masked as before.
+
 ## [0.9.0-beta.18] - 2026-10-10
 
 ### Fixed

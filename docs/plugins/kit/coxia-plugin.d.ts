@@ -57,7 +57,10 @@ export interface PluginContext {
 }
 
 export interface PluginResult {
-  /** The text of the document the plugin declared, written by the app into the run's cycle folder. Nothing is written when absent or empty. */
+  /**
+   * The text of the document the plugin declared, written by the app into the run's cycle folder (20,000 characters at most). Nothing is written when
+   * absent or empty. Only what is shaped like a credential is masked; the query of a link and an email address are kept.
+   */
   document?: string;
 }
 

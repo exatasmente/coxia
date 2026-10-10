@@ -19,6 +19,10 @@ const QUOTED_ASSIGNMENT = /(["']?\b[\w-]*(?:token|secret|passw(?:or)?d|api[_-]?k
 
 const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
 
+// The query of a link, and a long opaque string: masked in a log, where they are noise or a token; left alone where they are the content (`redactCredentials`).
+const LINK_QUERY = /(https?:\/\/[^\s?#"')]+)\?[^\s"')]+/g;
+const OPAQUE = /\b(?=[A-Za-z0-9_+=-]*\d)(?=[A-Za-z0-9_+=-]*[A-Za-z])[A-Za-z0-9_+=-]{32,}\b/g;
+
 // Ordered: specific shapes first, the generic opaque-string rule last.
 const SECRETS: [RegExp, string][] = [
   [/\b(Authorization|Proxy-Authorization|PRIVATE-TOKEN|Job-Token|X-Api-Key|X-Auth-Token|Set-Cookie|Cookie)\s*[:=]\s*[^\n]+/gi, '$1: [redacted]'],
@@ -29,9 +33,9 @@ const SECRETS: [RegExp, string][] = [
   [/\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]*/g, '[jwt]'],
   [ASSIGNMENT, '$1[redacted]'],
   [/(\/\/)[^\s/@:]+:[^\s/@]+@/g, '$1[redacted]@'],
-  [/(https?:\/\/[^\s?#"')]+)\?[^\s"')]+/g, '$1?[redacted]'],
+  [LINK_QUERY, '$1?[redacted]'],
   [EMAIL, '[email]'],
-  [/\b(?=[A-Za-z0-9_+=-]*\d)(?=[A-Za-z0-9_+=-]*[A-Za-z])[A-Za-z0-9_+=-]{32,}\b/g, '[redacted]'],
+  [OPAQUE, '[redacted]'],
 ];
 
 export function redact(text: string, home = homedir()): string {
@@ -41,14 +45,18 @@ export function redact(text: string, home = homedir()): string {
 interface Scrub {
   /** `quoted`: only an assignment whose value is a quoted literal (code, where `apiKey: string;` is what the code says). */
   assignments: 'all' | 'quoted';
-  /** `doc`: a version pinned with `@` (`pnpm@9.0.0`, `uses: x@v4.1.1`) and an ssh remote (`git@host:org/repo.git`) are not an address. */
-  email: 'all' | 'doc';
+  /** `doc`: a version pinned with `@` (`pnpm@9.0.0`, `uses: x@v4.1.1`) and an ssh remote (`git@host:org/repo.git`) are not an address. `none`: no address is masked. */
+  email: 'all' | 'doc' | 'none';
+  /** Only what is a credential by its shape: the query of a link and a long opaque string (a commit hash, an id) are left alone. */
+  credentialsOnly?: boolean;
 }
 
 function scrub(text: string, home: string, o: Scrub): string {
   let out = text;
   if (home && home !== '/') out = out.split(home).join('~');
   for (const [pattern, replacement] of SECRETS) {
+    if (o.credentialsOnly && (pattern === LINK_QUERY || pattern === OPAQUE)) continue;
+    if (pattern === EMAIL && o.email === 'none') continue;
     if (pattern === ASSIGNMENT && o.assignments === 'quoted') out = out.replace(QUOTED_ASSIGNMENT, replacement);
     else if (pattern === EMAIL && o.email === 'doc') out = out.replace(EMAIL, (m: string, at: number, whole: string) => (/^@v?\d/.test(m.slice(m.indexOf('@'))) || /^:[\w~./-]/.test(whole.slice(at + m.length)) ? m : replacement));
     else out = out.replace(pattern, replacement);
@@ -72,6 +80,15 @@ export function redactDoc(text: string, home = homedir()): string {
  */
 export function redactCode(text: string, home = homedir()): string {
   return scrub(text, home, { assignments: 'quoted', email: 'doc' });
+}
+
+/**
+ * `redact` for text whose links and addresses are the content, such as the document a plugin returns: only what is a credential by its shape (a key with a known prefix, a
+ * token, an authorization header, a JWT, an address with a password, a quoted literal assigned to a secret's name) and the home folder are masked. The query of a link, an
+ * email address and a long id are kept, so a contact link or a list of commits survives.
+ */
+export function redactCredentials(text: string, home = homedir()): string {
+  return scrub(text, home, { assignments: 'quoted', email: 'none', credentialsOnly: true });
 }
 
 export function trimStack(stack: string, home?: string): string {

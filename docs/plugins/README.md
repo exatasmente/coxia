@@ -63,7 +63,13 @@ quando uma execução termina. Um plugin que falha não derruba a execução nem
 - O que o plugin pode alcançar está declarado nele e é dito na lista de plugins (Configurações → Plugins); o que
   não estiver declarado é recusado, com o motivo.
 - O que o plugin imprime vira o documento que ele declarou na pasta do ciclo da execução, escrito pelo
-  aplicativo pelo mesmo caminho dos documentos de uma etapa.
+  aplicativo pelo mesmo caminho dos documentos de uma etapa (no máximo 20.000 caracteres). Antes, o aplicativo
+  mascara só o que tem forma de credencial: chave com prefixo conhecido, token `Bearer`/`Basic`, cabeçalho de
+  autorização, JWT, endereço com senha (`https://user:pass@…`), literal entre aspas atribuído a um nome de segredo
+  (`password = "…"`), e troca a pasta pessoal por `~`. A consulta de um link (`https://wa.me/…?text=…`), um
+  e-mail e um id longo (um hash de commit) passam como estão. O plugin não guarda segredo: as chamadas dele quem
+  faz é o aplicativo, e a resposta já chega mascarada — nela, sim, a consulta de um link e um e-mail chegam como
+  `[redacted]` e `[email]`.
 - Um plugin nunca escreve por conta própria: a escrita declarada sai pela porta única de Ações, só com a
   permissão, e entra no registro de auditoria. Num espaço de trabalho de teste nada é pedido e nada sai.
 
@@ -188,7 +194,13 @@ plugin that fails brings down neither the run nor the app.
 - What a plugin may reach is declared in it and is said in the plugin list (Settings → Plugins); whatever is not
   declared is refused, with the reason.
 - What the plugin prints becomes the document it declared in the run's cycle folder, written by the app through
-  the same path as the documents of a stage.
+  the same path as the documents of a stage (20,000 characters at most). Before that, the app masks only what is
+  shaped like a credential: a key with a known prefix, a `Bearer`/`Basic` token, an authorization header, a JWT, an
+  address with a password (`https://user:pass@…`), a quoted literal assigned to a secret's name
+  (`password = "…"`), and it replaces the home folder with `~`. The query of a link (`https://wa.me/…?text=…`), an
+  email address and a long id (a commit hash) go through as they are. A plugin holds no secret: its calls are made
+  by the app, and the response arrives already masked — there, the query of a link and an email address do arrive
+  as `[redacted]` and `[email]`.
 - A plugin never writes by itself: its declared write goes out through the single door of Actions, only with the
   permission, and lands in the audit log. In a test workspace nothing is asked and nothing goes out.
 
