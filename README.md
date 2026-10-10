@@ -6,15 +6,15 @@
 
 > **Status: 0.1, first public version.** It is used daily by its author, but parts are verified only against test servers (see [What is verified](#what-is-verified)). Expect rough edges and read the honest notes below.
 
-<!-- TODO(screenshots): take these with demo data (a throwaway repository and fictitious tasks), never real company or personal data. See docs/images/README.md. -->
+<!-- Every shot comes from the app itself, over a workspace of fictional data seeded by scripts/seed-docs-workspace.mjs and written by scripts/captures/ (see docs/images/README.md). -->
 
-| Screenshot (TODO) | What it shows |
+| Screenshot | What it shows |
 |---|---|
-| `docs/images/today.png` | The Today screen: cards of your open tasks with their stage |
-| `docs/images/call.png` | A ceremony in progress, by voice or text, with the agent's sources |
-| `docs/images/actions.png` | The actions queue: the exact command, waiting for your confirmation |
-| `docs/images/wizard.png` | The first-run setup wizard |
-| `docs/images/phone.png` | The phone companion (PWA) |
+| ![The day](docs/images/today.png) | The Today screen: cards of your open tasks with their stage |
+| ![A ceremony](docs/images/call.png) | A ceremony in progress, by voice or text, with the agent's sources |
+| ![The actions queue](docs/images/actions.png) | The actions queue: the exact command, waiting for your confirmation |
+| ![The setup wizard](docs/images/wizard.png) | The first-run setup wizard |
+| ![The paired phone](docs/images/phone.png) | The phone companion (PWA) |
 
 ## Contents
 

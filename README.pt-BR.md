@@ -6,15 +6,15 @@ Português (Brasil) | [English](README.md)
 
 > **Status: 0.1, primeira versão pública.** O autor usa todo dia, mas partes só foram verificadas contra servidores de teste (veja [O que foi verificado](#o-que-foi-verificado)). Espere arestas e leia as notas honestas abaixo.
 
-<!-- TODO(capturas de tela): tirar com dados de demonstração (um repositório descartável e atividades fictícias), nunca com dados reais de empresa ou de pessoas. Veja docs/images/README.md. -->
+<!-- Cada captura sai do próprio aplicativo, sobre um workspace de dados fictícios semeado por scripts/seed-docs-workspace.mjs e escrito por scripts/captures/ (veja docs/images/README.md). -->
 
-| Captura (TODO) | O que mostra |
+| Captura | O que mostra |
 |---|---|
-| `docs/images/today.png` | A tela Hoje: cartões das atividades abertas com a etapa de cada uma |
-| `docs/images/call.png` | Uma cerimônia em andamento, por voz ou texto, com as fontes do agente |
-| `docs/images/actions.png` | A fila de ações: o comando exato, esperando a sua confirmação |
-| `docs/images/wizard.png` | O assistente de configuração da primeira execução |
-| `docs/images/phone.png` | O companheiro no celular (PWA) |
+| ![O dia](docs/images/today.png) | A tela Hoje: cartões das atividades abertas com a etapa de cada uma |
+| ![Uma cerimônia](docs/images/call.png) | Uma cerimônia em andamento, por voz ou texto, com as fontes do agente |
+| ![A fila de ações](docs/images/actions.png) | A fila de ações: o comando exato, esperando a sua confirmação |
+| ![O assistente de configuração](docs/images/wizard.png) | O assistente de configuração da primeira execução |
+| ![O celular pareado](docs/images/phone.png) | O companheiro no celular (PWA) |
 
 ## Sumário
 

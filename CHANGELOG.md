@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The screenshots of the documentation are taken from the app itself, and a release refreshes them.** The README no longer promises pictures: it shows the day, a ceremony, the actions queue, the setup wizard and the paired phone, in both languages, and every one of them is written by a capture script over a workspace of fictional data, so nothing real can appear in an image. A command writes that workspace into a folder you choose (`scripts/seed-docs-workspace.mjs`), and it refuses a folder that already holds a workspace or that is the app's own data folder; the list of screens is a file (`scripts/captures/index.json`) that says where each image is used, and a check in CI refuses a reference with no image, an image nobody references, a capture with no script and a script the list does not name. Inside a release, a stage of the release flow refreshes the images on the branch and leaves them to the pull request, so a screen that changed shows up as a change you review like any other; the version is still cut by the one release step, behind your yes. A stage of a flow can also ask for the virtual display a QA stage gets (`display: true`, off when left out), which is what lets that stage run a capture; an existing flow changes nothing.
+
 ## [0.9.0-beta.14] - 2026-10-09
 
 ### Added

@@ -165,6 +165,7 @@ const stage = object(
     trackerStatus: string('A label the issue gets on the tracker when the run enters the stage.', { maxLength: 200 }),
     poolMode: enumOf('How the pool of the stage\'s agent is used here (work stages): fallback: one model, the pool only when it is busy; switch: each turn goes to the model of its activity; delegate: a fixed main model hands edit, command and screen work to sub-agents. Left out: the workspace\'s llm.poolMode.', POOL_MODES),
     testEnv: boolean('This stage receives the workspace\'s test environment (plain variables and secret references from testEnvironment). Left out: a QA stage of the current editor reads as yes, an already-saved template reads as no.'),
+    display: boolean('This stage gets the same virtual display a QA stage gets (Xvfb, no TCP, never the person\'s screen). Left out: off.'),
   },
   ['id', 'kind'],
 );
