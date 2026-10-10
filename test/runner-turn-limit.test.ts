@@ -187,4 +187,29 @@ describe('a stage that uses its last turn', () => {
     b.runner.command(run.id, b.runner.get(run.id)!.command!.id, 'once');
     await until(() => finished);
   });
+
+  it('asks for a sub-agent of a mention answered in the run\'s thread, with the run and the thread named', async () => {
+    const turnAsks = store();
+    const b = await boot({ turnAsks });
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    b.engine.script('planner', async (c) => {
+      await new Promise((r) => setTimeout(r, 20));
+      const decision = await c.turnLimit!.ask(stageStop({ of: 'sub', role: 'planner:explore', kind: 'explore', task: 'read the logs', used: 12, round: 12 }), c.abort?.signal);
+      return { text: `sub-agent: ${decision}` };
+    });
+    const [m] = b.forum.append(`run-${run.id}`, { kind: 'post', author: { type: 'person' }, text: '@planner look at the logs', mentions: ['planner'] });
+    b.runner.onMessage(m);
+    await until(() => turnAsks.list().length === 1);
+    const call = b.engine.calls.filter((c) => c.agent.id === 'planner' && c.turnLimit).at(-1)!;
+    // the answer's own limit is not asked, only what it starts
+    expect(call.turnLimit?.own).toBe(false);
+    expect(turnAsks.list()[0]).toMatchObject({ of: 'sub', run: run.id, thread: `run-${run.id}`, agent: 'planner', kind: 'explore', task: 'read the logs' });
+    expect(lines(b, run)).toContain('runner.turns.ask.sub');
+    turnAsks.answer(turnAsks.list()[0].id, 'continue', 'window');
+    await b.settle();
+    expect(lines(b, run).slice(-2)).toEqual(['runner.turns.ask.sub', 'runner.turns.continue.sub']);
+    expect(b.thread(run).some((x) => x.text?.includes('sub-agent: continue'))).toBe(true);
+  });
 });

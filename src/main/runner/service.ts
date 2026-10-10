@@ -1516,6 +1516,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       engine: deps.engine,
       sandbox: exec.sandbox,
       env: deps.env,
+      // A sub-agent of the answer asks the person at its limit, in this run's thread; the answer's own limit still ends in a partial answer.
+      turnAsks: deps.turnAsks,
       screens: () => (deps.sessions && deps.asks ? { sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff } : null),
       openSession: async (p, def, cwd, stage, signal, watch, wants) => {
         const r = p.run;

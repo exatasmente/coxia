@@ -81,3 +81,9 @@ Deviations from the plan:
   (150 ms idle, 500 ms cap, a wait of one second); the fake-timer version of acceptance 6 and 7 is `test/turn-limit-ask.test.ts` on the real watchdog.
 - The wait test found that a question asked before the watchdog's `guard` begins cannot pause it; the real engine always reaches its limit after at least one model call, so the
   tests let the responder take a moment first.
+
+## Fix after commit 4: a mention answered in a run's thread asks too
+
+The maintainer wants every limit that can ask to ask. The runner's `answerMention` (`service.ts`) now passes `turnAsks` to `answerMentions`, so a sub-agent of an agent named in a run's
+thread leaves its question, with the run and the thread named, and the lines are in that thread (`answer.ts` already handled `place.run`). This replaces the second deviation of commit 4;
+the answer's own limit still ends in a partial answer (spec Q6), and the chain question and the request between squads still pass none. Pinned in `test/runner-turn-limit.test.ts`.
