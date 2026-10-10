@@ -497,6 +497,17 @@ describe('a sub-agent as a node', () => {
     expect(notes.some((n) => n.includes('delegate'))).toBe(false);
   });
 
+  it('ends the node as failed when the model-switch notice throws before the sub-agent runs, once, and never runs the sub-agent', async () => {
+    seen.length = 0;
+    const { notes, onSubAgent } = caller();
+    const a = await server([many([{ kind: 'explore', prompt: 'p' }]), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server(sub('look'));
+    await run({ primary: member(a, 'a'), activities: { explore: [member(b, 'b')] }, tools: [watching('look')], over: { events: { onSubAgent, onSwitch: () => { throw new Error('listener broke'); } } } });
+    expect(notes.filter((n) => n.startsWith('open'))).toEqual(['open explore#0']);
+    expect(notes.filter((n) => n.includes(' end'))).toEqual(['explore#0 end listener broke']);
+    expect(seen).toEqual([]);
+  });
+
   it('reports the reasoning of each turn once to whoever took the turn: the parent\'s to the parent, a sub-agent\'s to its own handle', async () => {
     const { notes, onSubAgent } = caller();
     const a = await server([many([{ kind: 'explore', description: 'think about it', prompt: 'p' }]), textStep('principal done', { usageTokens: [10, 2], reasoning: 'The principal concludes.' })]);

@@ -417,17 +417,31 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     const handle = events.onSubAgent?.({ role, kind: kind ?? null, name: about.type?.trim() || null, description: about.description ?? '', prompt });
     const mutates = !!kind && MUTATING_KINDS.has(kind);
     const waits = mutates && mutatingOpen > 0;
-    handle?.state(waits ? 'queued' : 'started');
+    let ended = false;
+    const finish = (failure?: string): void => {
+      if (ended) return;
+      ended = true;
+      handle?.end(failure);
+    };
     // A sub-agent of a kind runs on the list of its own activity when the pool has one; without it, and for a plain sub-agent, on the principal's pool.
-    const own = kind ? modelOfKind(kind, p.pool) : null;
-    let model = own?.pool.primary.label ?? pool.member.label;
-    // The thread hears when a sub-agent runs on another model than the main one: once per kind and model in the session.
-    if (own && own.pool.primary.key !== pool.member.key) {
-      const told = `${kind}|${own.pool.primary.key}`;
-      if (!delegatedTo.has(told)) {
-        delegatedTo.add(told);
-        events.onSwitch?.({ from: { label: pool.member.label, provider: pool.member.provider }, to: { label: own.pool.primary.label, provider: own.pool.primary.provider }, reason: 'delegate', until: null, activity: kind as SubKind });
+    let own: ReturnType<typeof modelOfKind> = null;
+    let model = pool.member.label;
+    // Once the node exists, anything that throws before the run ends it: a listener that throws must not leave it "started".
+    try {
+      handle?.state(waits ? 'queued' : 'started');
+      own = kind ? modelOfKind(kind, p.pool) : null;
+      model = own?.pool.primary.label ?? pool.member.label;
+      // The thread hears when a sub-agent runs on another model than the main one: once per kind and model in the session.
+      if (own && own.pool.primary.key !== pool.member.key) {
+        const told = `${kind}|${own.pool.primary.key}`;
+        if (!delegatedTo.has(told)) {
+          delegatedTo.add(told);
+          events.onSwitch?.({ from: { label: pool.member.label, provider: pool.member.provider }, to: { label: own.pool.primary.label, provider: own.pool.primary.provider }, reason: 'delegate', until: null, activity: kind as SubKind });
+        }
       }
+    } catch (e) {
+      finish(e instanceof Error ? e.message : String(e));
+      throw e;
     }
     const sub = async (): Promise<OpenRunResult<string>> =>
       runOpen<string>({
@@ -450,12 +464,6 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         ...(kind ? { kind, incoming: undefined } : {}),
       });
     const inside = (): Promise<OpenRunResult<string>> => (handle ? handle.within(sub) : sub());
-    let ended = false;
-    const finish = (failure?: string): void => {
-      if (ended) return;
-      ended = true;
-      handle?.end(failure);
-    };
     if (mutates) mutatingOpen++;
     try {
       const r = await (mutates
