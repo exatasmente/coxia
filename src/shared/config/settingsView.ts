@@ -25,7 +25,7 @@ export function settingsFromConfig(c: WorkspaceConfig, web: WebSettings): Settin
 // The pool stays with the role; what was known of the old model (images, window, reasoning echo) does not follow a new one.
 function roleWithModel(rm: WorkspaceConfig['llm']['roles'][LlmRole], model: string): WorkspaceConfig['llm']['roles'][LlmRole] {
   if (rm.model === model) return rm;
-  const { images: _i, contextWindow: _c, echoReasoning: _e, ...rest } = rm;
+  const { images: _i, contextWindow: _c, echoReasoning: _e, offer: _o, ...rest } = rm;
   return { ...rest, model };
 }
 

@@ -43,6 +43,7 @@ export function modelPoolOf(m: Partial<AgentModel>): Partial<AgentModel> {
     ...(m.images !== undefined ? { images: m.images } : {}),
     ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
     ...(m.echoReasoning !== undefined ? { echoReasoning: m.echoReasoning } : {}),
+    ...(m.offer ? { offer: { ...m.offer } } : {}),
   };
 }
 

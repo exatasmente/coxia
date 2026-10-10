@@ -10,3 +10,4 @@ export * from './stages';
 export * from './transfer';
 export * from './validate';
 export * from './poolMode';
+export * from './offer';

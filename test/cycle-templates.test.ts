@@ -350,7 +350,7 @@ describe.each([['agent-flow'], ['agent-flow-engineering']])('the template %s', (
   });
 
   it('never brings the fallback models of an agent: they point at providers of one workspace', () => {
-    const pool = { fallbacks: [{ provider: 'anthropic', model: 'haiku' }], activities: { edit: [{ provider: 'gone', model: 'model-a' }] }, images: true, contextWindow: 64_000, echoReasoning: true };
+    const pool = { fallbacks: [{ provider: 'anthropic', model: 'haiku' }], activities: { edit: [{ provider: 'gone', model: 'model-a' }] }, images: true, contextWindow: 64_000, echoReasoning: true, offer: { flex: true, effort: true, deprecated: 1790000000, replacedBy: 'model-b' } };
     const withPool = [{ id: 'scout', name: 'Scout', job: '', model: { role: null, provider: 'anthropic', model: 'sonnet', ...pool }, stages: [], permission: 'read' as const, tracker: 'none' as const, shell: 'none' as const, autonomous: false, turnsTo: null, instructions: '', system: false }];
     const merged = mergeTemplateTeam(neutralConfig().agents.team, withPool, cycleOf(flow));
     expect(merged.find((a) => a.id === 'scout')!.model).toEqual({ role: null, provider: 'anthropic', model: 'sonnet' });
@@ -362,7 +362,7 @@ describe.each([['agent-flow'], ['agent-flow-engineering']])('the template %s', (
     source.agents.team.push(newAgent({ id: 'scout', name: 'Scout', model: { role: null, provider: 'anthropic', model: 'sonnet', ...pool } }));
     const exported = templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' });
     expect(exported.team!.find((a) => a.id === 'scout')!.model).toEqual({ role: null, provider: 'anthropic', model: 'sonnet' });
-    expect(JSON.stringify(applyTemplate(neutralConfig(), exported).agents.team)).not.toMatch(/fallbacks|activities|contextWindow/);
+    expect(JSON.stringify(applyTemplate(neutralConfig(), exported).agents.team)).not.toMatch(/fallbacks|activities|contextWindow|offer|flex/);
   });
 
   it('carries the pool mode of an agent and of a stage, and still never the pool', () => {

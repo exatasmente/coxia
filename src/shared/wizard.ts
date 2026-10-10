@@ -1,5 +1,5 @@
 import type { VcsProbeResult } from './vcs';
-import type { AgentDef, CeremonyId, EngineId, LlmProvider, LlmRole, ProviderCapabilities, ProviderKind, VcsKind, WorkspaceConfig } from './config/types';
+import type { AgentDef, CeremonyId, EngineId, LlmProvider, LlmRole, ProviderCapabilities, ProviderFeatures, ProviderKind, VcsKind, WorkspaceConfig } from './config/types';
 import { LLM_ROLES, defaultEngine } from './config/types';
 import type { SdkLocationView } from './configView';
 import type { CatalogModel } from './modelCatalog';
@@ -97,6 +97,8 @@ export interface OpenPreset {
   /** Where the user creates a key. */
   keyUrl: string | null;
   headers: Record<string, string>;
+  /** What this provider's server takes beyond the protocol; a new provider built from the preset starts with it on, an existing one only by the person's choice. */
+  features?: ProviderFeatures;
 }
 
 export const OPEN_PRESETS: OpenPreset[] = [
@@ -104,11 +106,25 @@ export const OPEN_PRESETS: OpenPreset[] = [
   { id: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', local: false, keyRequired: true, suggestedModels: ['deepseek/deepseek-chat'], keyUrl: 'https://openrouter.ai/settings/keys', headers: { 'X-Title': 'Coxia' } },
   { id: 'groq', baseUrl: 'https://api.groq.com/openai/v1', local: false, keyRequired: true, suggestedModels: ['llama-3.3-70b-versatile'], keyUrl: 'https://console.groq.com/keys', headers: {} },
   { id: 'deepseek', baseUrl: 'https://api.deepseek.com/v1', local: false, keyRequired: true, suggestedModels: ['deepseek-chat'], keyUrl: 'https://platform.deepseek.com/api_keys', headers: {} },
-  { id: 'deepinfra', baseUrl: 'https://api.deepinfra.com/v1/openai', local: false, keyRequired: true, suggestedModels: ['meta-llama/Meta-Llama-3.1-8B-Instruct'], keyUrl: 'https://deepinfra.com/dash/api_keys', headers: {} },
+  { id: 'deepinfra', baseUrl: 'https://api.deepinfra.com/v1/openai', local: false, keyRequired: true, suggestedModels: ['meta-llama/Meta-Llama-3.1-8B-Instruct'], keyUrl: 'https://deepinfra.com/dash/api_keys', headers: {}, features: { serviceTier: true, failFast: true, reasoningEffort: true, catalogUrl: 'https://api.deepinfra.com/models/list' } },
   { id: 'ollama', baseUrl: 'http://localhost:11434/v1', local: true, keyRequired: false, suggestedModels: ['qwen3:8b'], keyUrl: null, headers: {} },
   { id: 'lmstudio', baseUrl: 'http://localhost:1234/v1', local: true, keyRequired: false, suggestedModels: [], keyUrl: null, headers: {} },
   { id: 'custom', baseUrl: '', local: false, keyRequired: false, suggestedModels: [], keyUrl: null, headers: {} },
 ];
+
+/** The features of the preset a provider's address belongs to (same origin), or null: what "use the preset's" offers an existing provider. Nothing applies it on its own. */
+export function presetFeaturesOf(baseUrl: string): ProviderFeatures | null {
+  const origin = (u: string): string | null => {
+    try {
+      return new URL(u).origin;
+    } catch {
+      return null;
+    }
+  };
+  const mine = origin(baseUrl);
+  const preset = mine === null ? undefined : OPEN_PRESETS.find((p) => p.features && origin(p.baseUrl) === mine);
+  return preset?.features ? { ...preset.features } : null;
+}
 
 export const presetById = (id: string): OpenPreset => OPEN_PRESETS.find((p) => p.id === id) ?? OPEN_PRESETS[OPEN_PRESETS.length - 1];
 
@@ -175,6 +191,7 @@ export function buildProvider(draft: ProviderDraft, taken: Iterable<string>, wit
     temperature: null,
     timeoutMs: null,
     legacyCustomEndpoint: false,
+    ...(preset?.features ? { features: { ...preset.features } } : {}),
   };
 }
 

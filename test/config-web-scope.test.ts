@@ -170,6 +170,22 @@ describe('the reserve models of an agent, from a paired browser', () => {
   });
 });
 
+describe('what the provider offers, from a paired browser', () => {
+  it('may not switch on or change a provider\'s features, a role\'s offer, the effort per activity or the flex tier', () => {
+    expect(refused((c) => { c.llm.providers[0].features = { serviceTier: true, failFast: true }; })).toEqual(['llm.providers']);
+    expect(refused((c) => { c.llm.effort = { shell: 'high' }; })).toEqual(['llm.effort']);
+    expect(refused((c) => { c.llm.roles.deep.offer = { flex: true }; })).toEqual(['llm.roles.deep.offer']);
+    expect(refused((c) => { c.runner.flex = false; })).toEqual(['runner.flex']);
+  });
+
+  it('may change the offer of an agent\'s own model, which reaches nothing without the provider\'s features', () => {
+    const stored = edit((c) => { c.llm.providers = [{ id: 'p1' } as never]; c.agents.team.push(newAgent({ id: 'dev', model: { role: null, provider: 'p1', model: 'own' } })); });
+    const next = structuredClone(stored);
+    next.agents.team.find((a) => a.id === 'dev')!.model.offer = { flex: true, effort: true };
+    expect(refusedPaths(stored, next)).toEqual([]);
+  });
+});
+
 describe('the pool mode, from a paired browser', () => {
   it('may change the mode of an agent and of a stage: it reaches no tool the agent did not have', () => {
     expect(refused((c) => { c.agents.team[0].poolMode = 'fallback'; })).toEqual([]);

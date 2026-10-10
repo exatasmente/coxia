@@ -85,7 +85,7 @@ export function agentModelWith(model: AgentModel, next: { role: LlmRole } | { pr
   const lists = poolFieldsOf(model);
   if ('role' in next) return { role: next.role, provider: '', model: '', ...lists };
   const same = model.provider === next.provider && model.model === next.model;
-  const marks = same ? { ...(model.images !== undefined ? { images: model.images } : {}), ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}), ...(model.echoReasoning !== undefined ? { echoReasoning: model.echoReasoning } : {}) } : {};
+  const marks = same ? { ...(model.images !== undefined ? { images: model.images } : {}), ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}), ...(model.echoReasoning !== undefined ? { echoReasoning: model.echoReasoning } : {}), ...(model.offer ? { offer: model.offer } : {}) } : {};
   return { role: null, provider: next.provider, model: next.model, ...marks, ...poolFieldsOf(withoutLead(lists, next)) };
 }
 

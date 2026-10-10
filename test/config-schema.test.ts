@@ -84,7 +84,7 @@ describe('config schema', () => {
     expect([...holds].filter((k) => !declared.has(k) && !k.startsWith('devCycle.promptOverrides.'))).toEqual([]);
     // Fields that only appear when a list has items, or whose default is an empty list: the schema may know more than the defaults hold.
     // The pool of a role and the score overrides are absent from every default (absent = no fallbacks); a test below holds them to the schema.
-    const optionalPool = (k: string) => k.startsWith('llm.scoreOverrides') || /^llm\.roles\.[a-z]+\.(fallbacks|activities|images|contextWindow|echoReasoning)(\.|$)/.test(k);
+    const optionalPool = (k: string) => k.startsWith('llm.scoreOverrides') || /^llm\.roles\.[a-z]+\.(fallbacks|activities|images|contextWindow|echoReasoning|offer)(\.|$)/.test(k) || k.startsWith('llm.effort');
     const optionalOnlyInItems = [...declared].filter((k) => !holds.has(k) && !k.includes('[]') && !optionalPool(k));
     expect(optionalOnlyInItems).toEqual([]);
   });
@@ -226,6 +226,67 @@ describe('config schema', () => {
       expect(props.llm.properties?.poolMode.enum).toEqual(['fallback', 'switch', 'delegate']);
       expect(props.agents.properties?.team.items?.properties?.poolMode.enum).toEqual(['fallback', 'switch', 'delegate']);
       expect(props.devCycle.properties?.stages.items?.properties?.poolMode.enum).toEqual(['fallback', 'switch', 'delegate']);
+    });
+  });
+
+  describe('what the provider offers', () => {
+    const withProvider = (features?: Record<string, unknown>) => {
+      const c = neutralConfig();
+      c.llm.providers.push({ ...newProvider({ id: 'srv', kind: 'openai-compatible', baseUrl: 'https://api.example.com/v1' }), ...(features ? { features } : {}) } as never);
+      return c;
+    };
+    const errors = (x: unknown) => validateConfig(x).errors.map((e) => `${e.path}: ${e.message}`);
+
+    it('is off by default: no features on a provider, no offer on a model, no effort, flex on', () => {
+      const c = neutralConfig();
+      expect(c.llm.effort).toBeUndefined();
+      expect(c.runner.flex).toBe(true);
+      expect(Object.keys(c.llm.roles.deep).sort()).toEqual(['model', 'provider']);
+      expect(newProvider({ id: 'x', kind: 'openai-compatible', baseUrl: 'http://example.com/v1' })).not.toHaveProperty('features');
+      expect(withConfigDefaults({ llm: { providers: [] } } as never).llm.providers).toEqual([]);
+    });
+
+    it('accepts the features of a provider, the offer of a model, an effort per activity and the flex switch', () => {
+      const c = withProvider({ serviceTier: true, failFast: true, reasoningEffort: false, catalogUrl: 'https://api.example.com/models/list' });
+      c.llm.effort = { explore: 'low', shell: 'default', write: 'none', edit: 'high' };
+      c.runner.flex = false;
+      const offer = { flex: true, effort: true, deprecated: 1790000000, replacedBy: 'model-b' };
+      c.llm.roles.deep = { ...c.llm.roles.deep, offer, fallbacks: [{ provider: 'srv', model: 'model-a', offer }] };
+      expect(validateConfig(c).errors).toEqual([]);
+      expect(validateConfig(c).config?.llm.roles.deep.offer).toEqual(offer);
+    });
+
+    it('refuses what is not a boolean, an unknown level, an unknown key and an offer that is not a number', () => {
+      expect(errors(withProvider({ serviceTier: 'yes' }))).toEqual(['llm.providers[1].features.serviceTier: expected boolean, got string']);
+      const c = neutralConfig();
+      expect(validateConfig({ ...c, llm: { ...c.llm, effort: { shell: 'max' } } }).errors.map((e) => e.path)).toEqual(['llm.effort.shell']);
+      expect(validateConfig({ ...c, llm: { ...c.llm, effort: { plan: 'low' } } }).errors.map((e) => e.path)).toEqual(['llm.effort.plan']);
+      expect(validateConfig({ ...c, runner: { ...c.runner, flex: 'on' } }).errors.map((e) => e.path)).toEqual(['runner.flex']);
+      const bad = { ...c, llm: { ...c.llm, roles: { ...c.llm.roles, deep: { ...c.llm.roles.deep, offer: { deprecated: 'soon' } } } } };
+      expect(validateConfig(bad).errors.map((e) => e.path)).toEqual(['llm.roles.deep.offer.deprecated']);
+    });
+
+    it('holds the catalog address to the origin of the provider: the key is never sent elsewhere', () => {
+      expect(errors(withProvider({ catalogUrl: 'https://api.example.com/models/list' }))).toEqual([]);
+      expect(errors(withProvider({ catalogUrl: 'https://other.example.com/models/list' }))).toEqual([expect.stringContaining('llm.providers.srv.features.catalogUrl: must have the same origin')]);
+      expect(errors(withProvider({ catalogUrl: 'http://api.example.com/models/list' }))).toEqual([expect.stringContaining('same origin')]);
+      expect(errors(withProvider({ catalogUrl: 'https://api.example.com:8443/models/list' }))).toEqual([expect.stringContaining('same origin')]);
+      expect(errors(withProvider({ catalogUrl: 'file:///etc/passwd' }))).toEqual([expect.stringContaining('http:// or https://')]);
+      expect(errors(withProvider({ catalogUrl: 'not a url' }))).toEqual([expect.stringContaining('http:// or https://')]);
+    });
+
+    it('warns when features sit on a provider the Claude Agent SDK serves', () => {
+      const c = neutralConfig();
+      c.llm.providers.push({ ...newProvider({ id: 'cl', kind: 'anthropic', baseUrl: 'https://api.anthropic.com' }), features: { serviceTier: true } } as never);
+      expect(validateConfig(c).warnings.map((w) => w.path)).toContain('llm.providers.cl.features');
+    });
+
+    it('describes the new fields', () => {
+      const llm = CONFIG_SCHEMA.properties!.llm.properties!;
+      expect(Object.keys(llm.providers.items!.properties!.features.properties!)).toEqual(['serviceTier', 'failFast', 'reasoningEffort', 'catalogUrl']);
+      expect(llm.effort.properties?.shell.enum).toEqual(['none', 'low', 'medium', 'high', 'default']);
+      expect(Object.keys(llm.roles.properties!.deep.properties!.offer.properties!)).toEqual(['flex', 'effort', 'deprecated', 'replacedBy']);
+      expect(CONFIG_SCHEMA.properties!.runner.properties?.flex.type).toBe('boolean');
     });
   });
 

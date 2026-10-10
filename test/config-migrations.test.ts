@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { migrateConfig } from '../src/shared/config/migrations';
 import { proceduresOn } from '../src/shared/procedures';
-import { neutralConfig, neutralRunner, newProvider } from '../src/shared/config/defaults';
+import { neutralConfig, neutralRunner, newProvider, withConfigDefaults } from '../src/shared/config/defaults';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
 import { MARKER_FILE, V1_BACKUP_FILE, bootstrapConfigs, detectExistingInstall, readConfigFile } from '../src/main/config-bootstrap';
@@ -697,6 +697,66 @@ describe('migrateConfig', () => {
       expect(r.config.devCycle.stages[0].poolMode).toBeUndefined();
       expect(r.config.devCycle.flows?.release[0].poolMode).toBeUndefined();
       expect(r.notes.filter((n) => n.startsWith('dropped')).length).toBe(4);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('switches nothing on for what the provider offers: no features, no offer, no effort, and a file without flex reads it as on', () => {
+      const c = v24();
+      delete c.runner.flex;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.notes.join(' ')).toContain('what a provider offers');
+      expect(r.config.llm.providers.every((p) => p.features === undefined)).toBe(true);
+      expect(r.config.llm.effort).toBeUndefined();
+      expect(LLM_ROLES.every((role) => r.config.llm.roles[role].offer === undefined)).toBe(true);
+      expect(withConfigDefaults(r.config).runner.flex).toBe(true);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps what a file already carries of it, and a second start changes nothing', () => {
+      const c = v24();
+      c.llm.providers[c.llm.providers.length - 1].features = { serviceTier: true, catalogUrl: 'http://example.com/models/list' };
+      c.llm.effort = { shell: 'low', write: 'default' };
+      c.llm.roles.deep.offer = { flex: true, effort: true, deprecated: 1790000000, replacedBy: 'model-b' };
+      c.runner.flex = false;
+      const once = migrateConfig(c, { legacyInstall: false });
+      expect(once.config.llm.providers.at(-1)?.features).toEqual({ serviceTier: true, catalogUrl: 'http://example.com/models/list' });
+      expect(once.config.llm.effort).toEqual({ shell: 'low', write: 'default' });
+      expect(once.config.llm.roles.deep.offer).toEqual({ flex: true, effort: true, deprecated: 1790000000, replacedBy: 'model-b' });
+      expect(once.config.runner.flex).toBe(false);
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+    });
+
+    it('a bad field of it is dropped alone: the provider, the role and the workspace keep the rest', () => {
+      const c = v24();
+      const last = c.llm.providers.length - 1;
+      c.llm.providers[last].features = { serviceTier: 'yes', failFast: true };
+      c.llm.effort = { shell: 'max', edit: 'high' };
+      c.llm.roles.deep.offer = { flex: 'yes' };
+      c.llm.roles.turn.offer = { flex: true };
+      c.agents.team[c.agents.team.length - 1].model.offer = { effort: 3 };
+      c.runner.flex = 'on';
+      c.schemaVersion = 25;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.llm.providers[last]).toMatchObject({ id: 'spare', baseUrl: 'http://example.com/v1', features: { failFast: true } });
+      expect(r.config.llm.providers[last].features?.serviceTier).toBeUndefined();
+      expect(r.config.llm.effort).toEqual({ edit: 'high' });
+      expect(r.config.llm.roles.deep.offer).toBeUndefined();
+      expect(r.config.llm.roles.deep.model).toBe(c.llm.roles.deep.model);
+      expect(r.config.llm.roles.turn.offer).toEqual({ flex: true });
+      expect(r.config.agents.team.find((a) => a.id === 'writer')?.model).toEqual({ role: null, provider: 'spare', model: 'model-a' });
+      expect(r.config.runner.flex).toBe(true);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('a catalog address of another origin is dropped, not the provider', () => {
+      const c = v24();
+      const last = c.llm.providers.length - 1;
+      c.llm.providers[last].features = { serviceTier: true, catalogUrl: 'https://elsewhere.example.net/models/list' };
+      c.schemaVersion = 25;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.llm.providers[last].features).toEqual({ serviceTier: true });
+      expect(r.config.llm.providers[last].baseUrl).toBe('http://example.com/v1');
       expect(validateConfig(r.config).ok).toBe(true);
     });
 

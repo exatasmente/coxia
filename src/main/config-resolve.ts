@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { claudeProjectFolder, expandHome } from '../shared/config/paths';
 import { ACTIVITIES } from '../shared/config/types';
-import type { Activity, AgentModel, CeremonyId, ClaudeCliConfig, DevCycleConfig, EngineId, IssueProjectConfig, LlmProvider, LlmRole, ModelPool, ModelRef, ProviderCapabilities, ProviderKind, SpecLayout, StageDef, StructuredMode, TerminalConfig, VcsKind, WorkspaceConfig } from '../shared/config/types';
+import type { Activity, AgentModel, CeremonyId, ClaudeCliConfig, DevCycleConfig, EngineId, IssueProjectConfig, LlmProvider, LlmRole, ModelOffer, ModelPool, ModelRef, ProviderCapabilities, ProviderFeatures, ProviderKind, SpecLayout, StageDef, StructuredMode, TerminalConfig, VcsKind, WorkspaceConfig } from '../shared/config/types';
 import { configuredCli } from '../shared/cycles/terms';
 import { t } from '../shared/i18n';
 
@@ -73,6 +73,9 @@ export interface ResolvedRole {
   images?: boolean;
   contextWindow?: number;
   echoReasoning?: boolean;
+  /** What the provider takes beyond the protocol, and what its catalog said of this model (both absent: nothing extra is sent). */
+  features?: ProviderFeatures;
+  offer?: ModelOffer;
   /** The other models this call may move to; absent when the role has none (nothing changes). Each entry is resolved like the role itself. */
   pool?: ResolvedPool;
 }
@@ -158,6 +161,8 @@ export function resolveConfig(c: WorkspaceConfig, ctx: ResolveContext): Resolved
       ...(facts.images !== undefined ? { images: facts.images } : {}),
       ...(facts.contextWindow !== undefined ? { contextWindow: facts.contextWindow } : {}),
       ...(facts.echoReasoning !== undefined ? { echoReasoning: facts.echoReasoning } : {}),
+      ...(p.features ? { features: p.features } : {}),
+      ...(facts.offer ? { offer: facts.offer } : {}),
       ...poolOf(role, modelRole, pool),
     };
   };

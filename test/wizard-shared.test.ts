@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { neutralConfig } from '../src/shared/config/defaults';
 import { CONFIG_SCHEMA_VERSION, type LlmProvider } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
-import { type ProviderDraft, OPEN_PRESETS, SKIPPABLE_STEPS, WIZARD_STEPS, buildProvider, capabilityWarnings, emptyProgress, needsSdk, parseProgress, parseRemote, recommendModel, recommendRoles, uniqueId, visibleSteps } from '../src/shared/wizard';
+import { type ProviderDraft, OPEN_PRESETS, SKIPPABLE_STEPS, WIZARD_STEPS, buildProvider, capabilityWarnings, emptyProgress, needsSdk, parseProgress, parseRemote, presetFeaturesOf, recommendModel, recommendRoles, uniqueId, visibleSteps } from '../src/shared/wizard';
 
 describe('wizard steps', () => {
   it('opens on language and name and asks for the model provider right after it', () => {
@@ -74,9 +74,37 @@ describe('providers', () => {
     const deepinfra = OPEN_PRESETS.find((p) => p.id === 'deepinfra');
     expect(deepinfra).toMatchObject({ baseUrl: 'https://api.deepinfra.com/v1/openai', local: false, keyRequired: true, keyUrl: 'https://deepinfra.com/dash/api_keys', headers: {} });
     expect(deepinfra?.suggestedModels.length).toBeGreaterThan(0);
-    expect(Object.keys(deepinfra ?? {})).toEqual(Object.keys(OPEN_PRESETS[0]));
+    expect(Object.keys(deepinfra ?? {}).filter((k) => k !== 'features')).toEqual(Object.keys(OPEN_PRESETS[0]));
     expect(OPEN_PRESETS.map((p) => p.id)).toEqual(['openai', 'openrouter', 'groq', 'deepseek', 'deepinfra', 'ollama', 'lmstudio', 'custom']);
     expect(new Set(OPEN_PRESETS.map((p) => p.id)).size).toBe(OPEN_PRESETS.length);
+  });
+});
+
+describe('the features of a preset', () => {
+  const draft = (preset: ProviderDraft['preset']): ProviderDraft => ({ kind: 'openai-compatible', preset, baseUrl: OPEN_PRESETS.find((p) => p.id === preset)!.baseUrl, options: {}, model: 'model-a' });
+
+  it('only the preset of the provider that has them carries them, on, and the address of its richer listing is of its own origin', () => {
+    expect(OPEN_PRESETS.filter((p) => p.features).map((p) => p.id)).toEqual(['deepinfra']);
+    const f = OPEN_PRESETS.find((p) => p.id === 'deepinfra')!.features!;
+    expect(f).toMatchObject({ serviceTier: true, failFast: true, reasoningEffort: true });
+    expect(new URL(f.catalogUrl!).origin).toBe(new URL(OPEN_PRESETS.find((p) => p.id === 'deepinfra')!.baseUrl).origin);
+  });
+
+  it('a new provider built from that preset starts with them, a copy; the others have none', () => {
+    const a = buildProvider(draft('deepinfra'), [], true);
+    expect(a.features).toEqual(OPEN_PRESETS.find((p) => p.id === 'deepinfra')!.features);
+    a.features!.serviceTier = false;
+    expect(OPEN_PRESETS.find((p) => p.id === 'deepinfra')!.features!.serviceTier).toBe(true);
+    for (const id of ['openai', 'openrouter', 'groq', 'deepseek', 'ollama', 'lmstudio'] as const) expect(buildProvider(draft(id), [], false)).not.toHaveProperty('features');
+    expect(buildProvider({ kind: 'openai-compatible', preset: 'custom', baseUrl: 'http://example.com/v1', options: {}, model: 'm' }, [], false)).not.toHaveProperty('features');
+  });
+
+  it('offers an existing provider the preset\'s features by its address (same origin), and nothing otherwise', () => {
+    expect(presetFeaturesOf('https://api.deepinfra.com/v1/openai')).toMatchObject({ serviceTier: true });
+    expect(presetFeaturesOf('https://api.deepinfra.com/v1/openai/')).not.toBeNull();
+    expect(presetFeaturesOf('https://api.example.com/v1')).toBeNull();
+    expect(presetFeaturesOf('http://localhost:11434/v1')).toBeNull();
+    expect(presetFeaturesOf('not a url')).toBeNull();
   });
 });
 

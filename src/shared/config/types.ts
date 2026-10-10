@@ -49,6 +49,18 @@ export interface ProviderCapabilities {
   images?: boolean;
 }
 
+/** The extra parameters a server takes. Each is sent only where it is on, and only for a model the catalog or the person says takes it (`ModelOffer`). */
+export interface ProviderFeatures {
+  /** `service_tier: "flex"` on the calls nobody waits for. */
+  serviceTier?: boolean;
+  /** `fail_fast: true` on every model of a pool but the last: a busy model refuses at once. */
+  failFast?: boolean;
+  /** `reasoning_effort` per activity. */
+  reasoningEffort?: boolean;
+  /** The server's richer model listing, read only by the connection test. It must have the origin of the provider's address: the key never goes anywhere else. */
+  catalogUrl?: string;
+}
+
 export interface LlmProvider {
   /** Stable id, referenced by llm.roles. Lowercase letters, digits, "-" and "_". */
   id: string;
@@ -68,6 +80,11 @@ export interface LlmProvider {
   envFile: string | null;
   /** Kind-specific, non-secret settings. bedrock: region, profile. vertex: project, region. foundry: resource. */
   options: Record<string, string>;
+  /**
+   * What the server takes beyond the protocol, switched on by the person (the preset of a provider that has them offers it). Absent: none of it, and nothing in
+   * the request changes. The connection test never writes it.
+   */
+  features?: ProviderFeatures;
   /** Open engine: result of the connection test. null: untested (the engine tries tools and structured output and learns what the server rejects). */
   capabilities: ProviderCapabilities | null;
   /** Open engine: how the JSON answer is obtained. auto: response_format when the probe confirmed it, else a final_answer tool, else prompt + repair. */
@@ -95,6 +112,12 @@ export type Activity = (typeof ACTIVITIES)[number];
 export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high'] as const;
 export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
+/** What the person sets per activity: a level, or "default" (send nothing, the model decides). */
+export const EFFORT_SETTINGS = [...REASONING_EFFORTS, 'default'] as const;
+export type EffortSetting = (typeof EFFORT_SETTINGS)[number];
+/** The effort proposed per activity when the workspace says nothing; `write` and `screen` send nothing. */
+export const DEFAULT_EFFORT: Partial<Record<Activity, ReasoningEffort>> = { explore: 'low', shell: 'low', edit: 'medium' };
+
 /** The activities that have a quality floor (the others are ordered by price alone). */
 export const SCORED_ACTIVITIES = ['shell', 'edit', 'screen'] as const;
 export type ScoredActivity = (typeof SCORED_ACTIVITIES)[number];
@@ -113,6 +136,20 @@ export interface ModelRef {
   contextWindow?: number;
   /** Send this model's own reasoning back to it from the first call (some reasoning models need it). Absent: learned at run time. */
   echoReasoning?: boolean;
+  /** What the provider's catalog said of this model when the connection was tested. Absent: nothing known, and nothing extra is sent. */
+  offer?: ModelOffer;
+}
+
+/** What the catalog (or the person) knows of one model beyond the protocol; the connection test writes it into the draft. */
+export interface ModelOffer {
+  /** The model is served in the flex tier. */
+  flex?: boolean;
+  /** The model takes `reasoning_effort`. */
+  effort?: boolean;
+  /** When the provider retires the model (seconds since 1970). */
+  deprecated?: number;
+  /** The model the provider says replaces it. */
+  replacedBy?: string;
 }
 
 /** The models a call may move to when the first one is busy. Absent: no fallbacks, nothing changes. */
@@ -146,6 +183,8 @@ export interface LlmConfig {
   providers: LlmProvider[];
   roles: Record<LlmRole, RoleModel>;
   scoreOverrides?: ScoreOverrides;
+  /** Reasoning effort per activity. A missing activity uses `DEFAULT_EFFORT`; "default" sends nothing. Only for a model that takes it. */
+  effort?: Partial<Record<Activity, EffortSetting>>;
   /** The workspace default for how a pool is used. Absent: `delegate`. */
   poolMode?: PoolMode;
 }
@@ -569,7 +608,7 @@ export const AGENT_SHELLS = ['none', 'allowlist', 'sandbox', 'host'] as const;
 export type AgentShell = (typeof AGENT_SHELLS)[number];
 
 /** `fallbacks` and `activities` are ignored while `role` is set (the role's pool is used); the facts of ModelRef describe the agent's own model. */
-export interface AgentModel extends ModelPool, Pick<ModelRef, 'images' | 'contextWindow' | 'echoReasoning'> {
+export interface AgentModel extends ModelPool, Pick<ModelRef, 'images' | 'contextWindow' | 'echoReasoning' | 'offer'> {
   /** Borrow the provider and model of an `llm.roles` entry. null: use `provider` and `model` below. */
   role: LlmRole | null;
   /** An LlmProvider id; empty while `role` is set. */
@@ -917,6 +956,11 @@ export interface RunnerConfig {
    * lists, edits and deletes. A workspace that existed before it was added has it off (the migration), a new one has it on. Optional: absent reads as off (`proceduresOn`).
    */
   procedures?: boolean;
+  /**
+   * Calls nobody waits for (a stage, a question between agents, the closing lap of procedures) ask for the cheaper flex tier where the provider has it and the model is
+   * marked for it. Ceremonies and mentions never do. Optional: absent reads as on. Only the computer changes it.
+   */
+  flex?: boolean;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
   /** The title of the pull request a run opens; `{title}` (the agent's title, or the issue's) and `{iid}` are replaced. */

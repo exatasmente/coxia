@@ -74,7 +74,7 @@ export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], br
 
 /** A model without its pool: fallbacks point at providers of one workspace, so a template neither carries them nor brings them in. */
 function withoutPool(model: AgentModel): AgentModel {
-  const { fallbacks: _f, activities: _a, images: _i, contextWindow: _c, echoReasoning: _e, ...rest } = model;
+  const { fallbacks: _f, activities: _a, images: _i, contextWindow: _c, echoReasoning: _e, offer: _o, ...rest } = model;
   return rest;
 }
 

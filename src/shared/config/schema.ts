@@ -1,7 +1,7 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
-import { ACTIVITIES, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
+import { ACTIVITIES, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
 // The JSON Schema of WorkspaceConfig (schema 25). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
@@ -40,6 +40,12 @@ const modelRef = object(
     images: boolean('The model takes an image in a message. Absent: the provider\'s capability decides.'),
     contextWindow: integer('Context window in tokens, when known.', 1000, 10_000_000),
     echoReasoning: boolean('Send the model\'s own reasoning back to it from the first call (some reasoning models need it). Absent: learned at run time.'),
+    offer: object('What the provider\'s catalog said of the model when the connection was tested. Absent: nothing known, nothing extra is sent.', {
+      flex: boolean('The model is served in the flex tier.'),
+      effort: boolean('The model takes reasoning_effort.'),
+      deprecated: integer('When the provider retires the model (seconds since 1970).', 0, 10_000_000_000),
+      replacedBy: string('The model the provider says replaces it.', { maxLength: 200 }),
+    }),
   },
   ['provider', 'model'],
 );
@@ -90,6 +96,12 @@ const provider = object(
     temperature: { type: ['number', 'null'], description: "Sampling temperature (open engine); null: the server's default.", minimum: 0, maximum: 2 },
     timeoutMs: { type: ['integer', 'null'], description: "Limit of one whole call in ms (open engine); null: the engine's default.", minimum: 1000 },
     legacyCustomEndpoint: boolean('The Claude Agent SDK is pointed at a non-Anthropic endpoint; kept only for installs that predate the configuration.'),
+    features: object('What the server takes beyond the protocol (open engine). Absent: none of it, and nothing in the request changes.', {
+      serviceTier: boolean('Send service_tier "flex" on the calls nobody waits for, for the models marked for it.'),
+      failFast: boolean('Send fail_fast on every model of a pool but the last, so a busy model refuses at once.'),
+      reasoningEffort: boolean('Send reasoning_effort per activity, for the models marked for it.'),
+      catalogUrl: string('The richer model listing the connection test reads (flex, retirement). It must have the origin of baseUrl.', { maxLength: 500 }),
+    }),
   },
   ['id', 'kind'],
 );
@@ -240,6 +252,7 @@ const agentModel = object('Which model an agent uses.', {
   images: boolean('The agent\'s own model takes an image in a message.'),
   contextWindow: integer('Context window of the agent\'s own model, in tokens, when known.', 1000, 10_000_000),
   echoReasoning: boolean('Send the agent\'s own model its reasoning back from the first call.'),
+  offer: modelRef.properties!.offer,
 });
 
 /** The tools pre-approved for agents, at the workspace and (overriding it field by field) per agent. */
@@ -434,8 +447,9 @@ export const CONFIG_SCHEMA: JsonSchema = {
       }),
       llm: object('Model providers and which one serves each role.', {
         providers: list('Providers.', provider, { maxItems: 20 }),
-        roles: byRole('Provider and model per role.', object('Provider and model.', { provider: string('A provider id.', { pattern: ID }), model: string('Model id as the provider spells it.', { minLength: 1, maxLength: 200, pattern: '^\\S+$' }), images: modelRef.properties!.images, contextWindow: modelRef.properties!.contextWindow, echoReasoning: modelRef.properties!.echoReasoning, ...poolFields }, ['provider', 'model'])),
+        roles: byRole('Provider and model per role.', object('Provider and model.', { provider: string('A provider id.', { pattern: ID }), model: string('Model id as the provider spells it.', { minLength: 1, maxLength: 200, pattern: '^\\S+$' }), images: modelRef.properties!.images, contextWindow: modelRef.properties!.contextWindow, echoReasoning: modelRef.properties!.echoReasoning, offer: modelRef.properties!.offer, ...poolFields }, ['provider', 'model'])),
         poolMode: enumOf('The default for how a pool is used. fallback: one model, the pool only when it is busy. switch: each turn goes to the model of its activity\'s list. delegate: the main model stays fixed and hands edit, command and screen work to sub-agents on the lists of their activity. It acts only where a role or an agent has a list of its own for an activity. Absent: delegate.', POOL_MODES),
+        effort: object('Reasoning effort per activity, for the models that take it. An activity left out uses the proposal (explore and shell low, edit medium, write and screen the model\'s own); "default" sends nothing.', Object.fromEntries(ACTIVITIES.map((a) => [a, enumOf(`The effort for "${a}".`, EFFORT_SETTINGS)]))),
         scoreOverrides: object('Overrides of the quality scores the app ships for the suggested pools.', {
           floors: scoresOf('The score a model must reach to go first, per activity.'),
           models: { type: 'object', description: 'The scores of one model, by its normalized id (lowercase, without the organization prefix).', additionalProperties: scoresOf('Scores of the model.') },
@@ -564,6 +578,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         identity: object('Who the app\'s commits are made as (a run\'s, and the merge that resolves a conflict); both empty: the one in the repository\'s own .git/config, never the global one, and with neither the app does not commit.', { name: string('Author and committer name.', { maxLength: 200 }), email: string('Author and committer email.', { maxLength: 200 }) }),
         evidence: enumOf('Where a stage\'s evidence is kept: app (only with the run, in the workspace\'s data, never in a commit; the default) or cycle (also copied into the cycle folder and committed with the stage). Only the computer changes it. Optional: absent reads as app.', EVIDENCE_PLACEMENTS),
         procedures: boolean('Agents keep what they learned as procedures in the workspace and read them the next time. Only the computer changes it. Off: no tool and no prompt section; the Procedures view still lists, edits and deletes. Optional: absent reads as off.'),
+        flex: boolean('Calls nobody waits for (stages, questions between agents) ask for the cheaper flex tier where the provider has it and the model is marked for it. Ceremonies and mentions never do. Only the computer changes it. Optional: absent reads as on.'),
         commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         prTitle: string('The title of the pull request a run opens; {title} (the agent\'s title, or the issue\'s) and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         linkDependencies: boolean('A run\'s worktree gets a link to the dependency folders (node_modules, .venv) of the repository\'s clone, so the commands the app runs there find their tools. Optional: absent reads as true.'),

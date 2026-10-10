@@ -340,6 +340,16 @@ describe('the pool of an agent with a model of its own, in the editor', () => {
     expect(agentModelWith(own, { provider: 'other', model: 'model-a' })).not.toHaveProperty('images');
   });
 
+  it('keeps what the catalog said of the model only for the same model, and a pool entry keeps its own', () => {
+    const offered = { ...own, offer: { flex: true, effort: true }, fallbacks: [{ ...ref('model-b'), offer: { deprecated: 1790000000, replacedBy: 'model-c' } }] };
+    expect(agentModelWith(offered, { provider: 'local', model: 'model-a' })).toEqual(offered);
+    const renamed = agentModelWith(offered, { provider: 'local', model: 'model-z' });
+    expect(renamed).not.toHaveProperty('offer');
+    expect(renamed.fallbacks).toEqual(offered.fallbacks);
+    expect(newAgent({ id: 'x', model: offered }).model.offer).toEqual({ flex: true, effort: true });
+    expect(newAgent({ id: 'x', model: { role: null, provider: 'local', model: 'model-a' } }).model).not.toHaveProperty('offer');
+  });
+
   it('takes a reserve out of the list when it becomes the agent\'s own model', () => {
     expect(agentModelWith(own, { provider: 'local', model: 'model-b' }).fallbacks).toEqual([ref('model-c')]);
     expect(agentModelWith({ ...own, fallbacks: [ref('model-b')] }, { provider: 'local', model: 'model-b' })).not.toHaveProperty('fallbacks');

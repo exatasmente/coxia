@@ -117,7 +117,22 @@ describe('getters for a fresh install: neutral, nothing from a company or a mach
 
     it('a role without a pool resolves as before: no pool field at all', () => {
       const r = resolveConfig(neutralConfig(), ctx).role('deep');
-      expect('pool' in r || 'images' in r || 'contextWindow' in r || 'echoReasoning' in r).toBe(false);
+      expect('pool' in r || 'images' in r || 'contextWindow' in r || 'echoReasoning' in r || 'features' in r || 'offer' in r).toBe(false);
+    });
+
+    it('carries the features of the provider and the offer of the entry to the model that answers', () => {
+      const c = pooled();
+      const p = c.llm.providers.find((x) => x.id === 'local')!;
+      p.features = { serviceTier: true, reasoningEffort: true };
+      c.llm.roles.deep.offer = { flex: true };
+      c.llm.roles.deep.fallbacks = [{ provider: 'local', model: 'model-b', offer: { effort: true, deprecated: 1790000000, replacedBy: 'model-c' } }];
+      const r = resolveConfig(c, ctx).role('deep');
+      expect(r).toMatchObject({ features: { serviceTier: true, reasoningEffort: true }, offer: { flex: true } });
+      expect(r.pool?.fallbacks[0]).toMatchObject({ features: { serviceTier: true, reasoningEffort: true }, offer: { effort: true, deprecated: 1790000000, replacedBy: 'model-c' } });
+      // a model of a provider without features is resolved with none
+      expect(resolveConfig(c, ctx).role('turn')).not.toHaveProperty('features');
+      const own = resolveConfig(c, ctx).agentModel({ role: null, provider: 'local', model: 'model-b', offer: { effort: true } });
+      expect(own).toMatchObject({ features: { serviceTier: true }, offer: { effort: true } });
     });
 
     it('resolves every entry like the role itself, with the facts of the entry', () => {
@@ -153,6 +168,10 @@ describe('getters for a fresh install: neutral, nothing from a company or a mach
       expect(same.llm.roles.deep).toEqual(c.llm.roles.deep);
       const changed = applySettings(c, { ...s, models: { ...s.models, deep: 'model-c' } });
       expect(changed.llm.roles.deep).toEqual({ provider: 'local', model: 'model-c', fallbacks: c.llm.roles.deep.fallbacks, activities: c.llm.roles.deep.activities });
+      // what the catalog said of the old model does not follow a new one
+      c.llm.roles.deep.offer = { flex: true };
+      expect(applySettings(c, { ...s, models: { ...s.models, deep: 'model-c' } }).llm.roles.deep.offer).toBeUndefined();
+      expect(applySettings(c, s).llm.roles.deep.offer).toEqual({ flex: true });
     });
   });
 

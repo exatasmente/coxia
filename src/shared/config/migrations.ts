@@ -380,7 +380,7 @@ function v23ToV24(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
 // the only one its call uses: nothing is raised or switched on. The pool mode (`llm.poolMode`, `agents.team[].poolMode`, a stage's `poolMode`) is part of the same unreleased step: it
 // is no permission and a file without it reads as the default. The bump is what keeps an app that does not know the fields from reading a file that carries them as an llm block to repair.
 function v24ToV25(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
-  notes.push('model pools were added (fallbacks and activities per role and per agent; absent = no fallbacks) with the way they are used (poolMode; absent = delegate, which acts only on an activity list)');
+  notes.push('model pools were added (fallbacks and activities per role and per agent; absent = no fallbacks) with the way they are used (poolMode; absent = delegate, which acts only on an activity list) and what a provider offers (features, offer, effort, flex; absent = nothing is sent)');
   return { ...old, schemaVersion: 25 };
 }
 
@@ -400,12 +400,16 @@ function set(root: Doc, path: (string | number)[], value: unknown): void {
 
 // A stored value that fails validation is replaced by the default it would have had, so one bad field never locks a workspace out.
 // The optional model-pool fields are absent in every default, so a bad one is dropped (one entry of a list, or the field), never the role or the agent model around it.
-const POOL_KEYS = new Set(['fallbacks', 'activities', 'scoreOverrides', 'images', 'contextWindow', 'echoReasoning']);
+const POOL_KEYS = new Set(['fallbacks', 'activities', 'scoreOverrides', 'images', 'contextWindow', 'echoReasoning', 'offer']);
 
 // Index of the pool field a path points into, or -1: `llm.roles.<role>.<key>`, `llm.scoreOverrides` or `agents.team[i].model.<key>`; the pool mode of the workspace, of an
 // agent and of a stage is dropped alone too (absent = inherit).
 function poolKeyAt(path: (string | number)[]): number {
   if (path[0] === 'llm' && path[1] === 'poolMode') return 1;
+  // What the provider offers: a bad field of a provider's `features` or of `llm.effort` is dropped alone, `runner.flex` too (absent = the default).
+  if (path[0] === 'llm' && path[1] === 'providers' && path[3] === 'features') return path.length > 4 ? 4 : 3;
+  if (path[0] === 'llm' && path[1] === 'effort') return path.length > 2 ? 2 : 1;
+  if (path[0] === 'runner' && path[1] === 'flex') return 1;
   if (path[0] === 'agents' && path[1] === 'team' && path[3] === 'poolMode') return 3;
   if (path[0] === 'devCycle' && path[1] === 'stages' && path[3] === 'poolMode') return 3;
   if (path[0] === 'devCycle' && path[1] === 'flows' && path[4] === 'poolMode') return 4;
@@ -416,7 +420,16 @@ function poolKeyAt(path: (string | number)[]): number {
   return -1;
 }
 
+// The rules of `validate` name a provider by its id (`llm.providers.<id>.features...`), the schema by its index: the provider's `features` are dropped alone either way.
+function providerByIndex(out: Doc, path: (string | number)[]): (string | number)[] {
+  if (path[0] !== 'llm' || path[1] !== 'providers' || typeof path[2] !== 'string' || path[3] !== 'features') return path;
+  const list = get(out, ['llm', 'providers']);
+  const i = Array.isArray(list) ? list.findIndex((p) => p !== null && typeof p === 'object' && (p as Record<string, unknown>).id === path[2]) : -1;
+  return i < 0 ? path : [path[0], path[1], i, ...path.slice(3)];
+}
+
 function dropPoolField(out: Doc, path: (string | number)[], drops: { list: unknown[]; entry: unknown }[]): boolean {
+  path = providerByIndex(out, path);
   const at = poolKeyAt(path);
   if (at < 0) return false;
   // Inside a list (`fallbacks[1]`, `activities.edit[0]`): drop that entry only.

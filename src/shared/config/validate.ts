@@ -37,6 +37,16 @@ function duplicates(ids: string[]): string[] {
 const MAX_SCORE_MODELS = 200;
 const ANTHROPIC_HOST = /^https:\/\/api\.anthropic\.com\/?$/;
 
+/** The origin of an http(s) address, or null when it is not one. */
+const originOf = (url: string): string | null => {
+  try {
+    const u = new URL(url);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.origin : null;
+  } catch {
+    return null;
+  }
+};
+
 function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
   const at = (field: string) => `llm.providers.${p.id}.${field}`;
   if (p.engine === 'claude-sdk' && p.kind === 'openai-compatible') errors.push({ path: at('engine'), message: 'the Claude Agent SDK cannot serve an openai-compatible provider; use the open engine' });
@@ -46,6 +56,15 @@ function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIs
     warnings.push({ path: at('baseUrl'), message: 'the Claude Agent SDK is pointed at a non-Anthropic endpoint; only Claude models are supported there' });
   }
   if (p.legacyCustomEndpoint && p.kind !== 'anthropic') errors.push({ path: at('legacyCustomEndpoint'), message: 'only applies to the anthropic kind' });
+  const f = p.features;
+  if (f?.catalogUrl !== undefined) {
+    // The connection test sends the key to this address: it has to be the provider's own origin.
+    const own = originOf(p.baseUrl);
+    const there = originOf(f.catalogUrl);
+    if (there === null) errors.push({ path: at('features.catalogUrl'), message: 'must be an http:// or https:// address' });
+    else if (own === null || there !== own) errors.push({ path: at('features.catalogUrl'), message: 'must have the same origin as the provider\'s baseUrl: the key is never sent anywhere else' });
+  }
+  if (f && p.engine === 'claude-sdk' && (f.serviceTier || f.failFast || f.reasoningEffort)) warnings.push({ path: at('features'), message: 'only the open engine sends these parameters; the Claude Agent SDK ignores them' });
   if (p.kind === 'anthropic' && !p.secretRef) warnings.push({ path: at('secretRef'), message: 'no API key configured for the anthropic provider' });
   if (p.kind === 'bedrock' && !p.options.region) warnings.push({ path: at('options.region'), message: 'no AWS region set' });
   if (p.kind === 'vertex' && !(p.options.project && p.options.region)) warnings.push({ path: at('options'), message: 'vertex needs project and region' });
