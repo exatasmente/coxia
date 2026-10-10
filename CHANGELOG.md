@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.18] - 2026-10-10
+
 ### Fixed
 
 - The Windows package builds again: the activity tree's model and its component had names that differ only by case, and the Windows build loaded the wrong one. A test now refuses two modules of a folder whose names differ only by case or extension.
@@ -509,7 +511,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.17...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.18...HEAD
+[0.9.0-beta.18]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.17...v0.9.0-beta.18
 [0.9.0-beta.17]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.16...v0.9.0-beta.17
 [0.9.0-beta.16]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.15...v0.9.0-beta.16
 [0.9.0-beta.15]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.14...v0.9.0-beta.15
