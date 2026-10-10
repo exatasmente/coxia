@@ -2,6 +2,7 @@ import type { RunnerConfig, RunnerConversations, RunnerEvidence, RunnerSandbox, 
 import { proceduresOn } from '../../../../shared/procedures';
 import { soleMaintainerOf } from '../../../../shared/release';
 import { memoryOn } from '../../../../shared/memory';
+import { reasoningOn } from '../../../../shared/activity';
 import { unconfinedOf } from '../../../../shared/unconfined';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../../../../shared/sandboxPaths';
 
@@ -44,6 +45,8 @@ export interface RunnerDraft {
   unconfined: boolean;
   /** Agents keep notes per conversation and read a short list of them wherever they run (the computer and a paired browser both change it). */
   sharedMemory: boolean;
+  /** The activity shows the reasoning of the model as one closed line per turn (the computer and a paired browser both change it). */
+  showReasoning: boolean;
   /** The person is the repository's only maintainer: their yes on a merge of a release stands for the review (desktop only). */
   soleMaintainer: boolean;
   /** The limits of a conversation between team agents inside a run: carried as stored, with no field of their own on this screen. */
@@ -74,6 +77,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     flex: r.flex !== false,
     unconfined: unconfinedOf(r),
     sharedMemory: memoryOn({ runner: r }),
+    showReasoning: reasoningOn({ runner: r }),
     soleMaintainer: soleMaintainerOf(r),
     conversations: { ...r.conversations },
   };
@@ -100,6 +104,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     flex: d.flex,
     unconfined: d.unconfined,
     sharedMemory: d.sharedMemory,
+    showReasoning: d.showReasoning,
     release: { soleMaintainer: d.soleMaintainer },
     conversations: { ...d.conversations },
   };

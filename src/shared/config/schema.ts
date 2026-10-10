@@ -3,7 +3,7 @@ import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
 import { ACTIVITIES, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 27). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 28). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -582,6 +582,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         flex: boolean('Calls nobody waits for (stages, questions between agents) ask for the cheaper flex tier where the provider has it and the model is marked for it. Ceremonies and mentions never do. Only the computer changes it. Optional: absent reads as on.'),
         unconfined: boolean('The file tools of a run\'s agents read, and write when the agent writes, anywhere on the machine instead of only in the run\'s worktree; .git, hook folders and secret files stay refused, and the shell\'s sandbox is not affected. Only the computer changes it. Optional: absent reads as off.'),
         sharedMemory: boolean('Agents keep notes per conversation and read a short list of the whole app\'s notes, decisions and findings wherever they run. The computer and a paired browser change it. Off: no tool, no prompt section, no folder, no notice and no agent writes; the Memory view still lists, edits and removes what exists. Optional: absent reads as off.'),
+        showReasoning: boolean('The activity of the agents shows the reasoning of the model as one closed Thought line per turn, on every screen and on the paired phone. Off: none is made, stored or sent. The computer and a paired browser change it. Optional: absent reads as on.'),
         commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         prTitle: string('The title of the pull request a run opens; {title} (the agent\'s title, or the issue\'s) and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
         linkDependencies: boolean('A run\'s worktree gets a link to the dependency folders (node_modules, .venv) of the repository\'s clone, so the commands the app runs there find their tools. Optional: absent reads as true.'),

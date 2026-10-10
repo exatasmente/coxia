@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 27): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 28): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 27;
+export const CONFIG_SCHEMA_VERSION = 28;
 
 /** The local read-only state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
@@ -978,6 +978,12 @@ export interface RunnerConfig {
    * it was added has it off (the migration). Optional: absent reads as off (`memoryOn`).
    */
   sharedMemory?: boolean;
+  /**
+   * The activity of the agents shows the reasoning of the model as one closed "Thought" line per turn, on every screen and on the paired phone. Off: none is made,
+   * stored or sent (lines already in memory age out). The computer and a paired browser change it; a workspace that existed before it was added has it on (the
+   * migration writes it). Optional: absent reads as on (`reasoningOn`).
+   */
+  showReasoning?: boolean;
   /** The commit message of the app's commits; `{summary}` and `{iid}` are replaced. The repository's own convention goes here. */
   commitMessage: string;
   /** The title of the pull request a run opens; `{title}` (the agent's title, or the issue's) and `{iid}` are replaced. */

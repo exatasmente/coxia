@@ -41,6 +41,9 @@ export const ACTIVITY_RING = 200;
 export const ACTIVITY_TEXT_MAX = 200;
 export const ACTIVITY_LABEL_MAX = 240;
 
+/** The switch of the reasoning in the activity: absent (a config stored before it) reads as on. */
+export const reasoningOn = (config: { runner?: { showReasoning?: boolean } | null } | null | undefined): boolean => config?.runner?.showReasoning !== false;
+
 const CTX_KEY = '$ctx';
 const JOB_ID = /^[\w#:.@!/ -]{1,160}$/;
 

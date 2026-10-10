@@ -113,6 +113,16 @@ describe('what a browser may change', () => {
     expect(refused((c) => { c.runner.sharedMemory = false; c.runner.unconfined = true; })).toEqual(['runner.unconfined']);
   });
 
+  it('lets a paired browser turn the reasoning on and off, and nothing but the switch comes through with it', () => {
+    expect(refused((c) => { c.runner.showReasoning = false; })).toEqual([]);
+    const off = edit((c) => { c.runner.showReasoning = false; });
+    expect(refusedPaths(off, edit((c) => { c.runner.showReasoning = true; }))).toEqual([]);
+    expect(WEB_EDITABLE).toContain('runner.showReasoning');
+    // a stored config that never had the field gets it written by the draft: the same path, admitted
+    expect(refusedPaths(edit((c) => { delete c.runner.showReasoning; }), edit((c) => { c.runner.showReasoning = false; }))).toEqual([]);
+    expect(refused((c) => { c.runner.showReasoning = false; c.runner.unconfined = true; })).toEqual(['runner.unconfined']);
+  });
+
   it('refuses the external tools, the documents, the projects, the models, the hosts, the voice and everything else', () => {
     expect(refused((c) => { c.externalTools.terminal.command = 'sh'; })).toEqual(['externalTools.terminal.command']);
     expect(refused((c) => { c.docs.specsDir = '/etc'; })).toEqual(['docs.specsDir']);

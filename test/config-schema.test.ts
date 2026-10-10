@@ -60,6 +60,13 @@ describe('config schema', () => {
     expect(validateConfig({ ...neutralConfig(), docs: { ...neutralConfig().docs, roadmapFile: 3 } }).errors.map((e) => e.path)).toEqual(['docs.roadmapFile']);
   });
 
+  it('has the reasoning switch as an optional boolean that is on for a new workspace, and rejects another type by its path', () => {
+    expect(neutralConfig().runner.showReasoning).toBe(true);
+    expect(CONFIG_SCHEMA.properties?.runner?.properties?.showReasoning?.type).toBe('boolean');
+    expect(validateConfig({ ...neutralConfig(), runner: { ...neutralConfig().runner, showReasoning: false } }).config?.runner.showReasoning).toBe(false);
+    expect(validateConfig({ ...neutralConfig(), runner: { ...neutralConfig().runner, showReasoning: 'yes' } }).errors.map((e) => e.path)).toEqual(['runner.showReasoning']);
+  });
+
   it('reads a config stored without the conversation limits as the defaults, and refuses a limit outside its range', () => {
     const { conversations: _gone, ...runner } = neutralConfig().runner;
     const r = validateConfig({ ...neutralConfig(), runner });
