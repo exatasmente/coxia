@@ -15,7 +15,7 @@ import type { Module } from './module';
 import { recordWrite } from './auditoria';
 import { secrets, testEnvLedger } from './secrets';
 import { readRegistry } from './workspaces-core';
-import { refusedPaths } from './configScope';
+import { keepStoredTurns, refusedPaths } from './configScope';
 import { checkConfig, getConfig, reloadConfig, saveConfig, updateConfig } from './workspaceConfig';
 import { t } from '../shared/i18n';
 
@@ -59,14 +59,14 @@ export const configModule: Module = (ctx) => {
     return { ok: r.ok, errors: r.errors, warnings: r.warnings };
   });
   ctx.handle('config:save', (next: WorkspaceConfig) => {
-    saveConfig(next);
+    saveConfig(keepStoredTurns(next, getConfig()));
     return announce();
   });
 
   // The save a paired browser may use (webPolicy.ts leaves config:save desktop-only): validated like any save, and refused when it changes anything outside
   // the team, the squads, the flow, the comment templates and the runner's plain settings (configScope.ts). The diff is against the stored config, not the client's word.
   ctx.handle('config:cycle-save', (next: WorkspaceConfig) => {
-    const config = checkConfig(next);
+    const config = checkConfig(keepStoredTurns(next, getConfig()));
     const refused = refusedPaths(getConfig(), config);
     if (refused.length) throw new Error(t('main.config.webScope', { paths: refused.slice(0, 4).join(', ') }));
     saveConfig(config);

@@ -296,6 +296,38 @@ describe('config:cycle-save, end to end', () => {
     expect(getConfig().runner.commands).toBeNull();
   });
 
+  it('keeps the stored limits of the sub-agents when an older client saves the runner with only read and write', async () => {
+    const { call, getConfig, saveConfig } = await handlers();
+    const set = structuredClone(getConfig());
+    set.runner.turns = { read: 30, write: 80, explore: 25, edit: 40, shell: 15, screen: 33, plain: 9 };
+    saveConfig(set);
+    const old = structuredClone(getConfig()) as unknown as { runner: { turns: Record<string, number>; enabled: boolean } };
+    old.runner.turns = { read: 31, write: 81 };
+    old.runner.enabled = true;
+    call(old);
+    expect(getConfig().runner.enabled).toBe(true);
+    expect(getConfig().runner.turns).toEqual({ read: 31, write: 81, explore: 25, edit: 40, shell: 15, screen: 33, plain: 9 });
+    // a client that sends no turns at all keeps all of them
+    const bare = structuredClone(getConfig()) as unknown as { runner: Record<string, unknown> };
+    delete bare.runner.turns;
+    call(bare);
+    expect(getConfig().runner.turns).toMatchObject({ explore: 25, plain: 9 });
+  });
+
+  it('keeps them for the window\'s save too, and a key the client does send wins', async () => {
+    const { getConfig, saveConfig } = await handlers();
+    const { configModule } = await import('../src/main/configModule');
+    const map = new Map<string, (...a: never[]) => unknown>();
+    configModule({ handle: (ch, fn) => map.set(ch, fn), notify: () => {}, emit: () => {}, job: () => {} });
+    const set = structuredClone(getConfig());
+    set.runner.turns = { ...set.runner.turns, explore: 25, plain: 9 };
+    saveConfig(set);
+    const old = structuredClone(getConfig()) as unknown as { runner: { turns: Record<string, number> } };
+    old.runner.turns = { read: 30, write: 80, plain: 14 };
+    (map.get('config:save') as (...x: unknown[]) => unknown)(old);
+    expect(getConfig().runner.turns).toMatchObject({ explore: 25, plain: 14 });
+  });
+
   it('refuses a stale full config that would put back an old value of something the computer changed', async () => {
     const { call, getConfig, saveConfig } = await handlers();
     const stale = structuredClone(getConfig());
