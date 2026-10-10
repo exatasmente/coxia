@@ -190,7 +190,8 @@ async function buildTools(
   if (p.writeRoot && on('Edit')) tools.push(editTool);
   for (const extra of p.extraTools ?? []) if (on(extra.name)) tools.push(extra);
   if (!denied.has('Bash') && p.allowedTools.some((t) => t === 'Bash' || t.startsWith('Bash('))) tools.push(bashToolFor(bashPrefixesOf(p.allowedTools)));
-  const mcpAllowed = p.allowedTools.filter((t) => t.startsWith('mcp__') && !denied.has(t));
+  // A sub-agent of a kind has no MCP tool (`toolsOfKind` drops them), so its servers are not asked about.
+  const mcpAllowed = p.kind ? [] : p.allowedTools.filter((t) => t.startsWith('mcp__') && !denied.has(t));
   if (mcpAllowed.length) {
     const servers: Record<string, McpServerConfig> = loadMcpConfigs(p.docs?.mcpConfigs ?? []);
     tools.push(...(await mcpTools(servers, mcpAllowed, (s, e) => console.error('[open-engine] mcp', s, e.message))));

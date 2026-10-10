@@ -1,7 +1,7 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatClient } from '../src/main/engine/open/client';
 import { type OpenRunParams, runOpen } from '../src/main/engine/open/loop';
 import type { PoolMember, PoolSwitch } from '../src/main/engine/open/pool';
@@ -255,6 +255,22 @@ describe('a sub-agent of a kind', () => {
       // the principal never heard of it: it was not asked again
       expect(a.chats(), kind).toHaveLength(1);
     }
+  });
+
+  it('does not build the MCP tools for a sub-agent of a kind: its tools never include one, so the servers are not asked about a second time', async () => {
+    // A server that cannot start says so once per build of the tools: one for the principal, none for the sub-agent.
+    const config = join(dir, '.mcp.json');
+    writeFileSync(config, JSON.stringify({ mcpServers: { fake: { command: join(dir, 'no-such-server'), args: [] } } }));
+    const a = await server([delegating('explore'), textStep('principal done', { usageTokens: [10, 2] })]);
+    const b = await server([textStep('sub done', { usageTokens: [10, 2] })]);
+    const said = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      await run({ primary: member(a, 'a'), activities: { explore: [member(b, 'b')] }, tools: [tool('look', 'explore')], over: { allowedTools: ['Agent', 'look', 'mcp__fake__echo'], docs: { mcpConfigs: [config] } } });
+      expect(said.mock.calls.filter((c) => c[0] === '[open-engine] mcp')).toHaveLength(1);
+    } finally {
+      said.mockRestore();
+    }
+    expect(names(b.chats()[0])).toEqual(['look']);
   });
 
   it('runs edit and shell sub-agents one at a time and explore ones together', async () => {
