@@ -93,13 +93,20 @@ const PROCEDURES_WRITE = /^procedures:(?!(list|get|stats)$)/;
 export const MEMORY_CHANNELS = new Set(['memory:list', 'memory:read', 'memory:save', 'memory:review', 'memory:remove', 'memory:remove-folder']);
 const MEMORY_UNLISTED = /^memory:(?!(list|read|save|review|remove|remove-folder)$)/;
 
+// The questions an agent leaves at a turn limit (#246): a paired browser sees them and answers, with or without the external-effects switch. "Continue" spends the person's
+// model budget on work the agent was already allowed to do, and "finish now" ends it early; neither opens a tool, a host or a file it did not have, and neither is a write to
+// the code host or a command on the computer. Named so a later change of the default cannot close or open them by accident, and a pattern denies any other `turnAsks:` channel
+// until somebody classifies it. test/turn-asks-policy.test.ts pins both.
+export const TURN_ASK_CHANNELS = new Set(['turnAsks:list', 'turnAsks:answer']);
+const TURN_ASKS_UNLISTED = /^turnAsks:(?!(list|answer)$)/;
+
 // The local state server's doors: the opt-in writes the workspace config, the write offer writes a project folder's .mcp.json (a path of this
 // machine), and the view answers machine-local paths. Desktop-only in full; a paired browser never sees the panel.
 const MCP_STATE_ADMIN = /^mcpstate:/;
 
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MEMORY_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel)) return 'deny';
-  if (MEMORY_CHANNELS.has(channel)) return 'allow';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MEMORY_UNLISTED.test(channel) || TURN_ASKS_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel)) return 'deny';
+  if (MEMORY_CHANNELS.has(channel) || TURN_ASK_CHANNELS.has(channel)) return 'allow';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

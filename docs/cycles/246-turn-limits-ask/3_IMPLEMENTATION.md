@@ -18,3 +18,19 @@ Deviations from the plan:
   and `write`) without a copy.
 - The plain sub-agent's failure text stays the raw `agent ended with error_max_turns` (the plan only gives the effective number to the sub-agent of a kind, as today).
 - The CHANGELOG line of the setting is in this commit; the line about the question goes in the commit where it lands.
+
+## Commit 2: the store of questions at a turn limit and its door
+
+`shared/turnLimit.ts` (the record, the two decisions, the answerer, the event), `turnAsks-core.ts` (the store: no timer, one entry per question, abort ends as `finish` by `abort`,
+one `answer` door), `turnAsks.ts` (the process store, the audit writer, the notification, the module with `turnAsks:list` and `turnAsks:answer`), `modules.ts`, the audit kind
+`turn-limit` and its entry in the audit screen, and the two channels named in the web policy with their test. Nothing calls `ask` yet, so nothing is visible to the person: no
+CHANGELOG line in this commit.
+
+Deviations from the plan:
+
+- `TurnAskInput` (the record without `id` and `since`) is exported from `shared/turnLimit.ts`, because the engine-side asker of commit 4 files it.
+- `answer` returns `{ ok: false, reason: 'decision' }` for a decision that is not one, or `continue` where `canContinue` is false, and throws `TurnAskGone` only for a missing
+  id; the channel checks the decision first (a bad decision to a gone id answers `decision`, as `runs:screenAnswer` does) and turns `TurnAskGone` into `gone`.
+- A listener that throws (`changed`, `asked`, `audit`) is logged and ignored by the store, so it can neither decide an answer nor leave a question waiting.
+- The notification bodies take `{used}`, `{round}` and `{task}` (the task clipped to 120 characters); the kind of a sub-agent is on the card of commit 5, not in the notice.
+- The policy test reads `src/main/engine` to pin that the engine has no `turnAsks:` channel (the agent answerer is not built here).
