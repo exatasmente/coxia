@@ -6,6 +6,7 @@ import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '..
 import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, mentionableIds, parseMentions, runThreadId } from '../../shared/forum';
 import { runKey } from '../../shared/browser';
 import { ATTACHMENT_KINDS, type AttachmentRef } from '../../shared/attachments';
+import { conversationCommand } from '../../shared/plugins/calls';
 import { createTranslator, t } from '../../shared/i18n';
 import {
   type FlowStage,
@@ -1324,6 +1325,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!run || run.status !== 'question' || run.question?.kind === 'squad' || run.question?.kind === 'pr-retry' || !text.trim()) return null;
       // Naming an agent asks that agent something; it is not the answer to the question that waits.
       if (parseMentions(text, mentionableIds(deps.config().agents.team, thread)).length) return null;
+      // A message that calls a plugin is read as that and nothing else: it never answers the question that waits.
+      if (conversationCommand(text)) return null;
       // The files the message carries ride on the answer the runner writes, so the message shows them and the retention sees them as referenced.
       api.answer(run.id, text, attachments ?? []);
       const last = deps.forum.read(thread, 0, 2000)?.messages ?? [];

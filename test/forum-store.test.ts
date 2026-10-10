@@ -237,6 +237,17 @@ describe('what a person writes', () => {
     expect(() => personPost(store, [], 'ghost', 'x')).toThrow(expect.objectContaining({ code: 'unknown-thread' }));
     expect(() => personPost(store, [], 'g', 'x'.repeat(MAX_TEXT + 1))).toThrow(expect.objectContaining({ code: 'too-long' }));
   });
+
+  it('is read as a plugin call and nothing else when it is one: it names no agent, and no unknown name is said of it', () => {
+    store.ensureThread({ id: 'call', kind: 'general', title: 'call' });
+    const m = personPost(store, ['developer'], 'call', '/web-search what is @ghost doing?');
+    expect(m).toMatchObject({ kind: 'post', author: { type: 'person' }, text: '/web-search what is @ghost doing?', mentions: [] });
+    expect(store.read('call')!.messages.map((x) => x.code)).not.toContain('main.forum.mentions.unknown');
+    // A message that is not a command still names its agent and says of a name that is none.
+    expect(personPost(store, ['developer'], 'call', '@developer please look').mentions).toEqual(['developer']);
+    personPost(store, ['developer'], 'call', 'hello @ghost');
+    expect(store.read('call')!.messages.map((x) => x.code)).toContain('main.forum.mentions.unknown');
+  });
 });
 
 describe('the channels of the squads and the requests between them', () => {

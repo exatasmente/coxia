@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A conversation can call a plugin and get its answer there.** A message that starts with a bar, the plugin's id and a question (`/web-search how does replay work?`) calls that plugin at once and its answer comes back in the same conversation, inside the material markers and with its sources, never as an instruction; `@` keeps naming an agent and one message is never read both ways. In a run's conversation the call also carries the run (the answer is written as the plugin's document in the cycle folder, keeping what the document had); in any other conversation the plugin runs over an empty folder of its own and nothing is written anywhere. The permission contract is unchanged — the network and the writes a plugin needs are asked in Actions — and the paired phone may now allow the request a call from a conversation opened (it could already refuse the request or block a write); the requests of the four cycle events stay the computer's. An unknown command, a plugin that is off, refused or missing a required setting answers with the reason and disturbs nothing else of the conversation. The web search is the first plugin to use it, and the plugin kit gains the `conversation-called` event with what was asked, the conversation and the run (when there is one) in the plugin's context.
+
 ## [0.9.0-beta.12] - 2026-10-09
 
 ### Added

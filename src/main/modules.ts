@@ -19,6 +19,7 @@ import { register as glossary } from './glossary';
 import { minutes } from './minutes';
 import { mentionsModule } from './mentions/module';
 import { mcpStateModule } from './mcp-state/module';
+import { pluginsConversationModule } from './plugins/conversation';
 import { pluginsModule } from './plugins/module';
 import { proceduresModule } from './procedures/module';
 import { register as radar } from './radar';
@@ -58,6 +59,7 @@ const ALL: Module[] = [
   glossary,
   mentionsModule,
   minutes,
+  pluginsConversationModule,
   pluginsModule,
   proceduresModule,
   radar,

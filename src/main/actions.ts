@@ -1360,8 +1360,14 @@ export interface PluginAskUnit {
   reversible: boolean;
   /** The run whose event called the plugin; null outside a run. */
   runId: string | null;
+  /** The conversation a call from it was made in; null for the four events of a cycle. */
+  thread: string | null;
+  /** What the call from a conversation asked; empty on the four events of a cycle. */
+  asked: string;
   event: string;
   stage: string | null;
+  /** A request of a call from a conversation never holds a run: the answer is delivered to the conversation when it is allowed. */
+  holdsRun?: boolean;
   /** For the network: the destinations it declared. For a write: where it goes and what it would write. */
   hosts: string[];
   to: string | null;

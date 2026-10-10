@@ -56,14 +56,24 @@ describe('running a plugin', () => {
     expect(f.opened).toHaveLength(1);
     expect(f.opened[0]).toMatchObject({ worktree: scratch, reader: true });
     expect(f.opened[0].config.network).toBe('off');
-    expect(f.commands[0]).toBe(`set -- 'stage-finished'\necho "searched for $1"`);
+    expect(f.commands[0]).toBe(`set -- 'stage-finished' '' ''\necho "searched for $1"`);
     expect(f.closed.count).toBe(1);
   });
 
   it('never lets an event name become a second command', async () => {
     const f = fakeSandbox({ output: 'x' });
     await runPlugin(deps(f.service), plugin, "x'; rm -rf / #", target());
-    expect(f.commands[0].split('\n')[0]).toBe("set -- 'x'\\''; rm -rf / #'");
+    expect(f.commands[0].split('\n')[0]).toBe("set -- 'x'\\''; rm -rf / #' '' ''");
+  });
+
+  it('carries what a call from a conversation asked as $2 and the conversation as $3, each quoted', async () => {
+    const f = fakeSandbox({ output: 'x' });
+    await runPlugin(deps(f.service), plugin, 'conversation-called', target(), { asked: "what's a plugin?", thread: 'general' });
+    // i18n-ignore: a made-up question with a quote, to pin the quoting
+    expect(f.commands[0].split('\n')[0]).toBe("set -- 'conversation-called' 'what'\\''s a plugin?' 'general'");
+    const empty = fakeSandbox({ output: 'x' });
+    await runPlugin(deps(empty.service), plugin, 'stage-finished', target());
+    expect(empty.commands[0].split('\n')[0]).toBe("set -- 'stage-finished' '' ''");
   });
 
   it('gives the sandbox exactly the settings the caller built, the network the permission produced included', async () => {
@@ -132,5 +142,16 @@ describe('the document a plugin produced', () => {
     const out = await runPlugin(deps(f.service), plugin, 'stage-finished', at());
     expect(out.document?.name).toBe('7_WEB_SEARCH.md');
     expect(existsSync(out.document?.path as string)).toBe(true);
+  });
+
+  it('is written nowhere when the target says its documents are not written: a call with no run', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'coxia-plugin-doc-'));
+    const none = { ...at(), documents: false };
+    expect(writePluginDocument(none, { name: '7_WEB_SEARCH.md', title: 'Web search' }, { plugin: 'web-search', event: 'conversation-called', text: 'x' })).toBeNull();
+    const f = fakeSandbox({ output: 'the result' });
+    const out = await runPlugin(deps(f.service), plugin, 'conversation-called', none, { asked: 'how does replay work?', thread: 'general' });
+    expect(out.ok).toBe(true);
+    expect(out.text).toBe('the result');
+    expect(out.document).toBeNull();
   });
 });

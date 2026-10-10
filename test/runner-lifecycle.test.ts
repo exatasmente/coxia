@@ -928,6 +928,8 @@ describe('the thread', () => {
     await b.settle();
     const thread = `run-${run.id}`;
     expect(b.runner.answerPost(thread, '@planner what do you think?')).toBeNull();
+    // A message that calls a plugin is read as that and nothing else: it never answers the question that waits.
+    expect(b.runner.answerPost(thread, '/web-search how does replay work?')).toBeNull();
     expect(b.runner.answerPost(thread, '   ')).toBeNull();
     expect(b.runner.answerPost('general', 'x')).toBeNull();
     expect(b.runner.get(run.id)!.status).toBe('question');
