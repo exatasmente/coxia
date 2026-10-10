@@ -217,14 +217,3 @@ export function createActivityStore(options: ActivityStoreOptions = {}) {
 }
 
 export type ActivityStore = ReturnType<typeof createActivityStore>;
-
-/** The still-running runs of every bucket that no job on the screen owns: the "agent" entry of the dock. */
-export function strayActivity(all: ReadonlyMap<string, readonly ActivityEntry[]>, owned: ReadonlySet<string>): readonly ActivityEntry[] {
-  const picked: ActivityEntry[] = [];
-  for (const [key, entries] of all) {
-    if (owned.has(key)) continue;
-    const live = new Set(activeRunIds(entries));
-    picked.push(...entries.filter((e) => live.has(e.runId)));
-  }
-  return picked.sort(order);
-}

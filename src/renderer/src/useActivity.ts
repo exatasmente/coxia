@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { ACTIVITY_EVENT, ACTIVITY_GET, type ActivityEntry, EVENTS_RECONNECTED } from '../../shared/activity';
 import { api, moduleEvents } from './api';
-import { type ActivityStore, createActivityStore, strayActivity } from './activity';
+import { type ActivityStore, createActivityStore } from './activity';
+import { type TopEntry, type TreeNode, buildTree, topEntries } from './activityTree';
 import { jobs } from './useJobs';
 
 export const activity: ActivityStore = createActivityStore();
@@ -38,13 +39,22 @@ export function useActivity(jobId: string | undefined): readonly ActivityEntry[]
 
 const NONE: readonly ActivityEntry[] = [];
 
-/** The runs still going that no running job owns (the scheduler's, or a call that is not a job): the dock's "agent" entry. */
-export function useStrayActivity(ownedKeys: readonly string[]): readonly ActivityEntry[] {
+/** The tree of one job's lines: its roots, with the sub-agents and called agents under them. Rebuilt only when the lines change. */
+export function useActivityTree(jobId: string | undefined): TreeNode[] {
+  const entries = useActivity(jobId);
+  return useMemo(() => buildTree(entries), [entries]);
+}
+
+/**
+ * What the dock lists that no running job owns: one entry per run or conversation with something working, and one per agent for any other activity (the scheduler's,
+ * a ceremony answer). Its length is the badge.
+ */
+export function useTopEntries(ownedKeys: readonly string[]): TopEntry[] {
   const all = useSyncExternalStore(activity.subscribe, activity.snapshot);
   const owned = ownedKeys.join('\n');
-  const stray = useMemo(() => strayActivity(all, new Set(owned ? owned.split('\n') : [])), [all, owned]);
+  const tops = useMemo(() => topEntries(all, new Set(owned ? owned.split('\n') : [])), [all, owned]);
   useEffect(() => {
     void backfillActivity('');
   }, []);
-  return stray;
+  return tops;
 }

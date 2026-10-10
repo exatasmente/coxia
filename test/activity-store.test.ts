@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ActivityCall, ActivityEntry } from '../src/shared/activity';
 import { tagArgs, takeContext } from '../src/shared/activity';
-import { BUCKET_RUNS_MAX, activeRunIds, atBottom, callGroups, createActivityStore, latestStep, mergeEntries, stepText, strayActivity } from '../src/renderer/src/activity';
+import { BUCKET_RUNS_MAX, activeRunIds, atBottom, callGroups, createActivityStore, latestStep, mergeEntries, stepText } from '../src/renderer/src/activity';
 import { createJobStore, currentJob, withJob } from '../src/renderer/src/jobs';
 
 let seq = 0;
@@ -234,21 +234,6 @@ describe('running runs and the latest step', () => {
     expect(activeRunIds(live)).toEqual(['a']);
     expect(latestStep(live)).toBe(live[3]);
     expect(latestStep([])).toBeNull();
-  });
-
-  it('collects the running runs of the buckets no job owns, oldest line first', () => {
-    const store = createActivityStore();
-    for (const e of [
-      status('started', { jobId: null, runId: 'free' }),
-      entry({ jobId: null, runId: 'free', label: 'Read x' }),
-      status('started', { jobId: 'prep:#1', runId: 'prep' }),
-      status('started', { jobId: 'done', runId: 'old' }),
-      status('finished', { jobId: 'done', runId: 'old' }),
-      status('started', { jobId: 'deep:#1:ask', runId: 'owned' }),
-    ])
-      store.add(e);
-    const stray = strayActivity(store.snapshot(), new Set(['deep:#1:ask']));
-    expect(stray.map((e) => e.runId)).toEqual(['free', 'free', 'prep']);
   });
 });
 

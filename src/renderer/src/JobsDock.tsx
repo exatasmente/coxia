@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Screen } from './App';
 import { api } from './api';
 import type { ActivityEntry } from '../../shared/activity';
-import { ActivityTimeline } from './AgentActivity';
-import { callGroups, latestStep, stepText } from './activity';
+import { ActivityTree, Chevron, useTreeOpen } from './ActivityTree';
+import { latestStep, stepText } from './activity';
+import { type TopEntry, type TreeNode, buildTree, dockCounts, workingRoles } from './activityTree';
 import { t, tNodes, useT } from './i18n';
 import { appInView, systemNotify } from './jobNotify';
 import { type Job, formatElapsed, notificationText, sameScreen } from './jobs';
 import { agentName } from './screens/cycle/names';
 import { useRunConfig, useRuns } from './screens/cycle/runsApi';
-import { useActivity, useStrayActivity } from './useActivity';
+import { useActivity, useTopEntries } from './useActivity';
 import { jobs, useJobsSnapshot } from './useJobs';
 import './jobs.css';
 
@@ -87,27 +88,34 @@ function status(j: Job<Screen>, now: number): string {
   return t(j.status === 'done' ? 'ui.jobs.status.done' : 'ui.jobs.status.failed', { when, took });
 }
 
-// The step a running job is on, under its title; it opens into the whole live timeline.
-function Steps({ entries, name }: { entries: readonly ActivityEntry[]; name: string }) {
+// The step a running entry is on, under its title; it opens into the tree of what is going on inside it.
+function Steps({ id, latest, nodes, name }: { id: string; latest: ActivityEntry | null; nodes: readonly TreeNode[]; name: string }) {
   const t = useT();
-  const [open, setOpen] = useState(false);
-  const step = latestStep(entries);
+  const [open, toggle] = useTreeOpen(`entry:${id}`, false);
   return (
     <div className="jobs-steps">
-      <button type="button" className="jobs-steps-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-        <svg className={`act-chevron ${open ? 'act-chevron-open' : ''}`} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <path d="M9 6l6 6-6 6" />
-        </svg>
-        <span className="jobs-steps-now">{step ? stepText(step, t('activity.thought')) : t('activity.waiting')}</span>
+      <button type="button" className="jobs-steps-toggle" aria-expanded={open} onClick={toggle}>
+        <Chevron open={open} />
+        <span className="jobs-steps-now">{latest ? stepText(latest, t('activity.thought')) : t('activity.waiting')}</span>
         <span className="sr-only">{open ? t('activity.dock.hide', { name }) : t('activity.dock.show', { name })}</span>
       </button>
-      {open && <ActivityTimeline entries={entries} />}
+      {open && <ActivityTree nodes={nodes} />}
     </div>
   );
 }
 
+// A renderer job: its whole bucket as a tree.
 function JobSteps({ job }: { job: Job<Screen> }) {
-  return <Steps entries={useActivity(job.key)} name={job.label} />;
+  const entries = useActivity(job.key);
+  const nodes = useMemo(() => buildTree(entries), [entries]);
+  return <Steps id={job.key} latest={latestStep(entries)} nodes={nodes} name={job.label} />;
+}
+
+/** What heads an entry: the run's reference, the agents working in a conversation, or the agent itself. */
+function topTitle(entry: TopEntry, ref: string, nameOf: (role: string) => string): string {
+  if (entry.kind === 'run') return t('activity.run.entry', { run: ref });
+  const names = workingRoles(entry).map(nameOf);
+  return entry.kind === 'conversation' ? t('activity.conversation.entry', { agents: names.join(', ') }) : names.join(', ');
 }
 
 // Floating button with the agent jobs still running or not yet looked at, a panel to jump to them, and the completion notices.
@@ -132,13 +140,10 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
   // Finished jobs on the screen that is open are picked up by that screen at once; they are not news.
   const clock = Date.now();
   const shown = snap.filter((j) => (j.status === 'running' ? clock - j.startedAt >= SHOW_AFTER_MS : !sameScreen(j.screen as Screen, screen)));
-  // Agent runs that no job on the list owns: a `@` call shows under the agent and run it names, any other run as one "agent" entry while it lasts.
-  const stray = useStrayActivity(snap.filter((j) => j.status === 'running').map((j) => j.key));
-  const calls = callGroups(stray);
-  const other = stray.filter((e) => !e.call);
-  const total = shown.length + calls.length + (other.length ? 1 : 0);
-  const running = shown.filter((j) => j.status === 'running').length + calls.length + (other.length ? 1 : 0);
-  const failed = shown.filter((j) => j.status === 'failed').length;
+  // What no job on the list owns: a run and a conversation each one entry with the agents working in it, and any other activity one entry named for its agent. Every
+  // entry exists only while something in it works, and what runs inside it (sub-agents, called agents) never adds to the count.
+  const tops = useTopEntries(snap.filter((j) => j.status === 'running').map((j) => j.key));
+  const { total, running, failed } = dockCounts(shown, tops.length);
   const lift = useFabLift(total > 0);
 
   // A young running job shows up once it has lasted; the clock also ticks while the panel is open.
@@ -258,32 +263,23 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
           </header>
           {!total && <p className="jobs-empty">{t('ui.jobs.empty')}</p>}
           <ul>
-            {calls.map((g) => {
-              const id = g.thread.startsWith('run-') ? g.thread.slice(4) : null;
-              const run = id ? runs?.find((r) => r.id === id) : undefined;
-              const label = t('activity.call.entry', { agent: agentName(team, g.agent), run: run?.issue.ref ?? (id ?? g.thread) });
+            {tops.map((entry) => {
+              const run = entry.kind === 'run' ? runs?.find((r) => r.id === entry.id) : undefined;
+              const label = topTitle(entry, run?.issue.ref ?? entry.id, (role) => agentName(team, role));
               const main = (
                 <span className="jobs-item-label"><span className="spinner" aria-hidden="true" />{label}</span>
               );
               return (
-                <li key={g.runId} className="jobs-item jobs-running">
-                  {id ? (
-                    <button type="button" className="jobs-item-main" onClick={() => openJob({ name: 'run', id, tab: 'forum' })}>{main}</button>
+                <li key={entry.key} className="jobs-item jobs-running">
+                  {entry.kind === 'run' ? (
+                    <button type="button" className="jobs-item-main" onClick={() => openJob({ name: 'run', id: entry.id, tab: 'forum' })}>{main}</button>
                   ) : (
                     <div className="jobs-item-main jobs-item-static">{main}</div>
                   )}
-                  <Steps entries={g.entries} name={label} />
+                  <Steps id={entry.key} latest={entry.latest} nodes={entry.nodes} name={label} />
                 </li>
               );
             })}
-            {other.length > 0 && (
-              <li className="jobs-item jobs-running">
-                <div className="jobs-item-main jobs-item-static">
-                  <span className="jobs-item-label"><span className="spinner" aria-hidden="true" />{t('activity.generic')}</span>
-                </div>
-                <Steps entries={other} name={t('activity.generic')} />
-              </li>
-            )}
             {shown.map((j) => (
               <li key={j.key} className={`jobs-item jobs-${j.status}`}>
                 <button type="button" className="jobs-item-main" onClick={() => openJob(j.screen)}>

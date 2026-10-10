@@ -104,3 +104,25 @@ Deviations from the plan:
 - "No file holds the marker of a thought" cannot run the open session with `sessionsDir: null` through `askAgent`; the test walks the data folder and skips `open-sessions`, the one
   place the principal's reasoning already was.
 - No SDK `thinking` option or `forwardSubagentText` is set: a sub-agent's thought shows on the Claude engine only if the SDK forwards it (Q3 and question 3 of the plan).
+
+## Commit 6: the activity as a tree on the dock, the run screen and the inline panels
+
+`src/renderer/src/activityTree.ts` (DOM-free) builds the tree from the lines (`buildTree`), says what the dock lists and counts (`topEntries`, `dockCounts`), titles a level
+(`nodeTitle`), gives the default of each level (`defaultOpen`) and holds the person's choices outside the components (`createTreeView`); it re-exports `stepText`. `ActivityTree.tsx`
+draws it: a header per level (chevron, a spinner while it works, the title, the state word and, collapsed, its newest own step), the lines under it, a thought as a closed row that
+opens on demand, the answer excerpt with its own icon, and the follow-the-newest scroll of the old timeline on the outer box. `AgentActivity` (run screen, ceremony panels) and the
+dock use it; the generic card, the call groups of the dock and `ActivityTimeline` are gone, and `strayActivity` with them (`useTopEntries` replaces `useStrayActivity`).
+
+Deviations from the plan:
+
+- `ActivityTimeline` is removed instead of reused for a node's own lines: its list, its scroll-follow and its empty text moved into `ActivityTree`, and `KindIcon` with them (both
+  were only used by the dock and `AgentActivity`).
+- An entry of the dock shows only the roots that still have work, with everything under them. A run's bucket keeps the lines of every stage that ever ran in it; the old flat dock
+  showed only runs still going, so a finished stage agent is not listed there (the run screen, which shows the whole bucket, still lists it). Plan rule 5 protects finished
+  children of a parent in the panel, not finished roots.
+- `dockCounts` is a function of `activityTree.ts` (the plan had the sums inline in the dock) so the badge is tested as a plain function.
+- `activity.node.show|hide` read "Open {name}" / "Close {name}" so they are not a copy of `activity.dock.show|hide`; the state words reuse the wording of the existing finished and
+  failed lines. `activity.generic` and `activity.call.entry` were removed (nothing reads them any more).
+- No component is rendered by a test (the runner is a node environment); the markup was checked by `tsc`, the catalog and theme gates and the production build, not seen on screen.
+- `test/gitlab-catalogs-unchanged.test.ts` pins every key of the snapshot of `main`; `activity.generic` is one of them, so it is listed in that test's `REMOVED` table with its reason
+  (the way that test takes a key out), not left in the catalogs unused.
