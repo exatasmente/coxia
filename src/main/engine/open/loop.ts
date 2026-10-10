@@ -99,6 +99,8 @@ export interface OpenRunParams {
   writeAllow?: readonly string[];
   // The workspace lifted the fence of its runs: Write and Edit may land anywhere, `.git`, hooks and secrets still refused.
   writeAnywhere?: boolean;
+  // Folders the app keeps for itself: Write and Edit refuse them even with the fence lifted.
+  writeKeep?: readonly string[];
   hooks?: SdkHooks;
   // Tools the app itself provides (in-process, not shell or MCP); one is offered when its name is in allowedTools.
   extraTools?: ToolImpl[];
@@ -431,6 +433,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     writeReserved: p.writeReserved,
     writeAllow: p.writeAllow,
     writeAnywhere: p.writeAnywhere,
+    writeKeep: p.writeKeep,
     outputMax,
     env: { ...(p.writeRoot ? scrubbedEnv(process.env) : (process.env as Record<string, string>)), ...p.shellEnv },
     bashPrefixes: bashPrefixesOf(p.allowedTools),

@@ -34,6 +34,7 @@ import { loginPath, mergedPath } from './loginPath';
 import { noteSession } from './sessions';
 import { anyProfileDenyGlobs, isInsideAnyProfiles } from './browser/profile';
 import { ATAS, DATA_ROOT } from './env';
+import { MEMORY_DIR } from './runner/activities';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { docsSources, getConfig, rc } from './workspaceConfig';
@@ -626,6 +627,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     writeReserved: req.confine?.writeReserved,
     writeAllow: req.confine?.writeAllow,
     writeAnywhere: req.confine?.anywhere && !req.confine.writeRoot,
+    writeKeep: req.confine ? [join(ATAS, MEMORY_DIR)] : undefined,
     signal: req.abort?.signal,
     tuning: tuningOf(req),
     describeTool: source,

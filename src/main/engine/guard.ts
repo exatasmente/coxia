@@ -6,9 +6,9 @@
 // `.gitattributes`, `.gitmodules`) and secret files. For a read it refuses the first three kinds: `.git/config` can carry a token in a remote URL.
 import { lstatSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, dirname, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 
-export const DENIAL_CODES = ['no-path', 'traversal', 'outside', 'dangling', 'git', 'hooks', 'reserved', 'secret'] as const;
+export const DENIAL_CODES = ['no-path', 'traversal', 'outside', 'dangling', 'git', 'hooks', 'reserved', 'kept', 'secret'] as const;
 export type DenialCode = (typeof DENIAL_CODES)[number];
 
 export type PathCheck = { ok: true; /** The path to use: parent resolved through real directories, inside the root. */ path: string; /** Relative to the real root. */ rel: string } | { ok: false; code: DenialCode };
@@ -25,6 +25,11 @@ export interface CheckOptions {
   fence?: string;
   /** Names directly under `root` the app keeps for itself: a write to one (or under it) is refused, whatever the case it is spelled in. */
   reserved?: readonly string[];
+  /**
+   * Absolute folders the app keeps for itself (the workspace's `memory/`): a write whose real place, or whose written path, is inside one is refused with `kept`,
+   * whatever `anywhere` says and through links. A read is not judged by this.
+   */
+  keep?: readonly string[];
   /** Relative file paths an agent may write; when set, every other destination is refused. */
   writeAllow?: readonly string[];
   home?: string;
@@ -97,6 +102,17 @@ function segmentsCode(segments: string[], read: boolean): DenialCode | null {
   return null;
 }
 
+// Whether a write lands in a folder the app keeps. A kept folder is compared where it really is (its closest existing ancestor resolved, so a data folder reached through
+// a link counts) and where it is written, and by lower case, as `reserved` is.
+function keptPath(keep: readonly string[], place: string, abs: string): boolean {
+  const folders = keep.filter((k) => isAbsolute(k)).flatMap((k) => {
+    const where = landing(resolve(k));
+    return where === 'dangling' ? [resolve(k)] : [...new Set([resolve(k), where])];
+  });
+  const inside = (p: string): boolean => folders.some((k) => p.toLowerCase() === k.toLowerCase() || p.toLowerCase().startsWith(k.toLowerCase() + sep));
+  return inside(place) || inside(abs);
+}
+
 /**
  * Whether a file tool may use `input` as a path under `root`. `root` is the run's worktree: it must exist. The answer is the path to use
  * (never the raw input), so a link created between the check and the write is the only thing left to race, and the tools open with O_NOFOLLOW.
@@ -142,6 +158,7 @@ export function checkPath(root: string, input: unknown, options: CheckOptions = 
     const own = new Set(options.reserved.map((n) => n.toLowerCase()));
     if (own.has((rel.split(sep)[0] ?? '').toLowerCase()) || own.has((written[0] ?? '').toLowerCase())) return { ok: false, code: 'reserved' };
   }
+  if (options.keep?.length && !options.read && keptPath(options.keep, place, abs)) return { ok: false, code: 'kept' };
   if (options.isSecret && (options.isSecret(place) || options.isSecret(abs))) return { ok: false, code: 'secret' };
   return { ok: true, path: place, rel };
 }

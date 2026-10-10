@@ -46,3 +46,22 @@ Deviations and additions:
 - **Risk 3 of the plan is real, and is not relaxed.** The prose validator refuses a full 40-character commit hash (the `redact` net masks an opaque 32+ character string with a digit
   and a letter, so it counts as a credential), and a URL with a query string. A short hash (`a1b2c3d`), a path and a plain URL pass. `test/memory-note.test.ts` pins this. The
   plan's fallback (exempt a plain hex token of 7 to 40 characters in the prose pass) is a maintainer decision; it was not taken.
+
+## Commit 3: the app's memory folder out of reach of the file tools
+
+`CheckOptions.keep` in `src/main/engine/guard.ts`; `ConfineOptions.keep` in `src/main/runner/hooks.ts` (default `<workspace>/memory`, from `ATAS`); `ToolContext.writeKeep`,
+`OpenRunParams.writeKeep`, `BridgeArgs.writeKeep` for the open engine, set from `agents.ts` (`runOpenEngine`) for every call that has a `confine`. Nothing else calls the folder.
+
+Deviations and additions:
+
+- **A new denial code, `kept`, not `reserved`.** The plan reuses `reserved` and says its wording fits, but the catalog text behind `reserved` is "Only AGENTS.md may be written in a
+  documentation run" (`main.engine.text.write.denied.reserved`, `prompt.sdd.runner.denied.reserved`), which would tell a stage agent that tried the memory folder something false.
+  `kept` is added to `DENIAL_CODES` with three keys in both catalogs (`main.engine.text.write.denied.kept`, `prompt.sdd.runner.denied.kept`, `main.runner.denied.kept`); the
+  check, the layers and the order of the checks are the plan's. Decision log 22 ("a new denial code and catalog keys" rejected) is reversed for this reason only.
+- **The check runs on `place` and on `abs`, and the kept folder is resolved too** (its closest existing ancestor, so a data folder reached through a link counts), compared in lower
+  case as `reserved` is. It runs after `reserved` and before the secret rule, so a note under an id that holds the filter's words is told "kept", not "secret".
+- **Only the current workspace's `memory/` is kept.** `ATAS` is the workspace the app started in (switching workspace relaunches it); another workspace's `memory/` under the same
+  data folder is not named, as it was not before. The plan speaks of "the workspace's `memory/`".
+- **`confinedHooks` callers are untouched**: the default `keep` lives in `hooks.ts`, so the stage (`executor.ts`) and the called agent (`conversation.ts`) get it without a change. A
+  mention in a run's thread and the question chain use `readConfinedHooks`, which writes nothing and is not changed.
+- The test of the sub-agent runs a scripted `edit` sub-agent that tries `Write` into the folder (`test/memory-guard.test.ts`); the sub-agent runs on the principal's parameters, so it inherits the guard.

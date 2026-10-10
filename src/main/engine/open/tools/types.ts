@@ -19,6 +19,8 @@ export interface ToolContext {
   writeAllow?: readonly string[];
   // The workspace lifted the fence of its runs: a write outside writeRoot passes the guard (never with a narrow writeRoot).
   writeAnywhere?: boolean;
+  // Absolute folders the app keeps for itself (the workspace's memory): Write and Edit refuse them even with the fence lifted.
+  writeKeep?: readonly string[];
   outputMax: number;
   env: Record<string, string>;
   // Bash(<prefix>:*) rules from the allowed tools; empty means the hook policy alone decides.
