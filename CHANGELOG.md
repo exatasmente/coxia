@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.13] - 2026-10-09
+
 ### Added
 
 - **A run's agents can read and write outside the worktree.** A switch in Settings › Runner, on the computer only and off by default, lifts the fence of the file tools of a run's agents on both engines: a reader reads any folder of the computer and a writer writes any folder, instead of only the run's worktree. The agent's permission does not change, nor does the commands' sandbox; `.git` folders, hook folders and secret files stay refused. Configuration schema 25: an existing workspace keeps the fence.
@@ -453,7 +455,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.12...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.13...HEAD
+[0.9.0-beta.13]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.12...v0.9.0-beta.13
 [0.9.0-beta.12]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.11...v0.9.0-beta.12
 [0.9.0-beta.11]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.10...v0.9.0-beta.11
 [0.9.0-beta.10]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.9...v0.9.0-beta.10
