@@ -50,7 +50,10 @@ export interface PluginContext {
    * refused the call (not declared, setting empty, not allowed).
    */
   request(id: string, options?: RequestOptions): Promise<RequestAnswer>;
-  /** Asks for a write the plugin declared. It follows the person's permission after the plugin ends: it may go out, be announced first, or wait. */
+  /**
+   * Asks for a write the plugin declared. It follows the person's permission after the plugin ends: it may go out, be announced first, or wait. One
+   * call hands on at most 5 writes, the first ones asked; the rest are dropped.
+   */
   write(id: string, options?: RequestOptions): void;
   /** A line for the log of the run of the plugin. */
   log(...parts: unknown[]): void;

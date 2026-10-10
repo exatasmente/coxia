@@ -8,7 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
+- **A plugin that fails is no longer silent.** Every call of a plugin leaves a line in the workspace's audit log ("Plugin call": the plugin, the event, the stage, and whether it ran, failed with the reason, or waits for an answer in Actions). A call that fails also leaves a line in the run's conversation with the plugin's name, the event, the stage and the reason (no run to write into, a required setting empty, the sandbox did not open, the script ended with an error or without a result). Settings › Plugins shows each plugin's last call since the app opened.
 - **A plugin's document keeps its links and addresses.** Only what is shaped like a credential is masked in it now (a key, a token, an authorization header, a JWT, an address with a password); the query of a link such as a contact link, an email address and a long id go through. The answers to a plugin's requests stay masked as before.
+
+### Changed
+
+- The plugin guide says that one call of a JavaScript plugin hands on at most 5 writes (the rest are dropped, and the audit line counts them) and how its document is masked.
 
 ## [0.9.0-beta.18] - 2026-10-10
 

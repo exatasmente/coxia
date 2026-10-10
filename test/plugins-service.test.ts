@@ -6,7 +6,7 @@ import type { PluginConfig, PluginsConfig, RunnerSandbox } from '../src/shared/c
 import { neutralPlugins, neutralSandbox } from '../src/shared/config/defaults';
 import type { ReleaseAction } from '../src/shared/types';
 import type { PluginRecord } from '../src/main/plugins/types';
-import type { PluginDoor, PluginNote, PluginsDeps } from '../src/main/plugins/module';
+import type { PluginDoor, PluginNote, PluginOutcome, PluginsDeps } from '../src/main/plugins/module';
 import type { JsAnswer, JsCall } from '../src/main/plugins/runtime';
 
 const guard = vi.hoisted(() => ({ test: false }));
@@ -109,13 +109,14 @@ function memoryDoor(refuse: boolean, armed: boolean) {
 }
 
 /** Deps over an in-memory configuration: saving changes what the next read sees, as the real read of the folder would. */
-function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; refuse?: boolean; output?: string; armed?: boolean; js?: (read: (call: JsCall) => Promise<JsAnswer>) => Promise<{ document?: string; writes?: JsCall[] }>; status?: number } = {}) {
+function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; refuse?: boolean; output?: string; armed?: boolean; js?: (read: (call: JsCall) => Promise<JsAnswer>) => Promise<{ document?: string; writes?: JsCall[] }>; status?: number; fail?: string } = {}) {
   let config: PluginsConfig = { ...neutralPlugins(), dir: '/plugins', list: initial.map((r) => ({ id: r.id, folder: r.dir, enabled: r.enabled, allow: r.allow, allowedFor: r.reach, settings: r.values })) };
   const runs: { plugin: string; event: string; sandbox: RunnerSandbox }[] = [];
   const settled: { runId: string; note: PluginNote | null }[] = [];
   const memory = memoryDoor(opts.refuse === true, opts.armed === true);
   const fetched: { url: string; method: string }[] = [];
   const secretsStore = new Map<string, string>();
+  const outcomes: PluginOutcome[] = [];
   const deps: PluginsDeps = {
     dir: () => '/plugins',
     config: () => config,
@@ -135,7 +136,8 @@ function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; ref
     sandbox: () => opts.workspace ?? neutralSandbox(),
     run: async (p, event, _target, sandbox) => {
       runs.push({ plugin: p.id, event, sandbox });
-      return { plugin: p.id, ok: true, text: opts.output ?? 'result from the sandbox', refused: null, document: null };
+      if (opts.fail) return { plugin: p.id, ok: false, text: '', refused: opts.fail, document: null };
+      return { plugin: p.id, ok: true, text: opts.output ?? 'result from the sandbox', refused: null, document: p.documents?.length ? { path: `/wt/${p.documents[0].name}`, name: p.documents[0].name } : null };
     },
     runJs: async (p, event, _context, _target, sandbox, read) => {
       runs.push({ plugin: p.id, event, sandbox });
@@ -150,8 +152,9 @@ function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; ref
     setSecret: (p, key, value) => void (value ? secretsStore.set(`${p}.${key}`, value) : secretsStore.delete(`${p}.${key}`)),
     door: memory.door,
     settled: (runId, note) => void settled.push({ runId, note }),
+    outcome: (o) => void outcomes.push(o),
   };
-  return { deps, runs, settled, fetched, secretsStore, ...memory, list: (): PluginConfig[] => config.list, config: () => config };
+  return { deps, runs, settled, fetched, secretsStore, outcomes, ...memory, list: (): PluginConfig[] => config.list, config: () => config };
 }
 
 const ctx = (runId = 'r1') => ({ issue: 123, issueTitle: 'Plugin platform', stage: 'implement', runId });
@@ -642,3 +645,95 @@ describe('the notes the agents get', () => {
   });
 });
 
+
+describe('what each call leaves', () => {
+  it('writes a call that ran in the log, with the document it wrote, and shows it as the plugin\'s last call', async () => {
+    const h = harness([plugin({ allow: { network: true, write: true } })]);
+    const out = await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(out[0]).toMatchObject({ name: 'Web search', state: 'ok' });
+    expect(h.outcomes).toEqual([expect.objectContaining({ plugin: 'web-search', name: 'Web search', event: 'stage-finished', stage: 'implement', runId: 'r1', issue: 123, state: 'ok', reason: null, document: '7_WEB_SEARCH.md' })]);
+    expect(listPlugins(h.deps).plugins[0].last).toMatchObject({ state: 'ok', event: 'stage-finished', stage: 'implement', issue: 123, document: '7_WEB_SEARCH.md' });
+  });
+
+  it('writes a call that failed in the log with the reason, and keeps it as the last call', async () => {
+    const h = harness([plugin({ allow: { network: true, write: true } })], { fail: 'the plugin ended with code 2' });
+    const out = await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(out[0]).toMatchObject({ name: 'Web search', state: 'failed', refused: 'the plugin ended with code 2' });
+    expect(h.outcomes[0]).toMatchObject({ state: 'failed', reason: 'the plugin ended with code 2', document: null });
+    expect(listPlugins(h.deps).plugins[0].last).toMatchObject({ state: 'failed', reason: 'the plugin ended with code 2' });
+  });
+
+  it('says a plugin that could not be called failed: no run to write into, a required setting empty', async () => {
+    const h = harness([plugin({ network: [], write: null }), plugin({ id: 'needs', name: 'Needs a key', network: [], write: null, settings: [{ key: 'token', label: 'API key', kind: 'secret', required: true }] })]);
+    const gone = await firePluginEvent('stage-finished', ctx('gone'), h.deps);
+    expect(gone.map((c) => c.state)).toEqual(['failed', 'failed']);
+    const out = await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(out.find((c) => c.plugin === 'needs')).toMatchObject({ state: 'failed', refused: expect.stringContaining('API key') });
+    expect(out.find((c) => c.plugin === 'web-search')?.state).toBe('ok');
+  });
+
+  it('says a call that opened a request waits, not that it failed', async () => {
+    const h = harness([plugin()]);
+    const out = await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(out[0].state).toBe('waiting');
+    expect(h.outcomes[0]).toMatchObject({ state: 'waiting', reason: expect.stringContaining('Web search') });
+    // A write that waits for the person's answer is a wait too.
+    const w = harness([plugin({ allow: { network: true, write: false } })]);
+    expect((await firePluginEvent('stage-finished', ctx(), w.deps))[0].state).toBe('waiting');
+  });
+
+  it('says a call failed when the request it needed could not be opened (a test workspace asks nothing)', async () => {
+    const h = harness([plugin()], { refuse: true });
+    const out = await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(out[0]).toMatchObject({ state: 'failed', refused: expect.stringContaining('test workspace') });
+  });
+
+  it('counts the writes of a JavaScript plugin past the limit of one call', async () => {
+    const h = harness([plugin({ runtime: 'js', entry: 'index.mjs', network: [], write: null })]);
+    h.deps.runJs = async (p) => ({ plugin: p.id, ok: true, text: '', refused: null, document: null, writes: [], dropped: 2 });
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(h.outcomes[0]).toMatchObject({ state: 'ok', dropped: 2 });
+  });
+
+  it('does not let a log that cannot be written fail the call', async () => {
+    const h = harness([plugin({ allow: { network: true, write: true } })]);
+    h.deps.outcome = () => {
+      throw new Error('disk full');
+    };
+    const out = await firePluginEvent('stage-finished', ctx(), h.deps);
+    expect(out[0].state).toBe('ok');
+  });
+});
+
+describe('the log and the words of a call', () => {
+  it('writes each outcome as a plugin-call line of the workspace\'s audit log, never what the plugin returned', async () => {
+    const { pluginsDeps } = await import('../src/main/plugins/module');
+    const { listAudit } = await import('../src/main/auditoria');
+    pluginsDeps.outcome?.({ plugin: 'contacts', name: 'Contact links', event: 'stage-finished', stage: 'implement', runId: 'r1', issue: 123, state: 'failed', reason: 'the plugin ended with code 1 and no result', document: null, dropped: 0, at: new Date().toISOString() });
+    pluginsDeps.outcome?.({ plugin: 'contacts', name: 'Contact links', event: 'stage-finished', stage: 'implement', runId: 'r1', issue: 123, state: 'ok', reason: null, document: '7_CONTACTS.md', dropped: 3, at: new Date().toISOString() });
+    const lines = listAudit().filter((l) => l.kind === 'plugin-call');
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toMatchObject({ ok: false, issue: 123, result: 'the plugin ended with code 1 and no result', fields: { plugin: 'contacts', event: 'stage-finished', state: 'failed', stage: 'implement', run: 'r1' } });
+    expect(lines[0]).toMatchObject({ ok: true, fields: { state: 'ok', document: '7_CONTACTS.md', dropped: '3' } });
+  });
+
+  it('has the words of every outcome in both catalogs', async () => {
+    const mainEn = (await import('../src/shared/i18n/main.en.json')).default as Record<string, string>;
+    const mainPt = (await import('../src/shared/i18n/main.pt-BR.json')).default as Record<string, string>;
+    const uiEn = (await import('../src/shared/i18n/ui-settings.en.json')).default as Record<string, string>;
+    const uiPt = (await import('../src/shared/i18n/ui-settings.pt-BR.json')).default as Record<string, string>;
+    const todayEn = (await import('../src/shared/i18n/ui-today.en.json')).default as Record<string, string>;
+    const todayPt = (await import('../src/shared/i18n/ui-today.pt-BR.json')).default as Record<string, string>;
+    const main = ['stageEntered', 'stageFinished', 'gateDecided', 'runFinished'].map((e) => `main.forum.code.run.plugin.callFailed.${e}`).concat('main.plugins.outcome.ok');
+    for (const key of main) {
+      expect(mainEn[key], key).toBeTruthy();
+      expect(mainPt[key], key).toBeTruthy();
+    }
+    for (const key of ['ok', 'failed', 'waiting', 'document'].map((s) => `ui.plugins.last.${s}`)) {
+      expect(uiEn[key], key).toBeTruthy();
+      expect(uiPt[key], key).toBeTruthy();
+    }
+    expect(todayEn['ui.audit.kind.pluginCall']).toBeTruthy();
+    expect(todayPt['ui.audit.kind.pluginCall']).toBeTruthy();
+  });
+});

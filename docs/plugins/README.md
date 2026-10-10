@@ -54,6 +54,20 @@ O aplicativo dispara cada um no lugar onde ele já acontece: `stage-entered` qua
 etapa, `stage-finished` quando uma etapa conclui, `gate-decided` quando a pessoa decide um gate e `run-finished`
 quando uma execução termina. Um plugin que falha não derruba a execução nem o aplicativo.
 
+### O que fica de cada chamada
+
+Toda chamada de um plugin deixa uma linha no registro de auditoria do espaço de trabalho (tipo "Chamada de
+plugin"): o plugin, o acontecimento, a etapa, a execução e como terminou — rodou, falhou (com o motivo) ou espera
+a resposta de um pedido em Ações. Nunca o que o plugin devolveu.
+
+Quando a chamada **falha** (não há execução onde escrever, falta uma configuração obrigatória, a sandbox não
+abriu, o script terminou com erro ou sem resultado, uma escrita não pôde seguir), a conversa da execução ganha uma
+linha com o nome do plugin, o acontecimento, a etapa e o motivo. A execução segue. Uma chamada que rodou fica só no
+registro; uma que espera um pedido já aparece como a espera da execução.
+
+A lista de plugins (Configurações → Plugins) mostra a última chamada de cada um desde que o aplicativo abriu: como
+terminou, para qual acontecimento, etapa e issue, o documento escrito ou o motivo.
+
 ### A fronteira
 
 - O script do plugin roda dentro da **mesma** sandbox que o aplicativo já dá a uma etapa, entregue como o próprio
@@ -129,7 +143,8 @@ Só um plugin em JavaScript declara **configurações** e **requisições**:
   leitura; outro método tem de ser declarado `"write": true`.
 - Exemplo em JavaScript: [`example-notify/`](example-notify/).
 - `ctx.write(id, …)` pede uma escrita declarada, que segue o contrato de permissão depois
-  que o plugin termina.
+  que o plugin termina. Uma chamada repassa **no máximo 5 escritas**, as primeiras pedidas;
+  as seguintes são descartadas, e o registro de auditoria diz quantas (`dropped`).
 - Leituras precisam da permissão de rede do plugin; escritas, da de escrita. Tudo o que o
   aplicativo faz por um plugin fica na auditoria, sem chave e sem corpo.
 
@@ -184,6 +199,20 @@ the paired browser: it is a separate extension point.
 The app fires each one where it already happens: `stage-entered` when a run enters a stage, `stage-finished`
 when a stage concludes, `gate-decided` when the person decides a gate and `run-finished` when a run finishes. A
 plugin that fails brings down neither the run nor the app.
+
+### What each call leaves
+
+Every call of a plugin leaves a line in the workspace's audit log (kind "Plugin call"): the plugin, the event, the
+stage, the run and how it ended — it ran, it failed (with the reason) or it waits for the answer to a request in
+Actions. Never what the plugin returned.
+
+When a call **fails** (there is no run to write into, a required setting is empty, the sandbox did not open, the
+script ended with an error or without a result, a write could not go on), the run's conversation gets a line with
+the plugin's name, the event, the stage and the reason. The run goes on. A call that ran is only in the log; one
+that waits for a request already shows as the run's wait.
+
+The plugin list (Settings → Plugins) shows each plugin's last call since the app opened: how it ended, for which
+event, stage and issue, the document written or the reason.
 
 ### The boundary
 
@@ -247,6 +276,7 @@ Only a JavaScript plugin declares **settings** and **requests** (see the example
   other method has to be declared `"write": true`.
 - Example in JavaScript: [`example-notify/`](example-notify/).
 - `ctx.write(id, …)` asks for a declared write, which follows the permission contract once
-  the plugin ends.
+  the plugin ends. One call hands on **at most 5 writes**, the first ones asked; the rest
+  are dropped, and the audit log says how many (`dropped`).
 - Reads need the plugin's network permission; writes, its write permission. Everything the
   app does for a plugin lands in the audit log, without the key and without the body.

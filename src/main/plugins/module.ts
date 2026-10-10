@@ -90,7 +90,33 @@ export interface PluginsDeps {
   door: PluginDoor;
   /** Tells the runner a request of `runId` was answered: it goes on when none is left, and `note` goes to its conversation. */
   settled(runId: string, note: PluginNote | null): void;
+  /** Writes the outcome of one call in the workspace's log. Optional: a test that does not look at the log leaves it out. */
+  outcome?(o: PluginOutcome): void;
 }
+
+/** How one call of a plugin ended: it ran, it failed (and why), or it waits for the person's answer to a request it opened. */
+export type PluginOutcomeState = 'ok' | 'failed' | 'waiting';
+
+/** The outcome of one call of one plugin: what the workspace's log keeps, and the last of each plugin is what the plugin list shows. */
+export interface PluginOutcome {
+  plugin: string;
+  name: string;
+  event: string;
+  stage: string | null;
+  runId: string | null;
+  issue: number;
+  state: PluginOutcomeState;
+  /** Why it failed, or what it waits for; null when it ran. */
+  reason: string | null;
+  /** The document the app wrote from what it returned. */
+  document: string | null;
+  /** Writes asked past the limit of one call, not handed on. */
+  dropped: number;
+  at: string;
+}
+
+/** What `firePluginEvent` returns per plugin: the run, with the plugin's name and how the call ended. */
+export type PluginCalled = PluginRun & { name: string; state: PluginOutcomeState };
 
 /** A line for the run's conversation: a refusal, or a plugin that could not be called. */
 export interface PluginNote {
@@ -119,7 +145,11 @@ const setSession = (id: string, reach: string, change: Partial<PluginAllow>): vo
 /** Forgets every session permission (the app closing does it for real; a test does it here). */
 export function clearPluginSession(): void {
   session.clear();
+  lastOutcome.clear();
 }
+
+/** The last outcome of each plugin since the app opened, by id: the list shows it, so a plugin that fails is never silent. */
+const lastOutcome = new Map<string, PluginOutcome>();
 
 // ---- the real dependencies -----------------------------------------------------------------------------------------------------------------
 
@@ -156,6 +186,7 @@ export const pluginsDeps: PluginsDeps = {
   },
   door: { ask: proposePluginAsk, pending: pendingPluginAsks, settle: settlePluginAsk, now: writePluginNow, announce: announcePluginWrite, writes: pendingPluginWrites, withdraw: (id, words) => void withdrawPluginWrite(id, words), send: sendDuePluginWrite, sendRequest: auditPluginRequest },
   settled: (runId, note) => pluginRunHooks.settled(runId, note),
+  outcome: (o) => auditOutcome(o),
 };
 
 // ---- the list and the switches -------------------------------------------------------------------------------------------------------------
@@ -166,7 +197,11 @@ const waitingOf = (d: PluginsDeps) => (id: string): number => d.door.pending().f
 /** The list the interface shows: the folder, the deadline of the warning, and per plugin what it offers, asks for and was allowed. */
 export function listPlugins(d: PluginsDeps = pluginsDeps): PluginsView {
   const config = d.config();
-  return { dir: d.dir(), confirmSeconds: config.confirmSeconds, plugins: pluginViews(d.read(d.dir(), config), sessionOf, waitingOf(d), d.secretFilled) };
+  const plugins = pluginViews(d.read(d.dir(), config), sessionOf, waitingOf(d), d.secretFilled).map((v) => {
+    const o = lastOutcome.get(v.id);
+    return { ...v, last: o ? { state: o.state, event: o.event, stage: o.stage, issue: o.issue, reason: o.reason, document: o.document, at: o.at } : null };
+  });
+  return { dir: d.dir(), confirmSeconds: config.confirmSeconds, plugins };
 }
 
 const recordOf = (id: string, d: PluginsDeps): PluginRecord => {
@@ -265,20 +300,51 @@ const fail = (plugin: string, refused: string): PluginRun => ({ plugin, ok: fals
 
 /**
  * Calls every enabled plugin that observes `event`, and returns what each did. A plugin that fails does not stop the rest nor the app: the reason comes
- * back. A plugin whose declaration was refused, or that the person turned off, is never called. One that needs what it was not allowed opens a request
- * instead of running, and the run waits for the person's answer.
+ * back, and every call's outcome is written in the workspace's log and kept as the plugin's last. A plugin whose declaration was refused, or that the
+ * person turned off, is never called. One that needs what it was not allowed opens a request instead of running, and the run waits for the person's answer.
  */
-export async function firePluginEvent(event: PluginEvent, context: PluginContext, d: PluginsDeps = pluginsDeps): Promise<PluginRun[]> {
+export async function firePluginEvent(event: PluginEvent, context: PluginContext, d: PluginsDeps = pluginsDeps): Promise<PluginCalled[]> {
   const records = d.read(d.dir(), d.config()).filter((r) => r.enabled && !r.refused && r.events.includes(event) && r.entry);
-  const out: PluginRun[] = [];
+  const out: PluginCalled[] = [];
   for (const record of records) {
+    let result: PluginRun;
     try {
-      out.push(await callPlugin(record, event, context, d, {}));
+      result = await callPlugin(record, event, context, d, {});
     } catch (e) {
-      out.push(fail(record.id, e instanceof Error ? e.message : String(e)));
+      result = fail(record.id, e instanceof Error ? e.message : String(e));
     }
+    out.push({ ...result, name: record.name, state: noteOutcome(record, event, context, result, d) });
   }
   return out;
+}
+
+/** How a call ended, as the log and the list say it. */
+const stateOf = (r: PluginRun): PluginOutcomeState => (r.asked ? 'waiting' : r.ok && !r.refused ? 'ok' : 'failed');
+
+/** Keeps the outcome of one call as the plugin's last and writes it in the workspace's log; a log that cannot be written never fails the call. */
+function noteOutcome(record: PluginRecord, event: string, context: PluginContext, r: PluginRun, d: PluginsDeps): PluginOutcomeState {
+  const state = stateOf(r);
+  const o: PluginOutcome = {
+    plugin: record.id,
+    name: record.name,
+    event,
+    stage: context.stage ?? null,
+    runId: context.runId ?? null,
+    issue: context.issue,
+    state,
+    reason: state === 'ok' ? null : (r.refused ?? null),
+    document: r.document?.name ?? null,
+    dropped: (r as Partial<JsPluginRun>).dropped ?? 0,
+    at: new Date().toISOString(),
+  };
+  lastOutcome.set(record.id, o);
+  try {
+    d.outcome?.(o);
+  } catch (e) {
+    console.error('[plugins] could not record a call', e instanceof Error ? e.message : e);
+  }
+  if (state === 'failed') console.error('[plugins]', record.id, event, o.reason);
+  return state;
 }
 
 /** One call of one plugin, with what the person allowed it now and, when an answer is being carried out, what that answer allowed for this call. */
@@ -294,7 +360,7 @@ async function callPlugin(record: PluginRecord, event: string, context: PluginCo
   const reached = [...record.network, ...reads.map((r) => `${r.method} ${r.url}`)];
   if (!mayReachNetwork(reached, permission)) {
     const refused = ask(record, 'network', event, context, d, { hosts: reached });
-    return fail(record.id, refused ?? t('main.plugins.waiting.network', { plugin: record.name }));
+    return refused ? fail(record.id, refused) : { ...fail(record.id, t('main.plugins.waiting.network', { plugin: record.name })), asked: true };
   }
   if (record.runtime === 'js') return callJs(record, event, context, target, permission, d);
   const script = scriptOf(record);
@@ -309,7 +375,7 @@ async function callPlugin(record: PluginRecord, event: string, context: PluginCo
   else if (step === 'announce') announce(record, context, write, d);
   else if (step === 'ask') {
     const refused = ask(record, 'write', event, context, d, { text: result.text });
-    if (refused) return { ...result, refused };
+    return refused ? { ...result, refused } : { ...result, asked: true };
   }
   return result;
 }
@@ -322,11 +388,13 @@ async function callJs(record: PluginRecord, event: string, context: PluginContex
   const config = pluginNetworkSandbox(d.sandbox(), record.network, permission);
   const result = await d.runJs({ id: record.id, files, entry: record.entry, settings: plain, documents: record.documents.map((x) => ({ ...x, title: x.label })) }, event, { issue: context.issue, stage: context.stage }, target, config, (call) => readFor(record, call, context, d), (decision) => auditProxy(record, context, decision));
   if (!result.ok) return result;
+  let asked = false;
   for (const call of result.writes) {
-    const refused = await writeFor(record, call, event, context, permission, d);
-    if (refused) return { ...result, refused };
+    const step = await writeFor(record, call, event, context, permission, d);
+    if (step.refused) return { ...result, refused: step.refused };
+    asked ||= step.asked;
   }
-  return result;
+  return asked ? { ...result, asked } : result;
 }
 
 /** A read a JavaScript plugin asked for: checked against its declaration, made by the app with its secret, and written in the audit log. */
@@ -346,17 +414,19 @@ async function readFor(record: PluginRecord, call: JsCall, context: PluginContex
 const describeCall = (target: string, call: JsCall): string => [target, call.body ?? ''].filter(Boolean).join('\n\n');
 
 /** A write a JavaScript plugin asked for: it goes out, is announced, or becomes a request, exactly like the write of a plugin's outbox. */
-async function writeFor(record: PluginRecord, call: JsCall, event: string, context: PluginContext, permission: PluginPermission, d: PluginsDeps): Promise<string | null> {
+async function writeFor(record: PluginRecord, call: JsCall, event: string, context: PluginContext, permission: PluginPermission, d: PluginsDeps): Promise<{ refused: string | null; asked: boolean }> {
+  const refusedAs = (refused: string): { refused: string; asked: false } => ({ refused, asked: false });
+  const done = { refused: null, asked: false };
   const resolved = resolvePluginRequest(record, call);
-  if (!resolved.ok) return resolved.refused;
-  if (!resolved.decl.write) return t('main.plugins.request.isRead', { id: call.id });
+  if (!resolved.ok) return refusedAs(resolved.refused);
+  if (!resolved.decl.write) return refusedAs(t('main.plugins.request.isRead', { id: call.id }));
   const target = requestTarget(resolved);
   const request = { ...call, target, reach: record.reach };
   const step = pluginWriteStep({ to: resolved.decl.id, reversible: resolved.decl.reversible }, 'x', permission);
   const summary = t('main.plugins.request.summary', { plugin: record.name, target });
   if (step === 'go') {
     await sendRequestWrite(record, request, { issue: context.issue, key: `plugin-request:${record.id}:${Date.now()}`, summary, plugin: record.id }, d).catch((e) => console.error('[plugins] a write request', e instanceof Error ? e.message : e));
-    return null;
+    return done;
   }
   const write = { plugin: record.id, to: resolved.decl.id, text: describeCall(target, call) };
   if (step === 'announce') {
@@ -364,11 +434,12 @@ async function writeFor(record: PluginRecord, call: JsCall, event: string, conte
       const a = d.door.announce({ key: `plugin-write:${record.id}:${context.runId ?? '-'}:${Date.now()}`, issue: context.issue, issueTitle: context.issueTitle, summary, runId: context.runId ?? null, seconds: d.config().confirmSeconds, write, request });
       if (a) arm(a, d);
     } catch (e) {
-      return e instanceof Error ? e.message : String(e);
+      return refusedAs(e instanceof Error ? e.message : String(e));
     }
-    return null;
+    return done;
   }
-  return ask(record, 'write', event, context, d, { text: write.text, reversible: resolved.decl.reversible, request, to: resolved.decl.id });
+  const refused = ask(record, 'write', event, context, d, { text: write.text, reversible: resolved.decl.reversible, request, to: resolved.decl.id });
+  return refused ? refusedAs(refused) : { refused: null, asked: true };
 }
 
 /** Makes a plugin's write request through the audited door; a refusal or an error status is a failure the audit log keeps. */
@@ -413,6 +484,22 @@ function jsFilesOf(record: PluginRecord): Record<string, string> | null {
   } catch {
     return null;
   }
+}
+
+/** The outcome of a call is a line of the workspace's audit log, ok or not: a plugin that failed is never invisible. Never what it returned. */
+function auditOutcome(o: PluginOutcome): void {
+  recordWrite({
+    kind: 'plugin-call',
+    issue: o.issue,
+    target: `${o.plugin} · ${o.event}`,
+    via: 'plugin',
+    fields: { plugin: o.plugin, event: o.event, state: o.state, ...(o.stage ? { stage: o.stage } : {}), ...(o.runId ? { run: o.runId } : {}), ...(o.document ? { document: o.document } : {}), ...(o.dropped ? { dropped: String(o.dropped) } : {}) },
+    ok: o.state !== 'failed',
+    code: null,
+    result: o.reason ?? t('main.plugins.outcome.ok'),
+    origin: { actionId: '', kind: 'plugin', key: o.plugin, summary: null },
+    by: o.plugin,
+  });
 }
 
 /** A read a plugin asked the app to make is a fact of the audit log: what a plugin reached is never invisible. Never the query, the body or the secret. */
@@ -506,8 +593,9 @@ async function carryOut(a: ReleaseAction, record: PluginRecord | null, d: Plugin
     else {
       const context: PluginContext = { issue: a.issue, issueTitle: a.issueTitle, stage: unit.stage ?? undefined, runId: runId ?? undefined };
       if (unit.need === 'network') {
-        const done = await callPlugin(d.read(d.dir(), d.config()).find((r) => r.id === record.id) ?? record, unit.event, context, d, { network: true });
-        if (!done.ok && done.refused) note = { code: 'run.plugin.failed', params: { plugin: unit.name, reason: done.refused } };
+        const fresh = d.read(d.dir(), d.config()).find((r) => r.id === record.id) ?? record;
+        const done = await callPlugin(fresh, unit.event, context, d, { network: true });
+        if (noteOutcome(fresh, unit.event, context, done, d) === 'failed' && done.refused) note = { code: 'run.plugin.failed', params: { plugin: unit.name, reason: done.refused } };
       } else if (unit.request) {
         // A JavaScript plugin's write request, carried out on the declaration as it is now: a request that is gone, or became irreversible without the
         // permission to go always, does not go out.

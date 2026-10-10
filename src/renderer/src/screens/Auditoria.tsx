@@ -21,6 +21,7 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   worktree: { key: 'ui.audit.kind.worktree' },
   'plugin-write': { key: 'ui.audit.kind.pluginWrite' },
   'plugin-request': { key: 'ui.audit.kind.pluginRequest' },
+  'plugin-call': { key: 'ui.audit.kind.pluginCall' },
   'screen-open': { key: 'ui.audit.kind.screenOpen' },
   'screen-close': { key: 'ui.audit.kind.screenClose' },
   'screen-hold': { key: 'ui.audit.kind.screenHold' },
