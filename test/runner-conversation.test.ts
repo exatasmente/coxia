@@ -223,6 +223,44 @@ describe('a conversation between two agents', () => {
     expect(pushed[0].parent).toBeUndefined();
   });
 
+  describe('the end of the node of a called agent', () => {
+    const converse = async (engine: (call: AgentCall) => Promise<{ data: unknown }>, said: string[], abort = new AbortController()) => {
+      const pushed: ActivityEntry[] = [];
+      activityLog.setSink((e) => pushed.push(e));
+      try {
+        await runConversation({ run, stage: { id: 'implement' } as never, caller: agent('developer'), called: agent('qa'), forum, config: () => neutralConfig(), engine, commands: [], abort, chain: ['developer'], place: 'run', title: 'talk' }, exchange(said).ex);
+      } finally {
+        activityLog.setSink(null);
+      }
+      return pushed.filter((e) => e.kind === 'status').map((e) => e.state);
+    };
+
+    it('ends failed when the called agent gave no answer at all', async () => {
+      expect(await converse(async () => ({ data: {} }), ['anything?'])).toEqual(['started', 'failed']);
+    });
+
+    it('ends failed when the run was aborted, and the called agent never ran', async () => {
+      const abort = new AbortController();
+      abort.abort();
+      let ran = false;
+      expect(await converse(async () => { ran = true; return { data: { texto: 'x' } }; }, ['anything?'], abort)).toEqual(['started', 'failed']);
+      expect(ran).toBe(false);
+    });
+
+    it('ends finished when the caller is the one that ended the conversation', async () => {
+      const engine = async (call: AgentCall) => {
+        // the called agent asks for the next message and the caller has none: the other side ended it
+        await call.runnerTools?.find((x) => x.name === ASK_CONVERSATION_TOOL)?.run({ text: 'and now?' } as never, {} as never);
+        return { data: {} };
+      };
+      expect(await converse(engine, ['first'])).toEqual(['started', 'finished']);
+    });
+
+    it('still ends finished when the called agent answered', async () => {
+      expect(await converse(async () => ({ data: { texto: 'done' } }), ['first'])).toEqual(['started', 'finished']);
+    });
+  });
+
   it('counts the model use of a conversation on the calling stage', async () => {
     const used: Parameters<NonNullable<AgentCall['onUsage']>>[0][] = [];
     const engine = async (call: AgentCall) => {

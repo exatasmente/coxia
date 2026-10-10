@@ -156,6 +156,8 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
   // The called agent as a node under the agent that called it: one for the whole conversation, whatever the rounds, closed where the conversation ends.
   let node: RunActivity | null = null;
   let failure: string | null = null;
+  // A called agent that gave no answer, or that the run's abort cut short, did not finish: the node ends failed, as it does for a call made from inside an answer.
+  let unanswered = false;
   const screenStopped = (): void => {
     if (screenGone) return;
     screenGone = true;
@@ -209,6 +211,7 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
         }
       }
       for (;;) {
+        if (deps.abort.signal.aborted) unanswered = true;
         if (deps.abort.signal.aborted || screenGone) break;
         if (rounds >= cap) {
           reason = 'rounds';
@@ -221,7 +224,11 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
           if (screenGone) return null;
           throw e;
         });
-        if (turn === null) break;
+        if (turn === null) {
+          // The caller ending the conversation (`closed`) is a normal end; any other turn with nothing to show is a called agent that did not answer.
+          if (!closed) unanswered = true;
+          break;
+        }
         ex.answered(turn);
         // The excerpt is the text the conversation shows for this round; a round's own end is ignored on the lent node.
         node.answer(turn);
@@ -233,8 +240,8 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
     throw e;
   } finally {
     if (node) {
-      if (failure === null) node.status('finished');
-      else node.status('failed', failure);
+      if (failure !== null) node.status('failed', failure);
+      else node.status(unanswered ? 'failed' : 'finished');
     }
     // The screen is let go, not closed: it stays open and counting down for the next call of the agent in this thread.
     unhook();
