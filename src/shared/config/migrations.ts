@@ -49,6 +49,8 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //       optional (absent = no roadmap). Nothing else moves.
 //   v28 `runner.showReasoning`: the reasoning of the model as one closed line per turn in the activity, on for every workspace (existing and new). Nothing else moves.
 //   v29 `runner.turns.explore`, `.edit`, `.shell`, `.screen` and `.plain`: the turns of the sub-agents, 12, 30, 20, 30 and 12, the values they always had. Nothing else moves.
+//   v30 agents.team[].kind: the mark of the persona of the workspace; absent keeps an ordinary agent. Nothing stored changes; the bump makes an older app refuse the file
+//       instead of repairing (and then saving) a team it cannot place.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -423,7 +425,13 @@ function v28ToV29(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 29, runner: { ...old.runner, turns: { ...old.runner.turns, explore: 12, edit: 30, shell: 20, screen: 30, plain: 12 } } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29 };
+// The team gains the kind of an agent (the persona). The field is optional and absent is an ordinary agent, so nothing is raised or written but the version, as v19 did for `draft`:
+// the bump is what makes an older app refuse the file instead of repairing a team it cannot place.
+function v29ToV30(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
+  return { ...old, schemaVersion: 30 };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29, 29: v29ToV30 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 
@@ -450,6 +458,8 @@ function poolKeyAt(path: (string | number)[]): number {
   if (path[0] === 'llm' && path[1] === 'effort') return path.length > 2 ? 2 : 1;
   if (path[0] === 'runner' && path[1] === 'flex') return 1;
   if (path[0] === 'agents' && path[1] === 'team' && path[3] === 'poolMode') return 3;
+  // The persona's kind: every rule it breaks is reported at `kind`, and dropping that field leaves an ordinary agent and the team intact (a reset would replace the whole team).
+  if (path[0] === 'agents' && path[1] === 'team' && path[3] === 'kind') return 3;
   if (path[0] === 'devCycle' && path[1] === 'stages' && path[3] === 'poolMode') return 3;
   if (path[0] === 'devCycle' && path[1] === 'flows' && path[4] === 'poolMode') return 4;
   const known = (k: string | number | undefined) => typeof k === 'string' && POOL_KEYS.has(k);

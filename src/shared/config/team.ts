@@ -73,6 +73,8 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     ...(partial.squad !== undefined ? { squad: partial.squad } : {}),
     // Only a draft carries the mark: every other agent keeps the shape it had before the field existed.
     ...(partial.draft === true ? { draft: true } : {}),
+    // Only the persona has a kind: every other agent keeps the shape it had before the field existed.
+    ...(partial.kind === 'persona' ? { kind: 'persona' as const } : {}),
     // Absent means off and empty: an agent that never had them keeps the shape it had, and `newAgent` never switches one on by itself.
     ...(partial.screen === true ? { screen: true } : {}),
     ...(partial.allowedHosts?.length ? { allowedHosts: [...partial.allowedHosts] } : {}),
@@ -104,6 +106,22 @@ export function uniqueId(base: string, taken: Iterable<string>): string {
 
 /** Whether the agent is a draft the AI assistant saved to be tested: it takes no part in the cycle. */
 export const isDraft = (a: Pick<AgentDef, 'draft'>): boolean => a.draft === true;
+
+/** Whether the agent is the persona of the workspace (or its test copy): the person's representative, found by its kind and never by its id. */
+export const isPersona = (a: Pick<AgentDef, 'kind'>): boolean => a.kind === 'persona';
+
+/** Takes no part in the cycle: a draft of the AI assistant, or the persona. */
+export const outOfCycle = (a: Pick<AgentDef, 'draft' | 'kind'>): boolean => isDraft(a) || isPersona(a);
+
+/** The persona of the workspace, or null: the entry of that kind that is not a draft. */
+export const personaOf = (team: readonly AgentDef[]): AgentDef | null => team.find((a) => isPersona(a) && !isDraft(a)) ?? null;
+
+/** The persona being made or adjusted in the wizard (kind persona and a draft), or null. */
+export const personaDraftOf = (team: readonly AgentDef[]): AgentDef | null => team.find((a) => isPersona(a) && isDraft(a)) ?? null;
+
+/** The configuration without any entry of kind persona: what leaves the workspace in an export or a template. */
+export const withoutPersona = (config: WorkspaceConfig): WorkspaceConfig =>
+  config.agents.team.some(isPersona) ? { ...config, agents: { ...config.agents, team: config.agents.team.filter((a) => !isPersona(a)) } } : config;
 
 /** The team that takes part in the cycle: without the drafts. Whoever decides who works, is called or is offered reads the team through this. */
 export const workingTeam = (team: AgentDef[]): AgentDef[] => (team.some(isDraft) ? team.filter((a) => !isDraft(a)) : team);

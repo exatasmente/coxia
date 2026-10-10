@@ -332,6 +332,14 @@ describe('config schema', () => {
     expect(bad.errors.map((e) => e.path)).toEqual([`agents.team[${c.agents.team.length}].draft`]);
   });
 
+  it('accepts the persona kind of an agent and refuses a kind it does not know', () => {
+    const c = neutralConfig();
+    const agent = { id: 'me', name: 'Me', kind: 'persona' };
+    expect(validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, agent] } }).ok).toBe(true);
+    const bad = validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, { ...agent, kind: 'boss' }] } });
+    expect(bad.errors.map((e) => e.path)).toEqual([`agents.team[${c.agents.team.length}].kind`]);
+  });
+
   describe('the screen, hosts and browser profile of an agent', () => {
     const withAgent = (extra: Record<string, unknown>) => {
       const c = neutralConfig();
