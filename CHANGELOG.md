@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.9.0-beta.17] - 2026-10-10
+
 ### Added
 
 - **The activity panel is a tree of runs, agents, sub-agents and called agents.** The floating button of running work and its "Agent tasks" panel list one entry per run or conversation that has something working (and one per agent for work that belongs to neither), and under it the agent that works, the sub-agents it started (each named by its kind and task, with only its own steps, parallel ones never mixed) and the agents it called with `CallAgent` (named, with the topic, their own work, and a masked excerpt of their answer, at any depth). An `@` mention, a `CallAgent` inside an answer and a `CallAgent` from a stage all end under whoever called; a refused call says so on the caller's line. Every level opens and closes, keeps what you chose while new lines arrive, and shows its state while it works. The same tree is on the run screen, in the panels of the ceremonies and on the paired phone.
@@ -503,7 +505,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.16...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.17...HEAD
+[0.9.0-beta.17]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.16...v0.9.0-beta.17
 [0.9.0-beta.16]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.15...v0.9.0-beta.16
 [0.9.0-beta.15]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.14...v0.9.0-beta.15
 [0.9.0-beta.14]: https://github.com/exatasmente/coxia/compare/v0.9.0-beta.13...v0.9.0-beta.14
