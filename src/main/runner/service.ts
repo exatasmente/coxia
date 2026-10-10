@@ -131,6 +131,8 @@ import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
 import type { MemoryPort } from '../memory/port';
+import type { MemoryWrite } from '../memory/store';
+import { createNoticeHub } from './notices';
 import type { MemorySession } from '../memory/session';
 import type { ProceduresPort } from '../procedures/port';
 import type { ProcedureOffers } from '../procedures/offers';
@@ -260,6 +262,13 @@ export interface RunnerDeps {
   procedures?: ProceduresPort;
   /** The shared memory (#215): stages, the agents they call and the answers in a run's thread get their index and tools from here. Absent: none. */
   memoryPort?: MemoryPort;
+  /**
+   * How the runner hears that an agent wrote a note in the shared memory (returns the way to stop listening): a run the note concerns is told in its conversation and, when
+   * a stage is working, in the session. Absent: no run is told. The switch decides at every note.
+   */
+  memoryWrites?: (listener: (write: MemoryWrite) => void) => () => void;
+  /** For a test: how long notices that arrive close together are held to be told as one, in ms. */
+  noticeMergeMs?: number;
   /** Where the offers to keep a procedure are held: a stage and an answer in a run's thread raise them after their last turn (#187). Absent: no last turn. */
   offers?: ProcedureOffers;
   /** For a test: the limit of the last turn, in ms. */
@@ -415,7 +424,11 @@ export function createRunner(deps: RunnerDeps): Runner {
     }
   }
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run, narrow) => sharedTextOf(run.issue.ref, [], [], narrow), procedures: deps.procedures, memoryPort: deps.memoryPort, offers: deps.offers, procedureTurnMs: deps.procedureTurnMs, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
+  // A run is told when something it concerns is written elsewhere in the memory: by a note of an agent, and by a document of another run's stage.
+  const notices = deps.memoryWrites ? createNoticeHub({ runs: deps.runs, forum: deps.forum, config: deps.config, workingAgent: (run) => workingAgent(run), ...(deps.noticeMergeMs !== undefined ? { mergeMs: deps.noticeMergeMs } : {}) }) : null;
+  deps.memoryWrites?.((write) => notices?.noteWritten(write));
+
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run, narrow) => sharedTextOf(run.issue.ref, [], [], narrow), procedures: deps.procedures, memoryPort: deps.memoryPort, documentsWritten: (run, agent, names) => notices?.documentsWritten(run, agent, names), offers: deps.offers, procedureTurnMs: deps.procedureTurnMs, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
 
   /** The record of the activities as a call reads it: the front named whole, the others in short. Never a model call, never the file. */
   function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = [], narrow = false): string {

@@ -107,6 +107,13 @@ export interface Listing {
   skipped: number;
 }
 
+/** What an agent's write did: the note as the app lists it, and whether it is new. The person's edit is not one (it notifies nobody). */
+export interface MemoryWrite {
+  scope: Scope;
+  note: NoteSummary;
+  created: boolean;
+}
+
 export interface MemoryStoreDeps {
   now?: () => number;
   /** Eight hex digits for a new id. */
@@ -118,6 +125,8 @@ export interface MemoryStoreDeps {
   home?: string;
   /** Told after every change that took effect (a note written, edited, reviewed or removed, a folder removed), so an open screen reads again. */
   onChange?: () => void;
+  /** Told after an agent's note was created or replaced, with what the run notices read. Not told for the person's edits, reviews or removals. */
+  onWrite?: (write: MemoryWrite) => void;
 }
 
 export interface MemoryStore {
@@ -622,7 +631,17 @@ export function createMemoryStore(workspaceDir: string, deps: MemoryStoreDeps = 
       const had = validScope(s) && existsSync(folderOf(s));
       return announce(ensureFolder(s), (made) => made && !had);
     },
-    save: (req) => announce(save(req), okOf),
+    save: (req) => {
+      const r = announce(save(req), okOf);
+      if (r.ok) {
+        try {
+          deps.onWrite?.({ scope: req.scope, note: r.note, created: r.created });
+        } catch {
+          // the write already happened
+        }
+      }
+      return r;
+    },
     remove: (s, id) => announce(drop(s, id, 'agent'), okOf),
     edit: (req) => announce(edit(req), okOf),
     review: (s, id) => announce(review(s, id), okOf),

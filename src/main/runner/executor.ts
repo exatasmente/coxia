@@ -40,7 +40,8 @@ import { redact, redactCode, redactDoc } from '../errorlog-core';
 import { type Denial, confinedHooks, readConfinedHooks } from './hooks';
 import { type CommentAsk, type ResumeWhy, type StageInput, type StageResume, stagePrompt, systemText } from './prompt';
 import { prompt as cp } from '../cyclePrompts';
-import { type StageInbox, inboxOf, openInbox } from './inbox';
+import { READ_CODE, type StageInbox, inboxOf, openInbox } from './inbox';
+import { NOTICES_PER_STAGE, pendingNotices } from './notices';
 import { type RunnerTools, runnerTools } from './tools';
 import type { ProcedureUse } from '../../shared/procedures';
 import type { MemoryPort } from '../memory/port';
@@ -131,6 +132,8 @@ export interface ExecutorDeps {
   procedures?: ProceduresPort;
   /** The shared memory of the workspace (#215): a stage, and the agents it calls, get their index and tools from here. Absent, or the workspace's switch off: none. */
   memoryPort?: MemoryPort;
+  /** The stage's attempt was accepted and these documents are now in its cycle folder: other runs that they concern are told (the notice hub's). Absent: nobody is. */
+  documentsWritten?: (run: Run, agent: string, names: readonly string[]) => void;
   /** Where the offers to keep a procedure are held (#187): a stage whose work earned the last turn raises them here. Absent: the turn is not given. */
   offers?: WrapUpDeps['offers'];
   /** For a test: the limit of the stage's last turn, in ms. */
@@ -852,6 +855,10 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // built; a memory that cannot be opened is a stage without it, never a failed stage.
   const sharedIdx = (await d.memoryPort?.open({ surface: 'stage', agent, conversation: threadId, writes: true, tools: true, ref: run.issue.ref, repo: run.repo, runId: run.id, issue: run.issue.iid, screen: pscreen, ...(mask ? { mask } : {}), note: noteInThread })) ?? null;
 
+  // The notices of the memory no stage has read: shown only to a stage that has the memory's tools to open what they point at, a few at a time; the mark that they were
+  // read is written when the attempt is accepted, so a failed or retried attempt shows them again.
+  const shownNotices = sharedIdx ? pendingNotices(thread).slice(0, NOTICES_PER_STAGE) : [];
+
   // A sandbox and a host session that tests an interface both declare where the stage's evidence lives; a host session without one keeps what it has today.
   const evidenceRoot = session?.outputDir;
 
@@ -871,6 +878,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     proceduresGui: procedures?.has.screen === true,
     proceduresCmd: procedures?.has.commands === true,
     ...(sharedIdx ? { index: sharedIdx.list.text, indexWrite: sharedIdx.writes } : {}),
+    ...(shownNotices.length ? { notices: shownNotices.map((n) => n.text) } : {}),
     docsKeep: documented && writes,
     plugins: d.pluginNotes?.() ?? [],
     thread: thread.slice(-40),
@@ -1335,6 +1343,16 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   if (docs?.skipped.length) d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.docs.notAFile', params: { files: docs.skipped.join(', ') }, stage: stage.id });
   const commit = await commitAll(wt, commitMessage(config.runner.commitMessage, code ? commitSummary(output.commit, fallback) : fallback, run.issue.iid), identity);
   const head = writes ? await headSha(wt) : looked;
+  // Once accepted, the notices the attempt was shown are read, and the documents it produced may concern another run.
+  if (shownNotices.length) noteInThread(READ_CODE, { agent: agent.id, n: shownNotices.length, seqs: shownNotices.map((n) => n.seq).join(',') });
+  const produced = written.filter((name) => name !== MEMORY_FILE);
+  if (produced.length) {
+    try {
+      d.documentsWritten?.(run, agent.id, produced);
+    } catch (e) {
+      console.error('[runner] could not tell the runs about a document', e instanceof Error ? e.message : e);
+    }
+  }
   // The attempt is accepted: only now the last turn is given, awaited so the stage's usage counts it and a record it creates gets its baseline. The shell and the screen are
   // gone by now and the mailbox is closed; the turn has the procedure tools and the drafts the plan copied. Never fails the stage.
   if (wrapPlan && procedures && d.offers) {

@@ -355,6 +355,10 @@ export interface BootOptions {
   procedures?: RunnerDeps['procedures'];
   /** The shared memory of the workspace (a port over a folder of the test's); none by default. */
   memoryPort?: RunnerDeps['memoryPort'];
+  /** How the runner hears that an agent wrote a note (the memory world's `onWrite`); none by default, and then no run is told. */
+  memoryWrites?: RunnerDeps['memoryWrites'];
+  /** How long notices that arrive close together are held to be told as one, in ms. */
+  noticeMergeMs?: RunnerDeps['noticeMergeMs'];
   /** Where the offers to keep a procedure are held (#187); none by default, and then no stage is given a last turn. */
   offers?: RunnerDeps['offers'];
   /** The limit of a stage's last turn, in ms. */
@@ -408,6 +412,8 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     pluginNotes: options.pluginNotes,
     procedures: options.procedures,
     memoryPort: options.memoryPort,
+    memoryWrites: options.memoryWrites,
+    noticeMergeMs: options.noticeMergeMs,
     offers: options.offers,
     procedureTurnMs: options.procedureTurnMs,
   };

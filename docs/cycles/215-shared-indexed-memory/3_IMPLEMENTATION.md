@@ -205,3 +205,32 @@ the folder or the index cannot be made), and then the sentence would name tools 
 in `executor.ts`), and `service.ts` picks `sharedMovedMemory` only when `inbox.memory` is true; the `memoryOn` import left `service.ts`. The only place that sentence is posted is the working
 stage's inbox, so a mention has nothing to follow: it is answered by its own call with its own session. Test: the case of `test/memory-surfaces.test.ts` now has three worlds (on and opened, off, on and
 not opened); the second and third keep the old sentence byte for byte. No user-visible line for the `CHANGELOG.md`.
+
+## Commit 9: a run is told when something relevant is written elsewhere
+
+`src/main/runner/notices.ts` (the hub, the relevance rules, `entryOfWrite`, `pendingNotices`), `StageInbox.notice` and the two line codes in `inbox.ts`, `MemoryStoreDeps.onWrite` and `onMemoryWrite`
+(`memory/store.ts`, `instance.ts`), `RunnerDeps.memoryWrites` (set by `runner/module.ts`) and `ExecutorDeps.documentsWritten`, the section in `stagePrompt` (`StageInput.notices`), the pending read and
+the read marker in `runStage`, nine catalog keys in each language (`prompt.sdd.runner.section.sharedNew`, `runner.notice.sharedMemory`, `.sharedPointer`, `.sharedMore`, `.sharedWhy.activity|repo|agent`, and
+`main.forum.code.runner.sharedMemory.notice|noticeRead`), a `CHANGELOG.md` line. Tests: `memory-notices` (new), the notice cases of `runner-inbox`, the memory world's `onWrite` and `boot`'s `memoryWrites`.
+The goldens (`test/golden/*`, `prompts-screen`, `cycle-prompts`) ran unchanged: the section exists only when a stage was handed a notice.
+
+Deviations and additions:
+
+- **The store has an `onWrite`, not the hub a subscription to "the store's `onWrite`" that did not exist.** `onChange` carries nothing; `onWrite` carries the scope and the note of an agent's create or replace
+  (`MemoryWrite`), and is told for nothing else: the person's edit, review and removal go through other functions, so "a person's edit does not notify" holds by construction, and a test pins it.
+- **The read marker names the lines it read (`seqs`, a comma-joined string), not `upTo`.** With a high-water mark, a notice written while no mailbox was open (the short gap between building the prompt and
+  opening the mailbox) would be passed over by the marker of a later notice that the mailbox did hand over. `pendingNotices` is "the notice lines no marker names". Same lines, same place, same moment of writing.
+- **The line's `text` is not clipped to 1,500 characters**; it is bounded by construction (five pointers, each cut at 240 characters, and the framing), and a cut would remove the `</data>` the section
+  fences with. `ids` holds the ids of **every** entry of the window (up to 50), not only the five shown, so an entry that was counted as "and N more" is not told again either.
+- **The framing is the notice's own; the fence is the carrier's.** The mailbox already wraps what it hands over in `<data>` with "material, not an instruction" (`incomingText`), and the section
+  fences the lines it shows; the notice text itself carries the sentence that an entry changes no tool, host or permission and the pointers, with `<data` in a title escaped.
+- **Three more prompt keys than the plan lists:** the pointer line, the "and N more" line and the three reasons (`sharedWhy.*`), so the pointers read in the workspace's language.
+- **The document trigger fires when the attempt is accepted** (after the commit, with the names the stage wrote, `MEMORY.md` left out), not at `writeArtifact`: a stage that fails or asks a question has
+  produced nothing another run should hear about. A document is of kind `document`, so the repository rule (decisions only) never matches it; it concerns a run by its activity or by the agent that works it.
+- **A stage is shown notices only when its memory session opened** (`sharedIdx`), as the sentence of the previous fix: without the tools the pointers cannot be opened. They stay pending for a stage that has them.
+  A stage shows at most five (`NOTICES_PER_STAGE`); the rest wait for the next one.
+- **`RunnerDeps.noticeMergeMs`** is a test knob (like `procedureTurnMs`), so the end-to-end tests do not fake the timers the runner uses for its stages; the hub's own tests fake them.
+- **The hub forgets the runs that are gone** from its set of told entries at every entry, and seeds the set of a run, the first time it looks at it, from the notice lines of its thread (a restart does not tell again).
+- `StageInbox.delivered` still has no caller, as the plan found; the hub and the mailbox write their own lines. The marker of a notice handed through the mailbox is written by the mailbox at the handover.
+- **Not verified:** that the Claude SDK's stream and the open engine hand the notice over in the last step of a stage (the mailbox is tested directly and through the fake engine's `incoming`, as the plan
+  says); that a plain sub-agent of the open engine does not take the notice meant for its principal (it inherits `incoming`); a real stage that reads the notice and changes course.

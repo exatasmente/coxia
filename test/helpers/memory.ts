@@ -9,7 +9,7 @@ import { createFacts } from '../../src/main/memory/facts';
 import { createMemoryIndex, type MemoryIndex } from '../../src/main/memory/index';
 import { createMemoryPort, type MemoryOpenContext, type MemoryPort } from '../../src/main/memory/port';
 import { createMemorySession, type MemorySession, type MemorySessionContext } from '../../src/main/memory/session';
-import { createMemoryStore, type MemoryStore } from '../../src/main/memory/store';
+import { createMemoryStore, type MemoryStore, type MemoryWrite } from '../../src/main/memory/store';
 import { createSharedMemory } from '../../src/main/runner/activities';
 import { createRunStore, type RunStore } from '../../src/main/runs-core';
 import { drive, startInput } from './runs';
@@ -30,6 +30,8 @@ export interface MemoryWorld {
   clock: { now: number };
   session(ctx?: Partial<MemorySessionContext>): Promise<MemorySession>;
   port(): MemoryPort;
+  /** The way the runner hears of an agent's write (`RunnerDeps.memoryWrites`). */
+  onWrite(listener: (write: MemoryWrite) => void): () => void;
   /** A run whose worktree really exists, with the documents its stages produced. */
   runWith(id: string, ref: string, docs?: Record<string, string>, over?: { repo?: string }): string;
 }
@@ -41,7 +43,8 @@ export function memoryWorld(over: { ws?: string } = {}): MemoryWorld {
   const clock = { now: T0 };
   const config = neutralConfig();
   config.runner.sharedMemory = true;
-  const store = createMemoryStore(ws, { now: () => clock.now, hex: () => (++counter).toString(16).padStart(8, '0'), home: HOME });
+  const writers = new Set<(write: MemoryWrite) => void>();
+  const store = createMemoryStore(ws, { now: () => clock.now, hex: () => (++counter).toString(16).padStart(8, '0'), home: HOME, onWrite: (write) => writers.forEach((fn) => fn(write)) });
   const runs = createRunStore(join(ws, 'runs'));
   const index = createMemoryIndex({
     store,
@@ -63,6 +66,10 @@ export function memoryWorld(over: { ws?: string } = {}): MemoryWorld {
     audits,
     lines,
     clock,
+    onWrite: (listener) => {
+      writers.add(listener);
+      return () => void writers.delete(listener);
+    },
     session: (ctx = {}) => createMemorySession({ store, index, audit: (e) => audits.push(e), log: (l) => lines.push(l) }, { ...base(), ...ctx }),
     port: () => createMemoryPort({ config: () => config, store, index, audit: (e) => audits.push(e), log: (l) => lines.push(l), home: HOME }),
     runWith(id, ref, docs = {}, over = {}) {

@@ -92,6 +92,8 @@ export interface StageInput {
    * the section is absent when the list is ""). Absent: the memory is off or could not be opened, and the prompt is what it always was.
    */
   index?: string;
+  /** The notices of the shared memory no stage has read yet (their text, from the run's thread): the section right after the resume block. Absent: none. */
+  notices?: string[];
   /** The session writes: the call may also keep and remove notes of its own. Only with `index`. */
   indexWrite?: boolean;
   /** The stage changes the branch and the repository has AGENTS.md instructions that must stay true. */
@@ -267,6 +269,8 @@ export function stagePrompt(i: StageInput): string {
   // A stage that runs again opens with why and what was asked; the handoff is said there, so it is not repeated in the thread or at the end.
   const resume = i.resume && !i.answer ? i.resume : null;
   if (resume) sections.push(resumeSection(i, resume));
+  // What was written elsewhere in the memory since the last stage read the thread comes right after the app's own framing of this attempt, and before the folder.
+  if (i.notices?.length) sections.push(cp('runner.section.sharedNew', { text: fence(i.notices.join('\n\n')) }));
   for (const f of i.files) {
     sections.push(cp('runner.section.file', { name: f.name === ISSUE_FILE ? `${f.name} (${t('main.runner.issueFile')})` : f.name, text: fence(f.text) + (f.clipped ? `\n${cp('runner.section.clipped')}` : '') }));
     if (f.name === MEMORY_FILE && i.memory?.over) sections.push(cp('runner.section.memoryOver', { max: i.memory.max }));
