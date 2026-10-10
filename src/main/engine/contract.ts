@@ -214,11 +214,26 @@ export interface TurnLimit {
   ask(stop: TurnStop, signal?: AbortSignal): Promise<TurnDecision>;
 }
 
+/**
+ * Where the text of an answer being written goes, as it is written (the persona's chat shows it growing). Both engines feed it for the agent of the call only: what a
+ * sub-agent writes is a tool result for its parent and never reaches it.
+ */
+export interface TextSink {
+  /** The next piece of the turn being written. */
+  piece(text: string): void;
+  /** What was written is not the answer: the turn ended in tool calls (it moves to the activity as narration), the call moved to another model, or an attempt failed. */
+  restart(): void;
+  /** The whole final text, when the engine has it: a sink that got no piece shows it now. */
+  settle(text: string): void;
+}
+
 export interface EngineRequest {
   role: LlmRole;
   prompt: string;
-  /** JSON Schema of the answer. */
-  schema: Schema;
+  /** JSON Schema of the answer. Absent: the answer is plain text and the engine returns it as a string. */
+  schema?: Schema;
+  /** Where the text of the answer goes while it is written. Absent: nothing is streamed and the call asks the SDK for no partial message. */
+  text?: TextSink;
   /** The resolved provider and model serving this role (llm.roles + agents.roles). */
   target: ResolvedRole;
   /** Final system prompt: role preamble, the agent rules from the config and the VCS hints. */

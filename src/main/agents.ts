@@ -15,7 +15,7 @@ import { ACTIVITY_NODE_MAX } from '../shared/activity';
 import { type RunActivity, beginActivity, bindActivityParent, currentActivity, withActivityParent } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, type TurnLimit, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, type TextSink, type TurnLimit, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
 import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
 import { budgetText, busyText, clipProviderText } from './engine/budget';
@@ -514,7 +514,8 @@ function sdkOptions(req: EngineRequest): Options {
       ...SECRET_READ_DENY,
     ],
     hooks: req.activity ? reportBlocked(hooks, (call) => req.activity?.blocked(call)) : hooks,
-    outputFormat: { type: 'json_schema', schema: req.schema },
+    // A call with no schema answers in plain text: the SDK is asked for no structured output and the text is the answer.
+    ...(req.schema ? { outputFormat: { type: 'json_schema' as const, schema: req.schema } } : {}),
     maxTurns: 8,
     // An agent of the team reads the documentation the app hands it and none of Claude Code's: no CLAUDE.md or .claude/ of the project or the home, no settings
     // files, no automatic memory (which is the person's, not the project's). What the call needs from them the app passes itself (permissions, hooks, model, env).
@@ -674,7 +675,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? []), ...procedures, ...memory, ...(req.screen ? screenToolImpls(req.screen) : [])];
   const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name), ...(req.procedures ? procedureToolNames(req.procedures) : []), ...(req.memoryTools ? memoryToolNames(req.memoryTools) : []), ...(req.screen ? screenToolNames(req.screen) : [])];
   try {
-    return await runOpenOnce<T>({
+    const result = await runOpenOnce<T>({
     selection,
     prompt: req.prompt,
     options: { ...sdkOptions({ ...req, allowedTools }), model: req.target.model },
@@ -707,6 +708,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
         req.onUsage?.({ promptTokens: u.promptTokens, completionTokens: u.completionTokens, cachedTokens: u.cachedTokens, ...(u.costUsd !== undefined ? { costUsd: u.costUsd, costEstimated: false } : {}), ...(u.estimated ? { estimated: true } : {}) });
       },
       onText: () => req.beat?.(),
+      // The text of the answer as it is written, for the call that asked for it (the principal's own turns: the loop never gives a sub-agent these).
+      ...(req.text ? { onPiece: (text: string) => req.text?.piece(text), onTurnEnd: (toolsFollow: boolean) => (toolsFollow ? req.text?.restart() : undefined), onRestart: () => req.text?.restart() } : {}),
       onReasoning: () => req.beat?.(),
       // A call in the flex tier waits in the server's queue without a word: that is not a stage that stopped.
       onWait: () => req.beat?.(),
@@ -724,6 +727,9 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     subTurns: () => getConfig().runner.turns,
     turnLimit: req.turnLimit,
     });
+    // A server that did not stream gave no piece: the sink shows the whole text once, at the end.
+    if (!req.schema) req.text?.settle(typeof result.data === 'string' ? result.data : '');
+    return result;
   } catch (e) {
     // A refusal by budget is a wait, not a failure: it goes up with the provider that refused (a spare of the pool names itself), else the one the role is mapped to.
     if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(e.provider || req.target.providerId, 'open', e.detail);
@@ -811,6 +817,8 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
     // `tools: []` turns off the SDK's built-in tools and leaves the in-process servers; the strict config keeps out every server the person has set up themselves.
     ...(req.procedureOnly ? { tools: [], strictMcpConfig: true } : {}),
+    // Partial messages only for a call whose text is shown as it is written: no other call changes.
+    ...(req.text ? { includePartialMessages: true } : {}),
     model: req.target.model,
     env,
     ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
@@ -869,10 +877,31 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     if (held) held.owner?.thought(held.text.join('\n\n'));
     held = null;
   };
+  // The text of the call's own turn as the SDK streams it, for a call that shows it: pieces in order; a tool turn, or a new turn after text, is not the answer. Whatever a
+  // sub-agent streams (`parent_tool_use_id` set) is never shown. `written` is whether the sink holds text now.
+  let written = false;
+  const restartText = (): void => {
+    if (!written) return;
+    written = false;
+    req.text?.restart();
+  };
+  const streamed = (event: { type: string; delta?: { type?: string; text?: string }; content_block?: { type?: string } }): void => {
+    if (!req.text) return;
+    if (event.type === 'message_start') restartText();
+    else if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') restartText();
+    else if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta' && event.delta.text) {
+      written = true;
+      req.text.piece(event.delta.text);
+    }
+  };
+  // The last text of the call's own turns: what a plain answer falls back to when the result carries none.
+  let lastText = '';
   try {
     for await (const m of q) {
       req.beat?.();
-      if (m.type !== 'assistant') flushThought();
+      // A partial message lands between the blocks of one turn: it must not cut the thinking being joined into several lines.
+      if (m.type !== 'assistant' && m.type !== 'stream_event') flushThought();
+      if (m.type === 'stream_event' && (m as { parent_tool_use_id?: string | null }).parent_tool_use_id == null) streamed(m.event as Parameters<typeof streamed>[0]);
       if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt, req.resume !== undefined);
       if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
       if (m.type === 'assistant') {
@@ -901,10 +930,18 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
           }
           flushThought();
           if (block.type === 'text') {
-            if (owner === req.activity) assistantText.push(block.text);
+            if (owner === req.activity) {
+              assistantText.push(block.text);
+              if (!parentId) lastText = block.text;
+            }
             owner?.text(block.text);
           }
           if (block.type !== 'tool_use') continue;
+          // The call's own tool use: the text before it was narration and leaves what is being written, at once and not when the next turn starts.
+          if (!parentId) {
+            restartText();
+            lastText = '';
+          }
           if (block.name !== 'StructuredOutput') toolUsed = true;
           const input = block.input as Record<string, unknown>;
           sources.push(source(block.name, input));
@@ -940,7 +977,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         // The turn ended: the door is asked now, whatever the turn produced. A message that is waiting goes into the same session and the stage goes on; with none,
         // the closing call asks for the final answer with what the session already has.
         if (await throughDoor()) continue;
-        if (m.subtype !== 'success' || m.structured_output == null) {
+        if (m.subtype !== 'success' || (req.schema && m.structured_output == null)) {
           // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.
           const said = clipProviderText([...assistantText, typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : ''].filter(Boolean).join('\n'));
           // A refusal by budget is a wait, not a failure of the stage; the SDK prefixes the gateway's message with "Failed to authenticate", so the body decides.
@@ -953,6 +990,13 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
           throw new Error(failure);
         }
         stream?.end();
+        if (!req.schema) {
+          // A plain answer: the SDK's own final text, else the last text the call wrote itself.
+          const said = typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : '';
+          const text = said.trim() ? said : lastText;
+          req.text?.settle(text);
+          return { data: text as T, sessionId, sources };
+        }
         return { data: m.structured_output as T, sessionId, sources };
       }
     }
@@ -1426,7 +1470,10 @@ export interface AgentCall {
    */
   attachments?: { thread: string; refs: readonly AttachmentRef[] };
   prompt: string;
-  schema: Schema;
+  /** JSON Schema of the answer. Absent: the answer is plain text, returned as a string (the persona's chat). */
+  schema?: Schema;
+  /** Where the text of the answer goes as it is written. Only the agent of the call feeds it, never a sub-agent. */
+  text?: TextSink;
   /** The agent's system text: its job, its instructions and the rules of the stage (built by the runner). */
   system: string;
   /** The run's worktree for an agent that writes; where a reader looks at the code too. */
@@ -1566,6 +1613,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
       },
       async (picked) => {
         target = picked;
+        // A call that starts again on the next model of its pool has not written anything yet: what the first one wrote is not the answer.
+        call.text?.restart();
         // The documentation of the repositories goes in the system text, the same for both engines; a failure to read it never fails the call.
         const docs = call.docs && !only ? await harnessSection(call.docs, call.agent, { cwd: call.cwd, contextWindow: picked.capabilities?.contextWindow }).catch((e: unknown) => {
           console.error('[agent] could not build the documentation section', e instanceof Error ? e.message : e);
@@ -1575,6 +1624,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           role: picked.role,
           prompt: call.prompt,
           schema: call.schema,
+          ...(call.text ? { text: call.text } : {}),
           target: picked,
           system: [call.system, docs].filter(Boolean).join('\n\n'),
           cwd: call.cwd,
