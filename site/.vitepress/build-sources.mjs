@@ -71,8 +71,8 @@ const OTHER_LANGUAGES = [{ lang: 'pt-BR', word: 'Português' }, { lang: 'en', wo
  * A document the repository writes in both opens a page per language, and each names the other with a link: the
  * address language of a page is built here, and the site's check reads the same link to see that the pair is there.
  */
-function view(path, want) {
-  const text = readFileSync(join(docs, path), 'utf8');
+function view(path, want, at = root) {
+  const text = readFileSync(join(at, 'docs', path), 'utf8');
   const blocks = blocksOf(text);
   const pt = blocks.find((b) => b.lang === 'pt-BR');
   const en = blocks.find((b) => b.lang === 'en')?.body ?? text;
@@ -105,15 +105,23 @@ export function rewritesOf() {
   return rules;
 }
 
-export function writeSources() {
-  if (existsSync(sources)) rmSync(sources, { recursive: true, force: true });
-  mkdirSync(sources, { recursive: true });
+/**
+ * The pages the generator writes from the documents of a repository. `at` is the repository whose `docs/` is read,
+ * which is this one when the site is built; the suite passes a repository of its own so that the pages are the ones
+ * the build really writes. `into` is where the generated sources land, inside that repository unless the caller keeps
+ * them elsewhere — the site's sources are the default, so nothing of a test build is left in the tree.
+ */
+export function writeSources(at = root, into = join(at, 'site', 'generated')) {
+  const docs = join(at, 'docs');
+  if (existsSync(into)) rmSync(into, { recursive: true, force: true });
+  mkdirSync(into, { recursive: true });
+  const sources = into;
 
   for (const path of referencePages(docs)) {
     const page = pageFor(docs, path);
     const bare = referenceRoute(path).replace(/^\/reference\//, '');
     for (const want of page.single ? [page.lang] : ['en', 'pt-BR']) {
-      const { title, body, single } = view(path, want);
+      const { title, body, single } = view(path, want, at);
       const target = join(sources, 'reference', `${bare}${want === 'pt-BR' ? '.pt-br' : ''}.md`);
       mkdirSync(dirname(target), { recursive: true });
       const marker = single ? '\n<!-- site: one-language: the repository writes this document in one language only -->\n' : '';
@@ -121,26 +129,26 @@ export function writeSources() {
     }
   }
 
-  const posts = blogPosts(changelogOf(root).sections);
+  const posts = blogPosts(changelogOf(at).sections);
   for (const lang of ['en', 'pt-BR']) {
     const pt = lang === 'pt-BR';
     const list = posts.map((p) => `- [${p.title}](${postPath(p, lang)})`).join('\n');
     const head = pt
       ? 'Um texto por versão publicada, escrito a partir da seção daquela versão no histórico de mudanças do repositório.'
       : 'A post per released version, written from that version’s section of the repository’s changelog.';
-    const at = (rest) => join(sources, rest);
-    mkdirSync(dirname(at(pt ? 'blog/pt-br/index.pt-br.md' : 'blog/index.md')), { recursive: true });
-    writeFileSync(at(pt ? 'blog/pt-br/index.pt-br.md' : 'blog/index.md'), `# Blog\n\n${head}\n\n${list}\n`);
-    writeFileSync(at(pt ? 'changelog.pt-br.md' : 'changelog.md'), rendered('Changelog', rewriteLinks(historyPage(root, lang), 'CHANGELOG.md')));
+    const Q = (rest) => join(sources, rest);
+    mkdirSync(dirname(Q(pt ? 'blog/pt-br/index.pt-br.md' : 'blog/index.md')), { recursive: true });
+    writeFileSync(Q(pt ? 'blog/pt-br/index.pt-br.md' : 'blog/index.md'), `# Blog\n\n${head}\n\n${list}\n`);
+    writeFileSync(Q(pt ? 'changelog.pt-br.md' : 'changelog.md'), rendered('Changelog', rewriteLinks(historyPage(at, lang), 'CHANGELOG.md')));
     for (const post of posts) {
-      writeFileSync(at(pt ? `blog/pt-br/${post.slug}.pt-br.md` : `blog/${post.slug}.md`), rendered(post.title, rewriteLinks(postPage(post, lang), 'CHANGELOG.md')));
+      writeFileSync(Q(pt ? `blog/pt-br/${post.slug}.pt-br.md` : `blog/${post.slug}.md`), rendered(post.title, rewriteLinks(postPage(post, lang), 'CHANGELOG.md')));
     }
   }
-  return { pages: referencePages(docs), posts, version: versionOf(root) };
+  return { pages: referencePages(docs), posts, version: versionOf(at) };
 }
 
 /** What the build and the check both read: the reference pages, the posts and the version of the repository. */
-export function contentOf() {
-  const sections = changelogOf(root).sections;
-  return { pages: referencePages(docs).map((path) => ({ path, page: pageFor(docs, path) })), posts: blogPosts(sections), version: versionOf(root) };
+export function contentOf(at = root) {
+  const sections = changelogOf(at).sections;
+  return { pages: referencePages(join(at, 'docs')).map((path) => ({ path, page: pageFor(join(at, 'docs'), path) })), posts: blogPosts(sections), version: versionOf(at) };
 }
