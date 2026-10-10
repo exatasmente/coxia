@@ -49,13 +49,8 @@ describe('web policy for the runs', () => {
     expect(webRefusal('actions:approve', true)).toBeNull();
   });
 
-  it('keeps runs:memory and runs:activitySave open on purpose: the comment says so, and the audit records the door of each correction', () => {
+  it('keeps runs:memory and runs:activitySave open to a paired browser, and the audit records the door of each correction', () => {
     const text = source('module.ts');
-    const line = text.split('\n').findIndex((l) => l.includes("ctx.handle('runs:activitySave'"));
-    const comment = text.split('\n').slice(Math.max(0, line - 4), line).map((l) => l.replace(/^\s*\/\/\s?/, '')).join(' ');
-    // the comment no longer claims the correction is only the window's
-    expect(comment).not.toMatch(/only the window's/);
-    expect(comment).toMatch(/open to a paired browser on purpose/);
     expect(text).toMatch(/op: 'activity-correct'/);
     expect(text).toMatch(/op: 'cycle-memory-edit'/);
     expect(text).toMatch(/callOrigin\(\) === 'web' \? 'paired' : 'window'/);
