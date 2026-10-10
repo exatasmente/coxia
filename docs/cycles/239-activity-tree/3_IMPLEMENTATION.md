@@ -183,3 +183,7 @@ Five findings of `4_REVIEW.md`, one commit each, after the seven above:
    decorative (`KindIcon` takes `decorative`), because the button already says "Thought".
 
 Deviation: fix 4 took the screen closing under a turn (a turn cut short, `closed` false) as a no answer too, so that node ends failed as well.
+
+## After the merge
+
+The Windows build of the release failed: `src/renderer/src/activityTree.ts` and `ActivityTree.tsx` sit in one folder, and a case-insensitive file system with `.ts` tried before `.tsx` resolved `./ActivityTree` to the DOM-free module. The module is now `activityTreeModel.ts`, and `test/module-names-case.test.ts` fails on any two modules of a folder whose names differ only by case or extension. Earlier mentions of `activityTree.ts` in this folder name the module by its first name.
