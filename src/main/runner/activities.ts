@@ -205,9 +205,8 @@ export function frontOfActivity(run: Run, prior: ActivityFront | undefined, lang
  * The front of an activity as the store stands: projected from the newest run of the reference, or what the file had when no run is left. A correction the
  * person made (the front's own `source`) stands until the run moves past it: the newest run was not updated after the correction, so nothing new to say.
  */
-export function claimFront(index: ActivityIndex, store: RunStore, ref: string, language: Language): ActivityFront | null {
-  const run = store
-    .list()
+export function claimFront(index: ActivityIndex, store: RunStore, ref: string, language: Language, runs: readonly Run[] = store.list()): ActivityFront | null {
+  const run = runs
     .filter((r) => r.issue.ref === ref)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
   const prior = index.fronts[ref];
@@ -224,26 +223,30 @@ export interface SharedMemory {
   upsert(before: Run | null, after: Run | null, language: Language): void;
   /** Records that an activity exists, before its first run does (rule 8). Never throws. */
   ensure(issue: { ref: string; iid: number | null; title: string; url: string | null }, at: string): void;
-  /** The whole index, each front rebuilt from the store of runs when the record does not hold it, oldest first. */
-  read(store: RunStore, language: Language): ActivityIndex;
+  /**
+   * The whole index, each front rebuilt from the store of runs when the record does not hold it, oldest first. `runs` is the snapshot the caller already took: a call that
+   * reads the record and other things of the runs lists the run files once, not once per front.
+   */
+  read(store: RunStore, language: Language, runs?: readonly Run[]): ActivityIndex;
   /** What a call is told: a cut of the record, already rendered as text. */
-  render(store: RunStore, query: ActivityQuery, language: Language): string;
+  render(store: RunStore, query: ActivityQuery, language: Language, runs?: readonly Run[]): string;
   /** The person's correction of one front: masked, capped, marked as theirs and kept for the next reader. Null when that activity is unknown. */
   correct(ref: string, text: string, store: RunStore, language: Language): ActivityFront | null;
 }
 
 export function createSharedMemory(dir: string, now: () => Date = () => new Date()): SharedMemory {
   const at = (): string => now().toISOString();
-  const read = (store: RunStore, language: Language): ActivityIndex => {
+  const read = (store: RunStore, language: Language, snapshot?: readonly Run[]): ActivityIndex => {
     const index = readIndex(dir) ?? emptyIndex();
     const fronts: Record<string, ActivityFront> = {};
+    const runs = snapshot ?? store.list();
     // Oldest first, so a rebuild with no `prior` still lands in the order the file keeps.
     for (const front of sortedFronts(index).reverse()) {
-      const rebuilt = front.bare ? front : claimFront(index, store, front.ref, language);
+      const rebuilt = front.bare ? front : claimFront(index, store, front.ref, language, runs);
       if (rebuilt) fronts[front.ref] = rebuilt;
     }
     // An activity the record never learned about is still in the store: the reader adds it, so nothing that happened is invisible.
-    for (const run of store.list()) fronts[run.issue.ref] ??= frontOfActivity(run, undefined, language);
+    for (const run of runs) fronts[run.issue.ref] ??= frontOfActivity(run, undefined, language);
     return { version: ACTIVITIES_VERSION, fronts, agents: index.agents };
   };
   return {
@@ -273,10 +276,10 @@ export function createSharedMemory(dir: string, now: () => Date = () => new Date
       }
     },
     read,
-    render(store, query, language) {
-      const index = read(store, language);
+    render(store, query, language, runs) {
+      const index = read(store, language, runs);
       const fronts = selectFronts(index, query);
-      return renderFronts(fronts, { language, now: at(), ...(query.agents?.length ? { thumbnails: index.agents } : {}) });
+      return renderFronts(fronts, { language, now: at(), ...(query.agents?.length ? { thumbnails: query.onlyNamed ? thumbnailsOf(index, query.agents) : index.agents } : {}) });
     },
     correct(ref, text, store, language) {
       const index = read(store, language);
@@ -306,6 +309,11 @@ export interface ActivityQuery {
   refs?: string[];
   /** The agents the message named, and the owner of a direct conversation. */
   agents?: string[];
+  /**
+   * With the shared memory on: the section holds only what the call is about or named, whole, and only the named agents' thumbnails. The others in short are the index's
+   * `act:` entries, not this section. Absent: the section is what it always was (the named fronts, else everything in progress; every thumbnail once an agent is named).
+   */
+  onlyNamed?: boolean;
 }
 
 /** Every front, the newest first: the order the record is read in. Pure. */
@@ -338,8 +346,11 @@ export function compactLine(f: ActivityFront): string {
   return `- ${parts.join(' · ')}`;
 }
 
+/** Whether a front is one of the activities still in progress (open or failed): the ones a ranking puts above the finished. */
+export const isInProgress = inProgress;
+
 // One front, whole, as text: what a call named, and what a stage is about. The words are read in the language the call is written in.
-function frontText(f: ActivityFront, now: string, language: Language): string {
+export function frontText(f: ActivityFront, now: string, language: Language): string {
   const word = (key: string): string => cycleText(key, language);
   const stale = Date.parse(now) - Date.parse(f.updatedAt) > STALE_AFTER_MS;
   const lines = [`${f.ref} ${f.title}`.trim()];
@@ -363,7 +374,14 @@ export function selectFronts(index: ActivityIndex, q: ActivityQuery): ActivityFr
   const byRef = new Set([...(q.refs?.length ? refsNamed(index, q.refs) : []), ...(q.ref ? [q.ref] : [])]);
   const byAgent = new Set((q.agents ?? []).map((a) => a.trim().toLowerCase()).filter(Boolean));
   const picked = all.filter((f) => byRef.has(f.ref) || (f.agent && byAgent.has(f.agent.toLowerCase())) || (f.lastAgent && byAgent.has(f.lastAgent.toLowerCase())));
+  if (q.onlyNamed) return picked;
   return picked.length ? picked : all.filter(inProgress);
+}
+
+/** The thumbnails of the agents a query named, and nobody else's. */
+export function thumbnailsOf(index: ActivityIndex, agents: readonly string[]): ActivityIndex['agents'] {
+  const wanted = new Set(agents.map((a) => a.trim().toLowerCase()).filter(Boolean));
+  return Object.fromEntries(Object.entries(index.agents).filter(([id]) => wanted.has(id.toLowerCase())));
 }
 
 /**

@@ -88,3 +88,26 @@ Deviations and additions:
   makes the change visible; commit 10 completes it.
 - Tests: `memory-channels`, `memory-policy`, `memory-ui`, `memory-retention` (new), `runs-policy`, `forum-store`, `agent-assist-draft` and `memory-store` (extended). The audit kind's two
   catalog keys are covered by `memory-ui`; there is no test that renders the screen (the project has no React renderer test, and the view's logic is in `memoryModel.ts`).
+
+## Commit 5: the index of notes, activities, documents, version and roadmap
+
+`src/main/memory/index.ts` (entries, the ranking key, search, the lines and caps, `open` for one entry as a bounded excerpt), `documents.ts` (the headings of the cycle documents,
+sections and excerpts), `facts.ts` (version, roadmap); in `src/main/runner/activities.ts` the single run snapshot (`read` and `claimFront` take the runs the caller listed),
+`ActivityQuery.onlyNamed`, `thumbnailsOf`; tests `memory-index`, `memory-facts` and the three new cases of `activityIndex`. Nothing calls the index yet.
+
+Deviations and additions:
+
+- **`MemoryIndex` is a small object, not loose functions**: `build` (ranked entries), `list` (the lines within the prompt's or the tool's caps) and `open` (the excerpt of one entry). The
+  plan puts `open` in the tool handlers (commit 6); the part that knows how to slice a note, a front, a document, the roadmap and the version detail lives here, so the handler only
+  words it (standing sentence, fence, mask of the call).
+- **The facts are asynchronous**, because the tags come from git, and so is `build`. `cacheOnly` and `warm()` are here already (the plan builds the ceremonies' cache-only read in commit 8): a
+  cold repository reads `Version: not read yet` and a refresh starts behind the call, one at a time per repository. A stale cache is still an answer.
+- **The roadmap file may not be a symbolic link** (the plan says "`lstat`" and leaves the link open): it reads as "could not be read". The person points at the real file. `secretPath`
+  is given to `createFacts` as `secret(path)`, not imported, so the module has no dependency on `agents.ts` and the commit-6 port passes the real one.
+- **An activity entry's title is its compact line without the leading reference** (`act:app#101 Add the thing · Spec · developer`): the pointer already carries the reference.
+- **`0_ISSUE.md` is not indexed.** It is the tracker's text the agents already receive, not a document a stage produced. `MEMORY.md` is (Q7), by its sections.
+- **`Built.held`** counts the notes held back from every agent (waiting for review, foreign, unsafe), for the log line of commit 7.
+- **`onlyNamed` does both divergences at once**: the section holds nothing when nothing was named (divergences 1 and 2) and renders only the named agents' thumbnails (divergence 7). Without
+  the flag nothing changes, byte for byte (`test/activityIndex.test.ts`); the call sites pass it in commit 7.
+- **Measured** (risk 2 of the plan), on a temporary workspace of 500 notes in 10 conversations and 200 runs with 5 documents each (the 30 newest are read): the first list of a process takes
+  about 160 ms, the following ones 33 to 37 ms, with the cycle documents cached by path, modification time and size. The run files are listed once per call (a test counts it).
