@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The steps of a sub-agent are a setting.** Settings › Runner has five more numbers under the stage's two: the steps of an `explore`, `edit`, `shell` and `screen` sub-agent and of a sub-agent that is not of a kind (`runner.turns.explore`, `.edit`, `.shell`, `.screen` and `.plain`, from 1 to 500, schema 29). They show 12, 30, 20, 30 and 12, the values they always had, so nothing changes until a number is edited; the computer and a paired browser both edit them. A sub-agent takes its number when it starts: changing one applies from the next sub-agent.
+
 ## [0.9.0] - 2026-10-10
 
 ### Added

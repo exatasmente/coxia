@@ -718,6 +718,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
     incoming: req.incoming,
+    // Read when each sub-agent starts, so a change in Settings applies from the next one.
+    subTurns: () => getConfig().runner.turns,
     });
   } catch (e) {
     // A refusal by budget is a wait, not a failure: it goes up with the provider that refused (a spare of the pool names itself), else the one the role is mapped to.

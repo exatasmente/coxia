@@ -67,6 +67,20 @@ describe('config schema', () => {
     expect(validateConfig({ ...neutralConfig(), runner: { ...neutralConfig().runner, showReasoning: 'yes' } }).errors.map((e) => e.path)).toEqual(['runner.showReasoning']);
   });
 
+  it('has the turns of the sub-agents as integers from 1 to 500 under runner.turns, and refuses a bad one by its path', () => {
+    const keys = ['explore', 'edit', 'shell', 'screen', 'plain'] as const;
+    const turnsSchema = CONFIG_SCHEMA.properties?.runner?.properties?.turns?.properties;
+    expect(neutralConfig().runner.turns).toEqual({ read: 30, write: 80, explore: 12, edit: 30, shell: 20, screen: 30, plain: 12 });
+    for (const k of keys) {
+      expect(turnsSchema?.[k]).toMatchObject({ type: 'integer', minimum: 1, maximum: 500 });
+      const bad = (v: unknown) => validateConfig({ ...neutralConfig(), runner: { ...neutralConfig().runner, turns: { ...neutralConfig().runner.turns, [k]: v } } }).errors.map((e) => e.path);
+      expect(bad(0), k).toEqual([`runner.turns.${k}`]);
+      expect(bad(501), k).toEqual([`runner.turns.${k}`]);
+      expect(bad('12'), k).toEqual([`runner.turns.${k}`]);
+      expect(bad(500), k).toEqual([]);
+    }
+  });
+
   it('reads a config stored without the conversation limits as the defaults, and refuses a limit outside its range', () => {
     const { conversations: _gone, ...runner } = neutralConfig().runner;
     const r = validateConfig({ ...neutralConfig(), runner });

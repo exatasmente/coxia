@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 28): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 29): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 28;
+export const CONFIG_SCHEMA_VERSION = 29;
 
 /** The local read-only state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
@@ -826,10 +826,16 @@ export interface RunnerIdentity {
   email: string;
 }
 
-/** The turn caps of an agent of the runner, by what it may do. */
+/** The turn caps of an agent of the runner, by what it may do, and of the sub-agents it starts, by their kind. */
 export interface RunnerTurns {
   read: number;
   write: number;
+  /** The turns of a sub-agent of kind `explore`, `edit`, `shell` or `screen`, and of a plain one (no kind). Read when the sub-agent starts. */
+  explore: number;
+  edit: number;
+  shell: number;
+  screen: number;
+  plain: number;
 }
 
 /** How far a sandbox reaches the network: nowhere; only the listed package registries through the app's filtering proxy; or the computer's own network, shared whole. */

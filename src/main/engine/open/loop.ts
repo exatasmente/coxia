@@ -29,7 +29,7 @@ import { type ToolContext, type ToolImage, type ToolImpl, ToolError } from './to
 import type { ChatMessage, Completion, ContentPart, Json, ToolCall, ToolChoice, ToolDef } from './types';
 import type { Activity, PoolMode } from '../../../shared/config/types';
 import { effectivePoolMode } from '../../../shared/config/poolMode';
-import { type SubKind, MUTATING_KINDS, KIND_TURNS, isSubKind, modelOfKind, offeredKinds, toolsOfKind } from './subagent';
+import { type SubKind, MUTATING_KINDS, isSubKind, modelOfKind, offeredKinds, subTurnsOf, toolsOfKind } from './subagent';
 import { t } from '../../../shared/i18n';
 import { incomingActivity, incomingText } from '../incoming';
 
@@ -136,6 +136,8 @@ export interface OpenRunParams {
   secretGlobs?: string[];
   docs?: DocSources;
   maxTurns: number;
+  // The turns a sub-agent gets, read when it starts (the workspace's setting); without it, the defaults of `DEFAULT_SUB_TURNS`.
+  subTurns?: () => Partial<Record<SubKind | 'plain', number>>;
   resume?: string;
   // Where the JSONL transcripts live; null keeps the session in memory only.
   sessionsDir: string | null;
@@ -443,8 +445,11 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       finish(e instanceof Error ? e.message : String(e));
       throw e;
     }
-    const sub = async (): Promise<OpenRunResult<string>> =>
-      runOpen<string>({
+    // Taken when the sub-agent really begins (after its wait, for the kinds that change things), so a number changed while it queued applies.
+    let allowed = subTurnsOf(undefined, kind);
+    const sub = async (): Promise<OpenRunResult<string>> => {
+      allowed = subTurnsOf(p.subTurns, kind);
+      return runOpen<string>({
         ...p,
         role,
         prompt,
@@ -453,7 +458,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         // `Agent` is the principal's alone, and so is every tool that writes into the principal's place (the memory's write tools): a sub-agent reads.
         allowedTools: p.allowedTools.filter((t) => t !== 'Agent' && !principalOnly.has(t)),
         systemAppend: [def?.body, kind ? subagentNote(kind) : undefined].filter(Boolean).join('\n\n') || undefined,
-        maxTurns: kind ? KIND_TURNS[kind] : 12,
+        maxTurns: allowed,
         sessionsDir: null,
         sources,
         depth: (p.depth ?? 0) + 1,
@@ -463,6 +468,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         events: { ...events, onThought: undefined, ...handle?.events, ...(kind ? { onUsage: (u) => { model = u.model; events.onUsage?.(u); } } : {}) },
         ...(kind ? { kind, incoming: undefined } : {}),
       });
+    };
     const inside = (): Promise<OpenRunResult<string>> => (handle ? handle.within(sub) : sub());
     if (mutates) mutatingOpen++;
     try {
@@ -480,7 +486,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       return r.data;
     } catch (e) {
       // Out of turns is the sub-agent's failure, not the principal's: the principal reads it and decides (what the sub-agent did on disk stays).
-      const failure = kind && e instanceof OpenMaxTurnsError ? new ToolError(t('main.engine.text.subTurns', { kind, turns: KIND_TURNS[kind] })) : e;
+      const failure = kind && e instanceof OpenMaxTurnsError ? new ToolError(t('main.engine.text.subTurns', { kind, turns: allowed })) : e;
       finish(failure instanceof Error ? failure.message : String(failure));
       throw failure;
     } finally {

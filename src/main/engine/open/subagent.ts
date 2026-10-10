@@ -19,8 +19,19 @@ export const KIND_ACTIVITIES: Record<SubKind, readonly Activity[]> = {
   screen: ['explore', 'screen'],
 };
 
-/** Turns a sub-agent of each kind gets; running out is an error the principal reads and decides on. */
+/** Turns a sub-agent of each kind gets by default; the workspace's `runner.turns` says the numbers in force. Running out is an error the principal reads and decides on. */
 export const KIND_TURNS: Record<SubKind, number> = { explore: 12, edit: 30, shell: 20, screen: 30 };
+
+/** The turns of a sub-agent by its kind, and of one with no kind (`plain`). */
+export type SubTurns = Record<SubKind | 'plain', number>;
+export const DEFAULT_SUB_TURNS: SubTurns = { ...KIND_TURNS, plain: 12 };
+
+/** The turns a sub-agent starting now gets: the setting when it is a sensible number, else the default of its kind. */
+export function subTurnsOf(read: (() => Partial<Record<SubKind | 'plain', number>>) | undefined, kind: SubKind | undefined): number {
+  const key = kind ?? 'plain';
+  const n = read?.()[key];
+  return typeof n === 'number' && Number.isInteger(n) && n >= 1 ? n : DEFAULT_SUB_TURNS[key];
+}
 
 /** The kinds that change something, one at a time: two of them at once would be two hands on the same worktree (or the same screen). */
 export const MUTATING_KINDS: ReadonlySet<SubKind> = new Set(['edit', 'shell', 'screen']);
