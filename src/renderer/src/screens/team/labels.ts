@@ -1,7 +1,7 @@
 import type { SitesRefusal } from '../../../../shared/browser';
 import type { AssistField } from '../../../../shared/agentAssist';
 import type { SandboxGuiStatus, SandboxReason } from '../../../../shared/sandbox';
-import type { AgentPermission, SandboxNetwork, AgentShell, AgentTracker, CommentEventKey, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
+import type { AgentPermission, PoolMode, SandboxNetwork, AgentShell, AgentTracker, CommentEventKey, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
 import type { AssistStep } from './assistEdit';
 import type { TeamTab } from './teamNav';
 
@@ -24,6 +24,9 @@ export const PERMISSION_HINT: Record<AgentPermission, string> = {
   read: 'ui.team.permission.read.hint',
   worktree: 'ui.team.permission.worktree.hint',
 };
+
+export const POOL_MODE_LABEL: Record<PoolMode, string> = { fallback: 'ui.team.poolMode.fallback', switch: 'ui.team.poolMode.switch', delegate: 'ui.team.poolMode.delegate' };
+export const POOL_MODE_HINT: Record<PoolMode, string> = { fallback: 'ui.team.poolMode.fallback.hint', switch: 'ui.team.poolMode.switch.hint', delegate: 'ui.team.poolMode.delegate.hint' };
 
 export const TRACKER_LABEL: Record<AgentTracker, string> = { none: 'ui.team.tracker.none', read: 'ui.team.tracker.read' };
 export const TRACKER_HINT: Record<AgentTracker, string> = { none: 'ui.team.tracker.none.hint', read: 'ui.team.tracker.read.hint' };

@@ -96,6 +96,7 @@ describe('a stage that fought a command and kept nothing', () => {
     expect(calls).toHaveLength(1);
     const c = calls[0];
     expect(c.maxTurns).toBe(3);
+    expect(c.background).toBe(true);
     expect(c.agent.permission).toBe('read');
     expect(c.exec).toBeUndefined();
     expect(c.screen).toBeUndefined();

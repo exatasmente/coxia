@@ -1,6 +1,7 @@
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
+import { intlLocale, t } from '../../shared/i18n';
 import type { AttachmentRef } from '../../shared/attachments';
-import type { AgentToolsConfig, LlmRole } from '../../shared/config/types';
+import type { Activity, AgentToolsConfig, EngineId, LlmRole, PoolMode } from '../../shared/config/types';
 import type { RunActivity } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import type { UsageReport } from '../../shared/runs/usage';
@@ -21,6 +22,8 @@ export interface Run<T> {
   sources: string[];
   /** The agent ran out of turns and answered from what it had already read. */
   partial?: true;
+  /** The engine that answered, which `runAgent` fills: with a pool of models it is the engine of the model that was picked, not always the role's first one. */
+  engine?: EngineId;
 }
 
 /** Thrown by an engine whose agent hit its turn limit; `run` then resumes the session once, without tools, for a partial answer. */
@@ -31,6 +34,24 @@ export class MaxTurnsError extends Error {
   ) {
     // i18n-ignore: error text the engine compares
     super('agent ended with error_max_turns');
+  }
+
+  /** The engine that held the session, filled where the model was picked: the wrap-up that resumes the session has to run on it. */
+  engine?: EngineId;
+}
+
+/**
+ * Thrown by the Claude SDK path when the text of its answer says the model was busy (rate limit, overload, server error). Its message is the failure text a call has
+ * always had, so a role with one model fails exactly as before; a pool moves to the next model when no tool was used yet (`toolUsed`), because nothing is undone then.
+ */
+export class EngineBusyError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'rate_limit' | 'overloaded' | 'server',
+    readonly toolUsed: boolean,
+  ) {
+    super(message);
+    this.name = 'EngineBusyError';
   }
 }
 
@@ -48,6 +69,73 @@ export class ProviderBudgetError extends Error {
     super(`provider budget exhausted: ${provider}`);
     this.name = 'ProviderBudgetError';
   }
+}
+
+/**
+ * Thrown when every model of a role's pool refused the call for being busy (rate limit, overload or a server error, after the retries of the client). It is a
+ * failure of the stage like any other, with a text that names the pool: the models and when the first one is back (epoch ms; null when none is known).
+ */
+export class ProviderBusyError extends Error {
+  constructor(
+    readonly pool: string,
+    readonly engine: 'claude-sdk' | 'open',
+    readonly models: string[],
+    readonly until: number | null,
+    readonly detail: string,
+  ) {
+    super(t('main.runner.error.pool-busy', poolBusyParams({ pool, models, until, detail })));
+    this.name = 'ProviderBusyError';
+  }
+}
+
+const clockOf = (at: number): string => new Date(at).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
+
+/** The words of the failure of a pool that is all busy: the pool, its models and when the first one is back. The stage and the ceremonies both say it this way. */
+export function poolBusyParams(e: { pool: string; models: string[]; until: number | null; detail: string }): Record<string, string> {
+  const time = e.until === null ? null : clockOf(e.until);
+  return { pool: e.pool, models: e.models.join(', '), when: time === null ? t('main.runner.error.pool-busy.whenUnknown') : t('main.runner.error.pool-busy.when', { time }), detail: e.detail };
+}
+
+/**
+ * A call moved from one model of its pool to another. `reason` is the refusal that made it (the model was busy; `resting` is one that was already resting from a
+ * refusal elsewhere), `activity` (the next turn belongs to a list that does not hold the model in use) or `delegate` (the main model handed a task to a sub-agent that
+ * runs on another model: nothing was left behind, `from` is the main model and `activity` the kind of the sub-agent). `until` is when the model left behind is back
+ * (epoch ms), null when it is not resting.
+ */
+export interface PoolNotice {
+  from: { label: string; provider?: string };
+  to: { label: string; provider?: string };
+  reason: 'rate_limit' | 'overloaded' | 'server' | 'resting' | 'activity' | 'delegate';
+  until: number | null;
+  activity: Activity;
+}
+
+/** A model as the person reads it; the provider goes along only when the two models of a switch come from different ones. */
+const nameOf = (m: PoolNotice['from'], other: PoolNotice['from']): string => (m.provider && m.provider !== other.provider ? `${m.label} (${m.provider})` : m.label);
+
+/** The words of a switch, for the thread and for the live activity. A switch for the kind of work has no `time`: nothing is resting. */
+export function poolNoticeParams(e: PoolNotice): Record<string, string> {
+  return {
+    from: nameOf(e.from, e.to),
+    to: nameOf(e.to, e.from),
+    time: e.until === null ? '' : clockOf(e.until),
+    activity: t(`main.engine.pool.activity.${e.activity}`),
+    // What a sub-agent was handed (a delegation names the work, not the kind of turn).
+    ...(e.reason === 'delegate' ? { work: t(`main.engine.pool.work.${e.activity}`) } : {}),
+  };
+}
+
+/** The key of the thread line of a switch (under `main.forum.code.`): the model was busy, the turn asked for another list, or a sub-agent runs on another model. */
+export const poolNoticeCode = (e: PoolNotice): 'runner.model.switched' | 'runner.model.moved' | 'runner.model.delegated' =>
+  e.reason === 'delegate' ? 'runner.model.delegated' : e.reason === 'activity' || e.until === null ? 'runner.model.moved' : 'runner.model.switched';
+
+/** The thread line of a switch: the code under `main.forum.code.` and its params, with the agent whose call moved. */
+export const poolNoticeLine = (agent: string, e: PoolNotice): { code: string; params: Record<string, string> } => ({ code: poolNoticeCode(e), params: { agent, ...poolNoticeParams(e) } });
+
+/** One line saying a switch, for the live activity of a call that has no thread to say it in. */
+export function poolNoticeText(e: PoolNotice): string {
+  const code = poolNoticeCode(e);
+  return t(code === 'runner.model.switched' ? 'main.engine.pool.switched' : code === 'runner.model.delegated' ? 'main.engine.pool.delegated' : 'main.engine.pool.moved', poolNoticeParams(e));
 }
 
 /** The read-only shell the agent may use: SDK permission rules plus the allow-list the hook enforces (see agents.ts). */
@@ -175,6 +263,18 @@ export interface EngineRequest {
   onUsage?: (usage: UsageReport) => void;
   /** Called at every sign of life from the model: a piece of text, a tool call, a usage report, a message of the SDK. */
   beat?: () => void;
+  /** Called when the call moves to another model of its pool, so the thread can say it. */
+  onPool?: (notice: PoolNotice) => void;
+  /**
+   * How the target's pool is used (agent, then stage, then workspace; see `resolvePoolMode`). Only the open engine reads it: the Claude SDK takes an entry of the pool
+   * at the start of a call and nothing more. Absent: `switch`, which is how a pool behaved before the modes.
+   */
+  poolMode?: PoolMode;
+  /**
+   * Nobody waits for the answer, so the open engine may ask a server that has it for the cheaper tier (flex), for the models that take it. Set for a stage, a question
+   * between agents and the last turn of procedures; absent for a ceremony and a mention, where the person is waiting. The Claude SDK ignores it.
+   */
+  background?: boolean;
   /** Where the engine reports what it is doing (tool calls, narration, blocked calls); the run's own states are reported by `run`. */
   activity?: RunActivity;
   /**

@@ -5,10 +5,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { migrateConfig } from '../src/shared/config/migrations';
 import { proceduresOn } from '../src/shared/procedures';
 import { unconfinedOf } from '../src/shared/unconfined';
-import { neutralConfig, neutralRunner } from '../src/shared/config/defaults';
+import { neutralConfig, neutralRunner, newProvider, withConfigDefaults } from '../src/shared/config/defaults';
 import { CONFIG_SCHEMA_VERSION, LLM_ROLES } from '../src/shared/config/types';
 import { validateConfig } from '../src/shared/config/validate';
 import { MARKER_FILE, V1_BACKUP_FILE, bootstrapConfigs, detectExistingInstall, readConfigFile } from '../src/main/config-bootstrap';
+import { TEST_STAGES } from './helpers/config';
 import { ensureWorkspaces, setTestFlag, workspaceDir, createWorkspace } from '../src/main/workspaces-core';
 import { V1_SETTINGS, exampleProfile } from './helpers/config';
 
@@ -580,6 +581,9 @@ describe('migrateConfig', () => {
       expect(twice.config).toEqual(once.config);
     });
 
+    it('is followed by later steps: the chain does not stop at 23', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(23);
+    });
   });
 
   describe('schema 24 to 25: the fence of the runs\' file tools', () => {
@@ -613,10 +617,186 @@ describe('migrateConfig', () => {
       expect(unconfinedOf(null)).toBe(false);
       expect(unconfinedOf({ unconfined: true })).toBe(true);
     });
+  });
 
-    it('is the newest step: 25 is current and 26 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(25);
-      expect(() => migrateConfig({ schemaVersion: 26 }, { legacyInstall: false })).toThrow(/newer app/);
+  describe('schema 25 to 26: model pools', () => {
+    const v25 = (): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 25;
+      c.llm.providers.push(newProvider({ id: 'spare', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://example.com/v1' }));
+      c.agents.team.push({ id: 'writer', name: 'Writer', job: '', model: { role: null, provider: 'spare', model: 'model-a' }, stages: [], permission: 'read', tracker: 'none', shell: 'none', autonomous: false, turnsTo: null, instructions: '', system: false });
+      return c;
+    };
+
+    it('only bumps the version, leaves a note and yields a valid file with no pool anywhere', () => {
+      const r = migrateConfig(v25(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(25);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.notes.join(' ')).toContain('model pools were added');
+      expect(validateConfig(r.config).ok).toBe(true);
+      for (const role of LLM_ROLES) {
+        expect(r.config.llm.roles[role].fallbacks).toBeUndefined();
+        expect(r.config.llm.roles[role].activities).toBeUndefined();
+      }
+      expect(r.config.llm.scoreOverrides).toBeUndefined();
+      expect(r.config.agents.team.every((a) => a.model.fallbacks === undefined && a.model.activities === undefined)).toBe(true);
+    });
+
+    it('changes nothing else: the rest of the file is exactly as it was', () => {
+      const before = v25();
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect({ ...r.config, schemaVersion: 25 }).toEqual(before);
+    });
+
+    it('keeps a pool a file already carries, and a second start changes nothing', () => {
+      const c = v25();
+      c.llm.roles.deep.fallbacks = [{ provider: 'spare', model: 'model-b', images: true }];
+      c.llm.roles.deep.activities = { shell: [{ provider: 'spare', model: 'model-b' }] };
+      const once = migrateConfig(c, { legacyInstall: false });
+      expect(once.config.llm.roles.deep.fallbacks).toEqual([{ provider: 'spare', model: 'model-b', images: true }]);
+      expect(once.config.llm.roles.deep.activities).toEqual({ shell: [{ provider: 'spare', model: 'model-b' }] });
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+    it('a bad pool entry is dropped alone: the role keeps its model, and so do the good entries', () => {
+      const c = v25();
+      c.llm.roles.deep = { provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'gone', model: 'model-b' }, { provider: 'spare', model: 'model-c' }], activities: { edit: [{ provider: 'spare', model: 'model-b' }, { provider: 'spare', model: 'model-b' }] } };
+      c.agents.team[c.agents.team.length - 1].model.fallbacks = [{ provider: 'gone', model: 'model-b' }];
+      c.schemaVersion = 26;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.changed).toBe(true);
+      expect(r.config.llm.roles.deep).toEqual({ provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'spare', model: 'model-c' }], activities: { edit: [{ provider: 'spare', model: 'model-b' }] } });
+      expect(r.config.agents.team.find((a) => a.id === 'writer')?.model).toEqual({ role: null, provider: 'spare', model: 'model-a' });
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('a pool field of the wrong type is dropped, not the role around it', () => {
+      const c = v25();
+      c.llm.roles.turn.fallbacks = 'model-b';
+      c.llm.roles.turn.images = 'yes';
+      c.llm.scoreOverrides = { floors: { shell: 120 } };
+      c.schemaVersion = 26;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.llm.roles.turn).toEqual(c.llm.roles.turn && { provider: c.llm.roles.turn.provider, model: c.llm.roles.turn.model });
+      expect(r.config.llm.scoreOverrides).toBeUndefined();
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('reads a file without a pool mode as delegate and writes none into the agents and stages', () => {
+      const c = v25();
+      delete c.llm.poolMode;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.llm.poolMode ?? 'delegate').toBe('delegate');
+      expect(r.config.agents.team.every((a) => a.poolMode === undefined)).toBe(true);
+      expect(r.config.devCycle.stages.every((s) => s.poolMode === undefined)).toBe(true);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps a mode a file carries, in the workspace, an agent, a stage and a flow', () => {
+      const c = v25();
+      c.devCycle.stages = [structuredClone(TEST_STAGES[0])];
+      c.llm.poolMode = 'switch';
+      c.agents.team[c.agents.team.length - 1].poolMode = 'fallback';
+      c.devCycle.stages[0].poolMode = 'delegate';
+      c.devCycle.flows = { release: [{ ...c.devCycle.stages[0], poolMode: 'switch' }] };
+      c.schemaVersion = 26;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.changed).toBe(false);
+      expect(r.config.llm.poolMode).toBe('switch');
+      expect(r.config.agents.team.find((a) => a.id === 'writer')?.poolMode).toBe('fallback');
+      expect(r.config.devCycle.stages[0].poolMode).toBe('delegate');
+      expect(r.config.devCycle.flows?.release[0].poolMode).toBe('switch');
+    });
+
+    it('drops an invalid mode alone: the workspace, the agent, the stage and the flow keep everything else', () => {
+      const c = v25();
+      c.devCycle.stages = [structuredClone(TEST_STAGES[0])];
+      c.llm.poolMode = 'both';
+      const writer = c.agents.team[c.agents.team.length - 1];
+      writer.poolMode = 3;
+      c.devCycle.stages[0].poolMode = 'sometimes';
+      c.devCycle.flows = { release: [{ ...c.devCycle.stages[0], poolMode: 'x' }] };
+      c.schemaVersion = 26;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.changed).toBe(true);
+      expect(r.config.llm.poolMode ?? 'delegate').toBe('delegate');
+      expect(r.config.llm.roles).toEqual(c.llm.roles);
+      const w = r.config.agents.team.find((a) => a.id === 'writer')!;
+      expect(w.poolMode).toBeUndefined();
+      expect(w.model).toEqual({ role: null, provider: 'spare', model: 'model-a' });
+      expect(r.config.devCycle.stages[0]).toMatchObject({ id: c.devCycle.stages[0].id });
+      expect(r.config.devCycle.stages[0].poolMode).toBeUndefined();
+      expect(r.config.devCycle.flows?.release[0].poolMode).toBeUndefined();
+      expect(r.notes.filter((n) => n.startsWith('dropped')).length).toBe(4);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('switches nothing on for what the provider offers: no features, no offer, no effort, and a file without flex reads it as on', () => {
+      const c = v25();
+      delete c.runner.flex;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.notes.join(' ')).toContain('what a provider offers');
+      expect(r.config.llm.providers.every((p) => p.features === undefined)).toBe(true);
+      expect(r.config.llm.effort).toBeUndefined();
+      expect(LLM_ROLES.every((role) => r.config.llm.roles[role].offer === undefined)).toBe(true);
+      expect(withConfigDefaults(r.config).runner.flex).toBe(true);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps what a file already carries of it, and a second start changes nothing', () => {
+      const c = v25();
+      c.llm.providers[c.llm.providers.length - 1].features = { serviceTier: true, catalogUrl: 'http://example.com/models/list' };
+      c.llm.effort = { shell: 'low', write: 'default' };
+      c.llm.roles.deep.offer = { flex: true, effort: true, deprecated: 1790000000, replacedBy: 'model-b' };
+      c.runner.flex = false;
+      const once = migrateConfig(c, { legacyInstall: false });
+      expect(once.config.llm.providers.at(-1)?.features).toEqual({ serviceTier: true, catalogUrl: 'http://example.com/models/list' });
+      expect(once.config.llm.effort).toEqual({ shell: 'low', write: 'default' });
+      expect(once.config.llm.roles.deep.offer).toEqual({ flex: true, effort: true, deprecated: 1790000000, replacedBy: 'model-b' });
+      expect(once.config.runner.flex).toBe(false);
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+    });
+
+    it('a bad field of it is dropped alone: the provider, the role and the workspace keep the rest', () => {
+      const c = v25();
+      const last = c.llm.providers.length - 1;
+      c.llm.providers[last].features = { serviceTier: 'yes', failFast: true };
+      c.llm.effort = { shell: 'max', edit: 'high' };
+      c.llm.roles.deep.offer = { flex: 'yes' };
+      c.llm.roles.turn.offer = { flex: true };
+      c.agents.team[c.agents.team.length - 1].model.offer = { effort: 3 };
+      c.runner.flex = 'on';
+      c.schemaVersion = 26;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.llm.providers[last]).toMatchObject({ id: 'spare', baseUrl: 'http://example.com/v1', features: { failFast: true } });
+      expect(r.config.llm.providers[last].features?.serviceTier).toBeUndefined();
+      expect(r.config.llm.effort).toEqual({ edit: 'high' });
+      expect(r.config.llm.roles.deep.offer).toBeUndefined();
+      expect(r.config.llm.roles.deep.model).toBe(c.llm.roles.deep.model);
+      expect(r.config.llm.roles.turn.offer).toEqual({ flex: true });
+      expect(r.config.agents.team.find((a) => a.id === 'writer')?.model).toEqual({ role: null, provider: 'spare', model: 'model-a' });
+      expect(r.config.runner.flex).toBe(true);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('a catalog address of another origin is dropped, not the provider', () => {
+      const c = v25();
+      const last = c.llm.providers.length - 1;
+      c.llm.providers[last].features = { serviceTier: true, catalogUrl: 'https://elsewhere.example.net/models/list' };
+      c.schemaVersion = 26;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.llm.providers[last].features).toEqual({ serviceTier: true });
+      expect(r.config.llm.providers[last].baseUrl).toBe('http://example.com/v1');
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('is the newest step: 26 is current and 27 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(26);
+      expect(() => migrateConfig({ schemaVersion: 27 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

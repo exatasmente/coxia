@@ -1,6 +1,6 @@
 // i18n-lint: allow-file English diagnostics that name a path inside a cycle template file
 import { mergeDeep, neutralConfig } from '../config/defaults';
-import type { AgentDef, AgentShell, AgentTracker, DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
+import type { AgentDef, AgentModel, AgentShell, AgentTracker, DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
 import { validateConfig, type ConfigIssue } from '../config/validate';
 import { DOCS_FLOW_KEY, RELEASE_FLOW_KEY } from '../config/squads';
 import { isDraft, newAgent, pruneAgentStages, withoutSandbox } from '../config/team';
@@ -65,12 +65,20 @@ export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], br
     .map((a) => {
       // Nor does it bring commands allowed always: those are the person's answers on this computer.
       // The screen, the hosts it reaches and its logged-in browser are the person's choice on this computer too: a template never brings them.
-      const made = newAgent({ ...structuredClone(a), system: false, squad: undefined, allowedCommands: undefined, screen: undefined, allowedHosts: undefined, browserProfile: undefined });
+      const made = newAgent({ ...structuredClone(a), model: withoutPool(a.model), system: false, squad: undefined, allowedCommands: undefined, screen: undefined, allowedHosts: undefined, browserProfile: undefined });
       const agent = made.shell === 'host' ? { ...made, shell: 'sandbox' as const } : made;
       return options.sandbox === true ? agent : { ...agent, shell: withoutSandbox(agent.shell, agent.permission) };
     });
   return pruneAgentStages([...current, ...added], cycle);
 }
+
+/** A model without its pool: fallbacks point at providers of one workspace, so a template neither carries them nor brings them in. */
+function withoutPool(model: AgentModel): AgentModel {
+  const { fallbacks: _f, activities: _a, images: _i, contextWindow: _c, echoReasoning: _e, offer: _o, ...rest } = model;
+  return rest;
+}
+
+const hasPool = (m: AgentModel): boolean => Boolean(m.fallbacks?.length || Object.values(m.activities ?? {}).some((l) => l?.length));
 
 /** What the template still needs from the workspace: derived from what it switches on and the fields that are empty. */
 export function needsOf(cycle: DevCycleConfig): TemplateNeed[] {
@@ -101,7 +109,7 @@ export function templateFromConfig(config: WorkspaceConfig, meta: TemplateMeta):
   const team = pruneAgentStages(config.agents.team.filter((a) => !a.system && !isDraft(a)), cycle).map((a) => {
     // The squad is the workspace's own, and so are the screen, the hosts and the logged-in browser: a shared template carries none of them.
     const { squad: _squad, screen: _screen, allowedHosts: _hosts, browserProfile: _profile, ...rest } = structuredClone(a);
-    return rest;
+    return { ...rest, model: withoutPool(rest.model) };
   });
   return { id: meta.id, name: meta.name, description: meta.description, needs: needsOf(cycle), devCycle: withoutNeutral(cycle), ...(team.length ? { team } : {}) };
 }
@@ -176,6 +184,9 @@ export function parseTemplate(raw: unknown): TemplateCheck {
     if (t.team.some((a) => (a as Record<string, unknown>).system === true)) return fail('template.team', 'a template cannot define built-in agents');
     template.team = t.team as unknown as AgentDef[];
   }
+  // Said below, then dropped before the template is checked or kept.
+  const withPool = (template.team ?? []).filter((a) => isObject(a.model) && hasPool(a.model));
+  if (template.team) template.team = template.team.map((a) => (isObject(a.model) ? { ...a, model: withoutPool(a.model) } : a));
   // Checked as it would be applied: over a neutral workspace, the template's own agents (as written) next to the built-in ones.
   const base = neutralConfig();
   const checked = validateConfig({ ...base, devCycle: cycleOf(template), agents: { ...base.agents, team: [...base.agents.team, ...(template.team ?? [])] } });
@@ -193,6 +204,7 @@ export function parseTemplate(raw: unknown): TemplateCheck {
     ...(a.screen ? [{ path: `template.team[${a.id}].screen`, message: 'ignored: a template never gives an agent a virtual screen; turn it on in Settings, on the computer' }] : []),
     ...(a.allowedHosts?.length ? [{ path: `template.team[${a.id}].allowedHosts`, message: 'ignored: a template never gives an agent hosts to reach; add them in Settings, on the computer' }] : []),
     ...(a.browserProfile ? [{ path: `template.team[${a.id}].browserProfile`, message: 'ignored: a template never gives an agent a logged-in browser; turn it on in Settings, on the computer' }] : []),
+    ...(withPool.some((p) => p.id === a.id) ? [{ path: `template.team[${a.id}].model`, message: 'ignored: a template never brings fallback models; they point at providers of one workspace, add them in Settings' }] : []),
   ]);
   return { ok: issues.length === 0, template: issues.length ? null : template, errors: issues, warnings: [...prefix(checked.warnings), ...notes, ...ignored], powers };
 }

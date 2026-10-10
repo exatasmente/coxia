@@ -91,6 +91,7 @@ export function turnCall(run: WrapUpRun, abort: AbortController, onUsage: (usage
     system: cp('runner.procedures.turn.system', { agent: run.agent.id }),
     cwd: run.cwd,
     label: run.agent.id,
+    background: true,
     maxTurns: WRAPUP_MAX_TURNS,
     procedures: run.session.tools,
     procedureOnly: true,

@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { Run } from '../src/shared/runs';
-import { boot, doc, work } from './helpers/runner';
+import { type FakeEngine, boot, doc, fakeEngine, work } from './helpers/runner';
 
 // A stage whose concluding answer leaves out a document it produces is asked once for it before it fails, and a document named with its folder is still taken.
 // No model, no host, no network.
@@ -28,6 +28,19 @@ describe('a document the answer leaves out', () => {
     // The first answer stands: its summary and its handoff are what the stage recorded, not the round's.
     expect(b.thread(now).some((m) => m.kind !== 'system' && JSON.stringify(m).includes('Spec written.'))).toBe(true);
     expect(b.thread(now).some((m) => JSON.stringify(m).includes('Here it is.'))).toBe(false);
+  });
+
+  it('is asked of the engine that answered, which the engine reports when it picked the model from a pool', async () => {
+    // The agent's own model is on the Claude engine; the call was answered by another model of its pool, on the open engine.
+    const base = fakeEngine();
+    const engine: FakeEngine = Object.assign(async (call: Parameters<FakeEngine>[0], commands: string[]) => ({ ...(await base(call, commands)), engine: 'open' as const }), { calls: base.calls, jobs: base.jobs, script: base.script });
+    const b = await boot({ engine });
+    engine.script('refiner', () => work('Spec written.', { handoff: 'Plan it.' }), () => work('Here it is.', { artifacts: [doc('1_SPEC.md', '# Spec\n\nThe whole spec.\n')] }));
+    await b.runner.start('app#101');
+    await b.settle();
+    const calls = engine.calls.filter((c) => c.agent.id === 'refiner');
+    expect(calls).toHaveLength(2);
+    expect(calls[1].resume?.engine).toBe('open');
   });
 
   it('takes a document named with its folder by its file name, without a round', async () => {

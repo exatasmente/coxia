@@ -77,6 +77,69 @@ describe('a role mapped to an openai-compatible provider', () => {
     expect(sel.docs).toBeDefined();
   });
 
+  it('hands the open engine the pool of the role: only the models of the open engine, with what the entries say of them, and no pool without spares', async () => {
+    const { engineFor } = await import('../src/main/engine/registry');
+    expect(agents.openSelection(engineFor('deep'), '/tmp').pool).toBeUndefined();
+    cfg.updateConfig((c) => {
+      c.llm.roles.deep = {
+        provider: 'local',
+        model: 'qwen3:8b',
+        fallbacks: [{ provider: 'local', model: 'model-b', images: true, contextWindow: 64_000, echoReasoning: true }, { provider: 'anthropic', model: 'haiku' }],
+        activities: { screen: [{ provider: 'local', model: 'model-b', images: true }], shell: [{ provider: 'anthropic', model: 'sonnet' }] },
+      };
+      return c;
+    });
+    try {
+      const sel = agents.openSelection(engineFor('deep'), '/tmp');
+      expect(sel.pool?.name).toBe('deep');
+      expect(sel.pool?.primary).toMatchObject({ label: 'qwen3:8b', provider: 'local' });
+      // The Claude entries wait for the start of a stage; they never join an open session.
+      expect(sel.pool?.fallbacks.map((m) => m.label)).toEqual(['model-b']);
+      expect(sel.pool?.fallbacks[0]).toMatchObject({ provider: 'local', config: { model: 'model-b', baseUrl: fake.url, apiKey: 'secret-for-the-local-provider', echoReasoning: true }, capabilities: { tools: true, jsonSchema: false, contextWindow: 64_000, images: true } });
+      expect(Object.keys(sel.pool?.activities ?? {})).toEqual(['screen']);
+      expect(new Set([sel.pool?.primary.key, ...(sel.pool?.fallbacks.map((m) => m.key) ?? [])]).size).toBe(2);
+      expect(sel.capabilities).toEqual({ tools: true, jsonSchema: false, contextWindow: 32768 });
+      // The mode the call was resolved to goes with the pool; without one the pool is a switch pool, what it was before the modes.
+      expect(sel.pool?.mode).toBeUndefined();
+      for (const mode of ['fallback', 'switch', 'delegate'] as const) expect(agents.openSelection(engineFor('deep'), '/tmp', false, false, mode).pool?.mode).toBe(mode);
+    } finally {
+      cfg.updateConfig((c) => {
+        c.llm.roles.deep = { provider: 'local', model: 'qwen3:8b' };
+        return c;
+      });
+    }
+  });
+
+  it('leaves out a spare whose provider has no key, says so once, and still runs the call on the primary', async () => {
+    const { engineFor } = await import('../src/main/engine/registry');
+    cfg.updateConfig((c) => {
+      c.llm.providers.push(newProvider({ id: 'spare', kind: 'openai-compatible', baseUrl: fake.url, secretRef: 'llm.nokey', structured: 'tool' }));
+      c.llm.roles.deep = {
+        provider: 'local',
+        model: 'qwen3:8b',
+        fallbacks: [{ provider: 'spare', model: 'model-s' }, { provider: 'local', model: 'model-b' }],
+        activities: { screen: [{ provider: 'spare', model: 'model-s', images: true }] },
+      };
+      return c;
+    });
+    try {
+      const skipped: string[] = [];
+      const sel = agents.openSelection(engineFor('deep'), '/tmp', false, false, undefined, (label) => skipped.push(label));
+      expect(sel.pool?.fallbacks.map((m) => m.label)).toEqual(['model-b']);
+      expect(sel.pool?.activities ?? {}).toEqual({});
+      // in the list of the role and in the one of an activity, but said once
+      expect(skipped).toEqual(['model-s']);
+      const r = await agents.askAgent<{ fala: string }>('deep', 'Pergunta', schema(), { maxTurns: 2 });
+      expect(r.data).toEqual({ fala: 'do motor aberto' });
+    } finally {
+      cfg.updateConfig((c) => {
+        c.llm.roles.deep = { provider: 'local', model: 'qwen3:8b' };
+        c.llm.providers = c.llm.providers.filter((p) => p.id !== 'spare');
+        return c;
+      });
+    }
+  });
+
   it('fails with a clear message when the key has no source on this machine', async () => {
     cfg.updateConfig((c) => {
       c.llm.providers.find((p) => p.id === 'local')!.secretRef = 'llm.missing';

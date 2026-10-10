@@ -2,10 +2,10 @@ import { unconfinedOf } from '../../shared/unconfined';
 import { offersViewImage } from '../sandbox/tool';
 import { existsSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
+import { docsFlowOf, flowStagesOf, releaseFlowOf, squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
 import { workingTeam } from '../../shared/config/team';
-import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
+import type { AgentDef, PoolMode, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
 import { runKey } from '../../shared/browser';
@@ -16,7 +16,7 @@ import { withActivityContext } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import { rc } from '../workspaceConfig';
 import { type AgentCall, extraReadRoots } from '../agents';
-import { MaxTurnsError, ProviderBudgetError, type ReadConfinement } from '../engine/contract';
+import { MaxTurnsError, ProviderBudgetError, ProviderBusyError, type ReadConfinement, poolBusyParams, poolNoticeLine } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, MEMORY_FILE, ensureMemory, readFolder, readMemory, tidyArtifact, writeArtifact, writeMemory } from './cycleFolder';
@@ -67,7 +67,7 @@ import type { ScreenSessions } from '../browser/sessions';
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
 // the commits carry the workspace's identity. What the attempt means for the run (done, a question, findings) is the service's to apply.
 
-export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget', 'docs-folder-unsafe', 'qa-evidence-missing'] as const;
+export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget', 'pool-busy', 'docs-folder-unsafe', 'qa-evidence-missing'] as const;
 export type StageErrorCode = (typeof STAGE_ERROR_CODES)[number];
 
 export class StageError extends Error {
@@ -85,7 +85,7 @@ export class StageError extends Error {
 }
 
 /** Runs one agent call; `commands` are what an agent that writes may execute. The real one is `runAgent` of agents.ts. */
-export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ data: unknown; partial?: true; sessionId?: string | null }>;
+export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ data: unknown; partial?: true; sessionId?: string | null; engine?: ResolvedRole['engine'] }>;
 
 export interface ExecutorDeps {
   engine: StageEngine;
@@ -173,6 +173,15 @@ export function pickAgent(config: WorkspaceConfig, run: Run, flow: FlowStage[]):
   const agent = config.agents.team.find((a) => a.id === stage.agent);
   if (!agent) throw new StageError('unknown-agent', { agent: stage.agent });
   return { agent, stage, kind: outputKindOf(stage.kind) };
+}
+
+/**
+ * The pool mode the cycle model sets on a stage of the run, read from the live stage list the run follows (a release run's, a documentation run's, the squad's or the
+ * workspace's). The run's flow snapshot does not carry it: the choice of how a pool is used is no part of the flow a run was started on.
+ */
+export function stagePoolModeOf(config: WorkspaceConfig, run: Pick<Run, 'subject' | 'docs' | 'squad'>, stageId: string): PoolMode | undefined {
+  const stages = run.subject ? releaseFlowOf(config) : run.docs ? docsFlowOf(config) : flowStagesOf(config, run.squad);
+  return stages?.find((s) => s.id === stageId)?.poolMode;
 }
 
 /** The last note another stage left for `agent` that it has not answered with a post since. */
@@ -996,6 +1005,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     evidence,
     onLooked,
     label: agent.id,
+    stagePoolMode: stagePoolModeOf(config, run, stage.id),
+    background: true,
     maxTurns: writes ? config.runner.turns.write : config.runner.turns.read,
     procedures: procedures?.tools,
     abort,
@@ -1009,6 +1020,14 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   if (clock) clock.watch = watch;
   call.beat = watch.beat;
   call.onUsage = procedures ? procedures.wrapUsage(usage) : usage;
+  // A move to another model of the pool is said in the thread of the run, with the model that was busy and when it is back.
+  call.onPool = (notice) => {
+    try {
+      d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, ...poolNoticeLine(agent.id, notice), stage: stage.id });
+    } catch (e) {
+      console.error('[runner] could not record a switch of model', run.id, e instanceof Error ? e.message : e);
+    }
+  };
   // The mailbox of the stage: a message addressed to this agent while it works enters the session between two steps. It is opened with the attempt and closed
   // before the sandbox, so nothing the stage hands over outlives it.
   const inbox = openInbox(run.id, stage.id, agent.id, d.forum, () => new Date().toISOString());
@@ -1130,8 +1149,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   try {
     const firstRun = await watch.guard(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)));
     data = firstRun.data;
-    // Which engine answered, so the round that continues it is asked of the same one: a session of one engine is not one the other knows.
-    answered = { sessionId: firstRun.sessionId ?? null, engine: rc().agentModel(call.agent.model).engine };
+    // Which engine answered, so the round that continues it is asked of the same one: a session of one engine is not one the other knows. With a pool of models
+    // it is the engine of the model that was picked to start the call, which the engine reports; the agent's own model is the answer of a call that did not.
+    answered = { sessionId: firstRun.sessionId ?? null, engine: firstRun.engine ?? rc().agentModel(call.agent.model).engine };
     // The answer is read and checked while the sandbox is still open: a QA claim of execution that nothing backs goes back to the agent for one repair
     // round, and the pictures it looked at are kept (or said as looked and not kept). All of it has to happen before the sandbox (and the stage folder)
     // goes away. The two model calls of the attempt run inside the same guarded work above, so the stage's clock counts the attempt once.
@@ -1187,6 +1207,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   } catch (e) {
     if (e instanceof MaxTurnsError) throw new StageError('turns');
     if (e instanceof ProviderBudgetError) throw new StageError('budget', { provider: e.provider, engine: e.engine, detail: e.detail });
+    // Every model of the pool was busy: a failure like any other, retried by the person, that names the pool instead of one model.
+    if (e instanceof ProviderBusyError) throw new StageError('pool-busy', poolBusyParams(e));
     throw e;
   } finally {
     // What the call read becomes uses, and what it created gets its baseline; each use is a line in the thread.

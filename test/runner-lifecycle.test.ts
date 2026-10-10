@@ -144,6 +144,64 @@ describe('a stage that goes wrong', () => {
     expect(b.runner.get(run.id)!.stages.find((s) => s.stage === 'refine')?.attempts).toBe(2);
   });
 
+  it('fails like any other stage, naming the pool and when the first model is back, when every model of it was busy; it is not a wait, and trying again goes on', async () => {
+    const b = await boot();
+    easy(b);
+    const { ProviderBusyError } = await import('../src/main/engine/contract');
+    const back = Date.now() + 10 * 60_000;
+    b.engine.script('refiner', () => {
+      throw new ProviderBusyError('deep', 'open', ['model-a', 'model-b'], back, 'Rate limit reached');
+    }, () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    let run = await b.runner.start('app#101');
+    await b.settle();
+    run = b.runner.get(run.id)!;
+    expect(run).toMatchObject({ status: 'failed', stage: 'refine', error: { code: 'stage-failed' }, wait: null });
+    expect(run.error?.detail).toContain('deep');
+    expect(run.error?.detail).toContain('model-a, model-b');
+    expect(run.error?.detail).toContain(new Date(back).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+    expect(b.notices.at(-1)?.title).toContain('a etapa falhou');
+    b.runner.retry(run.id);
+    await b.settle();
+    expect(b.runner.get(run.id)).toMatchObject({ status: 'gate', error: null });
+  });
+
+  it('says in the thread of the run that a stage moved to another model of its pool, with the model that was busy and when it is back, and does not fail the stage', async () => {
+    const b = await boot();
+    easy(b);
+    const back = Date.parse('2026-01-01T14:05:00');
+    b.engine.script('refiner', (call) => {
+      call.onPool?.({ from: { label: 'model-a', provider: 'prov-a' }, to: { label: 'model-b', provider: 'prov-a' }, reason: 'rate_limit', until: back, activity: 'write' });
+      call.onPool?.({ from: { label: 'model-b', provider: 'prov-a' }, to: { label: 'model-c', provider: 'prov-b' }, reason: 'activity', until: null, activity: 'shell' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    const lines = b.thread(run).filter((m) => m.code?.startsWith('runner.model.'));
+    expect(lines.map((m) => m.code)).toEqual(['runner.model.switched', 'runner.model.moved']);
+    expect(lines[0]).toMatchObject({ kind: 'system', stage: 'refine', params: { agent: 'refiner', from: 'model-a', to: 'model-b' } });
+    expect(messageText(lines[0])).toContain(new Date(back).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }));
+    expect(messageText(lines[0])).toContain('model-a');
+    // The provider is named only where the two models come from different ones.
+    expect(lines[1].params).toMatchObject({ from: 'model-b (prov-a)', to: 'model-c (prov-b)' });
+    expect(b.runner.get(run.id)!.status).toBe('gate');
+  });
+
+  it('says in the thread of the run that the main model handed work to a sub-agent on another model', async () => {
+    const b = await boot();
+    easy(b);
+    b.engine.script('refiner', (call) => {
+      call.onPool?.({ from: { label: 'model-a', provider: 'prov-a' }, to: { label: 'model-b', provider: 'prov-a' }, reason: 'delegate', until: null, activity: 'shell' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+    });
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    const lines = b.thread(run).filter((m) => m.code?.startsWith('runner.model.'));
+    expect(lines.map((m) => m.code)).toEqual(['runner.model.delegated']);
+    expect(lines[0]).toMatchObject({ kind: 'system', stage: 'refine', params: { agent: 'refiner', from: 'model-a', to: 'model-b', work: 'os comandos' } });
+    expect(messageText(lines[0])).toContain('subagente');
+    expect(b.runner.get(run.id)!.status).toBe('gate');
+  });
+
   it('fails when the agent ran past the limit, stopping it', async () => {
     const b = await boot({ timeoutMs: 40 });
     easy(b);
@@ -217,7 +275,7 @@ describe('a stage that goes wrong', () => {
       return never();
     }, (call) => {
       call.onUsage?.({ promptTokens: 300, completionTokens: 30, cachedTokens: 0 });
-      call.onUsage?.({ promptTokens: 200, completionTokens: 20, cachedTokens: 0, costUsd: 0.001 });
+      call.onUsage?.({ promptTokens: 200, completionTokens: 20, cachedTokens: 0, costUsd: 0.001, costEstimated: false });
       return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
     });
     let run = await b.runner.start('app#101');

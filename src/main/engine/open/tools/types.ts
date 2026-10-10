@@ -1,4 +1,5 @@
 import type { Json } from '../types';
+import type { Activity } from '../../../../shared/config/types';
 import { t } from '../../../../shared/i18n';
 
 export interface ToolContext {
@@ -56,6 +57,11 @@ export interface ToolImpl {
    * final answer: a model that keeps announcing the end with notes would otherwise never end its step.
    */
   note?: boolean;
+  /**
+   * What the next turn is for when this tool's result is what it answers (see `activityOf`): the pool of a role may carry a list of models per activity. A tool
+   * without one (an MCP tool, the evidence, release and attachment tools) leaves the turn to the role's own list.
+   */
+  activity?: Activity;
 }
 
 // A failure the model should read and recover from, not a crash.

@@ -7,6 +7,7 @@ import { callKey } from '../../shared/browser';
 import { type CallScreen, type ScreenPorts, modelSeesImages, openCallScreen, promptFor } from '../browser/callScreen';
 import { grantsFor } from '../browser/guard';
 import type { AgentCall } from '../agents';
+import { poolNoticeLine } from '../engine/contract';
 import type { ForumStore } from '../forum-core';
 import type { SandboxSession } from '../sandbox';
 import type { StageEngine } from './executor';
@@ -302,11 +303,13 @@ async function turnOf(
     confine: writes ? { root: deps.run.worktree, anywhere: unconfinedOf(deps.config().runner), hooks: confinedHooks({ root: deps.run.worktree, commands: deps.commands, onDenied: denied, anywhere: unconfinedOf(deps.config().runner) }) } : undefined,
     exec: session ?? undefined,
     label: deps.called.id,
+    background: true,
     maxTurns: 12,
     abort: held?.abort ?? deps.abort,
     runnerTools: calledAgentTools(tools),
     procedures: procedures?.tools,
     onUsage: procedures ? procedures.wrapUsage(deps.onUsage) : deps.onUsage,
+    onPool: (notice) => say({ kind: 'system', author: { type: 'app' }, ...poolNoticeLine(deps.called.id, notice), stage: deps.stage.id }),
     ...(held?.screen.toolset ? { screen: held.screen.toolset } : {}),
   };
   let r: Awaited<ReturnType<StageEngine>>;

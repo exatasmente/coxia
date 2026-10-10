@@ -1,6 +1,7 @@
 // Upstream failures as typed errors, and the parameter fallbacks that make one request body work across OpenAI-compatible servers.
 import { budgetRefusal } from '../budget';
 import { type Lang, msg } from './messages';
+import { FAIL_FAST_REST_MS, MAX_REST_MS } from './rest';
 import { estimateTokens } from './text';
 import type { ChatRequest } from './types';
 
@@ -28,10 +29,15 @@ export class EngineError extends Error {
     readonly status?: number,
     readonly retryable = false,
     readonly retryAfterMs?: number,
+    // The server's Retry-After for the whole app to rest the model by (capped at 15 minutes), where `retryAfterMs` is what one call sleeps before its next try.
+    readonly restMs?: number,
   ) {
     super(message);
     this.name = 'EngineError';
   }
+
+  /** The provider of the pool member that refused, filled by the pool: a budget refusal has to name the provider that answered, not the role's first one. */
+  provider?: string;
 }
 
 export interface ErrorContext {
@@ -77,13 +83,26 @@ const CONTEXT_RE =
 const NO_TOOLS_RE = /does not support tools|tool use is not supported|tools? (is|are) not supported|doesn't support tool|does not support function|no tool use|tool_use is not supported/i;
 const MODEL_RE = /model[^.]*(not found|does not exist|is not supported|unknown|not available|not loaded|no longer available)|no such model|invalid model|unknown model|model_not_found/i;
 
-function retryAfterMs(headers: { get(name: string): string | null }): number | undefined {
+// Retry-After as the server sent it (seconds, or a date), in ms; undefined when absent or unreadable.
+function retryAfterRaw(headers: { get(name: string): string | null }): number | undefined {
   const raw = headers.get('retry-after');
   if (!raw) return undefined;
   const secs = Number(raw);
-  if (Number.isFinite(secs)) return Math.min(secs, 60) * 1000;
+  if (Number.isFinite(secs)) return Math.max(secs, 0) * 1000;
   const at = Date.parse(raw);
-  return Number.isFinite(at) ? Math.min(Math.max(at - Date.now(), 0), 60_000) : undefined;
+  return Number.isFinite(at) ? Math.max(at - Date.now(), 0) : undefined;
+}
+
+/** How long one call sleeps before retrying the same model. */
+function retryAfterMs(headers: { get(name: string): string | null }): number | undefined {
+  const ms = retryAfterRaw(headers);
+  return ms === undefined ? undefined : Math.min(ms, 60_000);
+}
+
+/** How long the whole app leaves the model alone after it refused for good. */
+function restMsOf(headers: { get(name: string): string | null }): number | undefined {
+  const ms = retryAfterRaw(headers);
+  return ms === undefined ? undefined : Math.min(ms, MAX_REST_MS);
 }
 
 export function mapHttpError(status: number, bodyText: string, headers: { get(name: string): string | null }, ctx: ErrorContext): EngineError {
@@ -91,6 +110,7 @@ export function mapHttpError(status: number, bodyText: string, headers: { get(na
   const detail = parsed.message;
   const lower = `${detail} ${parsed.code ?? ''} ${parsed.type ?? ''}`.toLowerCase();
   const wait = retryAfterMs(headers);
+  const rest = restMsOf(headers);
 
   if (status === 401) return new EngineError(msg(ctx.lang, 'auth', { status, detail }), 'auth', status);
   // A refusal by budget, not a failure: the runner waits on it instead of spending an attempt. The 403 is read by its body, never by the word "authenticate".
@@ -99,7 +119,9 @@ export function mapHttpError(status: number, bodyText: string, headers: { get(na
   if (status === 402 || parsed.code === 'insufficient_quota' || (status === 429 && /quota|billing|credit|balance/.test(lower))) {
     return new EngineError(msg(ctx.lang, 'quota', { detail }), 'quota', status);
   }
-  if (status === 429) return new EngineError(msg(ctx.lang, 'rateLimit', { detail }), 'rate_limit', status, true, wait);
+  // A server that refuses at once, because the call asked it not to queue, says the model is busy: it is not a rate limit, and it rests for a minute unless told more.
+  if (status === 429 && /engine_overloaded/.test(lower)) return new EngineError(msg(ctx.lang, 'overloaded', { status, detail }), 'overloaded', status, true, wait, rest ?? FAIL_FAST_REST_MS);
+  if (status === 429) return new EngineError(msg(ctx.lang, 'rateLimit', { detail }), 'rate_limit', status, true, wait, rest);
   if ((status === 400 || status === 422) && NO_TOOLS_RE.test(lower)) return new EngineError(msg(ctx.lang, 'noTools', { model: ctx.model, detail }), 'no_tools', status);
   if (status === 404 || parsed.code === 'model_not_found' || ((status === 400 || status === 422) && MODEL_RE.test(lower))) {
     // i18n-ignore: command the person is told to run
@@ -110,8 +132,8 @@ export function mapHttpError(status: number, bodyText: string, headers: { get(na
     return new EngineError(msg(ctx.lang, 'contextTooLong', { detail }), 'context', status);
   }
   if (status === 408 || status === 504) return new EngineError(msg(ctx.lang, 'timeout', { host: ctx.host }), 'timeout', status, true);
-  if (status === 503 || status === 529) return new EngineError(msg(ctx.lang, 'overloaded', { status, detail }), 'overloaded', status, true, wait);
-  if (status >= 500) return new EngineError(msg(ctx.lang, 'serverError', { status, detail }), 'server', status, true, wait);
+  if (status === 503 || status === 529) return new EngineError(msg(ctx.lang, 'overloaded', { status, detail }), 'overloaded', status, true, wait, rest);
+  if (status >= 500) return new EngineError(msg(ctx.lang, 'serverError', { status, detail }), 'server', status, true, wait, rest);
   return new EngineError(msg(ctx.lang, 'badRequest', { status, detail }), 'bad_request', status);
 }
 
@@ -156,6 +178,8 @@ export interface Learned {
   echoReasoning?: boolean;
   // The model answered that it cannot use tools: the engine stops offering them.
   noTools?: boolean;
+  // The server refused the reasoning sent back to it: it is not sent again, whatever a later reply shows.
+  echoRefused?: boolean;
   // The server refused a request with an image: images are replaced by a line from then on, and Read says the model does not see them.
   noImages?: boolean;
 }
@@ -164,7 +188,10 @@ export function newLearned(): Learned {
   return { dropParams: new Set() };
 }
 
-const DROPPABLE = ['stream_options', 'parallel_tool_calls', 'tool_choice', 'response_format', 'temperature', 'top_p', 'stop'];
+// What only a server with the feature takes: a complaint that names one drops it, and it is tested before the reasoning and image branches (a complaint about
+// `reasoning_effort` says "reasoning" too, and must not make the client stop sending the reasoning back).
+const PROVIDER_PARAMS = ['service_tier', 'reasoning_effort', 'fail_fast'];
+const DROPPABLE = ['stream_options', 'parallel_tool_calls', 'tool_choice', 'response_format', 'temperature', 'top_p', 'stop', ...PROVIDER_PARAMS];
 
 function outputLimit(message: string, current: number): number | null {
   const vllm = message.match(/(\d+)\s*>\s*(\d+)\s*-\s*(\d+)/);
@@ -188,10 +215,24 @@ export function adaptBodyForError(body: ChatRequest, status: number, message: st
   if (status !== 400 && status !== 422) return null;
   const m = message.toLowerCase();
   const next: ChatRequest = { ...body };
+  for (const param of PROVIDER_PARAMS) {
+    if (param in next && new RegExp(`\\b${param}\\b`).test(m)) {
+      delete next[param];
+      learned.dropParams.add(param);
+      return next;
+    }
+  }
   // A model that takes no image says so in many words; the request goes again without them, and the client stops sending any.
   if (hasImage(body) && /image|vision|multimodal|multi-modal|image_url|content type|content part/.test(m)) {
     learned.noImages = true;
     next.messages = withoutImages(body.messages, imageNote);
+    return next;
+  }
+  // Reasoning sent back from the first call (a model marked for it) against a server that does not take the field: stop sending it, and remember.
+  if (body.messages.some((x) => x.reasoning_content !== undefined) && /reasoning_content/.test(m)) {
+    learned.echoRefused = true;
+    learned.echoReasoning = false;
+    next.messages = body.messages.map(({ reasoning_content: _r, ...rest }) => rest as ChatRequest['messages'][number]);
     return next;
   }
   if (next.max_tokens !== undefined && /max_completion_tokens/.test(m)) {

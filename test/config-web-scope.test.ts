@@ -4,6 +4,7 @@ import { newAgent } from '../src/shared/config/team';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { WEB_EDITABLE, changedPaths, refusedPaths } from '../src/main/configScope';
 import { webAccess } from '../src/main/webPolicy';
+import { TEST_STAGES } from './helpers/config';
 
 vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0' }, BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] }, dialog: {} }));
 
@@ -128,6 +129,77 @@ describe('what a browser may change', () => {
     expect(refused((c) => { c.devCycle.promptOverrides = { 'turn.main': { 'pt-BR': 'x' } as never }; })).toEqual(['devCycle.promptOverrides.turn.main']);
     expect(refused((c) => { c.agents.extraInstructions = 'x'; })).toEqual(['agents.extraInstructions']);
     expect(refused((c) => { c.agents.tools.files = !c.agents.tools.files; })).toEqual(['agents.tools.files']);
+  });
+});
+
+describe('the reserve models of an agent, from a paired browser', () => {
+  const ref = (model: string) => ({ provider: 'p1', model });
+  const withPool = (c: WorkspaceConfig, extra: object = {}): void => {
+    c.llm.providers = [{ id: 'p1' } as never];
+    c.agents.team.push({ id: 'dev', name: 'Dev', job: '', model: { role: null, provider: 'p1', model: 'own', fallbacks: [ref('a'), ref('b')], activities: { shell: [ref('a')] }, ...extra }, stages: [], permission: 'read', tracker: 'none', shell: 'none', autonomous: false, turnsTo: null, instructions: '', system: false });
+  };
+  const stored = edit((c) => withPool(c));
+  const next = (change: (a: WorkspaceConfig['agents']['team'][number]) => void): WorkspaceConfig => {
+    const c = structuredClone(stored);
+    change(c.agents.team.find((a) => a.id === 'dev')!);
+    return c;
+  };
+
+  it('may take a reserve out, reorder the list and change the rest of the agent', () => {
+    expect(refusedPaths(stored, next((a) => { a.model.fallbacks = [ref('b')]; }))).toEqual([]);
+    expect(refusedPaths(stored, next((a) => { a.model.fallbacks = [ref('b'), ref('a')]; }))).toEqual([]);
+    expect(refusedPaths(stored, next((a) => { delete a.model.fallbacks; delete a.model.activities; }))).toEqual([]);
+    expect(refusedPaths(stored, next((a) => { a.instructions = 'Be brief.'; a.autonomous = true; }))).toEqual([]);
+  });
+
+  it('may not add a reserve to the list, or to the list of an activity, and the refusal names the agent and the list', () => {
+    expect(refusedPaths(stored, next((a) => { a.model.fallbacks = [...a.model.fallbacks!, ref('c')]; }))).toEqual(['agents.team[dev].model.fallbacks']);
+    expect(refusedPaths(stored, next((a) => { a.model.activities = { ...a.model.activities, edit: [ref('a')] }; }))).toEqual(['agents.team[dev].model.activities.edit']);
+    expect(refusedPaths(stored, next((a) => { a.model.activities = { shell: [ref('a'), ref('c')] }; }))).toEqual(['agents.team[dev].model.activities.shell']);
+  });
+
+  it('may not make an agent that already has a pool, and may make one without', () => {
+    const made = (extra: object) => edit((c) => { withPool(c, extra); c.agents.team[c.agents.team.length - 1].id = 'new'; });
+    expect(refusedPaths(stored, made({}))).toEqual(['agents.team[new].model.fallbacks', 'agents.team[new].model.activities.shell']);
+    expect(refusedPaths(stored, made({ fallbacks: undefined, activities: undefined }))).toEqual([]);
+  });
+
+  it('may not touch the pool of a role: the five of them are llm.roles, which the browser cannot change', () => {
+    expect(refused((c) => { c.llm.roles.turn.fallbacks = [ref('a')]; })).toEqual(['llm.roles.turn.fallbacks']);
+    expect(refused((c) => { c.llm.scoreOverrides = { floors: { shell: 1 } }; })).toEqual(['llm.scoreOverrides']);
+  });
+});
+
+describe('what the provider offers, from a paired browser', () => {
+  it('may not switch on or change a provider\'s features, a role\'s offer, the effort per activity or the flex tier', () => {
+    expect(refused((c) => { c.llm.providers[0].features = { serviceTier: true, failFast: true }; })).toEqual(['llm.providers']);
+    expect(refused((c) => { c.llm.effort = { shell: 'high' }; })).toEqual(['llm.effort']);
+    expect(refused((c) => { c.llm.roles.deep.offer = { flex: true }; })).toEqual(['llm.roles.deep.offer']);
+    expect(refused((c) => { c.runner.flex = false; })).toEqual(['runner.flex']);
+  });
+
+  it('may change the offer of an agent\'s own model, which reaches nothing without the provider\'s features', () => {
+    const stored = edit((c) => { c.llm.providers = [{ id: 'p1' } as never]; c.agents.team.push(newAgent({ id: 'dev', model: { role: null, provider: 'p1', model: 'own' } })); });
+    const next = structuredClone(stored);
+    next.agents.team.find((a) => a.id === 'dev')!.model.offer = { flex: true, effort: true };
+    expect(refusedPaths(stored, next)).toEqual([]);
+  });
+});
+
+describe('the pool mode, from a paired browser', () => {
+  it('may change the mode of an agent and of a stage: it reaches no tool the agent did not have', () => {
+    expect(refused((c) => { c.agents.team[0].poolMode = 'fallback'; })).toEqual([]);
+    expect(refused((c) => { c.agents.team[0].poolMode = 'delegate'; })).toEqual([]);
+    const staged = (c: WorkspaceConfig) => { c.devCycle.stages = [structuredClone(TEST_STAGES[0])]; };
+    const stored = edit(staged);
+    const next = (change: (c: WorkspaceConfig) => void) => { const c = structuredClone(stored); change(c); return c; };
+    expect(refusedPaths(stored, next((c) => { c.devCycle.stages[0].poolMode = 'switch'; }))).toEqual([]);
+    expect(refusedPaths(stored, next((c) => { c.devCycle.flows = { core: [{ ...c.devCycle.stages[0], poolMode: 'switch' }] }; }))).toEqual([]);
+  });
+
+  it('may not change the workspace default, which sits in llm beside the pools it governs', () => {
+    expect(refused((c) => { c.llm.poolMode = 'fallback'; })).toEqual(['llm.poolMode']);
+    expect(refused((c) => { delete c.llm.poolMode; })).toEqual(['llm.poolMode']);
   });
 });
 

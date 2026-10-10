@@ -9,12 +9,13 @@ import { catalogText } from '../cycles/text';
 import { effectiveCardScope } from '../cardScope';
 import { isVerifyProject } from '../verifyCommands';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../sandboxPaths';
+import { catalogUrlProblem } from './offer';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA, ID } from './schema';
 import { DOCS_COMMENT_EVENTS, DOCS_FLOW_KEY, RELEASE_COMMENT_EVENTS, RELEASE_FLOW_KEY, RUN_KIND_FLOW_KEYS, isRunKindFlowKey } from './squads';
 import { isSystemId } from './team';
-import { COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, TEST_ENV_REF_PREFIX, type LlmProvider, type SecretRequirement, type WorkspaceConfig } from './types';
+import { ACTIVITIES, COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, TEST_ENV_REF_PREFIX, type LlmProvider, type ModelPool, type ModelRef, type SecretRequirement, type WorkspaceConfig } from './types';
 import { ENV_NAME, SECRET_REF } from '../secrets';
 
 export interface ConfigIssue {
@@ -34,6 +35,7 @@ function duplicates(ids: string[]): string[] {
   return ids.filter((id, i) => ids.indexOf(id) !== i);
 }
 
+const MAX_SCORE_MODELS = 200;
 const ANTHROPIC_HOST = /^https:\/\/api\.anthropic\.com\/?$/;
 
 function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
@@ -45,10 +47,41 @@ function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIs
     warnings.push({ path: at('baseUrl'), message: 'the Claude Agent SDK is pointed at a non-Anthropic endpoint; only Claude models are supported there' });
   }
   if (p.legacyCustomEndpoint && p.kind !== 'anthropic') errors.push({ path: at('legacyCustomEndpoint'), message: 'only applies to the anthropic kind' });
+  const f = p.features;
+  if (f?.catalogUrl !== undefined) {
+    // The connection test sends the key to this address: it has to be the provider's own origin.
+    const why = catalogUrlProblem(p.baseUrl, f.catalogUrl);
+    if (why === 'scheme' || f.catalogUrl === '') errors.push({ path: at('features.catalogUrl'), message: 'must be an http:// or https:// address' });
+    else if (why === 'origin') errors.push({ path: at('features.catalogUrl'), message: 'must have the same origin as the provider\'s baseUrl: the key is never sent anywhere else' });
+  }
+  if (f && p.engine === 'claude-sdk' && (f.serviceTier || f.failFast || f.reasoningEffort)) warnings.push({ path: at('features'), message: 'only the open engine sends these parameters; the Claude Agent SDK ignores them' });
   if (p.kind === 'anthropic' && !p.secretRef) warnings.push({ path: at('secretRef'), message: 'no API key configured for the anthropic provider' });
   if (p.kind === 'bedrock' && !p.options.region) warnings.push({ path: at('options.region'), message: 'no AWS region set' });
   if (p.kind === 'vertex' && !(p.options.project && p.options.region)) warnings.push({ path: at('options'), message: 'vertex needs project and region' });
   if (p.kind === 'foundry' && !(p.options.resource || p.baseUrl.trim())) warnings.push({ path: at('options.resource'), message: 'foundry needs a resource name or a base URL' });
+}
+
+// A pool entry points at a provider the person registered, and a list holds a model once. An entry for the screen that is known not to take images is a warning, not an error:
+// the run skips it, and the person may know something the test did not.
+function poolRules(pool: ModelPool, first: ModelRef | null, at: string, providers: Set<string>, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
+  const list = (path: string, entries: ModelRef[], lead: ModelRef | null) => {
+    const seen = new Set<string>(lead ? [`${lead.provider}\n${lead.model}`] : []);
+    entries.forEach((m, i) => {
+      if (!providers.has(m.provider)) errors.push({ path: `${path}[${i}].provider`, message: `unknown provider "${m.provider}"` });
+      const key = `${m.provider}\n${m.model}`;
+      if (seen.has(key)) errors.push({ path: `${path}[${i}]`, message: `"${m.model}" of "${m.provider}" is already in this list` });
+      seen.add(key);
+    });
+  };
+  list(`${at}.fallbacks`, pool.fallbacks ?? [], first);
+  for (const a of ACTIVITIES) {
+    const entries = pool.activities?.[a];
+    if (!entries) continue;
+    list(`${at}.activities.${a}`, entries, null);
+    entries.forEach((m, i) => {
+      if (a === 'screen' && m.images === false) warnings.push({ path: `${at}.activities.screen[${i}]`, message: `"${m.model}" is marked as not taking images: the screen never uses it` });
+    });
+  }
 }
 
 function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIssue[]): void {
@@ -78,9 +111,11 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
     if (a.model.role === null) {
       if (!providers.has(a.model.provider)) errors.push({ path: at('model.provider'), message: `unknown provider "${a.model.provider}"` });
       if (!a.model.model.trim()) errors.push({ path: at('model.model'), message: 'is required when the agent names no role' });
+      poolRules(a.model, { provider: a.model.provider, model: a.model.model }, at('model'), providers, errors, warnings);
     } else if (a.model.provider || a.model.model) {
       warnings.push({ path: at('model'), message: 'provider and model are ignored while a role is set' });
     }
+    if (a.model.role !== null && (a.model.fallbacks || a.model.activities)) warnings.push({ path: at('model'), message: 'fallbacks and activities are ignored while a role is set: the role\'s pool is used' });
   });
   const agentIds = new Set(team.map((a) => a.id));
   c.devCycle.stages.forEach((s, i) => {
@@ -272,7 +307,9 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
   for (const id of duplicates(c.llm.providers.map((p) => p.id))) errors.push({ path: 'llm.providers', message: `duplicate provider id "${id}"` });
   for (const [role, rm] of Object.entries(c.llm.roles)) {
     if (!providers.has(rm.provider)) errors.push({ path: `llm.roles.${role}.provider`, message: `unknown provider "${rm.provider}"` });
+    poolRules(rm, rm, `llm.roles.${role}`, providers, errors, warnings);
   }
+  if (Object.keys(c.llm.scoreOverrides?.models ?? {}).length > MAX_SCORE_MODELS) errors.push({ path: 'llm.scoreOverrides.models', message: `at most ${MAX_SCORE_MODELS} models` });
   for (const p of c.llm.providers) providerRules(p, errors, warnings);
   teamRules(c, errors, warnings);
   flowRules(c, errors, warnings, tolerateFlow);

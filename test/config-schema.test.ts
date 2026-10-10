@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CONFIG_SCHEMA, collectSecretRequirements, mergeDeep, neutralConfig, newProvider, stageRank, validateConfig, withConfigDefaults } from '../src/shared/config';
 import type { JsonSchema } from '../src/shared/config';
 import { CONFIG_SCHEMA_VERSION } from '../src/shared/config/types';
+import { newAgent } from '../src/shared/config/team';
 import { TEST_STAGES, exampleProfile } from './helpers/config';
 import { validateSchema } from '../src/shared/config/jsonSchema';
 
@@ -82,7 +83,9 @@ describe('config schema', () => {
     // promptOverrides is a map keyed by prompt id: its keys are data, not fields.
     expect([...holds].filter((k) => !declared.has(k) && !k.startsWith('devCycle.promptOverrides.'))).toEqual([]);
     // Fields that only appear when a list has items, or whose default is an empty list: the schema may know more than the defaults hold.
-    const optionalOnlyInItems = [...declared].filter((k) => !holds.has(k) && !k.includes('[]'));
+    // The pool of a role and the score overrides are absent from every default (absent = no fallbacks); a test below holds them to the schema.
+    const optionalPool = (k: string) => k.startsWith('llm.scoreOverrides') || /^llm\.roles\.[a-z]+\.(fallbacks|activities|images|contextWindow|echoReasoning|offer)(\.|$)/.test(k) || k.startsWith('llm.effort');
+    const optionalOnlyInItems = [...declared].filter((k) => !holds.has(k) && !k.includes('[]') && !optionalPool(k));
     expect(optionalOnlyInItems).toEqual([]);
   });
 
@@ -112,6 +115,179 @@ describe('config schema', () => {
     expect(validateConfig({ ...neutralConfig(), schemaVersion: CONFIG_SCHEMA_VERSION + 1 }).errors[0].message).toMatch(/newer app/);
     expect(validateConfig(null).ok).toBe(false);
     expect(validateConfig([]).ok).toBe(false);
+  });
+
+  describe('model pools', () => {
+    const withProviders = () => {
+      const c = neutralConfig();
+      c.llm.providers.push(newProvider({ id: 'spare', kind: 'openai-compatible', baseUrl: 'http://example.com/v1' }));
+      return c;
+    };
+    const role = (c: ReturnType<typeof neutralConfig>, pool: Record<string, unknown>) => ({ ...c, llm: { ...c.llm, roles: { ...c.llm.roles, deep: { ...c.llm.roles.deep, ...pool } } } });
+
+    it('carry no pool by default: no fallbacks, no activities, no overrides, no facts', () => {
+      const c = neutralConfig();
+      for (const r of Object.values(c.llm.roles)) expect(Object.keys(r).sort()).toEqual(['model', 'provider']);
+      expect(c.llm.scoreOverrides).toBeUndefined();
+      expect(CONFIG_SCHEMA.properties?.llm.properties?.roles.properties?.deep.properties?.fallbacks.maxItems).toBe(8);
+    });
+
+    it('accepts fallbacks and a list per activity, and the facts of an entry', () => {
+      const c = withProviders();
+      const ok = role(c, { fallbacks: [{ provider: 'spare', model: 'model-a', images: true, contextWindow: 128_000, echoReasoning: true }], activities: { screen: [{ provider: 'spare', model: 'model-b', images: true }], shell: [{ provider: 'anthropic', model: 'haiku' }] } });
+      const r = validateConfig(ok);
+      expect(r.errors).toEqual([]);
+      expect(r.config?.llm.roles.deep.fallbacks?.[0]).toMatchObject({ model: 'model-a', contextWindow: 128_000 });
+      expect(validateConfig({ ...c, llm: { ...c.llm, scoreOverrides: { floors: { shell: 80 }, models: { 'model-a': { edit: 70.5 } } } } }).errors).toEqual([]);
+    });
+
+    it('refuses a wrong type, an unknown field, a list that is too long and a score out of range', () => {
+      const c = withProviders();
+      const entry = (n: number) => ({ provider: 'spare', model: `model-${n}` });
+      const paths = (x: unknown) => validateConfig(x).errors.map((e) => e.path);
+      expect(paths(role(c, { fallbacks: 'model-a' }))).toEqual(['llm.roles.deep.fallbacks']);
+      expect(paths(role(c, { fallbacks: [{ provider: 'spare', model: 'a b' }] }))).toEqual(['llm.roles.deep.fallbacks[0].model']);
+      expect(paths(role(c, { fallbacks: [{ provider: 'spare', model: 'model-a', extra: 1 }] }))).toEqual(['llm.roles.deep.fallbacks[0].extra']);
+      expect(paths(role(c, { fallbacks: [{ provider: 'spare', model: 'model-a', contextWindow: 10 }] }))).toEqual(['llm.roles.deep.fallbacks[0].contextWindow']);
+      expect(paths(role(c, { fallbacks: Array.from({ length: 9 }, (_, i) => entry(i)) }))).toEqual(['llm.roles.deep.fallbacks']);
+      expect(paths(role(c, { activities: { sleep: [entry(1)] } }))).toEqual(['llm.roles.deep.activities.sleep']);
+      expect(paths({ ...c, llm: { ...c.llm, scoreOverrides: { floors: { shell: 101 } } } })).toEqual(['llm.scoreOverrides.floors.shell']);
+    });
+
+    it('refuses an entry of a provider that does not exist and a model listed twice, and warns about a screen entry that takes no image', () => {
+      const c = withProviders();
+      expect(validateConfig(role(c, { fallbacks: [{ provider: 'gone', model: 'model-a' }] })).errors.map((e) => e.path)).toEqual(['llm.roles.deep.fallbacks[0].provider']);
+      const first = c.llm.roles.deep;
+      expect(validateConfig(role(c, { fallbacks: [{ provider: first.provider, model: first.model }] })).errors.map((e) => e.path)).toEqual(['llm.roles.deep.fallbacks[0]']);
+      expect(validateConfig(role(c, { activities: { edit: [{ provider: 'spare', model: 'm' }, { provider: 'spare', model: 'm' }] } })).errors.map((e) => e.path)).toEqual(['llm.roles.deep.activities.edit[1]']);
+      const warned = validateConfig(role(c, { activities: { screen: [{ provider: 'spare', model: 'm', images: false }] } }));
+      expect(warned.ok).toBe(true);
+      expect(warned.warnings.map((w) => w.path)).toEqual(['llm.roles.deep.activities.screen[0]']);
+    });
+
+    it('an agent with a model of its own carries a pool too; one on a role ignores it, with a warning', () => {
+      const c = withProviders();
+      const own = newAgent({ id: 'writer', name: 'Writer', model: { role: null, provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'anthropic', model: 'haiku' }] } });
+      const ok = validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, own] } });
+      expect(ok.errors).toEqual([]);
+      expect(ok.config?.agents.team.at(-1)?.model.fallbacks).toEqual([{ provider: 'anthropic', model: 'haiku' }]);
+      const bad = newAgent({ id: 'writer', name: 'Writer', model: { role: null, provider: 'spare', model: 'model-a', fallbacks: [{ provider: 'gone', model: 'x' }] } });
+      expect(validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, bad] } }).errors.map((e) => e.path)).toEqual([`agents.team[${c.agents.team.length}].model.fallbacks[0].provider`]);
+      const borrowed = newAgent({ id: 'writer', name: 'Writer', model: { role: 'deep', provider: '', model: '', fallbacks: [{ provider: 'spare', model: 'x' }] } });
+      const warn = validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, borrowed] } });
+      expect(warn.ok).toBe(true);
+      expect(warn.warnings.map((w) => w.path)).toContain(`agents.team[${c.agents.team.length}].model`);
+    });
+
+    it('newAgent leaves an empty pool out, so an agent without one keeps the shape it had', () => {
+      const a = newAgent({ id: 'writer', name: 'Writer', model: { role: null, provider: 'spare', model: 'm', fallbacks: [], activities: { edit: [] } } });
+      expect(a.model).toEqual({ role: null, provider: 'spare', model: 'm' });
+    });
+  });
+
+  describe('the pool mode', () => {
+    const withStage = () => {
+      const c = neutralConfig();
+      c.devCycle.stages = [structuredClone(TEST_STAGES[0])];
+      return c;
+    };
+    const stageOf = (c: ReturnType<typeof neutralConfig>) => c.devCycle.stages[0];
+
+    it('is in the neutral config as delegate, and absent from an agent and a stage until one chooses', () => {
+      const c = neutralConfig();
+      expect(c.llm.poolMode).toBe('delegate');
+      expect(c.agents.team.every((a) => !('poolMode' in a))).toBe(true);
+      expect(c.devCycle.stages.every((s) => !('poolMode' in s))).toBe(true);
+      expect(newAgent({ id: 'x' })).not.toHaveProperty('poolMode');
+      expect(newAgent({ id: 'x', poolMode: 'switch' }).poolMode).toBe('switch');
+    });
+
+    it('accepts the three modes in the workspace, an agent, a stage and a flow', () => {
+      for (const mode of ['fallback', 'switch', 'delegate'] as const) {
+        const c = withStage();
+        c.llm.poolMode = mode;
+        c.agents.team[0].poolMode = mode;
+        stageOf(c).poolMode = mode;
+        c.devCycle.flows = { release: [{ ...stageOf(c), poolMode: mode }] };
+        expect(validateConfig(c).errors).toEqual([]);
+      }
+    });
+
+    it('refuses another value, by path', () => {
+      const c = withStage();
+      const paths = (x: unknown) => validateConfig(x).errors.map((e) => e.path);
+      expect(paths({ ...c, llm: { ...c.llm, poolMode: 'both' } })).toEqual(['llm.poolMode']);
+      expect(paths({ ...c, agents: { ...c.agents, team: [{ ...c.agents.team[0], poolMode: 'both' }, ...c.agents.team.slice(1)] } })).toEqual(['agents.team[0].poolMode']);
+      expect(paths({ ...c, devCycle: { ...c.devCycle, stages: [{ ...stageOf(c), poolMode: 1 }, ...c.devCycle.stages.slice(1)] } })).toEqual(['devCycle.stages[0].poolMode']);
+    });
+
+    it('describes the three fields', () => {
+      const props = CONFIG_SCHEMA.properties!;
+      expect(props.llm.properties?.poolMode.enum).toEqual(['fallback', 'switch', 'delegate']);
+      expect(props.agents.properties?.team.items?.properties?.poolMode.enum).toEqual(['fallback', 'switch', 'delegate']);
+      expect(props.devCycle.properties?.stages.items?.properties?.poolMode.enum).toEqual(['fallback', 'switch', 'delegate']);
+    });
+  });
+
+  describe('what the provider offers', () => {
+    const withProvider = (features?: Record<string, unknown>) => {
+      const c = neutralConfig();
+      c.llm.providers.push({ ...newProvider({ id: 'srv', kind: 'openai-compatible', baseUrl: 'https://api.example.com/v1' }), ...(features ? { features } : {}) } as never);
+      return c;
+    };
+    const errors = (x: unknown) => validateConfig(x).errors.map((e) => `${e.path}: ${e.message}`);
+
+    it('is off by default: no features on a provider, no offer on a model, no effort, flex on', () => {
+      const c = neutralConfig();
+      expect(c.llm.effort).toBeUndefined();
+      expect(c.runner.flex).toBe(true);
+      expect(Object.keys(c.llm.roles.deep).sort()).toEqual(['model', 'provider']);
+      expect(newProvider({ id: 'x', kind: 'openai-compatible', baseUrl: 'http://example.com/v1' })).not.toHaveProperty('features');
+      expect(withConfigDefaults({ llm: { providers: [] } } as never).llm.providers).toEqual([]);
+    });
+
+    it('accepts the features of a provider, the offer of a model, an effort per activity and the flex switch', () => {
+      const c = withProvider({ serviceTier: true, failFast: true, reasoningEffort: false, catalogUrl: 'https://api.example.com/models/list' });
+      c.llm.effort = { explore: 'low', shell: 'default', write: 'none', edit: 'high' };
+      c.runner.flex = false;
+      const offer = { flex: true, effort: true, deprecated: 1790000000, replacedBy: 'model-b' };
+      c.llm.roles.deep = { ...c.llm.roles.deep, offer, fallbacks: [{ provider: 'srv', model: 'model-a', offer }] };
+      expect(validateConfig(c).errors).toEqual([]);
+      expect(validateConfig(c).config?.llm.roles.deep.offer).toEqual(offer);
+    });
+
+    it('refuses what is not a boolean, an unknown level, an unknown key and an offer that is not a number', () => {
+      expect(errors(withProvider({ serviceTier: 'yes' }))).toEqual(['llm.providers[1].features.serviceTier: expected boolean, got string']);
+      const c = neutralConfig();
+      expect(validateConfig({ ...c, llm: { ...c.llm, effort: { shell: 'max' } } }).errors.map((e) => e.path)).toEqual(['llm.effort.shell']);
+      expect(validateConfig({ ...c, llm: { ...c.llm, effort: { plan: 'low' } } }).errors.map((e) => e.path)).toEqual(['llm.effort.plan']);
+      expect(validateConfig({ ...c, runner: { ...c.runner, flex: 'on' } }).errors.map((e) => e.path)).toEqual(['runner.flex']);
+      const bad = { ...c, llm: { ...c.llm, roles: { ...c.llm.roles, deep: { ...c.llm.roles.deep, offer: { deprecated: 'soon' } } } } };
+      expect(validateConfig(bad).errors.map((e) => e.path)).toEqual(['llm.roles.deep.offer.deprecated']);
+    });
+
+    it('holds the catalog address to the origin of the provider: the key is never sent elsewhere', () => {
+      expect(errors(withProvider({ catalogUrl: 'https://api.example.com/models/list' }))).toEqual([]);
+      expect(errors(withProvider({ catalogUrl: 'https://other.example.com/models/list' }))).toEqual([expect.stringContaining('llm.providers.srv.features.catalogUrl: must have the same origin')]);
+      expect(errors(withProvider({ catalogUrl: 'http://api.example.com/models/list' }))).toEqual([expect.stringContaining('same origin')]);
+      expect(errors(withProvider({ catalogUrl: 'https://api.example.com:8443/models/list' }))).toEqual([expect.stringContaining('same origin')]);
+      expect(errors(withProvider({ catalogUrl: 'file:///etc/passwd' }))).toEqual([expect.stringContaining('http:// or https://')]);
+      expect(errors(withProvider({ catalogUrl: 'not a url' }))).toEqual([expect.stringContaining('http:// or https://')]);
+    });
+
+    it('warns when features sit on a provider the Claude Agent SDK serves', () => {
+      const c = neutralConfig();
+      c.llm.providers.push({ ...newProvider({ id: 'cl', kind: 'anthropic', baseUrl: 'https://api.anthropic.com' }), features: { serviceTier: true } } as never);
+      expect(validateConfig(c).warnings.map((w) => w.path)).toContain('llm.providers.cl.features');
+    });
+
+    it('describes the new fields', () => {
+      const llm = CONFIG_SCHEMA.properties!.llm.properties!;
+      expect(Object.keys(llm.providers.items!.properties!.features.properties!)).toEqual(['serviceTier', 'failFast', 'reasoningEffort', 'catalogUrl']);
+      expect(llm.effort.properties?.shell.enum).toEqual(['none', 'low', 'medium', 'high', 'default']);
+      expect(Object.keys(llm.roles.properties!.deep.properties!.offer.properties!)).toEqual(['flex', 'effort', 'deprecated', 'replacedBy']);
+      expect(CONFIG_SCHEMA.properties!.runner.properties?.flex.type).toBe('boolean');
+    });
   });
 
   it('accepts the draft mark of an agent and refuses one that is not a boolean', () => {

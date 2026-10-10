@@ -1,6 +1,7 @@
 // The seam between agents.ts and the open engine. agents.ts builds the SDK options as always; when an engine other than Claude is
 // selected, it hands them here and gets back what runOnce returns. The selection itself is a test hook for now (env flags); the
 // configuration layer will replace `openEngineFromEnv` with provider -> engine selection.
+import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Options } from '@anthropic-ai/claude-agent-sdk';
@@ -9,11 +10,41 @@ import { type DocSources, discoverClaudeMd } from './context';
 import { EngineError } from './errors';
 import { type Capabilities, type OpenRunParams, OpenMaxTurnsError, type RunEvents, runOpen } from './loop';
 import { ProviderBudgetError } from '../contract';
+import type { Activity, PoolMode, ScoreOverrides } from '../../../shared/config/types';
+import type { MemberParams, OpenPool, PoolMember, Tuning } from './pool';
 import type { Json } from './types';
 import { existsSync } from 'node:fs';
 
+/** A model of the pool as the app resolved it: how to reach it, and what is known of it. */
+export interface PoolMemberSpec {
+  /** The key the rest registry knows it by (see `restKey`). */
+  key: string;
+  /** The model as the person reads it. */
+  label: string;
+  /** The provider id. */
+  provider?: string;
+  config: ProviderConfig;
+  capabilities?: Capabilities;
+  /** The extra parameters this model may be sent (its provider's features and the catalog's mark of it). */
+  params?: MemberParams;
+}
+
+/** The pool of the role the call is made for: the model the call starts on is `provider`, and these are the others. */
+export interface SelectionPool {
+  name: string;
+  primary: { key: string; label: string; provider?: string };
+  fallbacks: PoolMemberSpec[];
+  activities?: Partial<Record<Activity, PoolMemberSpec[]>>;
+  scoreOverrides?: ScoreOverrides;
+  /** How the pool is used (`llm.poolMode` and the agent's and stage's choices, already resolved). Absent: `switch`. */
+  mode?: PoolMode;
+}
+
 export interface OpenEngineSelection {
   provider: ProviderConfig;
+  /** What the model the call starts on may be sent beyond the protocol; absent: nothing. */
+  params?: MemberParams;
+  pool?: SelectionPool;
   capabilities?: Capabilities;
   structured?: OpenRunParams['structured'];
   docs?: DocSources;
@@ -32,11 +63,13 @@ export function openEngineFromEnv(env: NodeJS.ProcessEnv = process.env): OpenEng
   };
 }
 
-// One client per provider and model for the life of the process, so what a server taught it (rejected parameters, reasoning echo) sticks.
+// One client per server, model and key for the life of the process, so what a server taught it (rejected parameters, reasoning echo) sticks. The key is part of the
+// identity (two providers on one server with different keys have their own client), held as a digest so the cache keys carry no secret.
 const clients = new Map<string, ChatClient>();
+const digest = (secret: string | undefined): string => (secret ? createHash('sha256').update(secret).digest('hex').slice(0, 16) : '');
 
 export function clientFor(provider: ProviderConfig): ChatClient {
-  const key = `${provider.baseUrl}|${provider.model}|${provider.apiKey ? 'k' : ''}`;
+  const key = `${provider.baseUrl}|${provider.model}|${digest(provider.apiKey)}|${provider.echoReasoning ? 'e' : ''}`;
   let c = clients.get(key);
   if (!c) {
     c = new ChatClient(provider);
@@ -57,6 +90,18 @@ export function defaultDocSources(cwd: string): DocSources {
   };
 }
 
+function memberOf(spec: PoolMemberSpec): PoolMember {
+  const c = spec.capabilities;
+  return { key: spec.key, label: spec.label, model: spec.config.model, provider: spec.provider, client: clientFor(spec.config), images: c?.images, tools: c?.tools, contextWindow: c?.contextWindow, ...(spec.params ? { params: spec.params } : {}) };
+}
+
+function poolOf(pool: SelectionPool | undefined): OpenPool | undefined {
+  if (!pool) return undefined;
+  const activities: OpenPool['activities'] = {};
+  for (const [a, list] of Object.entries(pool.activities ?? {}) as [Activity, PoolMemberSpec[]][]) if (list.length) activities[a] = list.map(memberOf);
+  return { name: pool.name, primary: pool.primary, fallbacks: pool.fallbacks.map(memberOf), activities, ...(pool.scoreOverrides ? { scoreOverrides: pool.scoreOverrides } : {}), ...(pool.mode ? { mode: pool.mode } : {}) };
+}
+
 export interface BridgeArgs {
   selection: OpenEngineSelection;
   prompt: string;
@@ -73,6 +118,8 @@ export interface BridgeArgs {
   // The workspace lifted the fence of its runs: Write and Edit may land anywhere, `.git`, hooks and secrets still refused.
   writeAnywhere?: boolean;
   signal?: AbortSignal;
+  /** What the call is for: background (nobody waits) and the effort of each activity. */
+  tuning?: Tuning;
   describeTool?: (name: string, input: Json) => string;
   events?: RunEvents;
   makeMaxTurnsError: (sessionId: string, sources: string[]) => Error;
@@ -91,7 +138,10 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
       prompt: a.prompt,
       schema,
       client: clientFor(a.selection.provider),
+      pool: poolOf(a.selection.pool),
       capabilities: a.selection.capabilities,
+      ...(a.selection.params ? { params: a.selection.params } : {}),
+      ...(a.tuning ? { tuning: a.tuning } : {}),
       structured: a.selection.structured,
       cwd,
       additionalDirectories: o.additionalDirectories,
@@ -120,8 +170,8 @@ export async function runOpenOnce<T>(a: BridgeArgs): Promise<{ data: T; sessionI
     return { data: r.data, sessionId: r.sessionId, sources: r.sources };
   } catch (e) {
     if (e instanceof OpenMaxTurnsError) throw a.makeMaxTurnsError(e.sessionId, e.sources);
-    // A refusal by budget is a wait, not a failure of the stage: it goes up as a reason of its own, with the provider that answered.
-    if (e instanceof EngineError && e.kind === 'budget') throw new ProviderBudgetError(a.selection.provider.model, 'open', e.message);
+    // A refusal by budget is a wait, not a failure of the stage: it goes up as a reason of its own, with the provider of the pool member that answered (empty: the caller knows the role's own).
+    if (e instanceof EngineError && e.kind === 'budget') throw new ProviderBudgetError(e.provider ?? '', 'open', e.message);
     throw e;
   }
 }

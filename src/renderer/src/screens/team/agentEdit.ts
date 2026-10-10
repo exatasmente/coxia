@@ -1,9 +1,11 @@
 import { ID } from '../../../../shared/config/schema';
 import { MAX_REGISTRY_HOSTS, isRegistryHost } from '../../../../shared/sandboxPaths';
 import { flowStagesOf, setAgentSquad } from '../../../../shared/config/squads';
-import { addAgent, isDraft, isSystemId, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
+import { poolFieldsOf } from '../../../../shared/config/pool';
+import { withoutLead } from '../../wizard/poolEdit';
+import { addAgent, isDraft, isSystemId, modelPoolOf, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
 import { t } from '../../../../shared/i18n';
-import type { AgentDef, AgentModel, AgentPermission, AgentShell, AgentToolsConfig, AgentTracker, StageDef, WorkspaceConfig } from '../../../../shared/config/types';
+import { MAX_POOL_ENTRIES, type AgentDef, type AgentModel, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type ModelOffer, type ModelPool, type ModelRef, type PoolMode, type StageDef, type WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
 import { shown } from './text';
@@ -37,6 +39,8 @@ export interface AgentDraft {
   allowedHosts: string[];
   /** The agent's browser keeps its logins between uses. */
   browserProfile: boolean;
+  /** How the agent's pool is used; null: the stage's, then the workspace's. */
+  poolMode: PoolMode | null;
   /** The stage ids the agent lists (the flow editor keeps them in step with the stages that name it). */
   stages: string[];
 }
@@ -68,12 +72,64 @@ export function draftOf(a: AgentDef): AgentDraft {
     screen: a.screen === true,
     allowedHosts: [...(a.allowedHosts ?? [])],
     browserProfile: a.browserProfile === true,
+    poolMode: a.poolMode ?? null,
     stages: [...a.stages],
   };
 }
 
+/**
+ * The model of a draft after the person picks a role, or a provider and a model. The pool stays with the draft (it is only written while the agent has a model of its
+ * own), a reserve that became the model itself leaves the list, and what was known of the old model (images, window, reasoning echo) is kept only for the same model.
+ */
+export function agentModelWith(model: AgentModel, next: { role: LlmRole } | { provider: string; model: string }): AgentModel {
+  const lists = poolFieldsOf(model);
+  if ('role' in next) return { role: next.role, provider: '', model: '', ...lists };
+  const same = model.provider === next.provider && model.model === next.model;
+  const marks = same ? { ...(model.images !== undefined ? { images: model.images } : {}), ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}), ...(model.echoReasoning !== undefined ? { echoReasoning: model.echoReasoning } : {}), ...(model.offer ? { offer: model.offer } : {}) } : {};
+  return { role: null, provider: next.provider, model: next.model, ...marks, ...poolFieldsOf(withoutLead(lists, next)) };
+}
+
+/** The model of a draft with the marks of its own model set by hand (served in the flex tier, takes the effort); the rest of the model stays. */
+export function agentModelOffer(model: AgentModel, offer: ModelOffer | undefined): AgentModel {
+  const { offer: _old, ...rest } = model;
+  return { ...rest, ...(offer ? { offer } : {}) };
+}
+
+/** The model of a draft with its pool replaced; the rest of the model stays. */
+export function agentModelPool(model: AgentModel, pool: ModelPool): AgentModel {
+  const { fallbacks: _f, activities: _a, ...rest } = model;
+  return { ...rest, ...poolFieldsOf(pool) };
+}
+
+/** The problems of the pool of an agent's own model: a provider that is gone, a model twice in a list, a list that is too long. */
+function poolProblems(config: WorkspaceConfig, model: AgentModel): AgentProblem[] {
+  const out: AgentProblem[] = [];
+  const check = (list: ModelRef[] | undefined, lead: ModelRef | null) => {
+    const seen = new Set<string>(lead ? [`${lead.provider}\n${lead.model}`] : []);
+    for (const r of list ?? []) {
+      if (!config.llm.providers.some((p) => p.id === r.provider)) out.push({ field: 'model', key: 'ui.team.err.poolProvider', params: { provider: r.provider } });
+      const k = `${r.provider}\n${r.model}`;
+      if (seen.has(k)) out.push({ field: 'model', key: 'ui.team.err.poolDuplicate', params: { model: r.model } });
+      seen.add(k);
+    }
+    if ((list?.length ?? 0) > MAX_POOL_ENTRIES) out.push({ field: 'model', key: 'ui.team.err.poolMax', params: { max: String(MAX_POOL_ENTRIES) } });
+  };
+  check(model.fallbacks, { provider: model.provider, model: model.model.trim() });
+  for (const list of Object.values(model.activities ?? {})) check(list, null);
+  return out;
+}
+
+/**
+ * Whether the switch of sub-agents is off for what the draft's agent runs as: an agent that writes works its stages under the workspace's tools, any other call under the
+ * agent's own when it names them. With it off, delegation hands no work out and the pool is a reserve only.
+ */
+export function subagentsOff(config: WorkspaceConfig, draft: Pick<AgentDraft, 'permission' | 'tools'>): boolean {
+  const tools = draft.permission === 'worktree' ? config.agents.tools : (draft.tools ?? config.agents.tools);
+  return tools.subagents === false;
+}
+
 export function blankAgent(): AgentDraft {
-  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, screen: false, allowedHosts: [], browserProfile: false, stages: [] };
+  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, screen: false, allowedHosts: [], browserProfile: false, poolMode: null, stages: [] };
 }
 
 /** What is wrong with the draft on its own (the checks that need the whole team come from `teamIssues`). */
@@ -88,6 +144,7 @@ export function agentProblems(config: WorkspaceConfig, draft: AgentDraft, isNew:
   if (draft.model.role === null) {
     if (!config.llm.providers.some((p) => p.id === draft.model.provider)) out.push({ field: 'model', key: 'ui.team.err.provider' });
     else if (!draft.model.model.trim()) out.push({ field: 'model', key: 'ui.team.err.modelName' });
+    out.push(...poolProblems(config, draft.model));
   }
   // Commands in the real worktree could leave files that the app then commits for an agent that promised only to read: a reader runs commands in a sandbox.
   if (draft.shell === 'allowlist' && draft.permission !== 'worktree') out.push({ field: 'shell', key: 'ui.team.err.allowlist' });
@@ -114,7 +171,7 @@ function fieldsOf(draft: AgentDraft) {
     name: draft.name.trim(),
     job: draft.job.trim(),
     instructions: draft.instructions,
-    model: draft.model.role ? { role: draft.model.role, provider: '', model: '' } : { role: null, provider: draft.model.provider, model: draft.model.model.trim() },
+    model: draft.model.role ? { role: draft.model.role, provider: '', model: '' } : { role: null, provider: draft.model.provider, model: draft.model.model.trim(), ...modelPoolOf(draft.model) },
     permission: draft.permission,
     tracker: draft.tracker,
     shell: draft.shell,
@@ -126,6 +183,8 @@ function fieldsOf(draft: AgentDraft) {
     screen: draft.screen ? true : undefined,
     allowedHosts: hostsOf(draft) ?? undefined,
     browserProfile: draft.browserProfile ? true : undefined,
+    // Inheriting is the absence of the field, not a value.
+    poolMode: draft.poolMode ?? undefined,
     stages: draft.stages,
   };
 }

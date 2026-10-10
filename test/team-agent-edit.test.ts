@@ -4,7 +4,7 @@ import { newSquad, addSquad } from '../src/shared/config/squads';
 import { addAgent, newAgent, workingTeam } from '../src/shared/config/team';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { agentFlow, applyTemplate } from '../src/shared/cycles';
-import { agentProblems, applyAgent, blankAgent, draftOf, promoteDraft, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId } from '../src/renderer/src/screens/team/agentEdit';
+import { agentModelOffer, agentModelPool, agentModelWith, agentProblems, applyAgent, blankAgent, draftOf, promoteDraft, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId } from '../src/renderer/src/screens/team/agentEdit';
 
 const flow = (): WorkspaceConfig => applyTemplate(neutralConfig(), agentFlow);
 // A squad with members needs a liaison; the squad is not what this test is about, so the checked copy has none.
@@ -109,6 +109,40 @@ describe('applying a draft', () => {
     expect(agent(own, 'developer').model).toEqual({ role: null, provider: 'local', model: 'tiny' });
     const back = applyAgent(own, { ...draftOf(agent(own, 'developer')), model: { role: 'fix', provider: 'local', model: 'tiny' } }, false);
     expect(agent(back, 'developer').model).toEqual({ role: 'fix', provider: '', model: '' });
+  });
+
+  it('keeps the pool of an agent\'s own model when the form saves something else, and leaves none behind for an agent without one', () => {
+    const c = flow();
+    c.llm.providers.push({ ...c.llm.providers[0], id: 'local', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://localhost:11434/v1' });
+    const model = { role: null, provider: 'local', model: 'model-a', fallbacks: [{ provider: 'local', model: 'model-b' }], activities: { shell: [{ provider: 'local', model: 'model-b' }] }, contextWindow: 64_000 };
+    const own = applyAgent(c, { ...draftOf(agent(c, 'developer')), model }, false);
+    expect(agent(own, 'developer').model).toEqual(model);
+    const renamed = applyAgent(own, { ...draftOf(agent(own, 'developer')), name: 'Dev' }, false);
+    expect(agent(renamed, 'developer').model).toEqual(model);
+    expect(validateConfig(agentOnly(renamed)).errors).toEqual([]);
+    const plain = applyAgent(c, { ...draftOf(agent(c, 'developer')), model: { role: null, provider: 'local', model: 'model-a' } }, false);
+    expect(agent(plain, 'developer').model).toEqual({ role: null, provider: 'local', model: 'model-a' });
+    const back = applyAgent(own, { ...draftOf(agent(own, 'developer')), model: { ...model, role: 'fix' } }, false);
+    expect(agent(back, 'developer').model).toEqual({ role: 'fix', provider: '', model: '' });
+  });
+
+  it('keeps the pool mode of an agent through the form, sets it, and clears it back to inheriting', () => {
+    const c = flow();
+    expect(blankAgent().poolMode).toBeNull();
+    expect(draftOf(agent(c, 'developer')).poolMode).toBeNull();
+    const plain = applyAgent(c, draftOf(agent(c, 'developer')), false);
+    expect('poolMode' in agent(plain, 'developer')).toBe(false);
+    const set = applyAgent(c, { ...draftOf(agent(c, 'developer')), poolMode: 'switch' }, false);
+    expect(agent(set, 'developer').poolMode).toBe('switch');
+    expect(validateConfig(agentOnly(set)).errors).toEqual([]);
+    expect(draftOf(agent(set, 'developer')).poolMode).toBe('switch');
+    // Saving something else keeps it; the person clearing it removes the field.
+    const renamed = applyAgent(set, { ...draftOf(agent(set, 'developer')), name: 'Dev' }, false);
+    expect(agent(renamed, 'developer').poolMode).toBe('switch');
+    const cleared = applyAgent(set, { ...draftOf(agent(set, 'developer')), poolMode: null }, false);
+    expect('poolMode' in agent(cleared, 'developer')).toBe(false);
+    const made = applyAgent(c, { ...blankAgent(), id: 'scout', name: 'Scout', poolMode: 'fallback' }, true);
+    expect(agent(made, 'scout').poolMode).toBe('fallback');
   });
 
   it('saving an agent with no allowed command leaves no empty field, and clearing the last one removes it', () => {
@@ -287,5 +321,78 @@ describe('promoting a draft agent of the assistant', () => {
     expect(agentProblems(c, form(c), false)).toEqual([]);
     expect(agentProblems(c, form(c, { name: '  ' }), false).map((p) => p.key)).toEqual(['ui.team.err.name']);
     expect(agentProblems(c, form(c, { shell: 'allowlist' }), false).map((p) => p.key)).toEqual(['ui.team.err.allowlist']);
+  });
+});
+
+describe('the pool of an agent with a model of its own, in the editor', () => {
+  const ref = (model: string, provider = 'local') => ({ provider, model });
+  const withLocal = (): WorkspaceConfig => {
+    const c = flow();
+    c.llm.providers.push({ ...c.llm.providers[0], id: 'local', kind: 'openai-compatible', engine: 'open', baseUrl: 'http://localhost:11434/v1' });
+    return c;
+  };
+  const own = { role: null, provider: 'local', model: 'model-a', fallbacks: [ref('model-b'), ref('model-c')], activities: { shell: [ref('model-c')] }, images: true, contextWindow: 64_000 };
+
+  it('keeps the pool when the person changes the model name or the provider, and keeps what was known only of the same model', () => {
+    const renamed = agentModelWith(own, { provider: 'local', model: 'model-z' });
+    expect(renamed).toEqual({ role: null, provider: 'local', model: 'model-z', fallbacks: own.fallbacks, activities: own.activities });
+    expect(agentModelWith(own, { provider: 'local', model: 'model-a' })).toEqual(own);
+    expect(agentModelWith(own, { provider: 'other', model: 'model-a' })).not.toHaveProperty('images');
+  });
+
+  it('keeps what the catalog said of the model only for the same model, and a pool entry keeps its own', () => {
+    const offered = { ...own, offer: { flex: true, effort: true }, fallbacks: [{ ...ref('model-b'), offer: { deprecated: 1790000000, replacedBy: 'model-c' } }] };
+    expect(agentModelWith(offered, { provider: 'local', model: 'model-a' })).toEqual(offered);
+    const renamed = agentModelWith(offered, { provider: 'local', model: 'model-z' });
+    expect(renamed).not.toHaveProperty('offer');
+    expect(renamed.fallbacks).toEqual(offered.fallbacks);
+    expect(newAgent({ id: 'x', model: offered }).model.offer).toEqual({ flex: true, effort: true });
+    expect(newAgent({ id: 'x', model: { role: null, provider: 'local', model: 'model-a' } }).model).not.toHaveProperty('offer');
+  });
+
+  it('sets the marks of the agent\'s own model by hand, leaving no empty offer and the pool as it was', () => {
+    const marked = agentModelOffer(own, { effort: true });
+    expect(marked.offer).toEqual({ effort: true });
+    expect(marked.fallbacks).toEqual(own.fallbacks);
+    expect(agentModelOffer(marked, undefined)).not.toHaveProperty('offer');
+    expect(own).not.toHaveProperty('offer');
+  });
+
+  it('takes a reserve out of the list when it becomes the agent\'s own model', () => {
+    expect(agentModelWith(own, { provider: 'local', model: 'model-b' }).fallbacks).toEqual([ref('model-c')]);
+    expect(agentModelWith({ ...own, fallbacks: [ref('model-b')] }, { provider: 'local', model: 'model-b' })).not.toHaveProperty('fallbacks');
+  });
+
+  it('keeps the pool in the draft while a role is picked, so the way back finds it, and writes none for the role', () => {
+    const c = withLocal();
+    const byRole = agentModelWith(own, { role: 'fix' });
+    expect(byRole).toEqual({ role: 'fix', provider: '', model: '', fallbacks: own.fallbacks, activities: own.activities });
+    const saved = applyAgent(c, { ...draftOf(agent(c, 'developer')), model: byRole }, false);
+    expect(agent(saved, 'developer').model).toEqual({ role: 'fix', provider: '', model: '' });
+    expect(agentModelWith(byRole, { provider: 'local', model: 'model-a' }).fallbacks).toEqual(own.fallbacks);
+  });
+
+  it('replaces the pool of the model and leaves an empty list out', () => {
+    const next = agentModelPool(own, { fallbacks: [ref('model-d')] });
+    expect(next).toEqual({ role: null, provider: 'local', model: 'model-a', images: true, contextWindow: 64_000, fallbacks: [ref('model-d')] });
+    expect(agentModelPool(own, {})).not.toHaveProperty('fallbacks');
+    const c = withLocal();
+    const saved = applyAgent(c, { ...draftOf(agent(c, 'developer')), model: next }, false);
+    expect(agent(saved, 'developer').model).toEqual(next);
+    expect(validateConfig(agentOnly(saved)).errors).toEqual([]);
+  });
+
+  it('flags a provider that is gone, a model twice in a list, the agent\'s own model as a reserve and a list that is too long', () => {
+    const c = withLocal();
+    const d = { ...draftOf(agent(c, 'developer')), model: { ...own } };
+    expect(agentProblems(c, d, false)).toEqual([]);
+    const keys = (model: object) => agentProblems(c, { ...d, model: { ...own, ...model } }, false).map((p) => p.key);
+    expect(keys({ fallbacks: [ref('model-b', 'gone')] })).toEqual(['ui.team.err.poolProvider']);
+    expect(keys({ fallbacks: [ref('model-b'), ref('model-b')] })).toEqual(['ui.team.err.poolDuplicate']);
+    expect(keys({ fallbacks: [ref('model-a')] })).toEqual(['ui.team.err.poolDuplicate']);
+    expect(keys({ activities: { edit: [ref('model-a'), ref('model-a')] } })).toEqual(['ui.team.err.poolDuplicate']);
+    expect(keys({ fallbacks: Array.from({ length: 9 }, (_, i) => ref(`m-${i}`)) })).toEqual(['ui.team.err.poolMax']);
+    // The model of a role has no pool of its own to check.
+    expect(agentProblems(c, { ...d, model: { role: 'fix', provider: '', model: '', fallbacks: [ref('x', 'gone')] } }, false)).toEqual([]);
   });
 });

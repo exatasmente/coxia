@@ -165,6 +165,8 @@ export function RunnerSection({ config, save }: SectionProps) {
           <p className="small muted">{t('ui.runner.soleMaintainerHint')}</p>
           <Toggle checked={draft.procedures} onChange={(procedures) => set({ procedures })} label={t('ui.runner.procedures')} />
           <p className="small muted">{t('ui.runner.proceduresHint')}</p>
+          <Toggle checked={draft.flex} onChange={(flex) => set({ flex })} label={t('ui.runner.flex')} />
+          <p className="small muted">{t('ui.runner.flexHint')}</p>
           <Toggle checked={draft.unconfined} onChange={(unconfined) => set({ unconfined })} label={t('ui.runner.unconfined')} />
           <p className="small muted">{t('ui.runner.unconfinedHint')}</p>
         </>
@@ -204,6 +206,8 @@ function WebOnComputer({ runner }: { runner: RunnerConfig }) {
       <dd className="small">{t(soleMaintainerOf(runner) ? 'ui.runner.soleMaintainerOn' : 'ui.runner.soleMaintainerOff')}</dd>
       <dt className="wz-label">{t('ui.runner.procedures')}</dt>
       <dd className="small">{t(proceduresOn({ runner }) ? 'ui.runner.proceduresOn' : 'ui.runner.proceduresOff')}</dd>
+      <dt className="wz-label">{t('ui.runner.flex')}</dt>
+      <dd className="small">{t(runner.flex === false ? 'ui.runner.flexOff' : 'ui.runner.flexOn')}</dd>
       <dt className="wz-label">{t('ui.runner.unconfined')}</dt>
       <dd className="small">{t(unconfinedOf(runner) ? 'ui.runner.unconfinedOn' : 'ui.runner.unconfinedOff')}</dd>
       <dt className="wz-label">{t('ui.runner.evidence')}</dt>

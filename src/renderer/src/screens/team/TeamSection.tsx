@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { offeredStages } from '../../../../shared/agentAssist';
 import { squadsOf } from '../../../../shared/config/squads';
 import { isDraft, removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
-import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type WorkspaceConfig } from '../../../../shared/config/types';
+import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, POOL_MODES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type PoolMode, type WorkspaceConfig } from '../../../../shared/config/types';
 import { flowIssueText } from '../../../../shared/runs/flowCheck';
 import { squadIssueText } from '../../../../shared/runs/squadCheck';
 import { errorText, api } from '../../api';
@@ -10,9 +10,10 @@ import { forgetNow, reloadThreads } from '../cycle/forumApi';
 import { useT } from '../../i18n';
 import { isWeb } from '../../platform';
 import { AgentAssist } from './AgentAssist';
-import { applyAgent, agentProblems, blankAgent, draftOf, promoteDraft, shellAfterPermission, slugOf, stagesLosingAgent, stagesOfAgent, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
+import { applyAgent, agentModelOffer, agentModelPool, agentModelWith, agentProblems, blankAgent, draftOf, promoteDraft, shellAfterPermission, slugOf, stagesLosingAgent, stagesOfAgent, subagentsOff, teamIssues, turnsToChoices, uniqueId, type AgentDraft } from './agentEdit';
 import { editorOf, startAssist, type AssistState } from './assistEdit';
-import { PERMISSION_HINT, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL, SHELL_HINT, SHELL_LABEL, TRACKER_HINT, TRACKER_LABEL } from './labels';
+import { PERMISSION_HINT, POOL_MODE_HINT, POOL_MODE_LABEL, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL, SHELL_HINT, SHELL_LABEL, TRACKER_HINT, TRACKER_LABEL } from './labels';
+import { PoolEditor } from '../../wizard/PoolEditor';
 import { Recommended } from './Recommended';
 import { ScreenFields } from './ScreenFields';
 import { useSandboxStatus } from './sandboxStatus';
@@ -488,22 +489,24 @@ function ModelFields({ config, draft, set, error }: { config: WorkspaceConfig; d
     <fieldset className="wz-fieldset">
       <legend className="wz-label">{t('ui.team.f.model')}</legend>
       <div role="group" aria-label={t('ui.team.f.model')} className="wz-pills">
-        <button type="button" aria-pressed={byRole} className={`filter ${byRole ? 'on' : ''}`} onClick={() => set({ model: { role: draft.model.role ?? 'deep', provider: '', model: '' } })}>{t('ui.team.model.useRole')}</button>
-        <button type="button" aria-pressed={!byRole} className={`filter ${!byRole ? 'on' : ''}`} onClick={() => set({ model: { role: null, provider: draft.model.provider || (config.llm.providers[0]?.id ?? ''), model: draft.model.model } })}>{t('ui.team.model.useProvider')}</button>
+        <button type="button" aria-pressed={byRole} className={`filter ${byRole ? 'on' : ''}`} onClick={() => set({ model: agentModelWith(draft.model, { role: draft.model.role ?? 'deep' }) })}>{t('ui.team.model.useRole')}</button>
+        <button type="button" aria-pressed={!byRole} className={`filter ${!byRole ? 'on' : ''}`} onClick={() => set({ model: agentModelWith(draft.model, { provider: draft.model.provider || (config.llm.providers[0]?.id ?? ''), model: draft.model.model }) })}>{t('ui.team.model.useProvider')}</button>
       </div>
       {byRole ? (
         <Labeled label={t('ui.team.model.role.label')} hint={t('ui.team.model.role.hint')}>
           {(id) => (
-            <select id={id} className="text-input" value={draft.model.role ?? 'deep'} onChange={(e) => set({ model: { role: e.target.value as LlmRole, provider: '', model: '' } })}>
+            <select id={id} className="text-input" value={draft.model.role ?? 'deep'} onChange={(e) => set({ model: agentModelWith(draft.model, { role: e.target.value as LlmRole }) })}>
               {LLM_ROLES.map((r) => <option key={r} value={r}>{t(`ui.settings.role.${r}.label`)}</option>)}
             </select>
           )}
         </Labeled>
-      ) : (
+      ) : null}
+      {byRole && draft.model.role && <RolePoolNote config={config} role={draft.model.role} />}
+      {!byRole && (
         <div className="wz-two">
           <Labeled label={t('ui.team.model.provider')}>
             {(id) => (
-              <select id={id} className="text-input" value={draft.model.provider} onChange={(e) => set({ model: { role: null, provider: e.target.value, model: draft.model.model } })}>
+              <select id={id} className="text-input" value={draft.model.provider} onChange={(e) => set({ model: agentModelWith(draft.model, { provider: e.target.value, model: draft.model.model }) })}>
                 {config.llm.providers.length === 0 && <option value="">{t('ui.team.model.noProvider')}</option>}
                 {config.llm.providers.map((p) => <option key={p.id} value={p.id}>{p.id}</option>)}
               </select>
@@ -512,14 +515,72 @@ function ModelFields({ config, draft, set, error }: { config: WorkspaceConfig; d
           <Labeled label={t('ui.team.model.name')}>
             {(id) => (
               <>
-                <input id={id} className="text-input mono" list={`${id}-models`} spellCheck={false} value={draft.model.model} onChange={(e) => set({ model: { role: null, provider: draft.model.provider, model: e.target.value } })} />
+                <input id={id} className="text-input mono" list={`${id}-models`} spellCheck={false} value={draft.model.model} onChange={(e) => set({ model: agentModelWith(draft.model, { provider: draft.model.provider, model: e.target.value }) })} />
                 <datalist id={`${id}-models`}>{(provider?.models ?? []).map((m) => <option key={m} value={m} />)}</datalist>
               </>
             )}
           </Labeled>
         </div>
       )}
+      {!byRole && <OwnPool config={config} draft={draft} set={set} />}
+      <PoolModeField config={config} draft={draft} set={set} />
       {error && <div className="tm-field-error small" role="alert">{error}</div>}
     </fieldset>
+  );
+}
+
+/** How the agent's pool is used: its own choice, or the stage's and then the workspace's. The pool decides nothing alone; a mode only acts where a list of an activity exists. */
+function PoolModeField({ config, draft, set }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void }) {
+  const t = useT();
+  const hint = draft.poolMode === null ? t('ui.team.poolMode.inherit.hint') : t(POOL_MODE_HINT[draft.poolMode]);
+  return (
+    <div className="wz-stack">
+      <Labeled label={t('ui.team.poolMode')} hint={t('ui.team.poolMode.hint')}>
+        {(id) => (
+          <select id={id} className="text-input" value={draft.poolMode ?? ''} onChange={(e) => set({ poolMode: (e.target.value || null) as PoolMode | null })}>
+            <option value="">{t('ui.team.poolMode.inherit')}</option>
+            {POOL_MODES.map((m) => <option key={m} value={m}>{t(POOL_MODE_LABEL[m])}</option>)}
+          </select>
+        )}
+      </Labeled>
+      <p className="small muted">{hint}</p>
+      {draft.poolMode === 'delegate' && subagentsOff(config, draft) && <p className="small muted" role="note">{t('ui.team.poolMode.subagentsOff')}</p>}
+    </div>
+  );
+}
+
+/** An agent that borrows a role's model uses the role's pool; the pool is changed in the Models step of the setup, where the role is. */
+function RolePoolNote({ config, role }: { config: WorkspaceConfig; role: LlmRole }) {
+  const t = useT();
+  const pool = config.llm.roles[role];
+  const reserves = (pool.fallbacks?.length ?? 0) + Object.values(pool.activities ?? {}).reduce((n, l) => n + (l?.length ?? 0), 0);
+  return <p className="small muted">{t('ui.team.pool.usesRole', { role: t(`ui.settings.role.${role}.label`), count: String(reserves) })}</p>;
+}
+
+/**
+ * The reserve models of an agent with a model of its own. From a paired browser they are only shown: adding one sends a stage's content to another provider, which is
+ * the computer's to decide (the server refuses the addition as well, `poolRaised`).
+ */
+function OwnPool({ config, draft, set }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void }) {
+  const t = useT();
+  if (isWeb()) {
+    const reserves = draft.model.fallbacks ?? [];
+    return (
+      <div className="wz-stack">
+        <div className="wz-label">{t('wizard.pool.reserves')}</div>
+        <p className="small muted">{t('ui.team.pool.webOnly')}</p>
+        {reserves.length > 0 && <ul className="wz-list">{reserves.map((r) => <li key={`${r.provider}\n${r.model}`} className="small mono">{r.provider} · {r.model}</li>)}</ul>}
+      </div>
+    );
+  }
+  return (
+    <PoolEditor
+      providers={config.llm.providers}
+      primary={{ provider: draft.model.provider, model: draft.model.model, ...(draft.model.offer ? { offer: draft.model.offer } : {}) }}
+      value={draft.model}
+      onChange={(pool) => set({ model: agentModelPool(draft.model, pool) })}
+      onPrimary={(next) => set({ model: agentModelOffer(draft.model, next.offer) })}
+      overrides={config.llm.scoreOverrides}
+    />
   );
 }

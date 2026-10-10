@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { poolFieldsOf } from './pool';
 import { ID } from './schema';
 import { LLM_ROLES, type AgentDef, type AgentModel, type AgentRoleConfig, type AgentShell, type AgentToolsConfig, type AgentTracker, type DevCycleConfig, type LlmRole, type StageDef, type WorkspaceConfig } from './types';
 
@@ -35,6 +36,17 @@ export function systemAgents(roles: Partial<Record<LlmRole, RoleSeed>> = {}): Ag
   return LLM_ROLES.map((r) => systemAgent(r, roles[r] ?? {}));
 }
 
+/** The pool of an agent's own model and what is known of it, only what is there: absent means no fallbacks, as it always was. */
+export function modelPoolOf(m: Partial<AgentModel>): Partial<AgentModel> {
+  return {
+    ...poolFieldsOf(m),
+    ...(m.images !== undefined ? { images: m.images } : {}),
+    ...(m.contextWindow !== undefined ? { contextWindow: m.contextWindow } : {}),
+    ...(m.echoReasoning !== undefined ? { echoReasoning: m.echoReasoning } : {}),
+    ...(m.offer ? { offer: { ...m.offer } } : {}),
+  };
+}
+
 /** An agent with every field filled: the id is the only thing that cannot be guessed. A new agent borrows the model of the `deep` role and only reads. */
 export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 'model'>> & { model?: Partial<AgentModel> }): AgentDef {
   const m = partial.model;
@@ -42,7 +54,7 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     id: partial.id,
     name: partial.name ?? partial.id,
     job: partial.job ?? '',
-    model: m ? { role: m.role ?? null, provider: m.provider ?? '', model: m.model ?? '' } : { role: 'deep', provider: '', model: '' },
+    model: m ? { role: m.role ?? null, provider: m.provider ?? '', model: m.model ?? '', ...modelPoolOf(m) } : { role: 'deep', provider: '', model: '' },
     stages: partial.stages ?? [],
     permission: partial.permission ?? 'read',
     // What an agent could do before the two fields existed: an agent that writes ran the commands of the workspace, one that reads ran none and had no say about the host.
@@ -59,6 +71,8 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     ...(partial.screen === true ? { screen: true } : {}),
     ...(partial.allowedHosts?.length ? { allowedHosts: [...partial.allowedHosts] } : {}),
     ...(partial.browserProfile === true ? { browserProfile: true } : {}),
+    // Absent means "the stage's, then the workspace's": only an agent that chose a mode carries it.
+    ...(partial.poolMode ? { poolMode: partial.poolMode } : {}),
     instructions: partial.instructions ?? '',
     system: partial.system ?? false,
   };

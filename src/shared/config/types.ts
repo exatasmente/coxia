@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 25): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 26): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 25;
+export const CONFIG_SCHEMA_VERSION = 26;
 
 /** The local read-only state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
@@ -49,6 +49,18 @@ export interface ProviderCapabilities {
   images?: boolean;
 }
 
+/** The extra parameters a server takes. Each is sent only where it is on, and only for a model the catalog or the person says takes it (`ModelOffer`). */
+export interface ProviderFeatures {
+  /** `service_tier: "flex"` on the calls nobody waits for. */
+  serviceTier?: boolean;
+  /** `fail_fast: true` on every model of a pool but the last: a busy model refuses at once. */
+  failFast?: boolean;
+  /** `reasoning_effort` per activity. */
+  reasoningEffort?: boolean;
+  /** The server's richer model listing, read only by the connection test. It must have the origin of the provider's address: the key never goes anywhere else. */
+  catalogUrl?: string;
+}
+
 export interface LlmProvider {
   /** Stable id, referenced by llm.roles. Lowercase letters, digits, "-" and "_". */
   id: string;
@@ -68,6 +80,11 @@ export interface LlmProvider {
   envFile: string | null;
   /** Kind-specific, non-secret settings. bedrock: region, profile. vertex: project, region. foundry: resource. */
   options: Record<string, string>;
+  /**
+   * What the server takes beyond the protocol, switched on by the person (the preset of a provider that has them offers it). Absent: none of it, and nothing in
+   * the request changes. The connection test never writes it.
+   */
+  features?: ProviderFeatures;
   /** Open engine: result of the connection test. null: untested (the engine tries tools and structured output and learns what the server rejects). */
   capabilities: ProviderCapabilities | null;
   /** Open engine: how the JSON answer is obtained. auto: response_format when the probe confirmed it, else a final_answer tool, else prompt + repair. */
@@ -87,15 +104,89 @@ export interface LlmProvider {
   legacyCustomEndpoint: boolean;
 }
 
-export interface RoleModel {
+/** What a model is used for in a turn: the pool of a role may carry a list of its own for each one. */
+export const ACTIVITIES = ['explore', 'edit', 'shell', 'screen', 'write'] as const;
+export type Activity = (typeof ACTIVITIES)[number];
+
+/** How hard a model that reasons is asked to think (`reasoning_effort`). */
+export const REASONING_EFFORTS = ['none', 'low', 'medium', 'high'] as const;
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
+
+/** What the person sets per activity: a level, or "default" (send nothing, the model decides). */
+export const EFFORT_SETTINGS = [...REASONING_EFFORTS, 'default'] as const;
+export type EffortSetting = (typeof EFFORT_SETTINGS)[number];
+/** The effort proposed per activity when the workspace says nothing; `write` and `screen` send nothing. */
+export const DEFAULT_EFFORT: Partial<Record<Activity, ReasoningEffort>> = { explore: 'low', shell: 'low', edit: 'medium' };
+
+/** The activities that have a quality floor (the others are ordered by price alone). */
+export const SCORED_ACTIVITIES = ['shell', 'edit', 'screen'] as const;
+export type ScoredActivity = (typeof SCORED_ACTIVITIES)[number];
+
+/** Most models one pool list may hold. */
+export const MAX_POOL_ENTRIES = 8;
+
+/** One entry of a pool: a model of a provider the person already registered, and what is known about it. */
+export interface ModelRef {
   /** An LlmProvider id. */
   provider: string;
   model: string;
+  /** This model takes an image in a message (a provider may serve models with and without). Absent: the provider's capability decides. */
+  images?: boolean;
+  /** Context window in tokens, when known. Absent: the provider's capability, else unknown. */
+  contextWindow?: number;
+  /** Send this model's own reasoning back to it from the first call (some reasoning models need it). Absent: learned at run time. */
+  echoReasoning?: boolean;
+  /** What the provider's catalog said of this model when the connection was tested. Absent: nothing known, and nothing extra is sent. */
+  offer?: ModelOffer;
 }
+
+/** What the catalog (or the person) knows of one model beyond the protocol; the connection test writes it into the draft. */
+export interface ModelOffer {
+  /** The model is served in the flex tier. */
+  flex?: boolean;
+  /** The model takes `reasoning_effort`. */
+  effort?: boolean;
+  /** When the provider retires the model (seconds since 1970). */
+  deprecated?: number;
+  /** The model the provider says replaces it. */
+  replacedBy?: string;
+}
+
+/** The models a call may move to when the first one is busy. Absent: no fallbacks, nothing changes. */
+export interface ModelPool {
+  /** Spare models of the role, cheapest first. */
+  fallbacks?: ModelRef[];
+  /** A complete list for one activity; it replaces the role's list (the first model and `fallbacks`) for that activity. */
+  activities?: Partial<Record<Activity, ModelRef[]>>;
+}
+
+/** `provider` and `model` are the first entry of the role's pool. */
+export interface RoleModel extends ModelRef, ModelPool {}
+
+/** Override of the shipped quality scores: a floor per activity, or the score of one model (by normalized id). */
+export interface ScoreOverrides {
+  floors?: Partial<Record<ScoredActivity, number>>;
+  models?: Record<string, Partial<Record<ScoredActivity, number>>>;
+}
+
+/**
+ * How a pool is used (open engine only). fallback: one model, the pool enters only when it is busy. switch: each turn goes to the model of its activity's list.
+ * delegate: the main model stays fixed (and keeps its cache) and edit, command and screen work go to sub-agents on the lists of their activity.
+ * Not a permission: it never reaches a tool the agent did not already have.
+ */
+export const POOL_MODES = ['fallback', 'switch', 'delegate'] as const;
+export type PoolMode = (typeof POOL_MODES)[number];
+/** What a workspace, an agent and a stage that say nothing use. It only acts where a role or agent has a list of its own for an activity. */
+export const DEFAULT_POOL_MODE: PoolMode = 'delegate';
 
 export interface LlmConfig {
   providers: LlmProvider[];
   roles: Record<LlmRole, RoleModel>;
+  scoreOverrides?: ScoreOverrides;
+  /** Reasoning effort per activity. A missing activity uses `DEFAULT_EFFORT`; "default" sends nothing. Only for a model that takes it. */
+  effort?: Partial<Record<Activity, EffortSetting>>;
+  /** The workspace default for how a pool is used. Absent: `delegate`. */
+  poolMode?: PoolMode;
 }
 
 export interface RepoConfig {
@@ -221,6 +312,8 @@ export interface StageDef {
    * expressions); a cycle where one does is a flow a run follows, and a stage with no type in it is work.
    */
   type?: StageType;
+  /** How the pool of the stage's agent is used in this stage (work stages only). Left out: the workspace's `llm.poolMode`. Not an address, so a template carries it. */
+  poolMode?: PoolMode;
   /** Whether the stage receives the workspace's test environment. Left out: a QA stage of the current editor reads as yes; every stage carried by an already-saved template reads as no. */
   testEnv?: boolean;
   /** The agent that works this stage in a run (an `agents.team` id). It wins over the `stages` list of the agents. Work stages only. */
@@ -514,7 +607,8 @@ export type AgentTracker = (typeof AGENT_TRACKERS)[number];
 export const AGENT_SHELLS = ['none', 'allowlist', 'sandbox', 'host'] as const;
 export type AgentShell = (typeof AGENT_SHELLS)[number];
 
-export interface AgentModel {
+/** `fallbacks` and `activities` are ignored while `role` is set (the role's pool is used); the facts of ModelRef describe the agent's own model. */
+export interface AgentModel extends ModelPool, Pick<ModelRef, 'images' | 'contextWindow' | 'echoReasoning' | 'offer'> {
   /** Borrow the provider and model of an `llm.roles` entry. null: use `provider` and `model` below. */
   role: LlmRole | null;
   /** An LlmProvider id; empty while `role` is set. */
@@ -585,6 +679,8 @@ export interface AgentDef {
   allowedHosts?: string[];
   /** The agent's browser keeps its logins between uses, in a profile folder of its own in the workspace's data. Absent: off, a fresh profile every time. */
   browserProfile?: boolean;
+  /** How the agent's model pool is used. Absent: the stage's, then the workspace's `llm.poolMode`. */
+  poolMode?: PoolMode;
   /** Appended to the agent's system prompt. A catalog key or a literal. */
   instructions: string;
   /** One of the five built-in agents (the ids of the LLM roles): they can be edited, never removed. */
@@ -860,6 +956,11 @@ export interface RunnerConfig {
    * lists, edits and deletes. A workspace that existed before it was added has it off (the migration), a new one has it on. Optional: absent reads as off (`proceduresOn`).
    */
   procedures?: boolean;
+  /**
+   * Calls nobody waits for (a stage, a question between agents, the closing lap of procedures) ask for the cheaper flex tier where the provider has it and the model is
+   * marked for it. Ceremonies and mentions never do. Optional: absent reads as on. Only the computer changes it.
+   */
+  flex?: boolean;
   /**
    * The file tools of a run's agents (a stage, a conversation, a question, a mention in the run's thread) read, and write when the agent writes, anywhere on the machine
    * instead of only in the run's worktree. `.git`, hook folders and secret files stay refused. The shell is not affected: its sandbox has its own folders. Only the

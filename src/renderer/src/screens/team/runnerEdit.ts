@@ -37,6 +37,8 @@ export interface RunnerDraft {
   linkDependencies: boolean;
   /** Agents keep what they learned as procedures and read them (desktop only: it gives every agent a write into a store other agents' prompts read). */
   procedures: boolean;
+  /** Calls nobody waits for ask for the flex tier where the provider and the model have it (desktop only). */
+  flex: boolean;
   /** The file tools of a run's agents reach the whole machine, not only the run's worktree (desktop only: it lifts the fence of every run). */
   unconfined: boolean;
   /** The person is the repository's only maintainer: their yes on a merge of a release stands for the review (desktop only). */
@@ -66,6 +68,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     autonomy: structuredClone(r.autonomy),
     linkDependencies: r.linkDependencies !== false,
     procedures: proceduresOn({ runner: r }),
+    flex: r.flex !== false,
     unconfined: unconfinedOf(r),
     soleMaintainer: soleMaintainerOf(r),
     conversations: { ...r.conversations },
@@ -90,6 +93,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     prTitle: d.prTitle,
     linkDependencies: d.linkDependencies,
     procedures: d.procedures,
+    flex: d.flex,
     unconfined: d.unconfined,
     release: { soleMaintainer: d.soleMaintainer },
     conversations: { ...d.conversations },
@@ -101,7 +105,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
  * whether the person's yes stands for a review are the stored ones whatever the draft says, because only the computer changes them (the save is refused otherwise).
  */
 export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig {
-  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', procedures: stored.procedures, unconfined: stored.unconfined, release: stored.release && { ...stored.release }, conversations: { ...stored.conversations } };
+  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', procedures: stored.procedures, flex: stored.flex, unconfined: stored.unconfined, release: stored.release && { ...stored.release }, conversations: { ...stored.conversations } };
 }
 
 export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage' | 'prTitle' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxBrowsers' | 'sandboxLimits';

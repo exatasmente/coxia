@@ -85,6 +85,9 @@ describe('a question between agents', () => {
     // the one who answered read only, whatever its own permission
     const call = b.engine.calls[4];
     expect(call.confine).toBeUndefined();
+    // nobody waits for either call (a stage, and a question between agents): the engine may use the cheaper tier
+    expect(call.background).toBe(true);
+    expect(b.engine.calls[3].background).toBe(true);
     // and its reading stays inside the run's worktree
     expect(call.readRoot?.root).toBe(run.worktree);
     expect(call.readRoot?.hooks).toBeTruthy();
