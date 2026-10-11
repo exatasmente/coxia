@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.10.0-beta.4] - 2026-10-11
+
 ### Added
 
 - **The discussions of a merge request that is not a card of the day open from a conversation.** The persona's button for the discussions, and a new button that any other agent answering in a conversation may offer under its answer, can name a merge request by its project (`group/repo`) and number instead of a card of the day; the button says which merge request it opens, and nothing opens until the person taps it. The button shows in the persona's chat, in the Forum and in a run's conversation; a tap opens the screen on that device, leaves a line in the conversation saying which merge request was opened, and Back returns to that conversation. The screen reads the open threads each time it opens and explains one without a card in the prompt; replying and resolving are not offered there, since they stay proposals tied to a card. The read stays inside the workspace's projects, strictly: a project outside them, a workspace that names no project, a malformed name or a number the code host does not give as a merge request is refused with the reason and what to do, in both languages. Opening the discussions from a card of the day is unchanged.
@@ -466,7 +468,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.3...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.4...HEAD
+[0.10.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.3...v0.10.0-beta.4
 [0.10.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.2...v0.10.0-beta.3
 [0.10.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.1...v0.10.0-beta.2
 [0.10.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.9.0...v0.10.0-beta.1
