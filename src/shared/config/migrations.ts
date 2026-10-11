@@ -48,6 +48,7 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v27 `runner.sharedMemory`: the shared, indexed memory of the agents, off for a workspace that existed and on for a new one; `docs.roadmapFile`: the roadmap pointer,
 //       optional (absent = no roadmap). Nothing else moves.
 //   v28 `runner.showReasoning`: the reasoning of the model as one closed line per turn in the activity, on for every workspace (existing and new). Nothing else moves.
+//   v29 `runner.turns.explore`, `.edit`, `.shell`, `.screen` and `.plain`: the turns of the sub-agents, 12, 30, 20, 30 and 12, the values they always had. Nothing else moves.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -413,7 +414,16 @@ function v27ToV28(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 28, runner: { ...old.runner, showReasoning: true } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28 };
+// The runner gains the turns of the sub-agents, which were constants of the code. The step writes the values they always had, whatever the chain seeded: a v28 file cannot
+// carry a stored choice (the keys are new), and writing them keeps a later change of the defaults from moving a workspace. `read` and `write` stay as they are. It raises
+// no permission; what a limit does (it asks the person instead of stopping) is what the note says.
+function v28ToV29(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  if (!isObject(old.runner) || !isObject(old.runner.turns)) return { ...old, schemaVersion: 29 };
+  notes.push('agents ask you when a stage or a sub-agent reaches its turn limit, and the turns of the sub-agents are in Settings › Runner');
+  return { ...old, schemaVersion: 29, runner: { ...old.runner, turns: { ...old.runner.turns, explore: 12, edit: 30, shell: 20, screen: 30, plain: 12 } } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

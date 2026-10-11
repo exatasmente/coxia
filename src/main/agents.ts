@@ -15,7 +15,7 @@ import { ACTIVITY_NODE_MAX } from '../shared/activity';
 import { type RunActivity, beginActivity, bindActivityParent, currentActivity, withActivityParent } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, type TurnLimit, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
 import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
 import { budgetText, busyText, clipProviderText } from './engine/budget';
@@ -438,6 +438,8 @@ function openSubAgent(parent: RunActivity, req: EngineRequest, s: SubAgentStart)
     },
     within: (fn) => withActivityParent(child.id, fn),
     state: (state) => child.status(state),
+    waiting: (used) => child.waiting(used),
+    continued: () => child.continued(),
     end: (failure) => (failure === undefined ? child.status('finished') : child.status('failed', failure)),
   };
 }
@@ -718,6 +720,9 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
     incoming: req.incoming,
+    // Read when each sub-agent starts, so a change in Settings applies from the next one.
+    subTurns: () => getConfig().runner.turns,
+    turnLimit: req.turnLimit,
     });
   } catch (e) {
     // A refusal by budget is a wait, not a failure: it goes up with the provider that refused (a spare of the pool names itself), else the one the role is mapped to.
@@ -1444,6 +1449,8 @@ export interface AgentCall {
   resume?: { session: string; engine: ResolvedRole['engine'] };
   /** The mailbox of a stage that talks while it works: where the engine gets a message to deliver between two steps (see EngineRequest.incoming). */
   incoming?: (delivered: (text: string) => void) => Promise<string | null>;
+  /** Reaching the turn limit asks the person instead of failing (see EngineRequest.turnLimit). The call's own node shows the wait; a sub-agent's is the engine's. */
+  turnLimit?: TurnLimit;
   /** The app tools of a stage that talks (`SendMessage`, `CallAgent`) or of a called agent (`AskConversation`); the engine offers each one by its name. */
   runnerTools?: ToolImpl[];
   /** The workspace's procedure tools, from the call's procedure session; absent: the call has none (a ceremony, a call with no session, the switch off). */
@@ -1597,6 +1604,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           poolMode,
           ...(call.background ? { background: true } : {}),
           incoming: only ? undefined : call.incoming,
+          turnLimit: only || !call.turnLimit ? undefined : turnLimitOf(call.turnLimit, activity),
           runnerTools: only ? undefined : underNode(call.runnerTools),
           procedures: call.procedures,
           // The last turn of procedures keeps the procedure tools and nothing else, the memory's included.
@@ -1606,11 +1614,29 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
         };
         // What the engine starts (an agent it calls) hangs under this call's node.
         return withActivityParent(activity.id, async () => {
-          try {
-            return await runnerFor(picked)<T>(request);
-          } catch (e) {
-            if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
-            return wrapUpAnswer<T>(request, e, activity);
+          // The stage's own limit on the Claude engine is asked here: the SDK ends the call with `error_max_turns`, and "continue" resumes the same session with a fresh limit.
+          // An open-engine `MaxTurnsError` has already been through the question inside its loop, so it is not asked again.
+          const asks = request.turnLimit?.own === true && picked.engine === 'claude-sdk';
+          let current = request;
+          let granted = 0;
+          // What the earlier rounds read: each call of the SDK reports only its own.
+          const before: string[] = [];
+          for (;;) {
+            try {
+              const r = await runnerFor(picked)<T>(current);
+              return granted ? { ...r, sources: [...before, ...r.sources] } : r;
+            } catch (e) {
+              if (!(e instanceof MaxTurnsError)) throw e;
+              if (asks && e.sessionId && request.turnLimit && (await anotherRound(request.turnLimit, picked.role, call.maxTurns, granted, call.abort?.signal))) {
+                before.push(...e.sources);
+                granted += 1;
+                current = continueRound(request, e.sessionId, call.maxTurns);
+                continue;
+              }
+              if (!call.wrapUp) throw e;
+              const partial = await wrapUpAnswer<T>(current, e, activity);
+              return granted ? { ...partial, sources: [...before, ...partial.sources] } : partial;
+            }
           }
         });
       },
@@ -1627,6 +1653,39 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(e.provider || target.providerId, e.engine, e.detail);
     throw e;
   }
+}
+
+/**
+ * Whether a stage on the Claude engine can go on past `maxTurns`. It resumes the same session by id with a fresh limit and the tools of the stage; checked against the real SDK
+ * (0.3.292) outside the suite on 2026-10-10: the call that ended with `error_max_turns` was resumed, kept the calls it had made, finished with its structured answer, and the
+ * limit counted per invocation and not per session. The question carries it so the card can offer only "finish now" if a later SDK stops doing so.
+ */
+export const CLAUDE_CAN_CONTINUE = true;
+
+// Asks the person once for the stage on the Claude engine; true when they said continue. A cancel or a stop is not an answer, so it ends the stage as the limit does.
+async function anotherRound(limit: TurnLimit, role: string, round: number, granted: number, signal?: AbortSignal): Promise<boolean> {
+  const decision = await limit.ask({ of: 'stage', role, kind: null, name: null, task: '', used: round * (granted + 1), round, granted, canContinue: CLAUDE_CAN_CONTINUE }, signal);
+  return decision === 'continue' && CLAUDE_CAN_CONTINUE && !signal?.aborted;
+}
+
+// The request of the next round: the same session, the same tools and schema, a fresh limit of one round. A stream of messages for the stage's door is built again by the engine.
+// Both `resume` fields are set: the engines read the session from `extra`, and `noteSession` from the request, so the session is not indexed twice.
+function continueRound(request: EngineRequest, sessionId: string, round: number): EngineRequest {
+  return { ...request, prompt: t('main.engine.text.continueRound'), resume: sessionId, extra: { ...request.extra, maxTurns: round, resume: sessionId } };
+}
+
+// The call's question at a turn limit with its own node told: the node of an agent that waits says so, and says it works again when the person lets it go on. A sub-agent
+// of the open engine is a node of its own that the loop tells.
+function turnLimitOf(limit: TurnLimit, activity: RunActivity): TurnLimit {
+  return {
+    own: limit.own,
+    ask: async (stop, signal) => {
+      if (stop.of === 'stage') activity.waiting(stop.used);
+      const decision = await limit.ask(stop, signal);
+      if (stop.of === 'stage' && decision === 'continue' && !signal?.aborted) activity.continued();
+      return decision;
+    },
+  };
 }
 
 // The resume of a call that ran out of turns: same session, same schema, 2 turns and no tool of any kind (no shell session, no code host read, no release step), so
@@ -1651,6 +1710,8 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
       procedures: undefined,
       memoryTools: undefined,
       screen: undefined,
+      // Two turns to answer: running out of them must not ask.
+      turnLimit: undefined,
     });
     return { ...r, sources: [...e.sources, ...r.sources], partial: true };
   } catch (again) {

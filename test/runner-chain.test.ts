@@ -175,6 +175,8 @@ describe('a question between agents', () => {
     const answering = b.engine.calls.find((c) => c.prompt.includes('asks:'));
     expect(answering?.agent.id).toBe('tech-lead');
     expect(answering).toMatchObject({ maxTurns: 9, wrapUp: true });
+    // a question of the chain keeps its partial answer at its limit: it is not asked about
+    expect(answering?.turnLimit).toBeUndefined();
   });
 
   it('uses the answer of an agent that ran out of turns and answered from the wrap-up, and says so in the thread', async () => {

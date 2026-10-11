@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ActivityEntry } from '../../shared/activity';
 import { atBottom } from './activity';
-import { type TreeItem, type TreeNode, createTreeView, defaultOpen, nodeTitle, stepText } from './activityTreeModel';
+import { type TreeItem, type TreeNode, createTreeView, defaultOpen, nodeTitle, stepText, waitsBelow } from './activityTreeModel';
 import { useT } from './i18n';
 import { formatElapsed } from './jobs';
 import { agentName } from './screens/cycle/names';
@@ -99,6 +99,7 @@ function NodeRow({ node, shared }: { node: TreeNode; shared: Shared }) {
         {node.state === 'working' && <span className="spinner act-spinner" aria-hidden="true" />}
         <span className="act-node-title">{title}</span>
         <span className="act-node-state">{t(`activity.node.state.${node.state}`)}</span>
+        {!open && waitsBelow(node) && <span className="act-node-waits">{t('activity.node.waitsBelow')}</span>}
         {!open && node.latest && <span className="act-node-now">{stepText(node.latest, t('activity.thought'))}</span>}
       </button>
       {open && <Items items={node.items} shared={shared} className="act-node-body" />}

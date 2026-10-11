@@ -6,6 +6,7 @@ import { MAX_MENTIONS } from '../../shared/forum';
 import { type RunActivity, beginCallActivity } from '../activity';
 import { runAgent, secretPath } from '../agents';
 import { ceremonyCommands } from '../ceremonyCommands';
+import { turnAsks } from '../turnAsks';
 import { ATAS, HOME } from '../env';
 import { forumStore } from '../forum';
 import { type Module } from '../module';
@@ -74,6 +75,8 @@ export const mentionsModule: Module = () => {
     },
     env: () => ({ fallbackCwd: rc().projectsRoot ?? ATAS }),
     propose: proposeMention,
+    // A sub-agent of an answer that uses its last turn asks the person, as the runner's do.
+    turnAsks,
     procedures: proceduresPort(),
     memoryPort: memoryPort(),
     // What the message names, for the ranking of the memory's list.

@@ -20,6 +20,7 @@
   "ui.audit.kind.screenUse": "Tela usada por uma pessoa",
   "ui.audit.kind.sync": "Sincronização",
   "ui.audit.kind.testEnv": "Ambiente de teste",
+  "ui.audit.kind.turnLimit": "Resposta num limite de passos",
   "ui.audit.kind.worktree": "Worktree de uma release",
   "ui.audit.loading": "Lendo o registro…",
   "ui.audit.none": "Nenhuma escrita executada ainda.",

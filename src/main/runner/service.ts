@@ -116,6 +116,7 @@ import { primaryIntegration } from '../../shared/cycles/terms';
 import { reasonText, type SandboxService } from '../sandbox';
 import type { ScreenHub } from '../screen/hub';
 import type { ScreenAsks } from '../browser/asks';
+import type { TurnAsks } from '../turnAsks-core';
 import type { RecordingOutcome } from '../screen/recorder';
 import type { ScreenSessions } from '../browser/sessions';
 import type { HandoffService } from '../screen/handoff';
@@ -235,6 +236,8 @@ export interface RunnerDeps {
   /** The screens of the agents that have one (the app's browser) and the questions they ask the person; without them no stage gets a browser. */
   sessions?: ScreenSessions;
   asks?: ScreenAsks;
+  /** The questions at a turn limit (#246): a stage that uses its last turn, and a sub-agent that does, wait here for the person. Without it a stage stops at its limit as it always did. */
+  turnAsks?: TurnAsks;
   /** The hand-off of an agent's screen to the person (#178); without it no agent is offered the tool. */
   handoff?: HandoffService | null;
   /** Makes one small call to a provider to find out whether its key has budget again. Without it the runs that hit the refusal keep waiting. */
@@ -428,7 +431,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   const notices = deps.memoryWrites ? createNoticeHub({ runs: deps.runs, forum: deps.forum, config: deps.config, workingAgent: (run) => workingAgent(run), ...(deps.noticeMergeMs !== undefined ? { mergeMs: deps.noticeMergeMs } : {}) }) : null;
   deps.memoryWrites?.((write) => notices?.noteWritten(write));
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run, narrow) => sharedTextOf(run.issue.ref, [], [], narrow), procedures: deps.procedures, memoryPort: deps.memoryPort, documentsWritten: (run, agent, names) => notices?.documentsWritten(run, agent, names), offers: deps.offers, procedureTurnMs: deps.procedureTurnMs, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, turnAsks: deps.turnAsks, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run, narrow) => sharedTextOf(run.issue.ref, [], [], narrow), procedures: deps.procedures, memoryPort: deps.memoryPort, documentsWritten: (run, agent, names) => notices?.documentsWritten(run, agent, names), offers: deps.offers, procedureTurnMs: deps.procedureTurnMs, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
 
   /** The record of the activities as a call reads it: the front named whole, the others in short. Never a model call, never the file. */
   function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = [], narrow = false): string {
@@ -1513,6 +1516,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       engine: deps.engine,
       sandbox: exec.sandbox,
       env: deps.env,
+      // A sub-agent of the answer asks the person at its limit, in this run's thread; the answer's own limit still ends in a partial answer.
+      turnAsks: deps.turnAsks,
       screens: () => (deps.sessions && deps.asks ? { sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff } : null),
       openSession: async (p, def, cwd, stage, signal, watch, wants) => {
         const r = p.run;

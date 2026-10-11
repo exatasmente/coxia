@@ -225,7 +225,7 @@ describe('a stage that goes wrong', () => {
     run = await reach(b, run, 'ready');
     const turns = Object.fromEntries(b.engine.calls.map((c) => [c.agent.id, c.maxTurns]));
     expect(turns).toEqual({ refiner: 30, planner: 30, developer: 80, reviewer: 30, qa: 30 });
-    const c = await boot({ configure: (cfg) => (cfg.runner.turns = { read: 7, write: 11 }) });
+    const c = await boot({ configure: (cfg) => (cfg.runner.turns = { ...cfg.runner.turns, read: 7, write: 11 }) });
     easy(c);
     const second = await c.runner.start('app#101');
     await reach(c, second, 'ready');

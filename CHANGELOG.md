@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The steps of a sub-agent are a setting.** Settings › Runner has five more numbers under the stage's two: the steps of an `explore`, `edit`, `shell` and `screen` sub-agent and of a sub-agent that is not of a kind (`runner.turns.explore`, `.edit`, `.shell`, `.screen` and `.plain`, from 1 to 500, schema 29). They show 12, 30, 20, 30 and 12, the values they always had, so nothing changes until a number is edited; the computer and a paired browser both edit them. A sub-agent takes its number when it starts: changing one applies from the next sub-agent.
+- **Reaching a turn limit asks instead of stopping.** A stage or a sub-agent that uses its last turn no longer fails: it pauses where it is, with its dialog and its files as they were, and the app asks whether to **continue** for another round of the same size or **finish now**. Finishing a sub-agent hands the agent that started it a partial result, marked as such, and not an error; finishing a stage ends it with the same "turns" failure as before, which can be retried. The question shows on every screen of the app and on the paired phone, which can answer it without the external-effects switch (continuing opens nothing the agent did not have); the run's conversation says when it was asked and what was answered, a notification opens the run, and the answer goes to the audit log. Nothing times out: the stage's idle and wall clocks stand still for as long as the question waits, and cancelling the run ends it. Several sub-agents of one turn can each leave a question. In the activity tree the waiting node says "Waiting for you" with its reason, and whatever is above it says so even when collapsed. It applies to the stage on either engine (on the Claude engine, **continue** resumes the same session with a fresh limit), to the sub-agents of the open engine, to the sub-agents of the agent a stage calls and to the sub-agents inside an answer to a mention, in a run's thread or in any other conversation; the answer's own limit keeps ending in a partial answer, and the sub-agents the Claude SDK starts keep the SDK's limits. The stage's turns hint no longer says that the stage fails.
+
 ## [0.9.0] - 2026-10-10
 
 ### Added

@@ -37,7 +37,11 @@ export interface RunActivity {
   /** An excerpt of the reply of a called agent, posted by the code that delivers the reply: masked, cut at ACTIVITY_ANSWER_MAX. */
   answer(text: string): void;
   blocked(label: string): void;
-  status(state: Exclude<ActivityState, 'blocked'>, detail?: string): void;
+  status(state: Exclude<ActivityState, 'blocked' | 'waiting'>, detail?: string): void;
+  /** The work used its last turn and waits for the person to let it go on or finish it now: a status line of its own state, with the number of turns it took. */
+  waiting(turns: number): void;
+  /** The person let the work go on for another round: it is working again. */
+  continued(): void;
   /** A node under this one: same job, same call. The caller says `started` or `queued` on it. */
   child(node: ActivityNode, role?: string): RunActivity;
   /** A view whose `finished` and `failed` are ignored: one engine run that is a round of a longer exchange, closed by whoever owns the exchange. */
@@ -243,6 +247,14 @@ export function createActivityLog(options: ActivityLogOptions = {}) {
         pending = '';
         const reason = detail ? safeText(detail, 160, o.isSecretPath) : '';
         emit('status', state === 'failed' && reason ? t('activity.failedWith', { reason }) : t(`activity.${state}`), state);
+      }),
+      waiting: safely((turns) => {
+        pending = '';
+        emit('status', t('activity.turnLimit', { turns }), 'waiting');
+      }),
+      continued: safely(() => {
+        pending = '';
+        emit('status', t('activity.continued'), 'started');
       }),
       child: (childNode, childRole) => begin(childRole ?? role, { parent: run.id, node: childNode, isSecretPath: o.isSecretPath }),
       lend: () => lent,

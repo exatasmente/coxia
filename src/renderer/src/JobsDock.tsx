@@ -4,7 +4,7 @@ import { api } from './api';
 import type { ActivityEntry } from '../../shared/activity';
 import { ActivityTree, Chevron, useTreeOpen } from './ActivityTree';
 import { latestStep, stepText } from './activity';
-import { type TopEntry, type TreeNode, buildTree, dockCounts, workingRoles } from './activityTreeModel';
+import { type TopEntry, type TreeNode, anyWaiting, buildTree, dockCounts, waitingLine, workingRoles } from './activityTreeModel';
 import { t, tNodes, useT } from './i18n';
 import { appInView, systemNotify } from './jobNotify';
 import { type Job, formatElapsed, notificationText, sameScreen } from './jobs';
@@ -89,14 +89,16 @@ function status(j: Job<Screen>, now: number): string {
 }
 
 // The step a running entry is on, under its title; it opens into the tree of what is going on inside it.
-function Steps({ id, latest, nodes, name }: { id: string; latest: ActivityEntry | null; nodes: readonly TreeNode[]; name: string }) {
+// A tree where something waits for the person says so on this line while it is closed, instead of the newest step of some other node.
+function Steps({ id, latest, nodes, name, waits }: { id: string; latest: ActivityEntry | null; nodes: readonly TreeNode[]; name: string; waits: boolean }) {
   const t = useT();
   const [open, toggle] = useTreeOpen(`entry:${id}`, false);
+  const shown = (waits && !open ? waitingLine(nodes) : null) ?? latest;
   return (
-    <div className="jobs-steps">
+    <div className={`jobs-steps ${waits ? 'jobs-steps-waits' : ''}`}>
       <button type="button" className="jobs-steps-toggle" aria-expanded={open} onClick={toggle}>
         <Chevron open={open} />
-        <span className="jobs-steps-now">{latest ? stepText(latest, t('activity.thought')) : t('activity.waiting')}</span>
+        <span className="jobs-steps-now">{shown ? stepText(shown, t('activity.thought')) : t('activity.waiting')}</span>
         <span className="sr-only">{open ? t('activity.dock.hide', { name }) : t('activity.dock.show', { name })}</span>
       </button>
       {open && <ActivityTree nodes={nodes} />}
@@ -108,7 +110,7 @@ function Steps({ id, latest, nodes, name }: { id: string; latest: ActivityEntry 
 function JobSteps({ job }: { job: Job<Screen> }) {
   const entries = useActivity(job.key);
   const nodes = useMemo(() => buildTree(entries), [entries]);
-  return <Steps id={job.key} latest={latestStep(entries)} nodes={nodes} name={job.label} />;
+  return <Steps id={job.key} latest={latestStep(entries)} nodes={nodes} name={job.label} waits={anyWaiting(nodes)} />;
 }
 
 /** What heads an entry: the run's reference, the agents working in a conversation, or the agent itself. */
@@ -276,7 +278,7 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
                   ) : (
                     <div className="jobs-item-main jobs-item-static">{main}</div>
                   )}
-                  <Steps id={entry.key} latest={entry.latest} nodes={entry.nodes} name={label} />
+                  <Steps id={entry.key} latest={entry.latest} nodes={entry.nodes} name={label} waits={entry.waits} />
                 </li>
               );
             })}

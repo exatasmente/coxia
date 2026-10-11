@@ -30,6 +30,7 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   'screen-handoff': { key: 'ui.audit.kind.screenHandoff' },
   'test-env': { key: 'ui.audit.kind.testEnv' },
   memory: { key: 'ui.audit.kind.memory' },
+  'turn-limit': { key: 'ui.audit.kind.turnLimit' },
 };
 
 function Row({ e }: { e: AuditEntry }) {

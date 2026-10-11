@@ -231,7 +231,7 @@ describe('migrateConfig', () => {
 
     it('gives the turn caps the runner always had, since a file of schema 8 has none', () => {
       const r = migrateConfig(v8({ stageTimeoutMs: 1_800_000 }), { legacyInstall: false });
-      expect(r.config.runner.turns).toEqual({ read: 30, write: 80 });
+      expect(r.config.runner.turns).toEqual({ read: 30, write: 80, explore: 12, edit: 30, shell: 20, screen: 30, plain: 12 });
       expect(validateConfig(r.config).ok).toBe(true);
     });
 
@@ -928,10 +928,76 @@ describe('migrateConfig', () => {
       expect(twice.changed).toBe(false);
       expect(twice.config).toEqual(once.config);
     });
+  });
 
-    it('is the newest step: 28 is current and 29 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(28);
-      expect(() => migrateConfig({ schemaVersion: 29 }, { legacyInstall: false })).toThrow(/newer app/);
+  describe('schema 28 to 29: the turns of the sub-agents', () => {
+    const KEYS = ['explore', 'edit', 'shell', 'screen', 'plain'] as const;
+    const DEFAULTS = { explore: 12, edit: 30, shell: 20, screen: 30, plain: 12 };
+    const v28 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 28;
+      for (const k of KEYS) delete c.runner.turns[k];
+      change(c);
+      return c;
+    };
+
+    it('writes the defaults of the sub-agents into an existing workspace, keeps read and write, bumps the version, leaves a note and yields a valid file', () => {
+      const r = migrateConfig(v28((c) => (c.runner.turns = { read: 7, write: 11 })), { legacyInstall: false });
+      expect(r.fromVersion).toBe(28);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.runner.turns).toEqual({ read: 7, write: 11, ...DEFAULTS });
+      expect(r.notes.join(' ')).toContain('agents ask you when a stage or a sub-agent reaches its turn limit');
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('writes the defaults even when the file already carries other numbers (it cannot be a stored choice at 28), and raises nothing else', () => {
+      const r = migrateConfig(v28((c) => Object.assign(c.runner.turns, { explore: 99, edit: 98, shell: 97, screen: 96, plain: 95 })), { legacyInstall: false });
+      expect(r.config.runner.turns).toMatchObject(DEFAULTS);
+      expect(r.config.runner.unconfined).toBe(false);
+      expect(r.config.runner.autonomy).toEqual(neutralRunner().autonomy);
+    });
+
+    it('touches nothing else of the file', () => {
+      const before = v28((c) => {
+        c.runner.enabled = true;
+        c.runner.turns.write = 120;
+        c.runner.showReasoning = false;
+      });
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect({ ...r.config, schemaVersion: 28, runner: { ...r.config.runner, turns: { read: r.config.runner.turns.read, write: r.config.runner.turns.write } } }).toEqual(before);
+    });
+
+    it('only bumps a document whose runner or turns is not an object, and the defaults fill it afterwards', () => {
+      for (const change of [(c: Record<string, any>) => (c.runner = 'broken'), (c: Record<string, any>) => (c.runner.turns = 'broken')]) {
+        const r = migrateConfig(v28(change), { legacyInstall: false });
+        expect(r.fromVersion).toBe(28);
+        expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+        expect(r.notes.join(' ')).not.toContain('turn limit');
+      }
+      expect(withConfigDefaults(v28((c) => delete c.runner.turns) as never).runner.turns).toEqual({ read: 30, write: 80, ...DEFAULTS });
+    });
+
+    it('ends with the defaults for a file from the first versions, a legacy install and a new workspace', () => {
+      expect(migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false }).config.runner.turns).toEqual({ read: 30, write: 80, ...DEFAULTS });
+      expect(migrateConfig(undefined, { legacyInstall: true }).config.runner.turns).toEqual({ read: 30, write: 80, ...DEFAULTS });
+      expect(migrateConfig(undefined, { legacyInstall: false }).config.runner.turns).toEqual({ read: 30, write: 80, ...DEFAULTS });
+      expect(neutralRunner().turns).toEqual({ read: 30, write: 80, ...DEFAULTS });
+    });
+
+    it('a file already at 29 keeps its choice, and a second start changes nothing', () => {
+      const custom = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      custom.runner.turns.explore = 3;
+      expect(migrateConfig(custom, { legacyInstall: false }).config.runner.turns.explore).toBe(3);
+      const once = migrateConfig(v28(), { legacyInstall: false });
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+    it('is the newest step: 29 is current and 30 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(29);
+      expect(() => migrateConfig({ schemaVersion: 30 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });
