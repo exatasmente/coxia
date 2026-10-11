@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.10.0-beta.3] - 2026-10-11
+
 ### Added
 
 - **The Audit tells a person's changes from the persona's, and records the person's own configuration, secret and plugin changes.** Four kinds of line are new and are written for whoever makes the change: a **configuration change** (the paths that changed, the old and new value of a switch, a number or a short choice such as `read` or `host`, only the length of any text, and a mark when the change gives an agent more reach), a **secret** (set, removed, or the insecure store accepted, with the name and the kind of source, never a value, a command or a path), a **plugin decision** (an answer, a revocation, a switch, a setting, with the plugin and the need, never a value) and the **act of the persona**. A line the persona wrote carries a badge, the door the request came by, the reason it gave and, folded, what it had read when it decided (a line that read nothing says only what it decided on, and has no fold when there is nothing to show); the screen has a **Who** filter (everyone, the person, the persona, an agent acting by its autonomy), with its label in sight. Lines written before show as the person's. Nothing writes, edits or deletes the audit but the app.
@@ -451,7 +453,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.2...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.3...HEAD
+[0.10.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.2...v0.10.0-beta.3
 [0.10.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.1...v0.10.0-beta.2
 [0.10.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.9.0...v0.10.0-beta.1
 [0.9.0]: https://github.com/exatasmente/coxia/compare/v0.8.0...v0.9.0
