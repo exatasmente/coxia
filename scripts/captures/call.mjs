@@ -17,7 +17,5 @@ export async function capture({ page }) {
   // The ceremony draws a live turn clock: freeze it, so the picture is the same on every run (a stylesheet, never a call
   // into the window: the app closes the window the moment the capture ends).
   await page.addStyleTag({ content: '.timer { visibility: hidden; }' }).catch(() => undefined);
-  // The turn bar under it keeps the same width, but the clock that feeds it is a real one: hold the page's clock still.
-  await page.clock.pauseAt(new Date('2026-06-15T09:41:00Z')).catch(() => undefined);
   await settle(page);
 }
