@@ -72,9 +72,12 @@ export function rowKind(m: Pick<ForumMessage, 'kind' | 'author'> & { code?: stri
 /** A row of the conversation: one message, or a run of lines the app wrote one after another, drawn as one line that opens. */
 export type LogRow = { kind: 'message'; m: ForumMessage } | { kind: 'notices'; items: ForumMessage[] };
 
+/** The notices that only inform and may fold into one row. A failure, a hold, a stop or the line that counts the rest of the acts is never in it: it must stay in sight. */
+export const FOLDABLE_NOTICES: ReadonlySet<string> = new Set(['runner.screen.closed', 'runner.screen.idleClosed', 'runner.screen.notKept']);
+
 /**
- * The messages as rows: two or more lines of the app in a row (a screen closed, a recording not kept) become one row, so they do not push the conversation out of sight.
- * A single line stays a line.
+ * The messages as rows: two or more of the informational lines of the app in a row (a screen closed, a recording not kept) become one row, so they do not push the conversation out of sight.
+ * A single line stays a line, and every other line of the app is a row of its own.
  */
 export function logRows(messages: readonly ForumMessage[], persona: string): LogRow[] {
   const rows: LogRow[] = [];
@@ -85,7 +88,7 @@ export function logRows(messages: readonly ForumMessage[], persona: string): Log
     run = [];
   };
   for (const m of messages) {
-    if (rowKind(m, persona) === 'system') {
+    if (rowKind(m, persona) === 'system' && m.code !== null && m.code !== undefined && FOLDABLE_NOTICES.has(m.code)) {
       run.push(m);
       continue;
     }

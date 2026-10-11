@@ -127,14 +127,27 @@ describe('the rows', () => {
     expect(rowKind({ kind: 'system', author: { type: 'agent', id: 'me' } }, 'me')).toBe('system');
   });
 
-  it('folds two or more lines of the app in a row into one row, and keeps a single line and everything else as it is', () => {
-    const app = (n: number) => stored(n, { kind: 'system', author: { type: 'app' } });
+  it('folds two or more screen notices in a row into one row, and keeps a single one and everything else as it is', () => {
+    const app = (n: number) => stored(n, { kind: 'system', author: { type: 'app' }, code: 'runner.screen.closed' });
     const rows = logRows([stored(1), app(2), app(3), app(4), stored(5, { author: { type: 'person' } }), app(6), stored(7), app(8), app(9)], 'me');
     expect(rows.map((r) => (r.kind === 'notices' ? r.items.map((m) => m.seq) : r.m.seq))).toEqual([1, [2, 3, 4], 5, 6, 7, [8, 9]]);
     expect(logRows([], 'me')).toEqual([]);
     // the line of an act of the persona is a row of its own and breaks a run of notices
     const act = stored(10, { kind: 'system', author: { type: 'app' }, code: 'persona.act' });
     expect(logRows([app(2), act, app(11)], 'me').map((r) => r.kind)).toEqual(['message', 'message', 'message']);
+  });
+
+  it('folds only the screen notices: failures, holds, stops and the count of the rest of the acts stay lines of their own', () => {
+    const line = (n: number, code: string | null) => stored(n, { kind: 'system', author: { type: 'app' }, code });
+    const shape = (rows: ReturnType<typeof logRows>) => rows.map((r) => (r.kind === 'notices' ? r.items.map((m) => m.seq) : r.m.seq));
+    expect(shape(logRows([line(1, 'runner.mentionFailed'), line(2, 'runner.mentionFailed')], 'me'))).toEqual([1, 2]);
+    for (const code of ['runner.model.allBusy', 'runner.mention.budget', 'runner.mention.noShell', 'runner.partial', 'persona.stopped.window', null]) {
+      expect(shape(logRows([line(1, code), line(2, code)], 'me'))).toEqual([1, 2]);
+    }
+    // a failure between two notices splits them; the count of the rest of the acts does not fold with a notice
+    expect(shape(logRows([line(1, 'runner.screen.closed'), line(2, 'runner.mentionFailed'), line(3, 'runner.screen.notKept')], 'me'))).toEqual([1, 2, 3]);
+    expect(shape(logRows([line(1, 'persona.act.more'), line(2, 'runner.screen.closed')], 'me'))).toEqual([1, 2]);
+    expect(shape(logRows([line(1, 'runner.screen.closed'), line(2, 'runner.screen.idleClosed'), line(3, 'runner.screen.notKept')], 'me'))).toEqual([[1, 2, 3]]);
   });
 
   it('draws the line of an act of the persona as its own row, and the line that counts the rest as a line of the app', () => {
