@@ -68,6 +68,8 @@ export type Screen =
   | { name: 'quick'; ref: string; card?: Card }
   | { name: 'reentry'; ref: string; card?: Card }
   | { name: 'discussions'; ref: string; mr?: string; card?: Card }
+  // A merge request that is not a card of the day, named by its project and number; `back` is the conversation whose button opened it.
+  | { name: 'discussions'; project: string; number: number; back?: Screen }
   | { name: 'radar' }
   | { name: 'saude' }
   | { name: 'auditoria'; id?: string }
@@ -258,6 +260,7 @@ export function App() {
     case 'reentry':
       return <Reentry card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
     case 'discussions':
+      if ('project' in screen) return <Discussions key={`${screen.project}!${screen.number}`} card={undefined} initialMr={undefined} target={{ project: screen.project, number: screen.number }} back={screen.back} ceremony={ceremony} player={player} go={go} />;
       return <Discussions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} initialMr={screen.mr} ceremony={ceremony} player={player} go={go} />;
     case 'help':
       return <Ajuda go={go} />;

@@ -109,11 +109,11 @@ const HEADER: JsonSchema = {
   required: ['v', 'type', 'id', 'kind', 'runId', 'title', 'createdAt'],
   additionalProperties: false,
 };
-/** At most this many buttons on a persona's answer. */
+/** At most this many buttons on an answer. */
 export const MAX_BUTTONS = 4;
 const BUTTON: JsonSchema = {
   type: 'object',
-  properties: { to: { type: 'string', maxLength: 24 }, ref: { type: 'string', maxLength: 80 }, id: { type: 'string', maxLength: 80 }, mr: { type: 'string', maxLength: 80 } },
+  properties: { to: { type: 'string', maxLength: 24 }, ref: { type: 'string', maxLength: 80 }, id: { type: 'string', maxLength: 80 }, mr: { type: 'string', maxLength: 80 }, project: { type: 'string', maxLength: 121 }, number: { type: 'integer', minimum: 1 } },
   required: ['to'],
   additionalProperties: false,
 };

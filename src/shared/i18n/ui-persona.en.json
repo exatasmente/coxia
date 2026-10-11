@@ -163,6 +163,7 @@
   "ui.chat.button.custo": "Open the costs",
   "ui.chat.button.deep": "Open the unblock for {ref}",
   "ui.chat.button.discussions": "Open the discussions for {ref}",
+  "ui.chat.button.discussionsMr": "Open the discussions for {project}{crMark}{number}",
   "ui.chat.button.forum": "Open the forum",
   "ui.chat.button.forumThread": "Open the conversation {id}",
   "ui.chat.button.gate": "Open the approval gate for {ref}",

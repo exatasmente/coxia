@@ -108,7 +108,7 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
           if (kind === 'system') return <SystemLine key={m.seq} m={m} />;
           if (kind === 'act') return <ActRow key={m.seq} m={m} ceremony={ceremony} onOpen={compact ? undefined : onOpen} />;
           if (kind === 'person') return <PersonBubble key={m.seq} m={m} waiting={queued.has(m.seq)} stopped={stopped} />;
-          if (kind === 'agent') return <AgentBubble key={m.seq} m={m} team={team} />;
+          if (kind === 'agent') return <AgentBubble key={m.seq} m={m} team={team} ceremony={ceremony} onOpen={compact ? undefined : onOpen} />;
           return <AnswerBubble key={m.seq} m={m} team={team} work={m.answersTo !== undefined ? workOf(roots, m.answersTo, persona.id) : null} ceremony={ceremony} onOpen={compact ? undefined : onOpen} />;
         })}
         {[...bubbles.map((b) => ({ to: b.to, text: b.text as string | null })), ...pending.map((r) => ({ to: r.call?.message ?? 0, text: null }))]

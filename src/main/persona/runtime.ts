@@ -10,6 +10,7 @@ import { ATAS } from '../env';
 import { viaOf } from '../rpc';
 import { ceremonyLabel } from '../cyclePrompts';
 import { listActions } from '../actions';
+import { workspaceProjects } from '../agents';
 import { loadCards } from '../cards';
 import { cycleView } from '../cycle-core';
 import { redact } from '../errorlog-core';
@@ -50,6 +51,7 @@ export function personaScreens(): ScreenFacts {
     run: (id) => runStore().get(id) !== null,
     conflict: (id) => listActions().some((a) => a.id === id && a.kind === 'conflict'),
     thread: (id) => forumStore().summary(id) !== null,
+    projects: workspaceProjects,
   };
 }
 

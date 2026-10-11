@@ -60,8 +60,8 @@ export function PersonBubble({ m, waiting, stopped = false }: { m: ForumMessage;
   );
 }
 
-/** The buttons an answer offers, worded by the app from their targets. A tap opens the screen on this device only. */
-function Buttons({ targets, ceremony, onOpen }: { targets: readonly PushTarget[]; ceremony: string; onOpen: (target: PushTarget) => void }) {
+/** The buttons an answer offers, worded by the app from their targets. A tap opens the screen on this device only. A run's thread draws the same ones. */
+export function Buttons({ targets, ceremony, onOpen }: { targets: readonly PushTarget[]; ceremony: string; onOpen: (target: PushTarget) => void }) {
   const t = useT();
   if (!targets.length) return null;
   return (
@@ -95,8 +95,8 @@ export function AnswerBubble({ m, team, work, ceremony, onOpen }: { m: ForumMess
   );
 }
 
-/** What an agent the persona called said in the persona's conversation: the author's name above the text. */
-export function AgentBubble({ m, team }: { m: ForumMessage; team: readonly AgentDef[] | undefined }) {
+/** What an agent the persona called said in the persona's conversation: the author's name above the text, and the discussions button it may have offered. */
+export function AgentBubble({ m, team, ceremony = '', onOpen }: { m: ForumMessage; team: readonly AgentDef[] | undefined; ceremony?: string; onOpen?: (target: PushTarget) => void }) {
   return (
     <li className="chat-row chat-row-agent" id={`msg-${m.seq}`}>
       <div className="chat-bubble chat-bubble-agent">
@@ -107,6 +107,7 @@ export function AgentBubble({ m, team }: { m: ForumMessage; team: readonly Agent
         <MessageAttachments thread={m.thread} message={m.seq} refs={m.attachments} />
         <time className="chat-time" dateTime={m.at}>{stamp(m.at)}</time>
       </div>
+      {onOpen && m.buttons && <Buttons targets={m.buttons} ceremony={ceremony} onOpen={onOpen} />}
     </li>
   );
 }

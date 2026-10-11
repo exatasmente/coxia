@@ -29,6 +29,7 @@ import { agentName, squadName } from './names';
 import { patchRun, runsApi, useRun, useRunConfig } from './runsApi';
 import './cycle.css';
 import { HOME } from '../../home';
+import { openButton } from '../../openButton';
 
 const ROUTED_KEY = {
   repo: 'ui.cycle.routed.repo',
@@ -203,6 +204,7 @@ export function RunScreen({ id, go, ceremony, actions, back = HOME, tab: initial
                   setTab('cycle');
                   setSendBackAsk((n) => n + 1);
                 }}
+                onOpen={(target) => openButton(target, { thread: runThreadId(run.id), hasCards: !!ceremony.cards, back: { name: 'run', id: run.id, tab: 'forum' }, go })}
               />
             </div>
           )}

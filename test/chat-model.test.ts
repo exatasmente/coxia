@@ -332,6 +332,13 @@ describe('the words of a button', () => {
     expect(buttonLabel({ to: 'forum' }, say.en, 'c')).toBe('Open the forum');
     expect(buttonLabel({ to: 'nowhere' }, say.en, 'c')).toBe('Open the screen');
   });
+
+  it.each(['en', 'pt-BR'] as const)('names the merge request of a discussions button that is not a card, in %s', (language) => {
+    const text = buttonLabel({ to: 'discussions', project: 'group/app', number: 7 }, say[language], 'c');
+    expect(text).toMatch(/group\/app\S7/);
+    expect(text).not.toMatch(/\{\w+\}/);
+    expect(buttonLabel({ to: 'discussions', ref: 'app#1' }, say[language], 'c')).toContain('app#1');
+  });
 });
 
 describe('the accessibility attributes of the box', () => {

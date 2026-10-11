@@ -8,7 +8,7 @@ import { t } from '../../shared/i18n';
 import type { Run } from '../../shared/runs';
 import { mentionJob } from '../../shared/activity';
 import { type RunActivity, beginActivity, currentActivity, withActivityContext } from '../activity';
-import { type AgentCall, secretPath } from '../agents';
+import { type AgentCall, secretPath, workspaceProjects } from '../agents';
 import { type ReadConfinement, ProviderBusyError, poolBusyParams, poolNoticeLine } from '../engine/contract';
 import { callKey } from '../../shared/browser';
 import { type CallScreen, type CallScreenRequest, type ScreenPorts, beginHandoff, modelSeesImages, offerHandoff, openCallScreen, promptFor } from '../browser/callScreen';
@@ -43,7 +43,7 @@ import { procedureScreen } from '../procedures/screen';
 import type { ProcedureSession } from '../procedures/session';
 import type { PersonaLive } from '../persona/live';
 import type { Door } from '../persona/door';
-import { type ScreenFacts, createButtons, openScreenTool } from '../persona/openScreen';
+import { type ScreenFacts, createButtons, openDiscussionsTool, openScreenTool } from '../persona/openScreen';
 import { type AnswerSession, createSession } from '../persona/session';
 import { personaToolImpls } from '../persona/tools';
 
@@ -448,6 +448,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
               }
             },
           }),
+          // Any other agent may offer one button of its own: the discussions of a merge request, opened only when the person taps it. The persona has OpenScreen for it.
+          ...(persona ? [] : [openDiscussionsTool(workspaceProjects, buttons)]),
         ];
       }
       // The persona's buttons: the one tool of its own, not offered to its test copy.
@@ -469,7 +471,9 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       const text = (actSession ? actSession.maskText : (s: string) => s)(answerText(persona ? r.data : (r.data as { text?: unknown })?.text));
       if (!text) throw new Error(t('main.runner.error.empty-answer'));
       // The persona's answer says which message it answers (the chat finds the work of the call by it) and carries the buttons it offered.
-      deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false, ...(persona ? { answersTo: message.seq, buttons: buttons.list() } : {}) });
+      // Another agent's answer carries a button only when it offered one (the discussions of a merge request).
+      const offered = buttons.list();
+      deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false, ...(persona ? { answersTo: message.seq, buttons: offered } : offered.length ? { buttons: offered } : {}) });
       posted = true;
       // What the thread shows of the answer is what the call's node shows of it, here and not in the engine, which never reports a closing answer as a step.
       made?.activity.answer(text);

@@ -273,6 +273,9 @@ const group = (reason: ExclusionReason, channels: string[]): [string, ExclusionR
 
 export const EXCLUDED: Readonly<Record<string, ExclusionReason>> = Object.fromEntries([
   ...group('window', ['agent:activity:get', 'agent:prepare', 'agent:reply', 'autostart:get', 'autostart:set', 'clipboard:copy', 'claude:continue', 'claude:command', 'jobs:notify', 'log:renderer', 'state:load', 'state:save', 'diagram:fix', 'glossary:hear', 'persona:live-read']),
+  // The discussions screen a button opened by project and number: its read is the screen's (the persona reads threads through VcsRead), and the line it leaves records the person's
+  // tap, which the persona must never be able to write for them.
+  ...group('window', ['feedback:discussions:open', 'feedback:discussions:opened']),
   ...group('machine', ['agents:scan', 'agents:propose', 'agents:summarize', 'agents:can-summarize', 'mcpstate:get', 'mcpstate:set-enabled', 'mcpstate:write-entry', 'vcs:probe', 'sandbox:probe']),
   ...group('update', ['update:busy', 'update:check', 'update:flushed', 'update:info', 'update:install', 'update:run', 'update:seen', 'update:settings-save', 'update:status']),
   ...group('voice', ['voice:cancel', 'voice:check', 'voice:enable', 'voice:install', 'voice:install-cancel', 'voice:list', 'voice:plan', 'voice:segment', 'voice:status', 'voice:test', 'voice:transcribe', 'voice:uninstall']),

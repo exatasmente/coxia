@@ -5,11 +5,11 @@ import type { PushTarget } from '../../../../shared/push';
 import type { Screen } from '../../App';
 import type { Ceremony } from '../../ceremony';
 import { useCycle } from '../../cycleApi';
-import { OVERVIEW, ceremonyCard } from '../../home';
+import { HOME, OVERVIEW, ceremonyCard } from '../../home';
 import { useT } from '../../i18n';
+import { openButton } from '../../openButton';
 import { bannerView } from '../../personaStopModel';
 import { usePersonaState } from '../../personaStopApi';
-import { targetToScreen } from '../../pushTarget';
 import type { AgoraPlan } from '../../dashboard';
 import { AgoraCard } from '../TodayParts';
 import { useAgora } from '../useAgora';
@@ -80,8 +80,7 @@ export function ChatScreen({ ceremony: c, go, persona, team, actions }: Props) {
 
   // A tap on a button of an answer opens that screen on this device only.
   const open = (target: PushTarget): void => {
-    const next = targetToScreen(target, !!c.cards);
-    if (next) go(next);
+    if (persona) openButton(target, { thread: agentThreadId(persona.id), hasCards: !!c.cards, back: HOME, go });
   };
 
   return (
