@@ -6,11 +6,11 @@ import { describe, expect, it } from 'vitest';
 import type { Run } from '../src/shared/runs';
 import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
 import { needsYou, pendingQuestions } from '../src/renderer/src/dashboard';
-import { type HomeCountsInput, HOME, OVERVIEW, anyCount, blockedCards, ceremonyCard, countTarget, deepBack, homeCounts, homeView, navGroups, resumeWizard, rowTitle, snoozeWizard, wizardSnoozed } from '../src/renderer/src/home';
+import { type HomeCountsInput, HOME, OVERVIEW, anyCount, blockedCards, ceremonyCard, countTarget, deepBack, homeCounts, homeView, isCurrentRow, navGroups, resolveRow, resumeWizard, rowTitle, snoozeWizard, wizardSnoozed } from '../src/renderer/src/home';
 import { agoraPlan, type AgoraInput } from '../src/renderer/src/dashboard';
 import { waitingRuns } from '../src/shared/runs/view';
 import type { WatcherAlert } from '../src/shared/watchers';
-import { setLanguage, t } from '../src/shared/i18n';
+import { createTranslator, createVoiceTranslator, setLanguage, t } from '../src/shared/i18n';
 
 const ROOT = join(import.meta.dirname, '..');
 const sources = readdirSync(join(ROOT, 'src/renderer/src'), { recursive: true })
@@ -78,7 +78,7 @@ describe('homeView', () => {
   });
 });
 
-describe('the counts of the strip', () => {
+describe('the counts of the home', () => {
   const cards = [card('1', { blockers: ['MR com conflitos'] }), card('2'), card('3'), card('4')];
   const input: HomeCountsInput = {
     cards,
@@ -126,6 +126,46 @@ describe('the counts of the strip', () => {
     expect(chat?.text).toMatch(/homeCounts\(/);
     expect(overview?.text).toMatch(/blockedCards\(/);
     expect(overview?.text).toMatch(/pendingQuestions\(/);
+  });
+});
+
+describe('the rows that depend on the day', () => {
+  const say = { t: createTranslator('en'), tv: createVoiceTranslator('en', false) };
+  const rows = navGroups(undefined, true).flatMap((g) => g.rows);
+  const rowOf = (id: string) => rows.find((r) => r.id === id) as (typeof rows)[number];
+  const card = { iid: 12, ref: 'group/project#12', stage: 'qa', spec: 'x' } as unknown as Card;
+  const idle = { callHeld: false, hasCards: true };
+
+  it('says "back" while the pre-daily is held, and has no target before the cards load', () => {
+    expect(resolveRow(rowOf('call'), idle, say)).toEqual({ label: say.t('ui.today.preDaily'), screen: { name: 'call' } });
+    expect(resolveRow(rowOf('call'), { callHeld: true, hasCards: true }, say).label).toBe(say.tv('call.back'));
+    expect(resolveRow(rowOf('call'), { ...idle, hasCards: false }, say).screen).toBeNull();
+  });
+
+  it('opens the first blocked card with the unblock, and nothing while there is none', () => {
+    expect(resolveRow(rowOf('deep'), idle, say)).toEqual({ label: say.t('ui.today.deepen'), screen: null });
+    const r = resolveRow(rowOf('deep'), { ...idle, firstBlocked: card }, say);
+    expect(r.label).toBe(say.t('ui.today.deepenIssue', { iid: 12 }));
+    expect(r.screen).toEqual({ name: 'deep', ref: 'group/project#12', back: 'chat' });
+  });
+
+  it('opens the first card the QA hand-off can take, and nothing while there is none', () => {
+    expect(resolveRow(rowOf('qa'), idle, say).screen).toBeNull();
+    expect(resolveRow(rowOf('qa'), { ...idle, firstQa: card }, say).screen).toEqual({ name: 'qa', ref: 'group/project#12', card });
+  });
+
+  it('takes the words and the target of any other row as they are', () => {
+    expect(resolveRow(rowOf('runs'), idle, say)).toEqual({ label: say.t('ui.runs.nav'), screen: { name: 'runs' } });
+    expect(resolveRow(rowOf('blocked'), idle, say).screen).toEqual(countTarget('blocked'));
+  });
+
+  it('marks the screen on show, and in the Overview only its own row, not the rows that open one of its sections', () => {
+    expect(isCurrentRow(rowOf('chat'), 'chat')).toBe(true);
+    expect(isCurrentRow(rowOf('runs'), 'chat')).toBe(false);
+    expect(isCurrentRow(rowOf('overview'), 'overview')).toBe(true);
+    for (const id of ['blocked', 'asking', 'needs']) expect(isCurrentRow(rowOf(id), 'overview'), id).toBe(false);
+    // a row that has no target of its own is never current
+    expect(isCurrentRow(rowOf('deep'), 'deep')).toBe(false);
   });
 });
 

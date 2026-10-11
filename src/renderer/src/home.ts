@@ -158,6 +158,39 @@ export function navGroups(on: Partial<CycleView['ceremonies']> | undefined, pers
   ].filter((g) => g.rows.length > 0) as NavGroup[];
 }
 
+/** What the words of a row need from the translators: the plain one and the one that follows the voice mode. */
+export interface RowSay {
+  t: (key: string, params?: Record<string, string | number>) => string;
+  tv: (key: string, params?: Record<string, string | number>) => string;
+}
+
+/** What the day decides about the rows: the pre-daily held or not, whether the board's cards are loaded, and the first card each card-bound ceremony could take. */
+export interface RowContext {
+  callHeld: boolean;
+  hasCards: boolean;
+  firstBlocked?: Pick<Card, 'iid' | 'ref'>;
+  firstQa?: Card;
+}
+
+/**
+ * The words and the target of a row that depend on the day: the pre-daily is named as the cycle names it and says "back" while it is held (and has no target before the cards
+ * load), and the two ceremonies on a card open the first card they can take, or nothing when there is none.
+ */
+export function resolveRow(r: NavRow, ctx: RowContext, say: RowSay): { label: string; screen: Screen | null } {
+  if (r.id === 'call') return { label: ctx.callHeld ? say.tv('call.back') : say.t(r.label), screen: ctx.hasCards ? r.screen : null };
+  if (r.id === 'deep') {
+    const card = ctx.firstBlocked;
+    return { label: card ? say.t('ui.today.deepenIssue', { iid: card.iid }) : say.t('ui.today.deepen'), screen: card ? { name: 'deep', ref: card.ref, back: 'chat' } : null };
+  }
+  if (r.id === 'qa') return { label: say.t('ui.chat.menu.qa'), screen: ctx.firstQa ? { name: 'qa', ref: ctx.firstQa.ref, card: ctx.firstQa } : null };
+  return { label: say.t(r.label), screen: r.screen };
+}
+
+/** Whether a row is the screen on show; the Overview's rows that open a section of it do not count as the Overview itself. */
+export function isCurrentRow(r: NavRow, current: Screen['name']): boolean {
+  return r.screen?.name === current && (current !== 'overview' || r.id === 'overview');
+}
+
 /** The hover text of a row: its detail (what the radar counts, the help's shortcut), and, when the sidebar is folded, its words too, since the icon alone does not say them. */
 export function rowTitle(label: string, detail: string | undefined, folded: boolean): string | undefined {
   if (!folded) return detail;

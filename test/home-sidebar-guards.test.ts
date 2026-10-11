@@ -47,3 +47,15 @@ describe('the hint of the inline box', () => {
     expect(read('screens/persona/ChatThread.tsx')).toMatch(/ui\.chat\.hint\.desktop/);
   });
 });
+
+describe('where the navigation is mounted', () => {
+  it('puts the chat and the Overview inside the sidebar frame', () => {
+    expect(read('screens/persona/ChatScreen.tsx')).toContain('<HomeShell ');
+    expect(read('screens/Overview.tsx')).toContain('<HomeShell ');
+  });
+
+  it('gives the phone the same navigation as a sheet of the header, and draws it in no other place', () => {
+    expect(read('screens/persona/ChatHeader.tsx')).toContain('<HomeNav ');
+    expect(read('screens/persona/HomeShell.tsx')).toContain('<HomeNav ');
+  });
+});

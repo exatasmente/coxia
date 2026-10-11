@@ -4,7 +4,7 @@ import { totalUnread } from '../../../../shared/forumView';
 import type { Screen } from '../../App';
 import type { Ceremony } from '../../ceremony';
 import { useCycle } from '../../cycleApi';
-import { type HomeCounts, type NavId, type NavRow, blockedCards, homeCounts, navGroups, qaCandidates, rowTitle } from '../../home';
+import { type HomeCounts, type NavId, type RowContext, blockedCards, homeCounts, isCurrentRow, navGroups, qaCandidates, resolveRow, rowTitle } from '../../home';
 import { useT, useTv } from '../../i18n';
 import { useWatcherAlerts } from '../../watchersApi';
 import { useSeen, useThreads } from '../cycle/forumApi';
@@ -77,15 +77,7 @@ export function HomeNav({ go, ceremony: c, actions, current, persona, folded = f
     saude: health.total ? badgeTitle(health) : t('ui.health.button.title'),
   };
 
-  // The rows whose words and target depend on the day: the pre-daily is named as the cycle names it and says "back" while it is held, and the two ceremonies on a card open the first card they can take.
-  const resolve = (r: NavRow): { label: string; screen: Screen | null } => {
-    if (r.id === 'call') return { label: c.startedAt && !c.callEnded ? tv('call.back') : t(r.label), screen: c.cards ? r.screen : null };
-    if (r.id === 'deep') return { label: firstBlocked ? t('ui.today.deepenIssue', { iid: firstBlocked.iid }) : t('ui.today.deepen'), screen: firstBlocked ? { name: 'deep', ref: firstBlocked.ref, back: 'chat' } : null };
-    if (r.id === 'qa') return { label: t('ui.chat.menu.qa'), screen: firstQa ? { name: 'qa', ref: firstQa.ref, card: firstQa } : null };
-    return { label: t(r.label), screen: r.screen };
-  };
-
-  const isCurrent = (r: NavRow): boolean => r.screen?.name === current && (current !== 'overview' || r.id === 'overview');
+  const ctx: RowContext = { callHeld: !!c.startedAt && !c.callEnded, hasCards: !!c.cards, firstBlocked, firstQa };
 
   return (
     <nav className={`home-nav ${folded ? 'home-nav-folded' : ''}`} aria-label={t('ui.today.navLabel')}>
@@ -93,7 +85,7 @@ export function HomeNav({ go, ceremony: c, actions, current, persona, folded = f
         <div key={g.id} className="home-nav-group" role="group" aria-label={g.label ? t(g.label) : undefined}>
           {g.label && !folded && <div className="home-nav-head">{t(g.label)}</div>}
           {g.rows.map((r) => {
-            const { label, screen } = resolve(r);
+            const { label, screen } = resolveRow(r, ctx, { t, tv });
             const badge = badges[r.id];
             const shown = badge && badge.count > 0 ? badge : null;
             return (
@@ -101,7 +93,7 @@ export function HomeNav({ go, ceremony: c, actions, current, persona, folded = f
                 key={r.id}
                 type="button"
                 className="home-nav-row"
-                aria-current={isCurrent(r) ? 'page' : undefined}
+                aria-current={isCurrentRow(r, current) ? 'page' : undefined}
                 aria-label={shown ? `${label}, ${shown.label}` : folded ? label : undefined}
                 title={rowTitle(label, titles[r.id], folded)}
                 disabled={!screen}
