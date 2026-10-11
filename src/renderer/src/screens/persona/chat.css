@@ -65,12 +65,28 @@
 .strip-info { background: var(--blue-soft); border-color: var(--blue-line); color: var(--blue-ink); }
 .strip-info .strip-l { color: var(--blue-ink); }
 
-/* the ceremony card pinned above the box: the Agora card, smaller */
-.chat-card .dash-agora { padding: 12px 14px; gap: 8px; border-radius: 14px; }
+/* the ceremony card pinned above the box: the Agora card, smaller. It has a surface and an edge of its own so that it never melts into a dark page. */
+.chat-card .dash-agora { padding: 12px 14px; gap: 8px; border-radius: 14px; background: var(--night-2); border-color: var(--night-line); }
+.chat-card-chip { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 12px; border: 1px solid var(--night-line); background: var(--night-2); color: var(--on-night); font: inherit; font-size: 14px; text-align: left; cursor: pointer; min-width: 0; }
+.chat-card-chip:focus-visible { outline: 2px solid var(--night-teal-2); outline-offset: 2px; }
+.chat-card-chip-label { flex: none; font-size: 12px; font-weight: 600; color: var(--night-teal); text-transform: uppercase; letter-spacing: 0.06em; }
+.chat-card-chip-title { flex: 1 1 auto; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-card-chip-progress { flex: none; color: var(--on-night-muted); }
+.chat-card-chip + div .dash-agora { margin-top: 6px; }
 .chat-card .agora-title { font-size: 17px; }
 .chat-card .agora-primary { min-height: 44px; font-size: 15px; }
 
 @media (max-width: 600px) {
   .chat-page { padding: 10px 12px 8px; gap: 8px; }
-  .chat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* the four counts stay one row of four small cells: the conversation needs the height */
+  .chat-strip { gap: 6px; }
+  .strip-item { flex-direction: column; align-items: center; justify-content: center; gap: 0; padding: 4px; text-align: center; border-radius: 10px; }
+  .strip-n { font-size: 18px; }
+  .strip-l { font-size: 11px; line-height: 1.15; white-space: normal; text-align: center; }
 }
+
+/* the wizard as the home: "Not now" is a quiet link at the end of the title row, not a button of its own */
+.wz-screen-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.wz-skip { flex: none; min-height: 44px; padding: 0 4px; display: inline-flex; align-items: center; font-size: 15px; }
+.wz-skip:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.wz-skip:disabled { color: var(--muted); cursor: default; text-decoration: none; }

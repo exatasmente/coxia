@@ -7,7 +7,7 @@ import { createTranslator } from '../src/shared/i18n';
 import type { LiveAnswer, LiveEvent } from '../src/shared/persona';
 import { PUSH_SCREENS } from '../src/shared/push';
 import { buildTree, hasWork } from '../src/renderer/src/activityTreeModel';
-import { BUTTON_KEY, bubblesOf, buttonLabel, composerAria, composerState, liveKey, menuControls, liveOf, queuedOf, reduceLive, reduceRead, rowKind, workItems, workOf, workOpenByDefault, workSummary } from '../src/renderer/src/chatModel';
+import { BUTTON_KEY, bubblesOf, buttonLabel, cardOpen, composerAria, composerState, liveKey, menuControls, liveOf, queuedOf, reduceLive, reduceRead, rowKind, workItems, workOf, workOpenByDefault, workShown, workSummary } from '../src/renderer/src/chatModel';
 
 const THREAD = 'agent-me';
 const event = (to: number, rev: number, offset: number, text: string, over: Partial<LiveEvent> = {}): LiveEvent => ({ thread: THREAD, to, agent: 'me', rev, offset, text, ...over });
@@ -236,5 +236,31 @@ describe('the accessibility attributes of the box and the menu', () => {
     expect(menuControls(false, false)).toBeUndefined();
     expect(menuControls(true, false)).toBe('chat-menu');
     expect(menuControls(true, true)).toBeUndefined();
+  });
+});
+
+describe('what the Work section shows and when', () => {
+  it('shows nothing for an answer the persona gave with no step, no thought and no one else called', () => {
+    const quiet = buildTree([status('q1', 'started', { call: call(4) }), line('q1', { call: call(4), kind: 'answer', label: 'the answer excerpt' }), status('q1', 'finished', { call: call(4) })]);
+    expect(workShown(workOf(quiet, 4, 'me') as never)).toBe(false);
+  });
+
+  it('shows the section while the call works, and after it for a step, a thought, a narration or a sub-agent', () => {
+    expect(workShown(workOf(buildTree([status('w1', 'started', { call: call(4) })]), 4, 'me') as never)).toBe(true);
+    for (const kind of ['tool', 'thought', 'text'] as const) {
+      const done = buildTree([status('w2', 'started', { call: call(5) }), line('w2', { call: call(5), kind }), status('w2', 'finished', { call: call(5) })]);
+      expect(workShown(workOf(done, 5, 'me') as never), kind).toBe(true);
+    }
+    const sub = buildTree([status('w3', 'started', { call: call(6) }), status('s3', 'started', { parent: 'w3', node: { type: 'sub', label: 'explore: map' } }), status('s3', 'finished', { parent: 'w3', node: { type: 'sub', label: 'explore: map' } }), status('w3', 'finished', { call: call(6) })]);
+    expect(workShown(workOf(sub, 6, 'me') as never)).toBe(true);
+  });
+});
+
+describe('the ceremony card on a small screen', () => {
+  it('is one line on a phone and in full on the computer until the person chooses, and the choice wins', () => {
+    expect(cardOpen(true, null)).toBe(false);
+    expect(cardOpen(false, null)).toBe(true);
+    expect(cardOpen(true, true)).toBe(true);
+    expect(cardOpen(false, false)).toBe(false);
   });
 });

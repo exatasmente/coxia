@@ -5,7 +5,7 @@ import type { PushTarget } from '../../../../shared/push';
 import type { OpenScreenInfo } from '../../../../shared/browser';
 import { ActivityItems, Chevron, useTreeOpen } from '../../ActivityTree';
 import type { TreeNode } from '../../activityTreeModel';
-import { buttonLabel, workItems, workOpenByDefault, workSummary } from '../../chatModel';
+import { buttonLabel, workItems, workOpenByDefault, workShown, workSummary } from '../../chatModel';
 import { intlLocale, useT } from '../../i18n';
 import { formatElapsed } from '../../jobs';
 import { RichText } from '../Diagram';
@@ -78,7 +78,7 @@ function Buttons({ targets, ceremony, onOpen }: { targets: readonly PushTarget[]
 export function AnswerBubble({ m, team, work, ceremony, onOpen }: { m: ForumMessage; team: readonly AgentDef[] | undefined; work: TreeNode | null; ceremony: string; onOpen?: (target: PushTarget) => void }) {
   return (
     <li className="chat-row chat-row-answer" id={`msg-${m.seq}`}>
-      {work && <Work root={work} />}
+      {work && workShown(work) && <Work root={work} />}
       <div className="chat-bubble chat-bubble-answer">
         <strong className="chat-who">{authorName(m.author, team)}</strong>
         <div className="chat-text">
@@ -138,7 +138,7 @@ export function LiveBubble({ text, thread, agent, team, work, screen, onWatch }:
   const t = useT();
   return (
     <li className="chat-row chat-row-answer" aria-busy="true">
-      {work && <Work root={work} />}
+      {work && workShown(work) && <Work root={work} />}
       <div className="chat-bubble chat-bubble-answer chat-bubble-live">
         <strong className="chat-who">{agentName(team, agent)}</strong>
         <div className="chat-text" aria-live="off">

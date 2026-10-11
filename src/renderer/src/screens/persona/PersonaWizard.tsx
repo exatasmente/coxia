@@ -312,12 +312,12 @@ export function PersonaWizard({ presentation, persona = null, onDone, onClose }:
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 820, gap: 16 }}>
-        <header className="row spread">
+        <header className="wz-screen-head">
           <div style={{ minWidth: 0 }}>
             <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.persona.wizard.screen.title')}</h1>
             <p className="muted" style={{ marginTop: 4 }}>{t('ui.persona.wizard.screen.lead')}</p>
           </div>
-          <button type="button" className="btn" disabled={busy === 'close'} onClick={requestClose}>{t('ui.persona.wizard.notNow')}</button>
+          <button type="button" className="cy-link wz-skip" disabled={busy === 'close'} onClick={requestClose}>{t('ui.persona.wizard.notNow')}</button>
         </header>
         <section className="panel" style={{ padding: 20, gap: 14 }} aria-label={title}>
           {body}

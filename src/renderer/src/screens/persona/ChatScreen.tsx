@@ -1,15 +1,19 @@
-import { useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
 import type { ReleaseAction } from '../../../../shared/types';
 import type { AgentDef } from '../../../../shared/config/types';
 import { agentThreadId } from '../../../../shared/forum';
 import type { PushTarget } from '../../../../shared/push';
 import type { Screen } from '../../App';
 import type { Ceremony } from '../../ceremony';
+import { Chevron } from '../../ActivityTree';
+import { cardOpen } from '../../chatModel';
 import { useCycle } from '../../cycleApi';
 import { OVERVIEW, ceremonyCard, homeCounts } from '../../home';
 import { useT } from '../../i18n';
 import { targetToScreen } from '../../pushTarget';
+import { useIsPhone } from '../../useIsPhone';
 import { useWatcherAlerts } from '../../watchersApi';
+import type { AgoraPlan } from '../../dashboard';
 import { AgoraCard } from '../TodayParts';
 import { useRuns } from '../cycle/runsApi';
 import { useAgora } from '../useAgora';
@@ -27,6 +31,35 @@ interface Props {
   persona: AgentDef | null;
   team: readonly AgentDef[] | undefined;
   actions: ReleaseAction[];
+}
+
+/**
+ * The ceremony card pinned above the box. On the computer it is the Agora card in full; on a phone it is one line (what it is, in a word) that opens the card when tapped,
+ * so the conversation keeps most of the height of a small screen.
+ */
+function CeremonyCard({ plan, onAction }: { plan: AgoraPlan; onAction: (a: AgoraPlan['primary']['action']) => void }) {
+  const t = useT();
+  const phone = useIsPhone();
+  const [chosen, setChosen] = useState<boolean | null>(null);
+  const body = useId();
+  const open = cardOpen(phone, chosen);
+  return (
+    <div className="chat-card">
+      {phone && (
+        <button type="button" className="chat-card-chip" aria-expanded={open} aria-controls={body} onClick={() => setChosen(!open)}>
+          <Chevron open={open} />
+          <span className="chat-card-chip-label">{t('ui.today.now')}</span>
+          <span className="chat-card-chip-title">{plan.title}</span>
+          {plan.progress && <span className="chat-card-chip-progress small">{plan.progress}</span>}
+        </button>
+      )}
+      {open && (
+        <div id={body}>
+          <AgoraCard plan={plan} onAction={onAction} />
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ChatScreen({ ceremony: c, go, persona, team, actions }: Props) {
@@ -56,7 +89,7 @@ export function ChatScreen({ ceremony: c, go, persona, team, actions }: Props) {
           persona={persona}
           team={team}
           onOpen={open}
-          above={card ? <div className="chat-card"><AgoraCard plan={card} onAction={onAgora} /></div> : undefined}
+          above={card ? <CeremonyCard plan={card} onAction={onAgora} /> : undefined}
         />
       ) : (
         <div className="panel chat-none" role="status">

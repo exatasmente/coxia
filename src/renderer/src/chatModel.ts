@@ -114,6 +114,15 @@ export function workItems(root: TreeNode): TreeItem[] {
   return root.items.filter((i) => !(i.type === 'line' && i.entry.kind === 'answer'));
 }
 
+/**
+ * Whether there is anything to show in the Work section: the call still works, or it took a step, thought, narrated or started something under it. A call that only said
+ * it started and finished (an answer from what the persona already knew) has nothing to show, and a "0:00, 0 steps" line would only be noise.
+ */
+export function workShown(root: TreeNode): boolean {
+  if (hasWork(root) || root.children.length > 0) return true;
+  return root.items.some((i) => i.type === 'line' && (i.entry.kind === 'tool' || i.entry.kind === 'thought' || i.entry.kind === 'text'));
+}
+
 /** Whether the Work section is open when the person has not chosen: while the call works, and closed once the answer is complete. */
 export const workOpenByDefault = (root: TreeNode): boolean => hasWork(root);
 
@@ -177,3 +186,8 @@ export function composerAria(mentions: boolean, listId: string, options: number,
 export function menuControls(open: boolean, phone: boolean): string | undefined {
   return open && !phone ? 'chat-menu' : undefined;
 }
+
+// ---- the ceremony card on a small screen --------------------------------------------------------------------------------------------------------
+
+/** Whether the pinned ceremony card shows in full: on a phone it is one line until the person opens it, on the computer it is open until they close it; their choice wins. */
+export const cardOpen = (phone: boolean, chosen: boolean | null): boolean => (chosen === null ? !phone : chosen);
