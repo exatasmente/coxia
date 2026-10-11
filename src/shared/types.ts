@@ -441,6 +441,8 @@ export interface ReleaseAction {
   unit: Record<string, unknown> | null;
   summary: string | null;
   command: VcsCommand | null;
+  /** The proposal was made under the persona's door (#248); absent: a person's, an agent's or the app's, as before. */
+  proposedBy?: 'persona';
   /** A group of writes that belong together (a review round: its comments, replies and verdict) and wait for one "sim"; `command` is the first. Absent for a single write. */
   commands?: VcsCommand[];
   /** How many of `commands` already ran: a retry after a failure goes on from there instead of posting the first ones again. */

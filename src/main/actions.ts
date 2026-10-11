@@ -13,6 +13,7 @@ import type { AppEvent, Card, ReleaseAction, VcsCommand } from '../shared/types'
 import { MEMORY_FILE } from '../shared/runs/output';
 import { conflictAsk, conflictPropose as askProposal, issueRef, rewriteQaComment, secretPath } from './agents';
 import { recordWrite } from './auditoria';
+import { openAct } from './persona/act';
 import { runStore } from './runs';
 import { getSettings } from './config';
 import {
@@ -130,6 +131,9 @@ async function cli(args: string[]): Promise<string> {
   }
 }
 
+/** Whether the code runs inside an open act of the persona: a proposal made now, or a line of output worded now, is the persona's and not the person's (#248). */
+const duringPersonaAct = (): boolean => openAct() !== null;
+
 function blank(partial: Partial<ReleaseAction> & Pick<ReleaseAction, 'key' | 'kind' | 'issue'>): ReleaseAction {
   return {
     id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
@@ -152,6 +156,7 @@ function blank(partial: Partial<ReleaseAction> & Pick<ReleaseAction, 'key' | 'ki
     summary: null,
     command: null,
     resolve: null,
+    ...(duringPersonaAct() ? { proposedBy: 'persona' as const } : {}),
     ...partial,
   };
 }
@@ -495,9 +500,11 @@ export interface AuditOrigin {
   summary: string | null;
   by?: string;
   bodyHash?: string;
+  /** The proposal was made under the persona's door: the line of approving it says so, and the Audit screen tells a persona that approved its own proposal. */
+  proposedBy?: 'persona';
 }
 
-const originOf = (a: ReleaseAction): AuditOrigin => ({ issue: a.issue, actionId: a.id, kind: a.kind, key: a.key, summary: a.summary });
+const originOf = (a: ReleaseAction): AuditOrigin => ({ issue: a.issue, actionId: a.id, kind: a.kind, key: a.key, summary: a.summary, ...(a.proposedBy ? { proposedBy: a.proposedBy } : {}) });
 
 // Every real write goes through here: one line in auditoria.jsonl, whatever the outcome.
 async function audited(from: AuditOrigin, base: AuditBase, write: (meta: ExecMeta) => Promise<string>): Promise<string> {
@@ -509,6 +516,7 @@ async function audited(from: AuditOrigin, base: AuditBase, write: (meta: ExecMet
     origin: { actionId: from.actionId, kind: from.kind, key: from.key, summary: from.summary },
     ...(from.by ? { by: from.by } : {}),
     ...(from.bodyHash ? { bodyHash: from.bodyHash } : {}),
+    ...(from.proposedBy ? { proposedBy: from.proposedBy } : {}),
   };
   try {
     const out = await write(meta);
@@ -994,7 +1002,8 @@ export async function conflictCommit(id: string): Promise<ReleaseAction> {
         `git -C ${r.worktree} push origin HEAD:refs/heads/${r.branch}`,
         // i18n-ignore: a git command line shown as it runs
         t('main.actions.commitNote', { sha: sha.slice(0, 9), message }),
-        r.verify?.skipped ? t('main.actions.verifySkipped') : r.verify?.exitCode === 0 ? t('main.actions.verifyPassed') : t('main.actions.verifyFailed', { code: String(r.verify?.exitCode) }),
+        // The decision to go on without a clean check is worded as whoever made it.
+        r.verify?.skipped ? t(duringPersonaAct() ? 'main.actions.verifySkippedPersona' : 'main.actions.verifySkipped') : r.verify?.exitCode === 0 ? t('main.actions.verifyPassed') : t(duringPersonaAct() ? 'main.actions.verifyFailedPersona' : 'main.actions.verifyFailed', { code: String(r.verify?.exitCode) }),
       ].join('\n'),
     });
     const s = read();

@@ -4,7 +4,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { docsFlowOf, flowStagesOf, releaseFlowOf, squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
-import { agentLabel, workingTeam } from '../../shared/config/team';
+import { agentLabel, personaIdsOf, workingTeam } from '../../shared/config/team';
 import type { AgentDef, PoolMode, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
@@ -788,7 +788,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const born = ensureMemory(wt, run.cycleFolder);
   // The conversation feeds the memory here, once per message (the marker makes it idempotent), so what the person answered and what a stage handed over survive the
   // 40-message window of the prompt. Tracked by the run's own commits, like the documents.
-  const facts = factsOfThread(thread);
+  const facts = factsOfThread(thread, personaIdsOf(d.config().agents.team));
   const kept = readMemory(wt, run.cycleFolder) ?? '';
   const memory = applyFacts(kept, facts);
   const memoryTouched = memory !== kept ? writeMemory(wt, run.cycleFolder, memory) : born;
