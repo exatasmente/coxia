@@ -1,0 +1,160 @@
+// The persona's chat as plain functions: what the screen decides above the markup. DOM-free like activity.ts and dashboard.ts, because nothing renders a component in the tests.
+// The live bubble (the text of an answer being written, assembled from events), the rule that the stored answer replaces it, the messages that wait their turn, the Work
+// section found by the message it answers, and the words of a button.
+import { type ActivityEntry } from '../../shared/activity';
+import type { ForumMessage } from '../../shared/forum';
+import { type LiveAnswer, type LiveEvent, applyLive, applyRead } from '../../shared/persona';
+import type { PushTarget } from '../../shared/push';
+import { type TreeItem, type TreeNode, hasWork } from './activityTreeModel';
+
+// ---- the live answers of a device ---------------------------------------------------------------------------------------------------------------
+
+/** The answers being written that this device knows of, by thread and the message each answers. */
+export type LiveMap = ReadonlyMap<string, LiveAnswer>;
+
+export const liveKey = (thread: string, to: number): string => `${thread}\u0000${to}`;
+
+/** The state after an event. `resync`: the event could not be placed (this device joined in the middle, or missed one), so the caller reads the text so far. */
+export function reduceLive(map: LiveMap, e: LiveEvent): { map: LiveMap; resync: boolean } {
+  const key = liveKey(e.thread, e.to);
+  const { state, resync } = applyLive(map.get(key) ?? null, e);
+  if (state === (map.get(key) ?? null)) return { map, resync };
+  const next = new Map(map);
+  if (state) next.set(key, state);
+  else next.delete(key);
+  return { map: next, resync };
+}
+
+/**
+ * The state after a read of one thread: what the read holds is taken when it is newer than what the device has, and an answer the device has that the read no longer
+ * holds is dropped (its call died with no end event, or the end was missed).
+ */
+export function reduceRead(map: LiveMap, thread: string, read: readonly LiveAnswer[]): LiveMap {
+  const next = new Map(map);
+  const held = new Set<string>();
+  for (const answer of read) {
+    if (answer.thread !== thread) continue;
+    const key = liveKey(thread, answer.to);
+    held.add(key);
+    next.set(key, applyRead(map.get(key) ?? null, answer));
+  }
+  for (const [key, answer] of map) if (answer.thread === thread && !held.has(key)) next.delete(key);
+  const same = next.size === map.size && [...next].every(([key, answer]) => map.get(key) === answer);
+  return same ? map : next;
+}
+
+/** The answers of one thread, oldest message first. */
+export const liveOf = (map: LiveMap, thread: string): LiveAnswer[] => [...map.values()].filter((a) => a.thread === thread).sort((a, b) => a.to - b.to);
+
+/**
+ * The bubbles to draw: an answer being written shows until a stored message answers the same message of the person. The stored answer replaces the bubble in the render in
+ * which it arrives, on every device, whichever of the message and the end of the stream comes first: no gap, no duplicate.
+ */
+export function bubblesOf(live: readonly LiveAnswer[], messages: readonly ForumMessage[]): LiveAnswer[] {
+  const answered = new Set(messages.filter((m) => m.answersTo !== undefined).map((m) => m.answersTo));
+  return live.filter((a) => !answered.has(a.to));
+}
+
+// ---- the messages -------------------------------------------------------------------------------------------------------------------------------
+
+export type RowKind = 'person' | 'answer' | 'agent' | 'system';
+
+/** How a message of the conversation is drawn: the person's bubble, the persona's answer, another agent's (one the persona called), or a line the app wrote. */
+export function rowKind(m: Pick<ForumMessage, 'kind' | 'author'>, persona: string): RowKind {
+  if (m.kind === 'system' || m.author.type === 'app') return 'system';
+  if (m.author.type === 'person') return 'person';
+  return m.author.id === persona ? 'answer' : 'agent';
+}
+
+/** The messages of the person that wait their turn behind an answer going on: their call line is still `queued`. */
+export function queuedOf(entries: readonly ActivityEntry[], thread: string, persona: string): Set<number> {
+  const lines = new Map<string, ActivityEntry[]>();
+  for (const e of entries) {
+    if (!e.call || e.call.thread !== thread || e.call.agent !== persona) continue;
+    const list = lines.get(e.runId);
+    if (list) list.push(e);
+    else lines.set(e.runId, [e]);
+  }
+  const out = new Set<number>();
+  for (const list of lines.values()) {
+    const last = list.sort((a, b) => a.seq - b.seq).findLast((e) => e.kind === 'status' && e.state !== 'blocked');
+    if (last?.state === 'queued' && list[0].call) out.add(list[0].call.message);
+  }
+  return out;
+}
+
+/** What the box says: an answer is going (so a message sent now waits its turn), or nothing. */
+export interface ComposerState {
+  going: boolean;
+}
+
+export function composerState(live: readonly LiveAnswer[], roots: readonly TreeNode[], persona: string): ComposerState {
+  return { going: live.length > 0 || roots.some((r) => r.call?.agent === persona && hasWork(r)) };
+}
+
+// ---- the work under an answer -------------------------------------------------------------------------------------------------------------------
+
+/** The call that answered the message `seq` of the person: the root of the tree whose first line names that message and this agent. */
+export function workOf(roots: readonly TreeNode[], seq: number, persona: string): TreeNode | null {
+  return roots.findLast((r) => r.call?.message === seq && r.call.agent === persona) ?? null;
+}
+
+const subtree = (node: TreeNode): TreeNode[] => [node, ...node.children.flatMap(subtree)];
+
+/** How long the call took (the first line to the last, anywhere under the root), how many steps it made (its tool lines) and whether it still works. */
+export function workSummary(root: TreeNode): { ms: number; steps: number; working: boolean } {
+  const lines = subtree(root).flatMap((n) => n.items.flatMap((i) => (i.type === 'line' ? [i.entry] : [])));
+  const first = Math.min(...lines.map((e) => e.at));
+  const last = Math.max(...lines.map((e) => e.at));
+  return { ms: lines.length ? last - first : 0, steps: lines.filter((e) => e.kind === 'tool').length, working: hasWork(root) };
+}
+
+/** The root's own lines and levels without its closing `answer` line: the bubble under the section is that answer. */
+export function workItems(root: TreeNode): TreeItem[] {
+  return root.items.filter((i) => !(i.type === 'line' && i.entry.kind === 'answer'));
+}
+
+/** Whether the Work section is open when the person has not chosen: while the call works, and closed once the answer is complete. */
+export const workOpenByDefault = (root: TreeNode): boolean => hasWork(root);
+
+// ---- the buttons --------------------------------------------------------------------------------------------------------------------------------
+
+/** The catalog key of the words of a button, by the screen it opens. The model writes no label: the app words the button from its target. */
+export const BUTTON_KEY: Record<string, string> = {
+  chat: 'ui.chat.button.chat',
+  overview: 'ui.chat.button.overview',
+  today: 'ui.chat.button.today',
+  board: 'ui.chat.button.board',
+  procedures: 'ui.chat.button.procedures',
+  memory: 'ui.chat.button.memory',
+  call: 'ui.chat.button.call',
+  deep: 'ui.chat.button.deep',
+  gate: 'ui.chat.button.gate',
+  qa: 'ui.chat.button.qa',
+  quick: 'ui.chat.button.quick',
+  reentry: 'ui.chat.button.reentry',
+  discussions: 'ui.chat.button.discussions',
+  retro: 'ui.chat.button.retro',
+  ata: 'ui.chat.button.ata',
+  history: 'ui.chat.button.history',
+  settings: 'ui.chat.button.settings',
+  actions: 'ui.chat.button.actions',
+  conflict: 'ui.chat.button.conflict',
+  custo: 'ui.chat.button.custo',
+  radar: 'ui.chat.button.radar',
+  saude: 'ui.chat.button.saude',
+  auditoria: 'ui.chat.button.auditoria',
+  help: 'ui.chat.button.help',
+  glossario: 'ui.chat.button.glossario',
+  run: 'ui.chat.button.run',
+  runs: 'ui.chat.button.runs',
+  forum: 'ui.chat.button.forum',
+};
+
+type Say = (key: string, params?: Record<string, string | number>) => string;
+
+/** The words of a button: "Start the pre-daily", "Open the board", "Open the QA hand-off for #123". `ceremony` is what the workspace calls its pre-daily. */
+export function buttonLabel(target: PushTarget, say: Say, ceremony: string): string {
+  const key = target.to === 'forum' && target.id ? 'ui.chat.button.forumThread' : (BUTTON_KEY[target.to] ?? 'ui.chat.button.other');
+  return say(key, { ceremony, ref: target.ref ?? '', id: target.id ?? '' });
+}

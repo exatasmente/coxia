@@ -115,6 +115,12 @@ function Items({ items, shared, className }: { items: readonly TreeItem[]; share
   );
 }
 
+/** The lines and levels of one node on their own, for a place that draws the work of a call under something else (the chat's Work section above an answer). */
+export function ActivityItems({ items, origin, className = 'act-node-body' }: { items: readonly TreeItem[]; origin: number; className?: string }) {
+  const team = useRunConfig()?.agents.team;
+  return <Items items={items} shared={{ origin, nameOf: (role) => agentName(team, role) }} className={className} />;
+}
+
 /** The nodes of a tree with their steps; follows the newest line unless the person scrolled up. */
 export function ActivityTree({ nodes }: { nodes: readonly TreeNode[] }) {
   const t = useT();

@@ -89,3 +89,21 @@ Deviations and decisions:
 - **Exports for reuse.** `AssistError`, `explain` and `endScreensOn` (agentAssist.ts), `roundsText` and `draftParts` (agentAssist-core.ts) are exported; no behaviour of the creator changed.
 - **The audit label is in `ui-today`.** `ui.audit.kind.persona` is needed now (the audit screen types its labels by `AuditKind`); the `ui-persona` catalogs of the plan start in commit 6.
 - **Wording.** `main.persona.draftName` is "My persona" / "Minha persona": a value identical in both catalogs would be refused by the lint, and a persona that was never renamed keeps this name.
+
+## Commit 6: the chat view, the wizard and the persona section of the settings
+
+Built as planned: `chatModel.ts` (the live answers of a device, the rule that the stored answer replaces the bubble, the queued messages, the Work found by the message an answer answers, the words of a button), `liveApi.ts` (the module event, the read on mount, on reconnect, on focus and every 15 s while a bubble is open), `ChatThread` / `ChatMessage` (bubbles, the Work section, the buttons, the live bubble with Stop), the `Composer` moved out of `Thread.tsx` with the two props, `ActivityItems` exported from `ActivityTree.tsx`, `PersonaWizard` and `personaWizard.ts`, `PersonaSection`, `ModelFields` exported from `TeamSection.tsx`, the `ui-persona` catalogs, `RoundState` (the structural state `closeRound`, `hasProgress` and `withRound` of `assistEdit.ts` now take), the tests (`chat-model`, `persona-wizard-state`, and one more case of `persona-assist-module`).
+
+Deviations and decisions:
+
+- **"Reachable only from Settings" means a side panel.** The chat screen with its header, strip, card and menu is commit 8, so until then Settings › Persona has **Open the chat**, which opens the full conversation (`ChatThread`, not compact) in a side panel; the buttons of an answer there navigate through `targetToScreen`. Commit 8 turns that link into `go(chat)`. Making the first persona ends in that panel; adjusting only saves.
+- **The test conversation is the compact chat.** `ChatThread` has `compact` (no cards of procedures or screens, no buttons: the draft has no tool for them), as planned.
+- **`persona:save` also carries the pool mode.** The editor reuses `ModelFields`, which edits the pool mode beside the model, and the plan's `{ name, job, instructions, model }` would have dropped it. Saying nothing leaves it, `null` goes back to inheriting, and a word that is not a mode is not kept.
+- **The DOM-free module of the wizard is `personaWizardModel.ts`.** The plan names it `personaWizard.ts`, which differs from `PersonaWizard.tsx` only by case and extension, and `test/module-names-case.test.ts` refuses two modules like that in a folder. The same reason keeps `chatModel.ts` clear of `ChatThread.tsx` and `ChatMessage.tsx`.
+- **`test/attachments-view.test.ts` reads `Composer.tsx`** for the checks of the box, since the box moved out of `Thread.tsx`; a new case pins that the thread and the persona's chat both use that one file.
+- **The plural of the steps uses the catalog's own convention** (`ui.chat.work.steps_one` / `_other` with `count`).
+- **The Work section's default is `hasWork`.** Open while any node under the root works, closed after, and the person's own choice kept by `treeView` under `work:<run id>`.
+- **A call that has written nothing yet** (thinking, or using a tool) shows a pending bubble with its Work section open and Stop; the live bubble takes over at the first piece. This is not in the plan and follows from rule 34 (the Work is open while it works).
+- **`Composer`'s `className`, `hint` and `placeholder`.** Besides `mentions` and `enterSends`, the moved `Composer` takes a class for the box (`composer`, the one the jobs dock lifts above), the line under the box and the placeholder. The default of every prop is what the box did before.
+- **CHANGELOG.** This commit makes a section of Settings and a chat visible, so the entry is here (the plan had it all at commit 10); commit 10 extends it with the home.
+- **Not rendered by any test.** `ChatThread`, `ChatMessage`, `PersonaWizard` and `PersonaSection` are not rendered by the suite (the runner is a node environment); the decisions they make are in `chatModel.ts` and `personaWizard.ts` and are tested as plain functions. `npx electron-vite build` compiles them.

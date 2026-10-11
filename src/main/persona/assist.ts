@@ -1,7 +1,7 @@
 import { ASSIST_LIMITS, ASSIST_ROUND_SCHEMA, readAssistDraft, type AssistDraft } from '../../shared/agentAssist';
 import { agentThreadId } from '../../shared/forum';
 import { addAgent, isDraft, isPersona, personaDraftOf, personaOf, removeAgent, uniqueId, updateAgent } from '../../shared/config/team';
-import { LLM_ROLES, type AgentDef, type AgentModel, type WorkspaceConfig } from '../../shared/config/types';
+import { LLM_ROLES, POOL_MODES, type AgentDef, type AgentModel, type PoolMode, type WorkspaceConfig } from '../../shared/config/types';
 import { t } from '../../shared/i18n';
 import { PERSONA_REVIEW_SCHEMA, personaAccessPatch, readPersonaReview, type PersonaReview } from '../../shared/persona';
 import { draftIdFor, draftOfAgent, readAssistInput, readRoundAnswer, testConversation, type AssistInput, type RoundAnswer } from '../agentAssist-core';
@@ -232,7 +232,7 @@ export function personaFinish(raw: unknown): { id: string } {
 const modelOf = (v: unknown): AgentModel | null => (isRecord(v) && typeof v.provider === 'string' && typeof v.model === 'string' ? (structuredClone(v) as unknown as AgentModel) : null);
 
 /**
- * The editor's Save: the three texts and the model. From a paired browser the change is held to what the browser may change (a reserve model it adds is refused, as on the
+ * The editor's Save: the three texts, the model and how its pool is used. From a paired browser the change is held to what the browser may change (a reserve model it adds is refused, as on the
  * configuration route); the persona's access is not in the call at all.
  */
 export function personaSave(raw: unknown): { id: string } {
@@ -242,9 +242,11 @@ export function personaSave(raw: unknown): { id: string } {
     const texts = readAssistDraft({ name: body.name, job: body.job, instructions: body.instructions }, { name: '', job: '', instructions: '' }, redact);
     if (!texts.name) throw new AssistError(t('main.persona.error.noName'));
     const model = modelOf(body.model);
+    // How the persona's own pool is used; saying nothing leaves it, null goes back to inheriting.
+    const poolMode = (POOL_MODES as readonly unknown[]).includes(body.poolMode) ? (body.poolMode as PoolMode) : undefined;
     updateConfig((current) => {
       const here = personaNow(current);
-      const next = updateAgent(current, here.id, { ...texts, ...(model ? { model } : {}) });
+      const next = updateAgent(current, here.id, { ...texts, ...(model ? { model } : {}), ...('poolMode' in body ? { poolMode } : {}) });
       const refused = callOrigin() === 'web' ? refusedPaths(current, next) : [];
       if (refused.length) throw new AssistError(t('main.persona.error.refused', { paths: refused.join(', ') }));
       return next;

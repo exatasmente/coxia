@@ -363,6 +363,19 @@ describe('the editor', () => {
     expect(agent('me')?.stages).toEqual([]);
   });
 
+  it('saves how its pool is used: saying nothing leaves it, null goes back to inheriting, and a word that is not a mode is not kept', async () => {
+    withPersona();
+    await window('persona:save', { name: 'Me', poolMode: 'delegate' });
+    expect(agent('me')?.poolMode).toBe('delegate');
+    await window('persona:save', { name: 'Me' });
+    expect(agent('me')?.poolMode).toBe('delegate');
+    await window('persona:save', { name: 'Me', poolMode: null });
+    expect(agent('me')?.poolMode).toBeUndefined();
+    await window('persona:save', { name: 'Me', poolMode: 'switch' });
+    await window('persona:save', { name: 'Me', poolMode: 'nonsense' });
+    expect(agent('me')?.poolMode).toBeUndefined();
+  });
+
   it('cuts the texts, masks a secret, and refuses an empty name, no persona, and a model the configuration does not have', async () => {
     await expect(window('persona:save', { name: 'x' })).rejects.toThrow(/no persona yet/);
     withPersona();

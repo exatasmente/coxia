@@ -482,7 +482,8 @@ function StagesFields({ config, draft, set }: { config: WorkspaceConfig; draft: 
   );
 }
 
-function ModelFields({ config, draft, set, error }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void; error?: string }) {
+/** The fields of an agent's model (the role it borrows, or its own provider, model and reserve), shared with the persona's editor. */
+export function ModelFields({ config, draft, set, error }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void; error?: string }) {
   const t = useT();
   const byRole = draft.model.role !== null;
   const provider = config.llm.providers.find((p) => p.id === draft.model.provider);
