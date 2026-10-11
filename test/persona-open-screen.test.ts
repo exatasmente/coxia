@@ -2,7 +2,7 @@
 // parse, a ceremony the cycle has turned off, a card that is not loaded, a run that is not there are refused with the reason, and no button is made.
 import { describe, expect, it } from 'vitest';
 import { ToolError } from '../src/main/engine/open/tools/types';
-import { BUTTON_SCREENS, OPEN_SCREEN_TOOL, type ScreenFacts, createButtons, openScreenTool, whyNot } from '../src/main/persona/openScreen';
+import { BUTTON_SCREENS, OPEN_DISCUSSIONS_TOOL, OPEN_SCREEN_TOOL, type ScreenFacts, createButtons, openDiscussionsTool, openScreenTool, whyNot } from '../src/main/persona/openScreen';
 import { t } from '../src/shared/i18n';
 import { PUSH_SCREENS, parseTarget } from '../src/shared/push';
 
@@ -124,5 +124,42 @@ describe('OpenScreen', () => {
     expect(await whyNot({ to: 'call' }, facts())).toBeNull();
     expect(await whyNot({ to: 'run', id: 'r1' }, facts())).toBeNull();
     expect(await whyNot({ to: 'run', id: 'nope' }, facts())).not.toBeNull();
+  });
+
+  it('adds a discussions button for a merge request that is not a card, when its project is the workspace\'s', async () => {
+    const { buttons, run } = setup({ projects: () => ['group/app'] });
+    expect(String((await run({ to: 'discussions', project: 'group/app', number: 7 })).response)).toBe(t('main.persona.openScreen.added'));
+    expect(String((await run({ to: 'discussions', project: 'group/app', number: 7 })).response)).toBe(t('main.persona.openScreen.duplicate'));
+    expect(buttons.list()).toEqual([{ to: 'discussions', project: 'group/app', number: 7 }]);
+  });
+
+  it('refuses a merge request outside the workspace, or with no project at all, with the reason, and makes no button', async () => {
+    const { buttons, refused } = setup({ projects: () => ['group/app'] });
+    expect(await refused({ to: 'discussions', project: 'other/app', number: 7 })).toBe(t('main.feedback.projectNotAllowed', { project: 'other/app', allowed: 'group/app' }));
+    expect(await setup().refused({ to: 'discussions', project: 'group/app', number: 7 })).toBe(t('main.feedback.noProjects'));
+    expect(buttons.list()).toEqual([]);
+  });
+});
+
+describe('OpenDiscussions, the button of an agent that is not the persona', () => {
+  const tool = (projects: string[]) => {
+    const buttons = createButtons();
+    return { buttons, tool: openDiscussionsTool(() => projects, buttons) };
+  };
+
+  it('adds a button that opens nothing itself, and is not the principal\'s alone', async () => {
+    const { buttons, tool: open } = tool(['group/app']);
+    expect(open.name).toBe(OPEN_DISCUSSIONS_TOOL);
+    expect(open.principalOnly).toBeFalsy();
+    expect(String((await open.run({ project: 'group/app', number: 7 } as never, ctx)).response)).toBe(t('main.persona.openScreen.added'));
+    expect(buttons.list()).toEqual([{ to: 'discussions', project: 'group/app', number: 7 }]);
+    for (const b of buttons.list()) expect(parseTarget(b)).toEqual(b);
+  });
+
+  it('refuses a project outside the workspace and a bad number, with the reason', async () => {
+    const { buttons, tool: open } = tool(['group/app']);
+    await expect(open.run({ project: 'other/app', number: 7 } as never, ctx)).rejects.toThrow(t('main.feedback.projectNotAllowed', { project: 'other/app', allowed: 'group/app' }));
+    await expect(open.run({ project: 'group/app', number: -1 } as never, ctx)).rejects.toBeInstanceOf(ToolError);
+    expect(buttons.list()).toEqual([]);
   });
 });

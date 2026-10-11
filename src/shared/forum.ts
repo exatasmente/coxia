@@ -116,7 +116,7 @@ export interface ForumMessage {
   waitsForAnswer: boolean;
   /** A persona's answer: the `seq` of the message it answers; absent on every other message and on a message stored before the field existed. */
   answersTo?: number;
-  /** The buttons a persona's answer offers; absent on every other message. */
+  /** The buttons a persona's answer offers, or the discussions button another agent's answer offers; absent on every other message. */
   buttons?: PushTarget[];
   /** Set once the message was mirrored to the tracker. */
   published: PublishedRef | null;

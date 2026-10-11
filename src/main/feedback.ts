@@ -15,7 +15,7 @@ import type {
   ReentryPhase,
 } from '../shared/feedback';
 import { listActions, proposeVcsCommands } from './actions';
-import { askAgent, obj, str, strOrNull } from './agents';
+import { askAgent, obj, str, strOrNull, workspaceProjects } from './agents';
 import { answerCeremonyMentions } from './mentions/ceremony';
 import { returnedFromQa } from '../shared/cycles/stages';
 import { cycle, formatTime, prompt as cp, text as cycleWord } from './cyclePrompts';
@@ -28,6 +28,8 @@ import type { Module } from './module';
 import type { Notice } from './scheduler';
 import { vcsProvider, vcsReady } from './vcs';
 import { mrChangesHint } from './vcs/readPolicy';
+import { mrOutOfReach } from './vcs/readTool';
+import { crRef } from '../shared/vcs';
 import type { VcsComment, VcsThread } from './vcs/types';
 import { tv, t } from '../shared/i18n';
 
@@ -406,22 +408,44 @@ export async function listDiscussions(mrIn: MrPath): Promise<DiscussionsResult> 
   return { mr, fetchedAt: new Date().toISOString(), discussions: all.filter(isUnresolved).map((d) => viewOf(d, store[d.id])) };
 }
 
-export async function explainDiscussion(card: Card, mrIn: MrPath, id: string): Promise<DiscussionView> {
+/** A merge request named without a card is read only inside the workspace's projects, with the strict rule of a team agent; the refusal says why. */
+function checkReach(project: string, number: unknown): void {
+  const why = mrOutOfReach(project, number, workspaceProjects());
+  if (why) throw new Error(why);
+}
+
+/**
+ * The discussions of a merge request named by project and number, not by a card of the day: read each time the screen opens. Its own read of the merge request comes
+ * first, so a number the host does not know as one is refused with the reason, in words that do not claim what else the number might be.
+ */
+export async function openDiscussions(project: string, number: number): Promise<DiscussionsResult> {
+  checkReach(project, number);
+  const prov = vcsProvider();
+  try {
+    await prov.getMr(project, number);
+  } catch (e) {
+    throw new Error(t('main.feedback.mrUnreadable', { mr: crRef(prov.kind, project, number, { full: true }), reason: e instanceof Error ? e.message : String(e) }));
+  }
+  return listDiscussions({ ref: crRef(prov.kind, project, number, { full: true }), project, iid: number });
+}
+
+/** `card` is null when the screen was opened for a merge request that is not a card of the day: the prompt then names no issue and no spec. */
+export async function explainDiscussion(card: Card | null, mrIn: MrPath, id: string): Promise<DiscussionView> {
   const mr = checkMr(mrIn);
+  if (!card) checkReach(mr.project, mr.iid);
   checkDiscussionId(id);
   const d = await vcsProvider().getMrThread(mr.project, mr.iid, id);
   const notes = realNotes(d);
   const where = d.path ? `${d.path}:${d.line ?? '?'}` : cp('discussion.noLine');
-  const prompt = cp('discussion.main', {
+  const params = {
     mr: mr.ref,
-    ref: card.ref,
-    title: card.title,
-    specLine: card.spec ? cp('discussion.specLine', { folder: card.spec.folder, phase: card.spec.phase }) : '',
+    specLine: card?.spec ? cp('discussion.specLine', { folder: card.spec.folder, phase: card.spec.phase }) : '',
     where,
     id,
     notes: notes.map((n) => cp('discussion.note', { author: n.author, at: n.createdAt, body: n.body.slice(0, 4000) }, { keepEmpty: ['body'] })).join('\n'),
     viewHint: cp('discussion.viewHint', { hint: mrChangesHint(mr.project, mr.iid) }),
-  });
+  };
+  const prompt = card ? cp('discussion.main', { ...params, ref: card.ref, title: card.title }) : cp('discussion.mainMr', params);
   const r = await askAgent<{ fala: string; texto: string; ponto: string; precisa_codigo: boolean; rascunho: string }>(
     'deep',
     prompt,
@@ -487,6 +511,7 @@ export const register: Module = (ctx) => {
   ctx.handle('feedback:reentry:prepare', prepareReentry);
   ctx.handle('feedback:reentry:ask', askReentry);
   ctx.handle('feedback:discussions:list', listDiscussions);
+  ctx.handle('feedback:discussions:open', openDiscussions);
   ctx.handle('feedback:discussions:explain', explainDiscussion);
   ctx.handle('feedback:discussions:reply', proposeReply);
   ctx.handle('feedback:discussions:resolve', proposeResolve);

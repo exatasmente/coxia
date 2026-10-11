@@ -1,3 +1,5 @@
+import { t } from '../../shared/i18n';
+import { PROJECT, isMrNumber } from '../../shared/push';
 import { VcsError } from './errors';
 import type { VcsProvider } from './types';
 import { checkIid } from './util';
@@ -48,6 +50,17 @@ function parse(input: unknown): { op: VcsReadOp; project: string; iid: number } 
 export function projectAllowed(project: string, allowed: readonly string[], strict = false): boolean {
   if (!allowed.length) return !strict;
   return allowed.some((p) => p.toLowerCase() === project.toLowerCase());
+}
+
+/**
+ * Why a merge request named by project and number, not by a card of the day, may not be read, in the person's language; null when it may. The check is the strict one of a
+ * team agent: a workspace that names no project refuses, and says what to set.
+ */
+export function mrOutOfReach(project: string, number: unknown, allowed: readonly string[]): string | null {
+  if (!PROJECT.test(project) || !isMrNumber(number)) return t('main.feedback.badMrTarget', { project: project.slice(0, 120) || '—', number: String(number ?? '—').slice(0, 20) });
+  if (!allowed.length) return t('main.feedback.noProjects');
+  if (!projectAllowed(project, allowed, true)) return t('main.feedback.projectNotAllowed', { project, allowed: allowed.join(', ') });
+  return null;
 }
 
 /** Runs one read and returns text for the model. Throws a translated VcsError for a bad input, a project outside the workspace or a failing host. */

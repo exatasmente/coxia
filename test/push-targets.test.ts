@@ -77,4 +77,29 @@ describe('the screen a target opens on a device', () => {
     expect(targetToScreen({ to: 'deep' }, true)).toBeNull();
     for (const to of ['settings', 'history', 'actions', 'retro']) expect(targetToScreen({ to }, true)).toEqual({ name: to });
   });
+
+  it('opens the discussions of a merge request by project and number, without a card, and of a card by its ref as before', () => {
+    expect(targetToScreen({ to: 'discussions', project: 'group/app', number: 7 }, false)).toEqual({ name: 'discussions', project: 'group/app', number: 7 });
+    expect(targetToScreen({ to: 'discussions', ref: 'app#1', mr: 'x' }, true)).toEqual({ name: 'discussions', ref: 'app#1', mr: 'x' });
+    expect(targetToScreen({ to: 'discussions' }, true)).toBeNull();
+  });
+});
+
+describe('a merge request named by project and number', () => {
+  it('is a discussions target without a ref, and round-trips through the query a push opens', () => {
+    const target = { to: 'discussions', project: 'group/app', number: 7 };
+    expect(parseTarget(target)).toEqual(target);
+    expect(targetFromSearch(`?${targetQuery(target)}`)).toEqual(target);
+    expect(noticeTarget({ type: 'open', screen: { name: 'discussions', project: 'group/app', number: 7 } } as never)).toEqual(target);
+  });
+
+  it('refuses half of it, a bad project or number, and the pair on another screen', () => {
+    expect(parseTarget({ to: 'discussions', project: 'group/app' })).toBeNull();
+    expect(parseTarget({ to: 'discussions', number: 7 })).toBeNull();
+    expect(parseTarget({ to: 'discussions', project: 'app', number: 7 })).toBeNull();
+    expect(parseTarget({ to: 'discussions', project: 'group/app', number: 0 })).toBeNull();
+    expect(parseTarget({ to: 'discussions', project: 'group/app', number: 1.5 })).toBeNull();
+    expect(parseTarget({ to: 'deep', ref: 'app#1', project: 'group/app', number: 7 })).toBeNull();
+    expect(targetFromSearch('?open=discussions&project=group/app&number=7abc')).toBeNull();
+  });
 });

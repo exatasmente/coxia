@@ -164,6 +164,8 @@ type Say = (key: string, params?: Record<string, string | number>) => string;
 
 /** The words of a button: "Start the pre-daily", "Open the board", "Open the QA hand-off for #123". `ceremony` is what the workspace calls its pre-daily. */
 export function buttonLabel(target: PushTarget, say: Say, ceremony: string): string {
+  // A merge request that is not a card of the day is named by its project and number: the button says which one it opens.
+  if (target.to === 'discussions' && target.project && target.number) return say('ui.chat.button.discussionsMr', { project: target.project, number: target.number });
   const key = target.to === 'forum' && target.id ? 'ui.chat.button.forumThread' : (BUTTON_KEY[target.to] ?? 'ui.chat.button.other');
   return say(key, { ceremony, ref: target.ref ?? '', id: target.id ?? '' });
 }

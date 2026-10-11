@@ -25,6 +25,8 @@ export function targetToScreen(t: PushTarget, hasCards: boolean, noPersona = fal
     case 'reentry':
       return t.ref ? { name: t.to, ref: t.ref } : null;
     case 'discussions':
+      // A merge request named by project and number opens without a card; otherwise the card's ref, as before.
+      if (t.project && t.number) return { name: 'discussions', project: t.project, number: t.number };
       return t.ref ? { name: 'discussions', ref: t.ref, mr: t.mr } : null;
     case 'conflict':
       return t.id ? { name: 'conflict', id: t.id } : null;
