@@ -1,7 +1,12 @@
 // The discussions of a merge request that is not a card of the day: named by project and number, read only inside the workspace's projects (the strict rule of a team
 // agent), refused with the reason otherwise, and explained without a card in the prompt.
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { t } from '../src/shared/i18n';
+import { messageText } from '../src/shared/forum';
+import { type ForumStore, createForumStore } from '../src/main/forum-core';
 import type { VcsThread } from '../src/main/vcs/types';
 
 const state = vi.hoisted(() => ({ projects: [] as string[], prompts: [] as string[], mrs: new Set<string>(), reads: [] as string[] }));
@@ -33,15 +38,24 @@ vi.mock('../src/main/agents', async (orig) => ({
   },
 }));
 
-const { openDiscussions, explainDiscussion } = await import('../src/main/feedback');
+const forumState = vi.hoisted(() => ({ store: null as ForumStore | null }));
+vi.mock('../src/main/forum', async (orig) => ({ ...(await orig<typeof import('../src/main/forum')>()), forumStore: () => forumState.store }));
+
+const { openDiscussions, explainDiscussion, discussionsOpened } = await import('../src/main/feedback');
 const { mrOutOfReach } = await import('../src/main/vcs/readTool');
+
+let dir: string;
 
 beforeEach(() => {
   state.projects = ['group/app'];
   state.prompts = [];
   state.reads = [];
   state.mrs = new Set(['group/app!7']);
+  dir = mkdtempSync(join(tmpdir(), 'coxia-discussions-opened-'));
+  forumState.store = createForumStore(dir);
 });
+
+afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('mrOutOfReach', () => {
   it('lets a merge request of a workspace project through, whatever the case of the project', () => {
@@ -84,6 +98,32 @@ describe('openDiscussions', () => {
     expect((err as Error).message).toContain('404 Not Found');
     expect((err as Error).message).not.toMatch(/issue/i);
     expect(state.reads.some((x) => x.startsWith('threads'))).toBe(false);
+  });
+});
+
+describe('the line a conversation keeps of what was opened from it', () => {
+  const offer = (thread: string) => {
+    forumState.store!.ensureThread({ id: thread, kind: 'general', title: 'Talk' });
+    return forumState.store!.append(thread, { kind: 'post', author: { type: 'agent', id: 'dev' }, text: 'Here they are.', buttons: [{ to: 'discussions', project: 'group/app', number: 7 }] });
+  };
+
+  it('says, in the thread, which merge request was opened from its button, without reading the host', () => {
+    offer('general');
+    expect(discussionsOpened('general', 'group/app', 7)).toBe(true);
+    const last = forumState.store!.read('general', 0, 100)?.messages.at(-1);
+    expect(last).toMatchObject({ kind: 'system', author: { type: 'app' }, code: 'main.feedback.opened', params: { project: 'group/app', number: 7 } });
+    expect(messageText(last!)).toContain('group/app');
+    expect(messageText(last!)).toContain('7');
+    expect(state.reads).toEqual([]);
+  });
+
+  it('writes nothing for a merge request no button of that thread offers, nor for a bad request', () => {
+    offer('general');
+    expect(discussionsOpened('general', 'group/app', 8)).toBe(false);
+    expect(discussionsOpened('general', 'other/app', 7)).toBe(false);
+    expect(discussionsOpened('general', 'group/app', '7')).toBe(false);
+    expect(discussionsOpened(7, 'group/app', 7)).toBe(false);
+    expect(forumState.store!.read('general', 0, 100)?.messages.filter((m) => m.kind === 'system')).toEqual([]);
   });
 });
 

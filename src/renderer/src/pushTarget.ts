@@ -38,3 +38,9 @@ export function targetToScreen(t: PushTarget, hasCards: boolean, noPersona = fal
       return { name: t.to } as Screen;
   }
 }
+
+/** The screen a button under an answer opens: a merge request named by project and number comes back to `back`, the conversation the button is in. */
+export function buttonScreen(t: PushTarget, hasCards: boolean, back: Screen): Screen | null {
+  const next = targetToScreen(t, hasCards);
+  return next?.name === 'discussions' && 'project' in next ? { ...next, back } : next;
+}

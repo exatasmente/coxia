@@ -2,6 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
 import type { OpenScreenInfo } from '../../../../shared/browser';
 import { type ForumMessage, MAX_MENTIONS, type MessageKind, messageText } from '../../../../shared/forum';
+import type { PushTarget } from '../../../../shared/push';
+import { Buttons } from '../persona/ChatMessage';
 import { type QuestionChain, commandRound, groupThread } from '../../../../shared/forumView';
 import { type Run, canSendBack } from '../../../../shared/runs';
 import { mentionJob } from '../../../../shared/activity';
@@ -54,6 +56,8 @@ interface Ctx {
   view: (name: string) => void;
   /** Deletes a message and the files it carried: the store records the removal and the files go with it. */
   remove: (m: ForumMessage) => void;
+  /** A tap on a button an agent's answer offers (the discussions of a merge request); absent, the buttons are not drawn. */
+  open?: (target: PushTarget) => void;
 }
 
 function useTarget(team: readonly AgentDef[] | undefined): (to: string | null) => string {
@@ -132,6 +136,8 @@ function Message({ m, ctx, inChain = false }: { m: ForumMessage; ctx: Ctx; inCha
           {m.evidence?.map((a) => <EvidenceAttachment key={a.id} runId={ctx.runId as string} attachment={a} />)}
         </p>
       )}
+      {/* The button stays here, with its target, until someone taps it: nothing opens by itself, and no one's window moves. */}
+      {ctx.open && m.author.type === 'agent' && m.buttons && <Buttons targets={m.buttons} ceremony="" onOpen={ctx.open} />}
       {(ctx.calls.get(m.seq) ?? []).map((g) => <CallLine key={g.runId} group={g} team={ctx.team} screen={screenOfCall(ctx.screens, g.thread, g.agent)} onWatch={ctx.watch} />)}
       {m.author.type === 'person' && m.mentions.length > 0 && (
         <>
@@ -269,10 +275,12 @@ interface Props {
   onSendBack?: () => void;
   /** The run screen shows the requests to hand a screen over at its top (RunHandoff), so this thread leaves them out of its list of questions. */
   handoffAbove?: boolean;
+  /** A tap on a button an agent's answer offers; absent (the wizard's test), the buttons are not drawn. */
+  onOpen?: (target: PushTarget) => void;
 }
 
 /** A thread read and written: messages by kind with their author and where they stand, the chain of each question, live, and the box to write in. */
-export function Thread({ thread, run = null, team, title, onSendBack, handoffAbove = false }: Props) {
+export function Thread({ thread, run = null, team, title, onSendBack, handoffAbove = false, onOpen }: Props) {
   const t = useT();
   const live = useThread(thread);
   const runId = run?.id ?? null;
@@ -299,7 +307,7 @@ export function Thread({ thread, run = null, team, title, onSendBack, handoffAbo
     }
     return byMessage;
   }, [activity, thread]);
-  const ctx: Ctx = { team, runId, calls, screens, watch: setWatching, view: setViewing, remove: setRemoving };
+  const ctx: Ctx = { team, runId, calls, screens, watch: setWatching, view: setViewing, remove: setRemoving, open: onOpen };
 
   // What is on screen is read: the thread counts as seen up to its last message.
   useEffect(() => {

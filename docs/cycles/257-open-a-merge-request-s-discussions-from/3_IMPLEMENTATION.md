@@ -1,97 +1,65 @@
 # Discussões de uma MR abertas por projeto e número
 
-A tela de discussões passa a abrir uma merge request pelo projeto (`group/repo`) e pelo número, sem card do dia. Ela abre por um botão sob uma resposta numa conversa: o da persona ou o de qualquer outro agente que responde ali. Nada abre sem a pessoa tocar.
+A tela de discussões passa a abrir uma merge request pelo projeto (`group/repo`) e pelo número, sem card do dia. Ela abre por um botão sob uma resposta numa conversa: o da persona ou o de qualquer outro agente que responde ali (chat da persona, Fórum ou conversa de execução). Nada abre sem a pessoa tocar. Ao tocar, a conversa ganha uma linha dizendo qual MR foi aberta, e o voltar da tela leva de volta a essa conversa.
 
-## O que mudou, por arquivo
+## O que mudou nesta tentativa (bloqueantes da revisão)
 
-### Destino e validação
-- `src/shared/push.ts`
-  - `PushTarget` ganha `project` e `number` (decisão Q1 do plano: campo novo, nada reaproveitado de `id` ou `mr`).
-  - `parseTarget` aceita o par só quando ele vem inteiro e só para `discussions`; `discussions` com o par dispensa `ref`.
-  - `targetQuery`, `targetFromSearch` e `noticeTarget` carregam o par. Na URL, o número é só dígitos.
-  - Exporta `PROJECT` e `isMrNumber`.
-- `src/renderer/src/pushTarget.ts`: um destino com o par vira a tela `{ name: 'discussions', project, number }`.
-- `src/main/forum-core.ts`: o esquema do botão gravado na mensagem aceita `project` e `number`.
+1. **Botão em conversa de execução (critério 5 / regra 18).** `src/renderer/src/screens/cycle/Thread.tsx` ganhou `onOpen`: com ele, a mensagem de um agente que traz `buttons` mostra os botões (o mesmo `Buttons` de `ChatMessage.tsx`). `RunScreen.tsx` (aba de conversa) e `ForumScreen.tsx` passam `onOpen`. O teste do assistente continua sem botões (sem `onOpen`).
+2. **Linha de sistema no thread (critério 4 / regra 16).**
+   - `src/renderer/src/openButton.ts` (novo): um toque num botão abre a tela neste dispositivo. Quando o destino é discussões por projeto e número, chama `feedbackApi.discussionsOpened(thread, project, number)`. A linha é registro, não portão: a tela abre mesmo se a gravação falhar.
+   - `src/main/feedback.ts`: `discussionsOpened` (canal `feedback:discussions:opened`) grava `{ kind: 'system', code: 'main.feedback.opened', params: { project, number } }`, mas só se uma mensagem daquele thread carrega um botão com aquele par. Nenhum chamador escreve uma linha sobre outra coisa, e nada é lido do host.
+   - Texto `main.forum.code.main.feedback.opened` nos dois catálogos (`main.en.json`, `main.pt-BR.json`).
+3. **Voltar à conversa (critério 14).**
+   - `App.tsx`: a rota `{ name: 'discussions', project, number, back? }`.
+   - `Discussions.tsx`: usa `back` (HOME quando falta) nos dois botões de voltar.
+   - `pushTarget.ts`: `buttonScreen(target, hasCards, back)` põe o `back` só no destino por projeto e número. O destino por `ref` fica como antes.
+   - O `back` de cada superfície: o chat da persona volta a HOME, que é o chat; o Fórum volta a `{ name: 'forum', thread }`; a execução volta a `{ name: 'run', id, tab: 'forum' }`.
 
-### Rigor de projeto
-- `src/main/vcs/readTool.ts`: `mrOutOfReach(project, number, allowed)` aplica a regra estrita da ferramenta de leitura.
-  - Recusa com motivo um nome malformado (`main.feedback.badMrTarget`).
-  - Recusa um workspace sem projetos (`main.feedback.noProjects`).
-  - Recusa um projeto fora da lista (`main.feedback.projectNotAllowed`).
-- `src/main/feedback.ts`
-  - `openDiscussions(project, number)` confere o alcance antes de qualquer leitura do host. Depois lê a MR (`getMr`): se o host não a dá, recusa com `main.feedback.mrUnreadable`, sem dizer o que o número seria. Só então lista os threads.
-  - Handler novo: `feedback:discussions:open`.
-  - `explainDiscussion(card | null, …)`: sem card, confere o alcance e usa o prompt `discussion.mainMr`, sem a issue, o título e a linha da spec (decisão Q4, alternativa a). Com card, nada muda.
-- `src/main/retention-core.ts`: registra o prompt novo.
+## Sugestões da revisão também tratadas
 
-### Os botões
-- `src/main/persona/openScreen.ts`
-  - `OpenScreen` aceita `project` e `number` para `discussions`. `whyNot` confere o par com `facts.projects()`.
-  - A chave de repetição dos botões inclui o par, e o teto de quatro não muda.
-  - Ferramenta nova `OpenDiscussions` (`openDiscussionsTool`) para um agente que não é a persona: recebe projeto e número, recusa com motivo e só acrescenta um botão (decisão Q2).
-- `src/main/persona/runtime.ts`: `projects: workspaceProjects` nos fatos da persona.
-- `src/main/mentions/answer.ts`
-  - Um agente que não é a persona recebe `OpenDiscussions` nas ferramentas da resposta.
-  - A mensagem dele carrega `buttons` só quando ele ofereceu um.
-- `src/renderer/src/chatModel.ts`: `buttonLabel` diz a MR (`ui.chat.button.discussionsMr`, `{project}{crMark}{number}`).
-- `src/renderer/src/screens/persona/ChatMessage.tsx` e `ChatThread.tsx`: a bolha de outro agente mostra os botões dele.
-- `src/shared/forum.ts`: comentário do campo `buttons`.
+- `src/shared/push.ts`: `PROJECT` recusa segmentos feitos só de pontos (`../..`, `group/..`, `./app`, `group/.`).
+- Testes novos:
+  - `test/mentions-open-discussions.test.ts` (novo), sobre a fiação de `answerMentions`:
+    - o agente ofereceu e a mensagem leva `buttons`;
+    - não ofereceu e a mensagem vai sem `buttons`;
+    - o projeto está fora do workspace: recusa com motivo ao modelo e nenhum botão.
+  - `test/discussions-by-mr.test.ts`: `discussionsOpened` grava a linha só para um botão que o thread carrega e recusa par ou tipos que não batem.
+  - `test/push-targets.test.ts`:
+    - `buttonScreen` com `back` só para o par;
+    - `openButton` registra a linha só para o par;
+    - os nomes com pontos são recusados.
 
-### A tela
-- `src/renderer/src/App.tsx`: rota nova de `discussions` por `project` e `number`; a rota por `ref` continua igual.
-- `src/renderer/src/screens/Discussions.tsx`, sem card:
-  - lê a lista ao abrir e no Atualizar, sem trabalho na barra de jobs;
-  - explica sem job;
-  - o cabeçalho cita a MR (`ui.discussions.headerMr`, `ui.discussions.mrName`);
-  - não oferece responder nem resolver e diz por quê (`ui.discussions.noCard`).
-  - Com card, o comportamento de hoje fica.
-- `src/renderer/src/feedbackApi.ts`: `openDiscussions`; `explainDiscussion` aceita `null`.
+## O que já estava feito (tentativas anteriores, conferido pelo código)
 
-### Textos
-- Chaves novas nos dois catálogos: `ui-persona`, `ui-gate`, `main`, e o prompt `prompt.sdd.discussion.mainMr` em `en.json` e `pt-BR.json`.
-
-### CHANGELOG
-- `Unreleased › Added`.
-
-## Testes
-
-- `test/discussions-by-mr.test.ts` (novo), com o provedor e o agente falsos. Cobre:
-  - `mrOutOfReach` nas três recusas;
-  - a lista só com threads não resolvidos;
-  - a nova leitura a cada abertura;
-  - a recusa antes de ler do host;
-  - o número que o host não dá como MR, recusado sem citar issue;
-  - a explicação sem card, com prompt sem issue, e sua recusa fora do workspace sem chamar o modelo.
-- `test/push-targets.test.ts`:
-  - o par passa por `parseTarget`, pela URL e por `noticeTarget`;
-  - meio par, nome ruim, número ruim e o par em outra tela são recusados;
-  - `targetToScreen` por par e por `ref`.
-- `test/persona-open-screen.test.ts`:
-  - o botão da persona por par, com repetição e com as recusas;
-  - `OpenDiscussions`: só acrescenta um botão, não é da persona e recusa com motivo.
-- `test/chat-model.test.ts`: o rótulo cita a MR nos dois idiomas, e o rótulo por `ref` fica.
+- O destino `PushTarget` com `project` e `number` (Q1), validado em `push.ts`, `pushTarget.ts` e `openScreen.ts`.
+- `mrOutOfReach` estrito em `readTool.ts`, aplicado antes de qualquer leitura do host em `openDiscussions` e em `explainDiscussion` sem card.
+- `explainDiscussion(null, …)` com o prompt `discussion.mainMr` (Q4 a).
+- A tela sem card: lê a cada abertura, sem job, sem responder nem resolver.
+- A ferramenta `OpenDiscussions` para quem não é a persona (Q2).
+- O rótulo do botão com `{project}{crMark}{number}`.
+- `CHANGELOG.md`: a entrada em Unreleased › Added foi completada nesta tentativa com a linha na conversa e o voltar.
 
 ## Verificação (rodado nesta tentativa)
 
 - `npx tsc --noEmit`: ok.
-- `npx vitest run` nos 4 arquivos acima: 72 testes passam.
-- `npx vitest run` completo: 8201 passam, 2 falham e 15 são pulados.
-  - As falhas ficam em 4 arquivos de navegador (`browser-contract`, `browser-runtime`, `browser-sites`, `browser-quit`).
-  - O erro é `Cannot find module '@playwright/mcp/...'`: a dependência falta no `node_modules` deste worktree. Esta mudança não toca esses arquivos.
-- `npm run i18n:lint`: ok.
+- `npx vitest run` nos 6 arquivos tocados (`discussions-by-mr`, `push-targets`, `mentions-open-discussions`, `persona-open-screen`, `chat-model`, `jobs`): 102 passam.
+- `npx vitest run` completo, duas vezes:
+  - 1ª: 13 falhas em 5 arquivos. Uma era `test/conflict-resolve.test.ts` ("este conflito já tem um passo em andamento"); rodado sozinho, passa 22/22.
+  - 2ª: 8210 passam, 2 falham e 15 são pulados. As falhas ficam só nos 4 arquivos de navegador (`browser-contract`, `browser-runtime`, `browser-sites`, `browser-quit`), por `@playwright/mcp` ausente no `node_modules` deste worktree. Esta mudança não toca esses arquivos.
+- `npm run i18n:lint`: ok (5927 chaves nos dois idiomas).
 - `node scripts/theme-audit.mjs`: ok.
 - `node scripts/public-audit.mjs`: ok.
 
 ## Não verificado
 
-- A tela não foi aberta no app: nenhum cenário de interface rodou.
+- A tela não foi aberta no app; nenhum cenário de interface rodou.
 - `electron-vite build` não rodou.
-- O botão de um agente numa conversa de execução (regra 18) não foi exercitado: como o thread de execução mostra `buttons` não foi conferido.
+- O desenho da linha de sistema no chat da persona, no Fórum e na execução não foi visto na tela, só gravado pelo teste.
 - O celular pareado (Q3) não foi testado.
+- A oscilação de `conflict-resolve` sob carga não foi investigada; fica fora do escopo.
 
 ## Diferenças em relação à spec, para a revisão
 
-- **Regra 16, a linha de sistema no thread:** não implementada. O app não registra no thread o que foi aberto.
-- **Critério 14:** o voltar da tela leva à home, que hoje é o chat, e não à conversa exata de onde veio.
-- **Q5 e regra 4, o escopo de execução:** a ferramenta usa os projetos do workspace e não estreita pela execução.
+- **Q5 / regra 4, o escopo de execução:** a ferramenta usa os projetos do workspace e não estreita a lista pela execução. É decisão da pessoa.
 - **Q6:** a recusa de um número que o host não dá como MR repete o motivo do host e não afirma o que o número é.
+- A linha de sistema é gravada ao tocar no botão, no main, para um botão que o thread carrega. Ela não confirma que a leitura da tela deu certo: uma recusa aparece na própria tela.

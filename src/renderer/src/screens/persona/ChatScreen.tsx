@@ -8,9 +8,9 @@ import type { Ceremony } from '../../ceremony';
 import { Chevron } from '../../ActivityTree';
 import { cardOpen, cardParts } from '../../chatModel';
 import { useCycle } from '../../cycleApi';
-import { OVERVIEW, ceremonyCard, homeCounts } from '../../home';
+import { HOME, OVERVIEW, ceremonyCard, homeCounts } from '../../home';
 import { useT } from '../../i18n';
-import { targetToScreen } from '../../pushTarget';
+import { openButton } from '../../openButton';
 import { useIsPhone } from '../../useIsPhone';
 import { useWatcherAlerts } from '../../watchersApi';
 import type { AgoraPlan } from '../../dashboard';
@@ -74,8 +74,7 @@ export function ChatScreen({ ceremony: c, go, persona, team, actions }: Props) {
 
   // A tap on a button of an answer opens that screen on this device only.
   const open = (target: PushTarget): void => {
-    const next = targetToScreen(target, !!c.cards);
-    if (next) go(next);
+    if (persona) openButton(target, { thread: agentThreadId(persona.id), hasCards: !!c.cards, back: HOME, go });
   };
 
   return (

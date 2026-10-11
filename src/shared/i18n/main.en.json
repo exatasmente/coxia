@@ -1378,6 +1378,7 @@
   "main.turnAsk.notice.body.stage": "It used {used} turns. Continue for {round} more, or finish now?",
   "main.turnAsk.notice.body.sub": "A sub-agent ({task}) used {used} turns. Continue for {round} more, or finish now?",
   "main.forum.code.main.forum.mentions.unknown": "No agent of the team goes by {names}.",
+  "main.forum.code.main.feedback.opened": "The discussions of {project}{crMark}{number} were opened from this conversation.",
   "main.forum.code.main.mentions.ceremony.failed": "{agent} could not answer in the ceremony: {reason}",
   "main.mentions.noRepo": "no repository is at hand in this place, so no command can run here",
   "main.mentions.ceremony.failed": "{agent} could not answer: {reason}",

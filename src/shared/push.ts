@@ -31,8 +31,8 @@ export interface PushStatus {
 export const PUSH_SCREENS = ['chat', 'overview', 'board', 'procedures', 'memory', 'today', 'call', 'deep', 'ata', 'history', 'settings', 'actions', 'conflict', 'gate', 'qa', 'retro', 'custo', 'quick', 'reentry', 'discussions', 'radar', 'saude', 'auditoria', 'help', 'glossario', 'run', 'runs', 'forum'];
 const NEEDS_REF = new Set(['deep', 'gate', 'qa', 'quick', 'reentry', 'discussions']);
 const FIELD = /^[\w#.:/-]{1,80}$/;
-/** "group/repo", the form the cards carry a project in. */
-export const PROJECT = /^[\w.-]{1,60}\/[\w.-]{1,60}$/;
+/** "group/repo", the form the cards carry a project in; a part made only of dots ("..") is no name. */
+export const PROJECT = /^(?!\.+\/)[\w.-]{1,60}\/(?!\.+$)[\w.-]{1,60}$/;
 
 export const isMrNumber = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n) && n > 0 && n < 1e9;
 

@@ -1,9 +1,20 @@
 // The vocabulary of where a notification, a push or a persona's button takes the person. The names added for the persona's chat are valid targets, the older ones are kept,
 // and what is not a name of the vocabulary is still refused.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { PUSH_SCREENS, noticeTarget, parseTarget, targetFromSearch, targetQuery } from '../src/shared/push';
 import { HOME } from '../src/renderer/src/home';
-import { targetToScreen } from '../src/renderer/src/pushTarget';
+import { buttonScreen, targetToScreen } from '../src/renderer/src/pushTarget';
+import { openButton } from '../src/renderer/src/openButton';
+
+const opened = vi.hoisted(() => [] as unknown[][]);
+vi.mock('../src/renderer/src/feedbackApi', () => ({
+  feedbackApi: {
+    discussionsOpened: async (...args: unknown[]) => {
+      opened.push(args);
+      return true;
+    },
+  },
+}));
 
 describe('parseTarget', () => {
   it.each(['chat', 'overview', 'today', 'call', 'board', 'procedures', 'memory'])('accepts %s', (to) => {
@@ -101,5 +112,34 @@ describe('a merge request named by project and number', () => {
     expect(parseTarget({ to: 'discussions', project: 'group/app', number: 1.5 })).toBeNull();
     expect(parseTarget({ to: 'deep', ref: 'app#1', project: 'group/app', number: 7 })).toBeNull();
     expect(targetFromSearch('?open=discussions&project=group/app&number=7abc')).toBeNull();
+  });
+
+  it('refuses a project whose part is only dots, and keeps a name that only has dots in it', () => {
+    for (const project of ['../..', '../app', 'group/..', './app', 'group/.']) expect(parseTarget({ to: 'discussions', project, number: 7 })).toBeNull();
+    expect(parseTarget({ to: 'discussions', project: 'group/app.v2', number: 7 })?.project).toBe('group/app.v2');
+    expect(parseTarget({ to: 'discussions', project: '.github/site', number: 7 })?.project).toBe('.github/site');
+  });
+});
+
+describe('a button tapped under an answer in a conversation', () => {
+  const back = { name: 'run', id: 'r1', tab: 'forum' } as const;
+
+  it('opens the discussions of a merge request with Back to that conversation', () => {
+    expect(buttonScreen({ to: 'discussions', project: 'group/app', number: 7 }, false, back)).toEqual({ name: 'discussions', project: 'group/app', number: 7, back });
+  });
+
+  it('leaves every other screen as a notice would open it', () => {
+    expect(buttonScreen({ to: 'discussions', ref: 'app#1', mr: 'x' }, true, back)).toEqual({ name: 'discussions', ref: 'app#1', mr: 'x' });
+    expect(buttonScreen({ to: 'board' }, true, back)).toEqual({ name: 'board' });
+    expect(buttonScreen({ to: 'discussions' }, true, back)).toBeNull();
+  });
+
+  it('asks main for the line of the conversation only for a merge request named by project and number, and opens the screen either way', async () => {
+    opened.length = 0;
+    const went: unknown[] = [];
+    openButton({ to: 'discussions', project: 'group/app', number: 7 }, { thread: 'run-r1', hasCards: false, back, go: (s) => went.push(s) });
+    openButton({ to: 'board' }, { thread: 'run-r1', hasCards: false, back, go: (s) => went.push(s) });
+    expect(opened).toEqual([['run-r1', 'group/app', 7]]);
+    expect(went).toEqual([{ name: 'discussions', project: 'group/app', number: 7, back }, { name: 'board' }]);
   });
 });

@@ -30,6 +30,8 @@ import { vcsProvider, vcsReady } from './vcs';
 import { mrChangesHint } from './vcs/readPolicy';
 import { mrOutOfReach } from './vcs/readTool';
 import { crRef } from '../shared/vcs';
+import { isMrNumber } from '../shared/push';
+import { forumStore } from './forum';
 import type { VcsComment, VcsThread } from './vcs/types';
 import { tv, t } from '../shared/i18n';
 
@@ -429,6 +431,19 @@ export async function openDiscussions(project: string, number: number): Promise<
   return listDiscussions({ ref: crRef(prov.kind, project, number, { full: true }), project, iid: number });
 }
 
+/**
+ * The line a conversation keeps when the person opened, from one of its buttons, the discussions of a merge request named by project and number. Written only for a
+ * button a message of that thread really carries, so no caller writes a line about anything else; nothing is read from the host.
+ */
+export function discussionsOpened(thread: unknown, project: unknown, number: unknown): boolean {
+  if (typeof thread !== 'string' || typeof project !== 'string' || !isMrNumber(number)) return false;
+  const forum = forumStore();
+  const offered = forum.read(thread, 0, 2000)?.messages.some((m) => m.buttons?.some((b) => b.to === 'discussions' && b.project === project && b.number === number));
+  if (!offered) return false;
+  forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'main.feedback.opened', params: { project, number } });
+  return true;
+}
+
 /** `card` is null when the screen was opened for a merge request that is not a card of the day: the prompt then names no issue and no spec. */
 export async function explainDiscussion(card: Card | null, mrIn: MrPath, id: string): Promise<DiscussionView> {
   const mr = checkMr(mrIn);
@@ -512,6 +527,7 @@ export const register: Module = (ctx) => {
   ctx.handle('feedback:reentry:ask', askReentry);
   ctx.handle('feedback:discussions:list', listDiscussions);
   ctx.handle('feedback:discussions:open', openDiscussions);
+  ctx.handle('feedback:discussions:opened', discussionsOpened);
   ctx.handle('feedback:discussions:explain', explainDiscussion);
   ctx.handle('feedback:discussions:reply', proposeReply);
   ctx.handle('feedback:discussions:resolve', proposeResolve);

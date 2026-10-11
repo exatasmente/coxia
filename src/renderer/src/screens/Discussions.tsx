@@ -35,10 +35,11 @@ export function Discussions({
   card,
   initialMr,
   target,
+  back = HOME,
   ceremony: c,
   player,
   go,
-}: { card: Card | undefined; initialMr: string | undefined; target?: { project: string; number: number }; ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
+}: { card: Card | undefined; initialMr: string | undefined; target?: { project: string; number: number }; back?: Screen; ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
   const t = useT();
   const mrs = card?.mrPaths ?? [];
   // A merge request that is not a card of the day: no card, no job, and the list read every time the screen opens.
@@ -176,7 +177,7 @@ export function Discussions({
   };
 
   if (!card && !byMr) {
-    return <div className="page"><div className="wrap"><div className="error">{t('ui.discussions.notFound')}</div><div><button type="button" className="btn" onClick={() => go(HOME)}>{t('ui.discussions.back')}</button></div></div></div>;
+    return <div className="page"><div className="wrap"><div className="error">{t('ui.discussions.notFound')}</div><div><button type="button" className="btn" onClick={() => go(back)}>{t('ui.discussions.back')}</button></div></div></div>;
   }
 
   const body = current ? (drafts[current.id] ?? current.explanation?.draft ?? '') : '';
@@ -187,7 +188,7 @@ export function Discussions({
     <div className="page">
       <div className="wrap" style={{ maxWidth: 940, gap: 18 }}>
         <header className="panel-dark hero" style={HEADER_STYLE}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.discussions.back')} onClick={() => go(HOME)}><BackIcon /></button>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.discussions.back')} onClick={() => go(back)}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
             {card ? (
               <>

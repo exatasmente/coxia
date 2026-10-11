@@ -1378,6 +1378,7 @@
   "main.turnAsk.notice.body.stage": "Usou {used} passos. Continuar por mais {round}, ou terminar agora?",
   "main.turnAsk.notice.body.sub": "Um subagente ({task}) usou {used} passos. Continuar por mais {round}, ou terminar agora?",
   "main.forum.code.main.forum.mentions.unknown": "Nenhum agente do time se chama {names}.",
+  "main.forum.code.main.feedback.opened": "As discussões de {project}{crMark}{number} foram abertas a partir desta conversa.",
   "main.forum.code.main.mentions.ceremony.failed": "{agent} não conseguiu responder na cerimônia: {reason}",
   "main.mentions.noRepo": "não há repositório à mão neste lugar, então nenhum comando pode rodar aqui",
   "main.mentions.ceremony.failed": "{agent} não conseguiu responder: {reason}",

@@ -59,8 +59,8 @@ export function PersonBubble({ m, waiting }: { m: ForumMessage; waiting: boolean
   );
 }
 
-/** The buttons an answer offers, worded by the app from their targets. A tap opens the screen on this device only. */
-function Buttons({ targets, ceremony, onOpen }: { targets: readonly PushTarget[]; ceremony: string; onOpen: (target: PushTarget) => void }) {
+/** The buttons an answer offers, worded by the app from their targets. A tap opens the screen on this device only. A run's thread draws the same ones. */
+export function Buttons({ targets, ceremony, onOpen }: { targets: readonly PushTarget[]; ceremony: string; onOpen: (target: PushTarget) => void }) {
   const t = useT();
   if (!targets.length) return null;
   return (
