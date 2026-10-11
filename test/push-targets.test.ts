@@ -2,6 +2,7 @@
 // and what is not a name of the vocabulary is still refused.
 import { describe, expect, it } from 'vitest';
 import { PUSH_SCREENS, noticeTarget, parseTarget, targetFromSearch, targetQuery } from '../src/shared/push';
+import { HOME } from '../src/renderer/src/home';
 import { targetToScreen } from '../src/renderer/src/pushTarget';
 
 describe('parseTarget', () => {
@@ -43,16 +44,27 @@ describe('the URL and the notice of a target', () => {
 });
 
 describe('the screen a target opens on a device', () => {
-  it('opens a plain screen for the screens a persona\'s button names, and the home and the Overview land on Today until they exist as screens', () => {
+  it('opens a plain screen for the screens a persona\'s button names', () => {
     expect(targetToScreen({ to: 'board' }, true)).toEqual({ name: 'board' });
     expect(targetToScreen({ to: 'procedures' }, true)).toEqual({ name: 'procedures' });
     expect(targetToScreen({ to: 'memory' }, true)).toEqual({ name: 'memory' });
-    expect(targetToScreen({ to: 'chat' }, true)).toEqual({ name: 'today' });
-    expect(targetToScreen({ to: 'overview' }, true)).toEqual({ name: 'today' });
   });
 
-  it('opens the pre-daily only with the cards loaded, as before', () => {
+  it('opens the Overview for `overview` and for `today`, its old name, and the home for `chat` (which is the Overview until the chat is a screen)', () => {
+    expect(targetToScreen({ to: 'overview' }, true)).toEqual({ name: 'overview' });
+    expect(targetToScreen({ to: 'today' }, true)).toEqual({ name: 'overview' });
+    expect(targetToScreen({ to: 'today' }, false)).toEqual({ name: 'overview' });
+    expect(targetToScreen({ to: 'chat' }, true)).toEqual(HOME);
+  });
+
+  it('opens the pre-daily only with the cards loaded, as before, and the home without them', () => {
     expect(targetToScreen({ to: 'call' }, true)).toEqual({ name: 'call' });
-    expect(targetToScreen({ to: 'call' }, false)).toEqual({ name: 'today' });
+    expect(targetToScreen({ to: 'call' }, false)).toEqual(HOME);
+  });
+
+  it('remembers that a deep dive came from the home, and lets the plain names open as they did', () => {
+    expect(targetToScreen({ to: 'deep', ref: 'group/project#123' }, true)).toEqual({ name: 'deep', ref: 'group/project#123', back: 'chat' });
+    expect(targetToScreen({ to: 'deep' }, true)).toBeNull();
+    for (const to of ['settings', 'history', 'actions', 'retro']) expect(targetToScreen({ to }, true)).toEqual({ name: to });
   });
 });

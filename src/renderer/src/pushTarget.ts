@@ -1,17 +1,20 @@
 import type { PushTarget } from '../../shared/push';
 import type { Screen } from './App';
+import { HOME } from './home';
 
-/** The screen a notification target opens; the call needs the cards loaded, so without them it lands on Hoje. */
+/** The screen a notification target opens; the call needs the cards loaded, so without them it lands on the home. */
 export function targetToScreen(t: PushTarget, hasCards: boolean): Screen | null {
   switch (t.to) {
     case 'call':
-      return hasCards ? { name: 'call' } : { name: 'today' };
-    // The home and the Overview are Today until the chat exists as a screen.
+      return hasCards ? { name: 'call' } : HOME;
+    // The home is the Overview until the chat exists as a screen. `today` is the old name of what the Overview holds, and stays accepted.
     case 'chat':
+      return HOME;
     case 'overview':
-      return { name: 'today' };
+    case 'today':
+      return { name: 'overview' };
     case 'deep':
-      return t.ref ? { name: 'deep', ref: t.ref, back: 'today' } : null;
+      return t.ref ? { name: 'deep', ref: t.ref, back: 'chat' } : null;
     case 'gate':
     case 'qa':
     case 'quick':

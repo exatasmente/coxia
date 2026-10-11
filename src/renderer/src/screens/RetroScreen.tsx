@@ -12,6 +12,7 @@ import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 import { intlLocale, t, useT, useVoiceEnabled } from '../i18n';
+import { HOME } from '../home';
 
 function Items({ title, items, tone }: { title: string; items: RetroItem[]; tone: string }) {
   const t = useT();
@@ -101,7 +102,7 @@ export function RetroScreen({ ceremony: c, player, go }: { ceremony: Ceremony; p
           className="panel-dark hero"
           style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }} // i18n-ignore: CSS shorthand
         >
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.retro.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.retro.back')} onClick={() => go(HOME)}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
             <div className="small" style={{ color: 'var(--night-teal)', fontWeight: 600 }}>{week ? t('ui.retro.headingWeek', { week }) : t('ui.retro.heading')}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{t('ui.retro.tagline')}</div>

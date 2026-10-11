@@ -11,6 +11,7 @@ import { BackIcon } from './icons';
 import { RichText } from './Diagram';
 import { ChangeSummary, DayPanel, DeleteSheet, TrashSection, clockTime, versionTitle } from './MinutesParts';
 import { type Which, minutesApi, useDay } from '../minutesApi';
+import { HOME } from '../home';
 
 function time(ms: number | null): string {
   return ms ? new Date(ms).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) : '--:--';
@@ -74,7 +75,7 @@ export function History({ go }: { go: (s: Screen) => void }) {
     <div className="page">
       <div className="wrap" style={{ gap: 20 }}>
         <header className="row" style={{ gap: 14 }}>
-          <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go(HOME)}><BackIcon /></button>
           <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.history.title')}</h1>
           <span className="faint">{entries ? t('ui.history.count', { count: entries.length }) : ''}</span>
         </header>

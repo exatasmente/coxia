@@ -13,6 +13,7 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { RichText } from './Diagram';
 import { BackIcon } from './icons';
 import { Presence } from './Avatar';
+import { HOME } from '../home';
 
 const HEADER_STYLE: CSSProperties = { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }; // i18n-ignore: CSS value
 const SPEAKER = 'discussão'; // i18n-ignore: speaker id
@@ -135,7 +136,7 @@ export function Discussions({
   };
 
   if (!card) {
-    return <div className="page"><div className="wrap"><div className="error">{t('ui.discussions.notFound')}</div><div><button type="button" className="btn" onClick={() => go({ name: 'today' })}>{t('ui.discussions.back')}</button></div></div></div>;
+    return <div className="page"><div className="wrap"><div className="error">{t('ui.discussions.notFound')}</div><div><button type="button" className="btn" onClick={() => go(HOME)}>{t('ui.discussions.back')}</button></div></div></div>;
   }
 
   const body = current ? (drafts[current.id] ?? current.explanation?.draft ?? '') : '';
@@ -146,7 +147,7 @@ export function Discussions({
     <div className="page">
       <div className="wrap" style={{ maxWidth: 940, gap: 18 }}>
         <header className="panel-dark hero" style={HEADER_STYLE}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.discussions.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.discussions.back')} onClick={() => go(HOME)}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
             <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>{t('ui.discussions.header', { mr: mr?.ref ?? t('ui.discussions.noMr'), iid: card.iid })}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>

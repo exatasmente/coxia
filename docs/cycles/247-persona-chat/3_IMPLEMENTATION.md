@@ -107,3 +107,17 @@ Deviations and decisions:
 - **`Composer`'s `className`, `hint` and `placeholder`.** Besides `mentions` and `enterSends`, the moved `Composer` takes a class for the box (`composer`, the one the jobs dock lifts above), the line under the box and the placeholder. The default of every prop is what the box did before.
 - **CHANGELOG.** This commit makes a section of Settings and a chat visible, so the entry is here (the plan had it all at commit 10); commit 10 extends it with the home.
 - **Not rendered by any test.** `ChatThread`, `ChatMessage`, `PersonaWizard` and `PersonaSection` are not rendered by the suite (the runner is a node environment); the decisions they make are in `chatModel.ts` and `personaWizard.ts` and are tested as plain functions. `npx electron-vite build` compiles them.
+
+## Commit 7: Today becomes the Overview, and every back goes to one home constant
+
+Built as planned: `git mv screens/Today.tsx screens/Overview.tsx` (the component is `Overview`, its content and header untouched); `src/renderer/src/home.ts` with `HOME` (the Overview for now); the screen `today` is `overview` in the union of `App.tsx`, which opens on `HOME`; all the "back" sites of the plan's search (24 files, `go(HOME)`, plus the default of `RunScreen`'s `back` and the two shortcuts that toggle a screen with the home) ask for the constant; `targetToScreen`, `bottomNavActive` and the tests.
+
+Deviations and decisions:
+
+- **`chat` is not in the screen union yet.** There is no chat screen until commit 8, so the `chat` target resolves to `HOME` (the Overview now), and the plan's `deep` with `back: 'chat'` is `back: 'chat'` resolved by `deepBack` to `HOME`. Commit 8 adds the screen and points `chat` at it; commit 9 flips `HOME`.
+- **`overview` and `today` resolve to the Overview by name, not through `HOME`.** If they went through the constant, flipping `HOME` to the chat in commit 9 would move every notice that means the Overview.
+- **`section` of the Overview is commit 8's.** The strip is what opens a section; adding the field now would be a member nothing sets.
+- **The `navigate` event now goes through `targetToScreen`.** The window used to build `{ name: ev.to }` itself, which cannot be typed once `today` is not a screen; the names that existed open the same screens, `today` opens the Overview and the pre-daily without cards opens the home. The main process still sends `today` and `call`: the senders change in commit 9, as planned.
+- **Nothing a person reads changes.** The labels that name "Today" (`ui.nav.backToday` and the others), the first item of the bar (still the item `today`, marked on the Overview) and the notices' fallback (`{ to: 'today' }` in `jobNotify.ts`) wait for commit 9, which rewords and lists them in `INTENDED`.
+- **`TodayParts.tsx` keeps its name.** It holds the parts of the Overview (the Agora card, the tiles, the needs list); renaming it is churn the plan does not ask for, and nothing in the folder clashes with it.
+- **`test/home-model.test.ts` starts here.** The plan puts the file at commit 8 (`homeView`, `homeCounts`, the menu); the constant and the scan that holds "no screen names the Overview but the home and the vocabulary" are tested now, and the file grows in 8.

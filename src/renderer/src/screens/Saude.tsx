@@ -7,6 +7,7 @@ import { saudeApi } from '../saudeApi';
 import { jobs, useJobs } from '../useJobs';
 import { ErrorsSection } from './ErrorsSection';
 import { BackIcon } from './icons';
+import { HOME } from '../home';
 
 const when = (iso: string | null) =>
   iso ? new Date(iso).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : t('ui.health.never');
@@ -45,7 +46,7 @@ export function Saude({ go }: { go: (s: Screen) => void }) {
       <div className="wrap" style={{ gap: 20 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.nav.health')}</h1>
             {snap && <span className="faint">{snap.problems ? t('ui.health.problems', { count: snap.problems }) : t('ui.health.allGood')}</span>}
           </div>

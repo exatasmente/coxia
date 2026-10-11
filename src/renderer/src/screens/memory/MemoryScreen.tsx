@@ -11,6 +11,7 @@ import { BADGE_LABEL, KIND_LABEL, NOTE_KIND_LIST, NO_FILTERS, badgesOf, distinct
 import { memoryApi } from './memoryApi';
 import '../cycle/cycle.css';
 import './memory.css';
+import { HOME } from '../../home';
 
 // The Memory view: every note the agents kept, grouped by conversation and by the agent that wrote it, each opening into its text, who wrote it and when. It reads whatever the
 // workspace switch says. The person reads, edits, marks reviewed and removes notes, and removes a folder; the same from the window and from a paired browser (the phone has
@@ -134,7 +135,7 @@ export function MemoryScreen({ go }: { go: (s: Screen) => void }) {
       <div className="wrap cy-wrap">
         <header className="row spread cy-top">
           <div className="row cy-top-main">
-            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 className="cy-title">{t('ui.memory.title')}</h1>
           </div>
           {view && <span className="faint">{t('ui.memory.shown', { shown: shown.length, total: view.items.length })}</span>}

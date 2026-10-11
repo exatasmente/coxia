@@ -19,7 +19,7 @@ import { WorktreeBadge } from './radarSlots';
 export function needTargetToScreen(t: NeedTarget): Screen {
   switch (t.to) {
     case 'deep':
-      return { name: 'deep', ref: t.ref, back: 'today' };
+      return { name: 'deep', ref: t.ref, back: 'chat' };
     case 'gate':
       return { name: 'gate', ref: t.ref, card: t.card };
     case 'conflict':
@@ -223,7 +223,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
             {card.spec && on?.gate !== false && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>{t('ui.today.row.gate')}</button>}
             {card.spec && on?.qaHandoff !== false && <button type="button" className="btn" onClick={() => go({ name: 'qa', ref: card.ref, card })} /* i18n-ignore */>QA</button>}
             <ResolveConflict card={card} go={go} place="act" />
-            <button type="button" className="btn btn-dark" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>{t('ui.today.deepen')}</button>
+            <button type="button" className="btn btn-dark" onClick={() => go({ name: 'deep', ref: card.ref, back: 'chat' })}>{t('ui.today.deepen')}</button>
           </div>
         </div>
       )}

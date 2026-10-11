@@ -34,21 +34,22 @@ import { RetroScreen } from './screens/RetroScreen';
 import { Saude } from './screens/Saude';
 import { SettingsScreen } from './screens/Settings';
 import { BottomNav } from './screens/BottomNav';
-import { Today } from './screens/Today';
+import { Overview } from './screens/Overview';
 import { JobsDock } from './JobsDock';
 import { UpdatePrompt } from './UpdatePrompt';
 import { UpdateToast } from './UpdateToast';
 import { useReportUpdateBusy } from './updateApi';
 import { useJobsSnapshot } from './useJobs';
+import { type DeepBack, HOME } from './home';
 import { targetToScreen } from './pushTarget';
 import { useWorkspaces } from './workspaceApi';
 import { SetupWizard } from './wizard/SetupWizard';
 import { wizardApi } from './wizard/wizardApi';
 
 export type Screen =
-  | { name: 'today' }
+  | { name: 'overview' }
   | { name: 'call' }
-  | { name: 'deep'; ref: string; back: 'today' | 'call'; card?: Card }
+  | { name: 'deep'; ref: string; back: DeepBack; card?: Card }
   | { name: 'ata' }
   | { name: 'history' }
   | { name: 'settings' }
@@ -88,7 +89,7 @@ export function App() {
   const ceremony = useCeremony();
   useWorkspaces();
   const player = usePlayer();
-  const [screen, setScreen] = useState<Screen>({ name: 'today' });
+  const [screen, setScreen] = useState<Screen>(HOME);
   const [actions, setActions] = useState<ReleaseAction[]>([]);
   // A workspace whose setup never finished lands in the wizard; one that did (every migrated install) never sees it unless it is opened.
   const [setup, setSetup] = useState<'checking' | 'needed' | 'done'>('checking');
@@ -133,7 +134,7 @@ export function App() {
           // The board follows what became of its proposals (approved, skipped, failed) without asking Actions itself.
           moduleEvents.dispatchEvent(new CustomEvent('actions:changed'));
         }
-        else if (ev.type === 'deep') go({ name: 'deep', ref: ev.card.ref, back: 'today', card: ev.card });
+        else if (ev.type === 'deep') go({ name: 'deep', ref: ev.card.ref, back: 'chat', card: ev.card });
         else if (ev.type === 'conflict') go({ name: 'conflict', id: ev.id });
         else if (ev.type === 'open') go(ev.screen as unknown as Screen);
         else if (ev.type === 'module') moduleEvents.dispatchEvent(new CustomEvent(ev.name, { detail: ev.payload }));
@@ -142,8 +143,11 @@ export function App() {
           setSpeechEnabled(ev.settings.voice.speak);
           setBargeIn(ev.settings.voice.bargeIn);
         }
-        else if (ev.to === 'call') go(cards ? { name: 'call' } : { name: 'today' });
-        else go({ name: ev.to });
+        else {
+          // The old names stay: a tray entry or a notice that says `today` opens the Overview, and the pre-daily without cards opens the home.
+          const next = targetToScreen({ to: ev.to }, !!cards);
+          if (next) go(next);
+        }
       }),
     // go only touches the player and the screen state
     [mergeStatus, cards],
@@ -178,8 +182,8 @@ export function App() {
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
   const view = ((): ReactElement => { switch (screen.name) {
-    case 'today':
-      return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} />;
+    case 'overview':
+      return <Overview ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} />;
     case 'call':
       return <Call ceremony={ceremony} player={player} go={go} />;
     case 'deep':

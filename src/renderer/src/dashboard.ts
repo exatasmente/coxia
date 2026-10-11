@@ -273,7 +273,7 @@ export function tempoSegments(issues: TempoIssue[]): TempoSegment[] {
 export type NavKey = 'today' | 'call' | 'actions' | 'history' | 'more';
 
 const NAV_ACTIVE: Record<string, NavKey> = {
-  today: 'today',
+  overview: 'today',
   actions: 'actions',
   history: 'history',
   settings: 'more',

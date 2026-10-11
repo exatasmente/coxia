@@ -28,6 +28,7 @@ import { Thread } from './Thread';
 import { agentName, squadName } from './names';
 import { patchRun, runsApi, useRun, useRunConfig } from './runsApi';
 import './cycle.css';
+import { HOME } from '../../home';
 
 const ROUTED_KEY = {
   repo: 'ui.cycle.routed.repo',
@@ -92,7 +93,7 @@ function FlowNote({ run, current }: { run: Run; current: string }) {
 }
 
 /** One run: who it waits for and what to do about it, the stages as a timeline, the live work of the agent, and the review rounds. */
-export function RunScreen({ id, go, ceremony, actions, back = { name: 'today' }, tab: initialTab = 'cycle' }: Props) {
+export function RunScreen({ id, go, ceremony, actions, back = HOME, tab: initialTab = 'cycle' }: Props) {
   const t = useT();
   const narrow = useNarrow();
   const [tab, setTab] = useState<'cycle' | 'forum'>(initialTab);

@@ -28,7 +28,7 @@ type Filter = 'all' | 'blocked' | 'ask';
 
 const TOP = 3;
 
-export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[] }) {
+export function Overview({ ceremony: c, go, pendingActions, actions }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[] }) {
   const t = useT();
   const tv = useTv();
   const phone = useIsPhone();
@@ -252,7 +252,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         <div className="cer">
           <h3>{t('ui.today.unblock')}</h3>
           <p className="small muted">{blocked.length ? t('ui.today.withBlockers', { count: blocked.length }) : t('ui.today.noneBlocked')}</p>
-          <button type="button" className="btn" disabled={!firstBlocked} onClick={() => firstBlocked && go({ name: 'deep', ref: firstBlocked.ref, back: 'today' })}>
+          <button type="button" className="btn" disabled={!firstBlocked} onClick={() => firstBlocked && go({ name: 'deep', ref: firstBlocked.ref, back: 'chat' })}>
             {firstBlocked ? t('ui.today.deepenIssue', { iid: firstBlocked.iid }) : t('ui.today.deepen')}
           </button>
         </div>

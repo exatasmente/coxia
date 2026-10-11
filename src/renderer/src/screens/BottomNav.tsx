@@ -11,6 +11,7 @@ import { useSeen, useThreads } from './cycle/forumApi';
 import { useRuns } from './cycle/runsApi';
 import { waitingRuns } from './cycle/RunNeeds';
 import { Sheet } from './Sheet';
+import { HOME } from '../home';
 
 interface Props {
   screen: Screen['name'];
@@ -92,7 +93,7 @@ export function BottomNav({ screen, go, pendingActions, hasCards, callLive }: Pr
   return (
     <>
       <nav className="bnav" aria-label={t('ui.nav.mainLabel')}>
-        {item('today', t('ui.nav.today'), <HomeIcon />, () => go({ name: 'today' }))}
+        {item('today', t('ui.nav.today'), <HomeIcon />, () => go(HOME))}
         {item('call', tv('nav.call'), voiceOn ? <CallIcon /> : <ChatIcon />, () => go({ name: 'call' }), { disabled: !hasCards, live: callLive, ariaLabel: callLive ? tv('nav.call.live') : tv('nav.call') })}
         {item('actions', t('ui.nav.actions'), <ActionsIcon />, () => go({ name: 'actions' }), { badge: pendingActions, ariaLabel: pendingActions ? t('ui.nav.actionsPending', { count: pendingActions }) : t('ui.nav.actions') })}
         {item('history', t('ui.nav.history'), <HistoryIcon />, () => go({ name: 'history' }))}

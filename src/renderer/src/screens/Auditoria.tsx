@@ -4,6 +4,7 @@ import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { intlLocale, useT } from '../i18n';
 import { BackIcon } from './icons';
+import { HOME } from '../home';
 
 // A plain string is a product name; { key } is a catalog key translated when the row renders.
 const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
@@ -76,7 +77,7 @@ export function Auditoria({ go }: { go: (s: Screen) => void }) {
     <div className="page">
       <div className="wrap" style={{ gap: 16 }}>
         <header className="row" style={{ gap: 14 }}>
-          <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go(HOME)}><BackIcon /></button>
           <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.audit.title')}</h1>
           <span className="faint">{rows ? t('ui.audit.shownOf', { shown: shown.length, total: rows.length }) : ''}</span>
           <input

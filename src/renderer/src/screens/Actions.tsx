@@ -12,6 +12,7 @@ import { isRunProposal, RunProposal } from './cycle/RunProposal';
 import { SuggestionCard, isSuggestion } from './SuggestionCard';
 import { PluginActionCard, isPluginAction } from './PluginActionCard';
 import { BackIcon } from './icons';
+import { HOME } from '../home';
 
 const STATE_LABEL: Record<ReleaseAction['state'], string> = {
   pending: 'ui.actions.state.pending',
@@ -272,7 +273,7 @@ export function Actions({ actions, go }: { actions: ReleaseAction[]; go: (s: Scr
       <div className="wrap" style={{ maxWidth: 1100, gap: 18 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label={t('ui.actions.backToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.actions.backToday')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.actions.title')}</h1>
           </div>
           <div className="row">

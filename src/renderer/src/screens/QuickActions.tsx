@@ -9,6 +9,7 @@ import { useT } from '../i18n';
 import { quickApi } from '../gitlabQuickApi';
 import { jobs, useJobs } from '../useJobs';
 import { BackIcon } from './icons';
+import { HOME } from '../home';
 
 function MrBlock({ mr, members, busy, replacesReviewers, onPropose }: { mr: QuickMr; members: QuickMember[] | undefined; busy: boolean; replacesReviewers: boolean; onPropose: (r: QuickRequest) => void }) {
   const t = useT();
@@ -134,7 +135,7 @@ export function QuickActions({ card, go }: { card: Card | undefined; go: (s: Scr
       <div className="wrap" style={{ maxWidth: 900, gap: 18 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label={t('ui.quick.backToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.quick.backToday')} onClick={() => go(HOME)}><BackIcon /></button>
             <div>
               <div className="faint">{t('ui.quick.kicker')}</div>
               <h1 style={{ fontSize: 24, fontWeight: 700 }}>{card ? `#${card.iid} ${card.title}` : t('ui.quick.notFound')}</h1>

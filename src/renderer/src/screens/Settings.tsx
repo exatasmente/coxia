@@ -23,6 +23,7 @@ import { DocsSection } from './DocsSection';
 import { ConfigWorkspacesSection } from './ConfigWorkspacesSection';
 import { TeamSettings } from './team/TeamSettings';
 import { PersonaSection } from './persona/PersonaSection';
+import { HOME } from '../home';
 
 // The tables hold catalog keys; they are translated at render so the language switches live.
 const ROLES: [ModelRole, string, string][] = [
@@ -122,7 +123,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
       <div className="wrap" style={{ maxWidth: 980, gap: 20 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label={t('ui.settings.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.settings.back')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('settings.title')}</h1>
           </div>
           <div className="row">

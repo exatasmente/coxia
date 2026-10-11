@@ -13,6 +13,7 @@ import { squadName } from './names';
 import { Thread } from './Thread';
 import { useRunConfig, useRuns } from './runsApi';
 import './cycle.css';
+import { HOME } from '../../home';
 
 const ALL = '';
 
@@ -144,7 +145,7 @@ export function ForumScreen({ go, thread }: { go: (s: Screen) => void; thread?: 
       <div className="wrap cy-wrap">
         <header className="row spread cy-top">
           <div className="row cy-top-main">
-            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 className="cy-title">{t('ui.forum.title')}{unread > 0 ? <span className="badge cy-unread cy-title-badge" aria-label={t('ui.forum.list.unreadAll', { count: unread })}>{unread}</span> : null}</h1>
           </div>
         </header>
