@@ -48,6 +48,14 @@ export interface Door {
   finish(session: AnswerSession): void;
 }
 
+/** A value of a write's argument with the answer's masked values taken out of every text in it, JSON included; the shape and the other types stay. */
+function maskedArg(value: unknown, mask: (text: string) => string): unknown {
+  if (typeof value === 'string') return mask(value);
+  if (Array.isArray(value)) return value.map((x) => maskedArg(x, mask));
+  if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([k, x]) => [k, maskedArg(x, mask)]));
+  return value;
+}
+
 const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
 const cut = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
@@ -162,6 +170,9 @@ export function createDoor(deps: DoorDeps = {}): Door {
     const values: Values = { ...checked.values };
     const why = op.write ? oneLine(String(input.why)) : '';
     for (const spec of op.args) if (spec.secret && typeof values[spec.name] === 'string') session.maskValue(values[spec.name] as string);
+    // What the persona writes is masked as well as what it reads: a value it read or was given to set must not be pasted into a comment, a post, a note or an answer, whatever it
+    // does with it. The arguments marked secret are the values themselves, and go as given.
+    if (op.write) for (const spec of op.args) if (!spec.secret && values[spec.name] !== undefined) values[spec.name] = maskedArg(values[spec.name], mask);
     // Text composed for the code host is signed by the app, never by the model, and only when the persona is the one who composed it.
     for (const name of op.hostText ?? []) if (typeof values[name] === 'string') values[name] = signHostText(values[name] as string);
 

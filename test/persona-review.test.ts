@@ -11,7 +11,7 @@ import { agentThreadId } from '../src/shared/forum';
 vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0', whenReady: () => Promise.resolve() }, BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] }, dialog: {}, nativeImage: {} }));
 
 const { bindIpc, handle } = await import('../src/main/rpc');
-const { personaDoor } = await import('../src/main/persona/door');
+const { createDoor, personaDoor } = await import('../src/main/persona/door');
 const { createSession } = await import('../src/main/persona/session');
 const { listAudit } = await import('../src/main/auditoria');
 const { forumStore } = await import('../src/main/forum');
@@ -120,3 +120,44 @@ describe('a secret that runs a command', () => {
   });
 });
 
+
+describe('what the persona writes is masked as what it reads is', () => {
+  const VALUE = 'correct-horse-battery-staple-9';
+  const table = [
+    { tool: 'Board' as const, op: 'probe', channel: 't:probe', write: true, args: [{ name: 'body', type: 'text' as const }, { name: 'title', type: 'string' as const }, { name: 'data', type: 'json' as const }, { name: 'token', type: 'text' as const, secret: true }, { name: 'n', type: 'integer' as const }] },
+  ];
+  const seen: unknown[][] = [];
+  handle('t:probe', ((...args: unknown[]) => (seen.push(args), 'ok')) as never);
+
+  it('takes a value the answer holds out of a text, a string and a JSON argument before the handler runs, and gives the secret-marked ones as they are', async () => {
+    const door = createDoor({ table, hooks: () => ({ build: (v) => [v.body, v.title, v.data, v.token, v.n] }), stopped: () => false });
+    const s = session();
+    s.maskValue(VALUE);
+    await door.run(s, 'Board', { op: 'probe', body: `the key is ${VALUE}`, title: `t ${VALUE}`, data: { a: [`x ${VALUE}`, 3], b: { c: VALUE, ok: true } }, token: 'given-token-value', n: 4, why });
+    expect(seen.at(-1)).toEqual(['the key is [secret]', 't [secret]', { a: ['x [secret]', 3], b: { c: '[secret]', ok: true } }, 'given-token-value', 4]);
+    expect(JSON.stringify(seen.at(-1))).not.toContain(VALUE);
+  });
+
+  it('does not touch the arguments of a read', async () => {
+    const reads = [{ ...table[0], op: 'look', write: false }];
+    const door = createDoor({ table: reads, hooks: () => ({ build: (v) => [v.body] }), stopped: () => false });
+    const s = session();
+    s.maskValue(VALUE);
+    await door.run(s, 'Board', { op: 'look', body: VALUE });
+    expect(seen.at(-1)).toEqual([VALUE]);
+  });
+
+  it('keeps a value read through Secrets out of the text of a comment the persona posts, through the whole door', async () => {
+    const { secrets } = await import('../src/main/secrets');
+    const rpc = await import('../src/main/rpc');
+    process.env.PERSONA_REVIEW_SECRET = VALUE;
+    secrets().set({ ref: 'test.review', source: 'env', name: 'PERSONA_REVIEW_SECRET' });
+    const s = session();
+    expect(await personaDoor.run(s, 'Secrets', { op: 'read', ref: 'test.review', why })).toContain(VALUE);
+    const posted: unknown[][] = [];
+    rpc.handle('forum:post', ((...args: unknown[]) => (posted.push(args), { ok: true })) as never);
+    await personaDoor.run(s, 'Conversations', { op: 'post', thread: THREAD, text: `Here it is: ${VALUE}`, why });
+    expect(JSON.stringify(posted)).not.toContain(VALUE);
+    expect(JSON.stringify(posted)).toContain('[secret]');
+  });
+});
