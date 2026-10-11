@@ -123,3 +123,50 @@ Deviations and decisions:
 - **Two links, one tap each**: **Audit** (`{ to: 'auditoria', id }`) and the button the line's target makes, both through the chat's `open`, so a tap moves the device it was tapped on and no navigation event is sent. In the wizard's test (`compact`) the lines are text only.
 - **A refused act is drawn with the error tokens** (`--red-soft`, `--red-ink`, `--red-line`), a raise with the existing `badge-ask`.
 - **Not seen:** the line's layout at 360 px and in the dark theme, the Audit screen's scroll to the entry from the chat. Compiled by `npx electron-vite build` and decided by plain functions in the tests.
+
+## Commit 8: document what the persona can do now
+
+Built as planned: `docs/persona.md` in both languages (the first paragraph and the review item no longer say the persona only chats; the starting access is said to be the configuration's, not the tools'; the buttons bullet; new bullets for the act lines and the Stop in the chat; new sections "What the persona does" with the table of the eleven tools, "The Audit" and "The Stop"; the phone paragraph; the latch file under "where the personal text lives"; the "not verified" lists), the two README rows, the row of `docs/README.md`, the two Audit bullets of `docs/runner.md`, the CHANGELOG completed (the footer sentence and a "Changed" line for the documentation), `test/persona-docs.test.ts` and `test/persona-phone.test.ts`.
+
+Deviations and decisions:
+
+- **`test/persona-phone.test.ts` was not written with the door (commit 4), as the plan has it, but here**, because it needs the tools offered. It goes through the HTTP door (`invoke`, labelled `web`) with the real mentions module and a fake model: a message from a paired browser makes the persona save the configuration (denied to a browser by `webAccess`), the audit says `door: paired`, a message from the window says `window`, and a message written from the phone while the persona is stopped keeps `paired` when it is answered after Resume.
+- **`test/persona-docs.test.ts` reads the repository's own `docs/persona.md` and the two READMEs** (not the computer's documentation): neither language says the persona only chats, the eleven tools and `persona-latch.json` are named, and the links to its own sections land on a heading.
+- **The documentation says "301 channels"** as the plan counted them; the pinned-table test is what keeps the number true, and the page names the file rather than listing them.
+- **`docs/configuration.md` and `docs/cycles.md` are unchanged**: they say the persona does not travel and stays out of the cycle, which is still true, and the schema stays 30.
+
+## Delivery against the acceptance criteria
+
+Where each criterion is held (all of these pass in the full suite at commit 8):
+
+1. **The four from the issue** (a setting, a card's priority, an approval, a hold): `persona-tools.test.ts` ("the four acts of the issue"), through the real `answerMentions` and the open engine against a fake server, with the audit lines, the four act lines before the answer and the proposal's line unclaimed; `persona-door.test.ts` drives the same four through the door.
+2. **Stop**: `persona-stop.test.ts` (the latch set before the call returns, the model call halted, every call registered in the persona's thread ended, one stopped line, a message written afterwards held, Resume answering in order), `persona-door.test.ts` (a call on its way when the Stop comes is refused with no handler run), `persona-tools.test.ts` ("the Stop").
+3. **Stop is the person's**: `persona-stop.test.ts` ("the channels"), `persona-policy.test.ts`, `persona-door-table.test.ts` (no operation names them), `persona-door.test.ts` (a persona that asks to resume is told it cannot); the latch's restart and unreadable-file cases in `persona-stop.test.ts`.
+4. **Not undone**: `persona-door.test.ts` and `persona-tools.test.ts` (an approval in flight finishes, is audited and is named by the stopped line).
+5. **The origin**: `persona-origin.test.ts` (including the scan that nothing but `rpc.ts` names `callOrigin`).
+6. **The act's scope**: `persona-door.test.ts` and `persona-origin.test.ts` (what a handler leaves running writes as itself); `persona-worded-run.test.ts` (a run's history says who).
+7. **The table**: `persona-door-table.test.ts`.
+8. **The tools**: `persona-tools-schema.test.ts`, `persona-tools.test.ts` (the same names to both engines' request, a sub-agent, a called agent, the test copy and an ordinary agent given none, an invalid argument read as an error with no audit line), `persona-tools-sdk.test.ts` (the Claude path's names, loose described fields and the sub-agent guard).
+9. **Approvals, with proposals**: `persona-worded.test.ts` (`proposedBy` and the approval's line), `persona-test-workspace.test.ts`.
+10. **The audit says who for the lines that did not exist**: `persona-audit.test.ts`.
+11. **What it read**: `persona-audit.test.ts`, `persona-door.test.ts`.
+12. **Secrets**: `persona-secrets.test.ts` and, through a whole answer, `persona-tools.test.ts` ("a secret the persona read").
+13. **The chat**: `persona-acts-chat.test.ts` (stored, before the answer, the cap of thirty, refused, raised) and `chat-model.test.ts` (worded in both languages from the stored facts).
+14. **Not the person's**: `persona-worded.test.ts` and `persona-worded-run.test.ts`.
+15. **Own permissions**: `persona-audit.test.ts`, `persona-door.test.ts`, `persona-tools.test.ts` (raised, and a save that gives the persona a stage refused).
+16. **Test workspace**: `persona-test-workspace.test.ts`.
+17. **Phone**: `persona-phone.test.ts`, `persona-stop.test.ts` ("the channels").
+18. **The audit screen**: `audit-model.test.ts` and `persona-audit.test.ts` (no channel writes the audit); the screen itself is not rendered by a test.
+19. **No schema change**: the schema tests (`docs-schema-version`, `config-schema`) pass unchanged; the schema is 30 and the JSON Schema is the same.
+20. **Wording and theme**: the catalog and `ui-i18n` tests, `persona-wording.test.ts` (the wizard's line, the Settings intro and the prompts no longer say it cannot act), `persona-docs.test.ts`, the theme audit and the i18n lint.
+
+### Not verified
+
+- **No model of either engine was used**: the tools were driven by a fake OpenAI server and a scripted Claude SDK. Whether real models call the eleven tools well, and what the descriptions cost them (about 11,000 tokens an answer by character count), is unknown.
+- **The Claude SDK was checked by hand once** for the three points of the plan's "real checks" (above). Not checked: the SDK's tool-search deferral with eleven tools on a real answer, and a real sub-agent of the app (the check used a sub-agent defined by the script).
+- **No window was opened**: the act line, the Stop button, the indicator, the banner, the Audit screen's filter and folded basis, the memory and procedure marks and the Actions badge were compiled (`npx electron-vite build`) and tested as plain functions; none was rendered or seen, at 360 px or in the dark theme. The plan's run of the app with a virtual display, pressing Stop on the computer and through the HTTP door, was **not** done.
+- **The stop was never pressed against a real running app or a real host.** The in-flight approval is a fake host.
+- **The words of the 194 operations** were written from the code and have not been read by someone who knows each screen.
+- **The Q2 default of `raised`** (the four checks plus a workspace autonomy switch going on and a new `allowedCommands` entry) is as the plan chose; the maintainer's answer was "the plan's default".
+- **A stage skipped by the persona** still counts as a manual stage in the suggestions' evidence (it reads the stage's status), while its answers and gate decisions do not.
+- **A host shell the persona gave itself ends the guarantees** (spec, risks): the Stop and the Audit are limits of the app's doors.

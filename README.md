@@ -34,7 +34,7 @@
 
 ## What it does
 
-- **A persona and a chat that opens the app.** The app opens on a chat with your *persona*, a representative you make in a few minutes with an AI that asks who you are, how you decide, what matters to you and what you never want done. It answers as it writes, shows the work behind each answer, and offers buttons that open a ceremony or a screen. It only chats and reads in this version. See [Persona and chat](docs/persona.md).
+- **A persona and a chat that opens the app.** The app opens on a chat with your *persona*, a representative you make in a few minutes with an AI that asks who you are, how you decide, what matters to you and what you never want done. It answers as it writes, shows the work behind each answer, and offers buttons that open a ceremony or a screen. It also acts in the app on your behalf, through eleven tools over what a person does there: every act is in the chat and in the Audit under its name, with its reason and what it had read, and a Stop halts it on the computer and on the phone. See [Persona and chat](docs/persona.md).
 - **Pre-stand-up.** Before the daily, one agent per open task checks the issue, its merge or pull requests, the pipeline, the review threads and the spec, and tells you what changed and what is stuck. You answer by voice or text; the app produces the minutes.
 - **Unblock and deep dive.** Talk a problem through with an agent that has already read the code, the specs and your team's rules, and that can look things up on the code host. It is read-only: it explains and proposes, it does not edit your repository.
 - **Gate quiz.** Before a task moves on, a short quiz generated from the spec checks that you understand what you are about to ship.

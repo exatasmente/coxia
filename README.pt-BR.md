@@ -34,7 +34,7 @@ Português (Brasil) | [English](README.md)
 
 ## O que faz
 
-- **Uma persona e um chat que abre o app.** O app abre num chat com a sua *persona*, um representante que você cria em poucos minutos com uma IA que pergunta quem você é, como você decide, o que importa para você e o que você nunca quer que se faça. Ela responde enquanto escreve, mostra o trabalho por trás de cada resposta e oferece botões que abrem uma cerimônia ou uma tela. Nesta versão ela só conversa e lê. Veja [Persona e chat](docs/persona.md).
+- **Uma persona e um chat que abre o app.** O app abre num chat com a sua *persona*, um representante que você cria em poucos minutos com uma IA que pergunta quem você é, como você decide, o que importa para você e o que você nunca quer que se faça. Ela responde enquanto escreve, mostra o trabalho por trás de cada resposta e oferece botões que abrem uma cerimônia ou uma tela. Ela também age no app por você, com onze ferramentas sobre o que uma pessoa faz ali: cada ato fica no chat e na Auditoria com o nome dela, o motivo e o que ela tinha lido, e um Parar a interrompe no computador e no celular. Veja [Persona e chat](docs/persona.md).
 - **Pré-daily.** Antes da daily, um agente por atividade aberta confere a issue, os merge ou pull requests, o pipeline, as discussões de revisão e a spec, e diz o que mudou e o que está parado. Você responde por voz ou texto; o app produz a ata.
 - **Desbloqueio e aprofundamento.** Converse sobre um problema com um agente que já leu o código, as specs e as regras do time, e que consulta a hospedagem de código. É somente leitura: explica e propõe, não edita o seu repositório.
 - **Gate (quiz).** Antes de uma atividade avançar, um quiz curto gerado a partir da spec confere se você entende o que vai entregar.
