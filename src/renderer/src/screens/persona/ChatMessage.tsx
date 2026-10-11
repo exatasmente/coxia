@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
-import { type ForumMessage, messageText } from '../../../../shared/forum';
+import { type ForumMessage, isInterrupted, messageText } from '../../../../shared/forum';
 import type { PushTarget } from '../../../../shared/push';
 import type { OpenScreenInfo } from '../../../../shared/browser';
 import { ActivityItems, Chevron, useTreeOpen } from '../../ActivityTree';
@@ -77,6 +77,7 @@ function Buttons({ targets, ceremony, onOpen }: { targets: readonly PushTarget[]
 
 /** The persona's stored answer: its Work above (when this session still has the lines), the text, the files, the buttons. */
 export function AnswerBubble({ m, team, work, ceremony, onOpen }: { m: ForumMessage; team: readonly AgentDef[] | undefined; work: TreeNode | null; ceremony: string; onOpen?: (target: PushTarget) => void }) {
+  const t = useT();
   return (
     <li className="chat-row chat-row-answer" id={`msg-${m.seq}`}>
       {work && workShown(work) && <Work root={work} />}
@@ -85,6 +86,7 @@ export function AnswerBubble({ m, team, work, ceremony, onOpen }: { m: ForumMess
         <div className="chat-text">
           <RichText text={messageText(m)} />
         </div>
+        {isInterrupted(m) && <span className="chat-interrupted small" role="note">{t('ui.chat.interrupted')}</span>}
         <MessageAttachments thread={m.thread} message={m.seq} refs={m.attachments} />
         <time className="chat-time" dateTime={m.at}>{stamp(m.at)}</time>
       </div>

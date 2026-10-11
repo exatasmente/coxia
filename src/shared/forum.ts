@@ -176,6 +176,12 @@ export const FORUM_EVENT = 'forum:message';
 export const MAX_TEXT = 20_000;
 export const MAX_TITLE = 120;
 export const GENERAL_THREAD = 'general';
+
+/** The parameter a persona's answer carries when a Stop cut it: the stored text is only what had been written, so the chat says it was interrupted. */
+export const INTERRUPTED_PARAM = 'interrupted';
+
+/** Whether a message is an answer a Stop cut short. */
+export const isInterrupted = (m: { params?: Record<string, unknown> | null }): boolean => m.params?.[INTERRUPTED_PARAM] === 'stop';
 export const THREAD_ID = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 
 export const runThreadId = (runId: string): string => `run-${runId}`;

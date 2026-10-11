@@ -22,6 +22,7 @@
 .chat-text .rich { gap: 6px; }
 .chat-time { font-size: 12px; color: var(--faint); align-self: flex-end; }
 .chat-waits { font-size: 12px; font-weight: 600; color: var(--amber-ink); }
+.chat-interrupted { display: block; margin-top: 4px; font-weight: 600; color: var(--amber-ink); }
 .chat-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; max-width: 92%; padding: 6px 12px; border-radius: 12px; border: 1px solid var(--line-3); background: var(--surface-2); color: var(--ink); font-size: 13px; overflow-wrap: anywhere; }
 .chat-row-act-refused .chat-act { border-color: var(--red-line); background: var(--red-soft); color: var(--red-ink); }
 .chat-act-links { display: inline-flex; flex-wrap: wrap; gap: 6px; }

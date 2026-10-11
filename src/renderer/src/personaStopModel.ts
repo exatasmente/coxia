@@ -32,3 +32,14 @@ export function indicatorView(o: { state: PersonaState; working: boolean; screen
 
 /** The catalog key of the line under a message that waits: for its turn behind an answer, or for Resume. */
 export const queuedKey = (stopped: boolean): string => (stopped ? 'ui.chat.queuedStopped' : 'ui.chat.queued');
+
+/**
+ * What the jobs dock counts while the persona is stopped: nothing of its own conversation. A message that waits for Resume keeps its call line, which the activity reads as work,
+ * but nothing runs, so a spinner and a badge for it would say the opposite of the banner. Everything else is counted as before.
+ */
+export function withoutHeldPersona<T extends { kind: string; id: string }>(tops: readonly T[], o: { stopped: boolean; isPersonaThread: (thread: string) => boolean }): T[] {
+  return o.stopped ? tops.filter((e) => !(e.kind === 'conversation' && o.isPersonaThread(e.id))) : [...tops];
+}
+
+/** Whether the composer says an answer is going: not while the persona is stopped, when what is listed is waiting for Resume and nothing runs. */
+export const answerGoing = (o: { going: boolean; stopped: boolean }): boolean => o.going && !o.stopped;

@@ -86,3 +86,26 @@ describe('the words and the colours', () => {
     expect(readFileSync(join(src, 'screens/persona/PersonaSection.tsx'), 'utf8')).toContain('<StopControl />');
   });
 });
+
+describe('what a stopped persona shows as going', () => {
+  const tops = [
+    { kind: 'conversation', id: 'agent-me', key: 'a' },
+    { kind: 'conversation', id: 'general', key: 'b' },
+    { kind: 'run', id: 'r-1', key: 'c' },
+    { kind: 'agent', id: 'agent-me', key: 'd' },
+  ];
+  const isPersonaThread = (thread: string): boolean => thread === 'agent-me';
+
+  it('keeps the persona\'s own conversation out of the dock while it is stopped, and everything else in', async () => {
+    const { withoutHeldPersona } = await import('../src/renderer/src/personaStopModel');
+    expect(withoutHeldPersona(tops, { stopped: true, isPersonaThread }).map((e) => e.key)).toEqual(['b', 'c', 'd']);
+    expect(withoutHeldPersona(tops, { stopped: false, isPersonaThread }).map((e) => e.key)).toEqual(['a', 'b', 'c', 'd']);
+  });
+
+  it('does not say an answer is going while the persona is stopped, and says it as before otherwise', async () => {
+    const { answerGoing } = await import('../src/renderer/src/personaStopModel');
+    expect(answerGoing({ going: true, stopped: true })).toBe(false);
+    expect(answerGoing({ going: true, stopped: false })).toBe(true);
+    expect(answerGoing({ going: false, stopped: false })).toBe(false);
+  });
+});

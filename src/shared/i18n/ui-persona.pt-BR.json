@@ -179,6 +179,7 @@
   "ui.chat.empty": "Diga algo para {agent}. A resposta aparece aqui, e o que foi feito para respondê-la fica em Trabalho.",
   "ui.chat.hint.desktop": "Enter envia, Shift+Enter quebra a linha",
   "ui.chat.hint.phone": "Enter quebra a linha, o botão envia",
+  "ui.chat.interrupted": "Interrompida: isto é só o que já tinha sido escrito.",
   "ui.chat.invite": "Criar a sua persona",
   "ui.chat.log": "Chat com {agent}",
   "ui.chat.menu.button": "Menu principal",

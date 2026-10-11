@@ -3,7 +3,7 @@ import { dirname, join } from 'node:path';
 import { agentLabel, isDraft, isPersona, workingTeam } from '../../shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
-import { type ForumMessage, MAX_MENTIONS } from '../../shared/forum';
+import { type ForumMessage, INTERRUPTED_PARAM, MAX_MENTIONS } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import type { Run } from '../../shared/runs';
 import { mentionJob } from '../../shared/activity';
@@ -490,7 +490,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         const written = stoppedBy === 'person' && liveOn && live ? live.snapshot(place.thread, message.seq) : '';
         try {
           if (written) {
-            deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text: written, stage, public: false, answersTo: message.seq, buttons: buttons.list() });
+            deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text: written, stage, public: false, answersTo: message.seq, buttons: buttons.list(), params: { [INTERRUPTED_PARAM]: 'stop' } });
             posted = true;
             partialPosted = true;
           }

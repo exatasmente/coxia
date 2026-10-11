@@ -11,6 +11,7 @@ import { agentName } from '../cycle/names';
 import { useIsPhone } from '../../useIsPhone';
 import { useLiveAnswers } from '../../liveApi';
 import { usePersonaState } from '../../personaStopApi';
+import { answerGoing } from '../../personaStopModel';
 import { AskCards } from '../cycle/AskCard';
 import { Composer } from '../cycle/Composer';
 import { LiveScreen } from '../cycle/LiveScreen';
@@ -67,7 +68,8 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
   const shown = new Set(bubbles.map((b) => b.to));
   // A call at work that has written nothing yet (thinking, or using a tool) and is not waiting its turn: it has its Work section and Stop, and no text.
   const pending = roots.filter((r) => r.call?.agent === persona.id && hasWork(r) && !answered.has(r.call.message) && !shown.has(r.call.message) && !queued.has(r.call.message));
-  const going = composerState(writing, roots, persona.id).going;
+  // A stopped persona runs nothing: what is listed waits for Resume, and the banner says so.
+  const going = answerGoing({ going: composerState(writing, roots, persona.id).going, stopped });
 
   // What is on screen is read: the conversation counts as seen up to its last message. A test conversation is nobody's unread.
   useEffect(() => {
