@@ -99,7 +99,7 @@ describe('what the door refuses before it runs anything', () => {
     const audit = listAudit().length;
     const said = acts().length;
     const bad: [Record<string, unknown>, RegExp][] = [
-      [{ op: 'probe', why }, /run is required/],
+      [{ op: 'probe', why }, /The argument run is missing/],
       [{ op: 'probe', run: 5, why }, /run must be of type text/],
       [{ op: 'probe', run: 'r', n: 1.5, why }, /n must be of type integer/],
       [{ op: 'probe', run: 'r', mode: 'c', why }, /mode must be one of: a, b/],
@@ -313,6 +313,27 @@ describe('the four acts of the issue', () => {
     // the line in the chat carries the card's title, not a code
     expect(acts().at(-1)?.params).toMatchObject({ tool: 'Board', op: 'update', subject: 'Plan the beta' });
     expect((await asPerson('board:list')) as { cards?: { id: string; column: string }[] }).toMatchObject({ cards: expect.arrayContaining([expect.objectContaining({ id: created.id, column: second })]) });
+  });
+});
+
+describe('a card the persona creates', () => {
+  it('needs its column said, and a missing or empty one is refused in the door, naming the argument, before any handler runs and with no audit line', async () => {
+    const audit = listAudit().length;
+    const said = acts().length;
+    for (const input of [{ op: 'create', title: 'No column', why }, { op: 'create', title: 'Empty column', column: '', why }, { op: 'create', title: 'Blank column', column: '  ', why }]) {
+      const e = await personaDoor.run(session(), 'Board', input).catch((x: Error) => x);
+      expect(e, JSON.stringify(input)).toBeInstanceOf(ToolError);
+      expect((e as Error).message).toBe('Board.create: The argument column is missing: the operation needs it.');
+    }
+    expect(listAudit()).toHaveLength(audit);
+    expect(acts()).toHaveLength(said);
+  });
+
+  it('is said by its title in the chat and in the record', async () => {
+    const out = await personaDoor.run(session(), 'Board', { op: 'create', title: 'Plan the launch', column: 'backlog', why });
+    expect(out).toMatch(/^Done\./);
+    expect(acts().at(-1)?.params).toMatchObject({ tool: 'Board', op: 'create', subject: 'Plan the launch', result: 'ok' });
+    expect(newest('act')).toMatchObject({ target: 'Board.create', actor: 'persona', basis: { subject: 'Plan the launch' } });
   });
 });
 

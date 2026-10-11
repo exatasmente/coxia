@@ -107,7 +107,7 @@ export const OPS: readonly Op[] = [
 
   // ---- Board: the workspace's own board ---------------------------------------------------------------------------------------------------------------------------------
   read('Board', 'list', 'board:list', ['refresh:b'], { outside: true }),
-  act('Board', 'create', 'board:create', ['title:t!', 'body:t', 'column:s', 'squad:s', 'priority:s', 'repo:s', 'labels:j'], { hostText: ['body'] }),
+  act('Board', 'create', 'board:create', ['title:t!', 'body:t', 'column:s!', 'squad:s', 'priority:s', 'repo:s', 'labels:j'], { hostText: ['body'] }),
   act('Board', 'send', 'board:send', ['id:s@!']),
   act('Board', 'sendAll', 'board:sendAll'),
   act('Board', 'update', 'board:update', ['id:s@', 'project:s', 'iid:i', 'title:t', 'body:t', 'column:s', 'squad:s', 'priority:s', 'labels:j'], { hostText: ['body'] }),

@@ -1409,7 +1409,7 @@
   "main.persona.door.failed": "{tool}.{op} failed: {reason}",
   "main.persona.door.noCard": "No card has the reference {ref}. Some that are loaded: {list}.",
   "main.persona.door.arg.unknown": "{name} is not an argument of this operation. Its arguments: {args}.",
-  "main.persona.door.arg.required": "{name} is required.",
+  "main.persona.door.arg.required": "The argument {name} is missing: the operation needs it.",
   "main.persona.door.arg.type": "{name} must be of type {type}.",
   "main.persona.door.arg.long": "{name} is too long: at most {max} characters.",
   "main.persona.door.arg.enum": "{name} must be one of: {values}.",

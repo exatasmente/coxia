@@ -1409,7 +1409,7 @@
   "main.persona.door.failed": "{tool}.{op} falhou: {reason}",
   "main.persona.door.noCard": "Nenhum cartão tem a referência {ref}. Alguns que estão carregados: {list}.",
   "main.persona.door.arg.unknown": "{name} não é um argumento desta operação. Os argumentos: {args}.",
-  "main.persona.door.arg.required": "{name} é obrigatório.",
+  "main.persona.door.arg.required": "Faltou o argumento {name}: a operação precisa dele.",
   "main.persona.door.arg.type": "{name} deve ser do tipo {type}.",
   "main.persona.door.arg.long": "{name} é longo demais: no máximo {max} caracteres.",
   "main.persona.door.arg.enum": "{name} deve ser um de: {values}.",
