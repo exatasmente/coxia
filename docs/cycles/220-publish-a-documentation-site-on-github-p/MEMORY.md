@@ -1,47 +1,23 @@
 # Memória do ciclo
 
 ## Decisões
-
-- #220 pede um site de documentação no GitHub Pages (landing, guia, referência, casos de uso, blog) escrito e mantido pelos agentes pelo ciclo normal. Squad `Plataforma`; `priority:medium`; gates 1 e 2 aprovados pelo app.
-- Refino fechou: gerador **VitePress**; pasta **`site/`**; referência **incluída de `docs/`**, nunca copiada; domínio próprio fora do escopo.
-- Plano: o agente `docs-writer` do modelo `docs-flow` passa a ter `shell: 'sandbox'` (permissão `worktree` continua); esquema continua **27**, sem migração. Onde a máquina não tem sandbox, o modelo baixa `sandbox` para os comandos de antes.
-- Versão que abre o blog: **0.8.0** (estável); a linha de status dos dois README cita a versão do arquivo de versão e leva ao endereço publicado (contraria a D10 do plano a favor da regra 12).
-- Imagem de etapa só chega ao commit com `runner.evidence: "cycle"` (o padrão é `app`); nada muda o padrão.
-- O prefixo de publicação nunca vive em arquivo: a construção o recebe do fluxo e a checagem o lê da própria construção (`baseOf`, `withinBase`, `targetOf`).
-- A checagem de línguas nomeia o par pela forma que o site escreve: pasta `pt-br/` para páginas escritas à mão, marca `.pt-br` e endereço `/reference/…` para páginas geradas.
-- **Páginas de referência são julgadas pelo documento, não pelo gerado.** A checagem decide pela coluna de línguas do índice de `docs/` (`declaredLanguages`): documento declarado bilíngue exige a página inglesa sem a marca `site: one-language`, com o link de par e o arquivo `.pt-br`; declarado em uma língua só não exige par. `otherLanguageLink` lê as duas formas do link (HTML e Markdown).
-- O pull request está sendo aberto contra a branch `main` (também já foi aberto contra `release/0.9.0` em rodadas anteriores). <!-- answer:761 --> <!-- answer:493 --> <!-- answer:295 --> <!-- answer:298 --> <!-- answer:301 --> <!-- answer:304 --> <!-- answer:307 --> <!-- answer:310 --> <!-- answer:313 -->
+- Resposta: O pull request está sendo aberto de novo contra a branch release/0.9.0. <!-- answer:295 -->
+- Resposta: O pull request está sendo aberto de novo contra a branch release/0.9.0. <!-- answer:298 -->
+- Resposta: O pull request está sendo aberto de novo contra a branch main. <!-- answer:301 -->
+- Resposta: O pull request está sendo aberto de novo contra a branch main. <!-- answer:304 -->
+- Resposta: O pull request está sendo aberto de novo contra a branch main. <!-- answer:307 -->
+- Resposta: O pull request está sendo aberto de novo contra a branch main. <!-- answer:310 -->
+- Resposta: O pull request está sendo aberto de novo contra a branch main. <!-- answer:313 -->
+- Resposta: Volta e pede o ajuste que falta e somente os que faltam <!-- answer:493 -->
+- Resposta: Volta e resolve <!-- answer:761 -->
 
 ## Restrições
 
-- Repositório público: `node scripts/public-audit.mjs` é portão e vale para as fontes do site; nada de empresa, pessoa, host privado, número real de issue ou segredo; nenhuma exceção nova em `scripts/public-audit.allow.json` (segue com duas entradas).
-- `docs/` continua sendo a fonte lida pelos agentes; a referência é incluída, não copiada. `CONFIG_SCHEMA_VERSION` segue 27.
-- Nada da construção entra no commit: `site/generated/`, `site/.vitepress/dist/` e `site/.vitepress/cache/` são ignorados.
-- A cerca de escrita do agente que escreve não mudou; só a capacidade de rodar comandos na sandbox foi acrescentada. Nenhuma string de interface do desktop passa pelo site.
-- `runner.evidence: "cycle"` é escolha da pessoa, nunca o padrão.
-
 ## Tentado e descartado
-
-- Exigir `SITE_BASE` no ambiente da checagem: descartado; o prefixo é lido da construção.
-- Escrever o prefixo num campo da página gerada: descartado; os endereços de `assets/` já o dizem.
-- Vincular o fluxo de documentação à pasta do site (`devCycle.flows.docs`): descartado (campo novo, migração, caminho de escrita novo).
-- Deduzir a língua declarada lendo só o arquivo do documento: descartado; um documento que perdeu a metade lê como uma língua só — por isso a checagem lê o índice de `docs/`.
-- Exigir o link entre as duas línguas nas páginas escritas à mão: permanece sugestão, não coberta.
 
 ## Perguntas abertas
 
-Nenhuma.
-
 ## Onde o trabalho está
-
-- Triagem, refino e plano: `0_TRIAGE.md`, `1_SPEC.md` (14 regras, 14 critérios), `2_PLAN.md` (17 decisões, 9 blocos).
-- Implementação: `site/` com VitePress preso em 1.6.4; travessia de `docs/`; blog e histórico do `CHANGELOG.md`; `pages.yml`; linha de status dos README; `docsWriter()` com sandbox; `docs/site.md`; esquema 27.
-- **Revisão: rodada 5 deu `approved`**; os dois bloqueantes da rodada 4 estão fechados (a checagem de línguas pega o documento bilíngue que perdeu a metade; typecheck e os 8 arquivos de teste do site/README verdes, 213 casos).
-- **QA (esta passada): 5_TEST_PLAN.md escrito, com três cenários fechados nesta rodada.** Cenário 8 (publicação declarada, aplicativo fora da configuração de repositório): único fluxo que publica é `.github/workflows/pages.yml`, `on: push: branches: [main]` + `workflow_dispatch`, `contents: read`/`pages: write`/`id-token: [redacted]; busca na árvore inteira por fluxo de publicação ou configuração de repositório só acha o caminho REST `/api/v3` de um host auto-hospedado, o `settings.yml` de um servidor de busca que a pessoa roda e o `site/README.md`; `src/main/actions.ts` só tem um `settings` e é campo da config do workspace (ev-52, ev-56). Cenário 13: metade 1 provocada numa cópia descartável (tirar `## Português` de `docs/memory.md` faz a checagem nomear `/reference/memory` e sair 1; árvore saudável sai 0, ev-54), metade 2 já comprovada (ev-38). Cenário 9: os dois README dizem `0.9.0-beta.15` e levam ao site (ev-53).
-- Comandos desta QA: `npx vitest run` dos 5 arquivos de site/readme (41 casos, 0, ev-50); `SITE_BASE=/cerimonias/ npm run docs:build` + `npm run docs:check` (ambos 0, ev-51); `git status` depois (só o `MEMORY.md`, ev-55). A checagem (`cli.mjs`) **não aceita `--root`** — para provocar falha fora do worktree é preciso chamar `writeSources(<dir>)` e `checkLanguages(<dir>/site)` dos módulos puros, não o `cli.mjs`.
-- Verificado na árvore: theme-audit, i18n:lint e public-audit (1734) em 0; sugestões não bloqueantes seguem abertas (endereço dos README aceitar qualquer host; a checagem de links não olhar `src`; as páginas escritas à mão não ligarem as línguas por link).
-- Não verificado: o site no ar, o Pages ligado no host, uma mudança posterior em `docs/`/`CHANGELOG.md` atualizando o site na mesclagem, e o agente de documentação construindo o site com um modelo de verdade.
-- Passagem QA → validação da pessoa: os critérios 10 a 12 (site no ar, Pages ligado, mudança posterior atualizando o site) só depois da mesclagem; o resto do plano está fechado por comando ou comprovação.
 - Passagem support → product-owner: Refinar a #220 a partir deste documento: fechar as escolhas em aberto (gerador VitePress vs Jekyll, pasta e roteamento de squad do agente, referência incluída de docs/ vs movida, domínio próprio) e detalhar a aceitação em passos verificáveis. Fica fora desta etapa decidir prioridade e milestone. Vale confirmar no código, antes do plano, o formato exato do fluxo de Pages e a checagem de links/línguas no CI. <!-- handoff:11 -->
 - Passagem product-owner → pessoa: Plano técnico: decidir o agente, o fluxo e o encaminhamento à pasta do site (a spec recomenda um agente novo da pessoa, com sandbox, encaminhado a `site/`) e o que isso muda numa configuração que já tem o agente do fluxo de documentação de hoje; decidir a forma técnica de incluir a referência de `docs/` sem copiá-la (montagem, ligação ou equivalente); dizer como a construção do site, a checagem de links e a checagem das duas línguas entram no fluxo de verificação; e resolver como uma imagem guardada por uma etapa chega ao repositório, já que as ferramentas de arquivo do agente que escreve só a… <!-- handoff:22 -->
 - Passagem tl-plataforma → pessoa: Implementar o plano na ordem dos 9 commits, cada um com os gates do repositório verdes (auditoria pública, tipos, suíte, lint de idiomas, construção). Os quatro primeiros commits (1 a 4) são onde se decide o nome exato e a versão do gerador do site, se ele aceita a travessia da pasta de documentação sem uma lista de páginas escrita à mão, e se a checagem de links dele basta ou precisa do módulo próprio: construir o site e provocar um link quebrado e uma página de uma língua só. No commit 8, cobrir com um caso novo as recusas da cerca do agente que escreve quando o palco não é do fluxo de docum… <!-- handoff:49 -->
@@ -55,3 +31,4 @@ Nenhuma.
 - Passagem pessoa → developer: Volta e resolve <!-- handoff:762 -->
 - Passagem developer → revisor-plataforma: Review the branch against the spec and the plan: confirm that acceptance criterion 13 is now met (a reference page that loses a language fails the check, and a healthy tree passes), that the typecheck and the whole suite are green, and that the fix of the language link (Markdown and HTML forms) did not weaken the hand-written-page case. <!-- handoff:887 -->
 - Passagem revisor-plataforma → qa-plataforma-2: Approved. The change may move to the test stage (planned QA). What that stage should exercise beyond the automated gates: bring the local preview up on the loopback with a free port, walk the landing, guide, reference, use cases, blog and changelog pages in both languages, and confirm each reference document of `docs/` is reachable from the reference index; confirm the pages that ask for an image show text and a placeholder and no capture with real data; and exercise the two failures of criterion 13 by hand if a fuller pass is wanted. The published site, Pages enabled on the host, and a later … <!-- handoff:928 -->
+- Passagem qa-plataforma-2 → pessoa: QA closes with three scenarios executed and evidenced in this pass (8, 13 and 9) and the rest of the plan as it stood. Next stage: the person's validation gate. What it can check for itself: the site check exits 0 over the healthy build made with the publication base, the readme status lines name 0.9.0-beta.15 and carry the published address, and the publishing flow is on the default branch with no step writing a repository setting. What it cannot check before the merge: that Pages answers at the project address, and that a later change to `docs/` or `CHANGELOG.md` reaches the site through tha… <!-- handoff:1032 -->
