@@ -70,14 +70,14 @@ export function groupNotes(view: Pick<MemoryListView, 'folders'>, shown: readonl
   return [...groups.values()];
 }
 
-export type Badge = 'edited' | 'awaits' | 'foreign' | 'unsafe' | 'old' | 'left';
+export type Badge = 'edited' | 'editedPersona' | 'awaits' | 'foreign' | 'unsafe' | 'old' | 'left';
 
 /** The badges a note carries, in the order they are shown. `foreign` and `unsafe` come before the others: they say the app does not stand behind the file. */
-export function badgesOf(n: Pick<NoteItem, 'person' | 'reviewed' | 'foreign' | 'unsafe' | 'old' | 'left'>): Badge[] {
+export function badgesOf(n: Pick<NoteItem, 'person' | 'persona' | 'reviewed' | 'foreign' | 'unsafe' | 'old' | 'left'>): Badge[] {
   const out: Badge[] = [];
   if (n.foreign) out.push('foreign');
   if (n.unsafe) out.push('unsafe');
-  if (n.person && !n.foreign) out.push('edited');
+  if (n.person && !n.foreign) out.push(n.persona ? 'editedPersona' : 'edited');
   if (!n.reviewed && !n.foreign) out.push('awaits');
   if (n.old) out.push('old');
   if (n.left) out.push('left');
@@ -87,6 +87,7 @@ export function badgesOf(n: Pick<NoteItem, 'person' | 'reviewed' | 'foreign' | '
 export const KIND_LABEL: Record<NoteKind, string> = { decision: 'ui.memory.kind.decision', finding: 'ui.memory.kind.finding', note: 'ui.memory.kind.note' };
 export const BADGE_LABEL: Record<Badge, string> = {
   edited: 'ui.memory.badge.edited',
+  editedPersona: 'ui.memory.badge.editedPersona',
   awaits: 'ui.memory.badge.awaits',
   foreign: 'ui.memory.badge.foreign',
   unsafe: 'ui.memory.badge.unsafe',

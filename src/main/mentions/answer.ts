@@ -1,14 +1,14 @@
 import { existsSync, mkdirSync, rmSync, symlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { agentLabel, workingTeam } from '../../shared/config/team';
+import { agentLabel, isDraft, isPersona, workingTeam } from '../../shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
-import { type ForumMessage, MAX_MENTIONS } from '../../shared/forum';
+import { type ForumMessage, INTERRUPTED_PARAM, MAX_MENTIONS } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import type { Run } from '../../shared/runs';
 import { mentionJob } from '../../shared/activity';
 import { type RunActivity, beginActivity, currentActivity, withActivityContext } from '../activity';
-import type { AgentCall } from '../agents';
+import { type AgentCall, secretPath, workspaceProjects } from '../agents';
 import { type ReadConfinement, ProviderBusyError, poolBusyParams, poolNoticeLine } from '../engine/contract';
 import { callKey } from '../../shared/browser';
 import { type CallScreen, type CallScreenRequest, type ScreenPorts, beginHandoff, modelSeesImages, offerHandoff, openCallScreen, promptFor } from '../browser/callScreen';
@@ -25,6 +25,8 @@ import { dependencyFolders } from '../runner/dependencies';
 import type { SandboxService, SandboxSession } from '../sandbox';
 import { readFolder, type FolderFile } from '../runner/cycleFolder';
 import { limitsOf, watchdog, type StageEngine } from '../runner/executor';
+import type { TurnAsks } from '../turnAsks-core';
+import { turnAsker } from '../turnLimit';
 import { mentionCall, readProposedWrites, type ProposedWrite } from './call';
 import { conversationCallTool } from './converse';
 import { type ProposalOutcome } from './propose';
@@ -39,6 +41,11 @@ import type { ProcedureOffers } from '../procedures/offers';
 import { raiseOffers, runWrapUp } from '../procedures/wrapup';
 import { procedureScreen } from '../procedures/screen';
 import type { ProcedureSession } from '../procedures/session';
+import type { PersonaLive } from '../persona/live';
+import type { Door } from '../persona/door';
+import { type ScreenFacts, createButtons, openDiscussionsTool, openScreenTool } from '../persona/openScreen';
+import { type AnswerSession, createSession } from '../persona/session';
+import { personaToolImpls } from '../persona/tools';
 
 // The answer an agent named in a message gives, wherever the person wrote (a run's thread, a channel, a general conversation, the direct conversation of an agent).
 // One owner per place: the runner owns the run's thread (it has the worktree, the cycle folder and the publisher) and calls this; the mentions module owns the rest.
@@ -70,6 +77,11 @@ export interface MentionDeps {
   kept?: KeptSessions;
   /** Where a running answer can be stopped by the person (default: this process's). */
   stops?: CallStops;
+  /**
+   * The questions at a turn limit (#246): a sub-agent of the answer that uses its last turn asks the person here, and the answer's clocks stand still meanwhile. The answer's own
+   * limit keeps ending in a partial answer, and a ceremony's answer (recorded elsewhere, with no conversation to ask in) never asks. Absent: sub-agents stop at their limit as before.
+   */
+  turnAsks?: TurnAsks;
   /**
    * The line a caller opened for an agent's call when the message was accepted (a run's thread), and whether it waited its turn there: the answer goes on in it,
    * so the engine reports only how it ends. Absent, or null for an agent: the engine opens its own line when it starts.
@@ -120,6 +132,23 @@ export interface MentionDeps {
   offers?: Pick<ProcedureOffers, 'raise' | 'turned'>;
   /** The last turn's runner; a test replaces it to wait for the detached turn (the default is `runWrapUp`). */
   wrapUp?: typeof runWrapUp;
+  /**
+   * The persona's chat (#247): where the text of its answer is published as it is written, and what the button tool checks a target against. Absent: the persona still answers
+   * in plain text, with nothing shown while it is written and no button. `door` (#248) is the door its tools go through: absent, the real persona has no tool but the button.
+   */
+  persona?: { live: PersonaLive; screens: ScreenFacts; door?: Door };
+  /**
+   * How the message being answered came in (`window` or `paired`; open to more): every act of the persona in this answer says so in the audit. Read where the message was
+   * posted, since only there is the call that carried it. Absent: the window.
+   */
+  door?: string;
+  /** The answer's session, made by the caller when the activity line of the call already needed its mask (the mentions module); absent: made here. */
+  session?: AnswerSession;
+  /**
+   * Whether the persona is stopped and this thread is its conversation (#248): an answer that ends because of that Stop does not write the per-answer line, since the one line of
+   * the stop says it, with the acts that were still running. Absent: never.
+   */
+  latched?: (thread: string) => boolean;
 }
 
 /** What a mention answer produced, for a caller that records it elsewhere (a ceremony). */
@@ -169,7 +198,8 @@ function inputOf(place: MentionPlace): { files: FolderFile[]; ref?: string; titl
 
 /** Whether the agent may propose writes: it reads the code host (its own tracker setting, or the default of its permission), and the place has a propose path. */
 function mayPropose(def: AgentDef, deps: MentionDeps, place: MentionPlace): boolean {
-  if (!deps.propose) return false;
+  // The persona's answer is plain text and carries no write: its writes come with its tools.
+  if (!deps.propose || isPersona(def)) return false;
   return (def.tracker ?? (def.permission === 'worktree' ? 'none' : 'read')) === 'read';
 }
 
@@ -200,6 +230,18 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       continue;
     }
     const reader: AgentDef = { ...def, permission: 'read' };
+    // The persona answers in plain text. Its test copy (a draft) has no button tool: it cannot act, and nothing of its own is offered in a test.
+    const persona = isPersona(def);
+    const buttons = createButtons();
+    const live = persona ? (deps.persona?.live ?? null) : null;
+    // The persona's tools (#248): its real entry only, never its test copy, never an agent it called (`chain`), never a ceremony. The session keeps what the answer read, the
+    // values it must never write back and the acts it put in the thread.
+    const acts = persona && !isDraft(def) && deps.persona?.door && !deps.chain?.length && place.kind !== 'ceremony' ? deps.persona.door : null;
+    const actSession: AnswerSession | null = acts ? (deps.session ?? createSession({ persona: id, thread: place.thread, seq: message.seq, door: deps.door ?? 'window' })) : null;
+    // Whether the live text of this answer was begun, whether the answer (or, after a Stop, what had been written of it) was posted, and whether it was a Stop that posted it.
+    let liveOn = false;
+    let posted = false;
+    let partialPosted = false;
     const wantsCommands = def.shell === 'sandbox' || def.shell === 'host';
     const stage = place.kind === 'run' ? (place.run?.stage ?? null) : null;
     const abort = new AbortController();
@@ -317,6 +359,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         // What the agent is told of its screen and its hosts: nothing for an agent with neither, so its prompt is what it was.
         screen: promptFor(screen, def, config.runner.sandbox, grantsFor(def), session?.gui?.display === 'on'),
         proposals: mayPropose(def, deps, place),
+        ...(persona ? { persona: { buttons: !isDraft(def) && !!deps.persona, tools: actSession !== null } } : {}),
         autonomous: autonomyOf(config, def),
         attachments: attachments ?? undefined,
         // What the app knows of the activities: the section is text only, so no tool of the call changes and no folder of it is opened.
@@ -352,6 +395,20 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       // Its working folder is the same folder as the guard's root, so a relative path is judged and read against one folder, never two.
       call.readRoot = deps.readRoot?.(place, def, call.cwd);
       call.beat = watch.beat;
+      if (deps.turnAsks && place.kind !== 'ceremony') {
+        call.turnLimit = {
+          own: false,
+          ask: turnAsker({
+            store: deps.turnAsks,
+            place: { run: place.run?.id ?? null, thread: place.thread, stage, ref: ref ?? null, ...(place.run ? { issue: place.run.issue.iid } : {}) },
+            agent: { id, name: agentLabel(config.agents.team, id) },
+            say: note,
+            pause: watch.pause,
+            signal: abort.signal,
+            isSecretPath: (token) => secretPath(token, call.cwd),
+          }),
+        };
+      }
       // The agent may bring another agent of the team into the conversation (not in a ceremony, whose answers are recorded elsewhere): the other answers here, read
       // only, and the answer comes back to it. The caller's clocks stop while the other answers, as they do while a command waits for the person.
       if (place.kind !== 'ceremony') {
@@ -391,16 +448,33 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
               }
             },
           }),
+          // Any other agent may offer one button of its own: the discussions of a merge request, opened only when the person taps it. The persona has OpenScreen for it.
+          ...(persona ? [] : [openDiscussionsTool(workspaceProjects, buttons)]),
         ];
+      }
+      // The persona's buttons: the one tool of its own, not offered to its test copy.
+      if (persona && !isDraft(def) && deps.persona) call.runnerTools = [...(call.runnerTools ?? []), openScreenTool(deps.persona.screens, buttons)];
+      // The eleven tools of its acts: the same names to both engines, principal only.
+      if (acts && actSession) call.runnerTools = [...(call.runnerTools ?? []), ...personaToolImpls(acts, actSession)];
+      // The text of the persona's answer is published as it is written; nothing of it is stored until the answer is whole.
+      if (live) {
+        live.begin(place.thread, message.seq, id, actSession ? (text) => actSession.maskText(text) : undefined);
+        liveOn = true;
+        call.text = live.sink(place.thread, message.seq);
       }
       // The call waited its turn: it says it is working now, when it really begins.
       if (made?.queued) made.activity.status('started');
       ran = true;
       const r = await watch.guard(withActivityContext(place.kind === 'run' ? `run:${place.run?.id}` : mentionJob(place.thread), () => deps.engine(call, [])));
       answered = true;
-      const text = answerText((r.data as { text?: unknown })?.text);
+      // A value the persona read (a secret) is never written back, whatever the model did with it.
+      const text = (actSession ? actSession.maskText : (s: string) => s)(answerText(persona ? r.data : (r.data as { text?: unknown })?.text));
       if (!text) throw new Error(t('main.runner.error.empty-answer'));
-      deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false });
+      // The persona's answer says which message it answers (the chat finds the work of the call by it) and carries the buttons it offered.
+      // Another agent's answer carries a button only when it offered one (the discussions of a merge request).
+      const offered = buttons.list();
+      deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false, ...(persona ? { answersTo: message.seq, buttons: offered } : offered.length ? { buttons: offered } : {}) });
+      posted = true;
       // What the thread shows of the answer is what the call's node shows of it, here and not in the engine, which never reports a closing answer as a step.
       made?.activity.answer(text);
       // The answer is out: the work may have earned one last turn, which runs beside the thread and not in front of its next message.
@@ -415,11 +489,29 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       const reason = redact(e instanceof Error ? e.message : String(e)).slice(0, 300);
       // Nothing ran, so the engine reported no end: the call fails here, or its line would stay on screen.
       if (!ran) made?.activity.status('failed', reason);
-      if (stoppedBy) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: stoppedBy === 'person' ? 'runner.mention.stopped' : 'runner.mention.stoppedScreen', params: { agent: id }, stage });
+      if (stoppedBy) {
+        // The person's Stop on the persona's answer keeps what was written: it is posted as the persona's message, and the line says it was cut. A failure keeps nothing.
+        const written = stoppedBy === 'person' && liveOn && live ? live.snapshot(place.thread, message.seq) : '';
+        try {
+          if (written) {
+            deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text: written, stage, public: false, answersTo: message.seq, buttons: buttons.list(), params: { [INTERRUPTED_PARAM]: 'stop' } });
+            posted = true;
+            partialPosted = true;
+          }
+        } catch (err) {
+          console.error('[mentions] could not post what was written before the stop', err instanceof Error ? err.message : err);
+        }
+        // The stop of the persona (the latch) says itself, once, in the thread: this answer only keeps what it had written.
+        if (!(stoppedBy === 'person' && deps.latched?.(place.thread) === true)) {
+          deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: stoppedBy === 'person' ? (partialPosted ? 'runner.mention.stoppedPartial' : 'runner.mention.stopped') : 'runner.mention.stoppedScreen', params: { agent: id }, stage });
+        }
+      }
       // Every model of the role's pool was busy: the line names the pool and when the first one is back, whole where the reason would be cut.
       else if (e instanceof ProviderBusyError) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.model.allBusy', params: { agent: id, ...poolBusyParams(e) }, stage });
       else deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.mentionFailed', params: { agent: id, reason }, stage });
     } finally {
+      // The bubble goes on every device: with the whole text when the answer was posted, with nothing when it failed.
+      if (liveOn && live) live.end(place.thread, message.seq, posted ? 'done' : 'dropped');
       shared?.finish();
       if (!detached) procedures?.finish(answered ? 'done' : 'failed');
       unregister();
@@ -434,6 +526,8 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         await session?.close().catch(() => undefined);
         if (source?.made) rmSync(source.cwd, { recursive: true, force: true });
       }
+      // The acts past the cap are said in one line, whether the answer ended well, was stopped or failed.
+      if (acts && actSession) acts.finish(actSession);
       deps.release?.(id);
     }
   }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { offeredStages } from '../../../../shared/agentAssist';
 import { squadsOf } from '../../../../shared/config/squads';
-import { isDraft, removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
+import { isDraft, isPersona, removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
 import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, POOL_MODES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type PoolMode, type WorkspaceConfig } from '../../../../shared/config/types';
 import { flowIssueText } from '../../../../shared/runs/flowCheck';
 import { squadIssueText } from '../../../../shared/runs/squadCheck';
@@ -142,7 +142,8 @@ export function TeamSection(props: SectionProps & { suggestion?: { draft: AgentD
         {error && <div className="error" role="alert">{error}</div>}
         {!isWeb() && <Recommended config={config} save={save} />}
         <ul className="tm-list" aria-label={t('ui.team.listAria')}>
-          {config.agents.team.map((a) => {
+          {/* The persona is not a member of the cycle's team: it has its own section in Settings. */}
+          {config.agents.team.filter((a) => !isPersona(a)).map((a) => {
             // A draft of the assistant takes part in nothing, whatever a file lists on it: no way to edit it or to let it run, only to discard it.
             const draftCard = isDraft(a);
             const works = draftCard ? [] : stagesOfAgent(config, a);
@@ -481,7 +482,8 @@ function StagesFields({ config, draft, set }: { config: WorkspaceConfig; draft: 
   );
 }
 
-function ModelFields({ config, draft, set, error }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void; error?: string }) {
+/** The fields of an agent's model (the role it borrows, or its own provider, model and reserve), shared with the persona's editor. */
+export function ModelFields({ config, draft, set, error }: { config: WorkspaceConfig; draft: AgentDraft; set: (p: Partial<AgentDraft>) => void; error?: string }) {
   const t = useT();
   const byRole = draft.model.role !== null;
   const provider = config.llm.providers.find((p) => p.id === draft.model.provider);

@@ -50,11 +50,14 @@ uv pip install --python sidecar/.venv/bin/python -r sidecar/requirements.txt
 | `npm run build` | Builds main, preload and renderer into `out/` |
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm test` | The whole test suite (`vitest run`); `npx vitest run test/<file>.test.ts` for one file |
+| `npm run docs:build` | Builds the documentation site into `site/.vitepress/dist` ([`docs/site.md`](docs/site.md)) |
+| `npm run docs:check` | Fails when a link of the built site points at a page it does not have, or a page lost one of its two languages |
 | `node scripts/theme-audit.mjs` | Counts literal colors per file and checks the contrast of the theme tokens |
 | `node scripts/public-audit.mjs` | Fails when a file carries a company or personal name, a private address, an email outside the reserved domains or a secret (exceptions go in `scripts/public-audit.allow.json`, with a reason) |
 | `npm run i18n:lint` | Checks that the `pt-BR` and `en` catalogs define the same keys |
 | `node scripts/i18n-lint.mjs` | Lists user-facing literal strings that do not go through `t()` |
 | `node scripts/third-party-notices.mjs` | Regenerates `THIRD_PARTY_NOTICES.md` (run after changing dependencies; `--check` verifies it) |
+| `node scripts/evidence-sheet.mjs <out.png> <image>...` | Puts screenshots on one captioned contact sheet (a PNG) for a pull request: `--cols N`, `--width PX`, `--title TEXT`, `--caption "<file>=<text>"`, `--theme light\|dark`; 1 to 48 `.png`/`.jpg`/`.jpeg`/`.webp` files, cut at 12000 px tall; renders with the Chromium of `playwright-core` (`npx playwright install chromium`), offline |
 | `npm run dist` | Your own package, with the Claude Agent SDK inside (do not redistribute it) |
 | `npm run dist:public` | The public package, without the SDK: what the releases contain ([`RELEASING.md`](RELEASING.md)) |
 

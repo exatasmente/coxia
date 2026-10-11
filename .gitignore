@@ -12,3 +12,6 @@ dist/
 release-notes.md
 .sdk-probe.log
 .claude/worktrees/
+site/generated/
+site/.vitepress/dist/
+site/.vitepress/cache/

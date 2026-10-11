@@ -15,6 +15,7 @@ const EVENT_KEY: Record<string, string> = {
   'stage-finished': 'ui.plugins.event.stageFinished',
   'gate-decided': 'ui.plugins.event.gateDecided',
   'run-finished': 'ui.plugins.event.runFinished',
+  'conversation-called': 'ui.plugins.event.conversationCalled',
 };
 
 /** What a plugin was allowed, per need and reach (always, this session, or nothing: it asks every time). */

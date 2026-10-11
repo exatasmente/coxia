@@ -9,9 +9,9 @@ const keys = (d: RunnerDraft, flow = true) => runnerProblems(d, flow).map((p) =>
 describe('the runner draft', () => {
   it('round trips the defaults and a configured runner', () => {
     expect(runnerOf(base())).toEqual(neutralConfig().runner);
-    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40 }, identity: { name: 'Bot', email: 'bot@example.com' }, sandbox: neutralConfig().runner.sandbox, autonomy: neutralConfig().runner.autonomy, screenPolicy: { name: 'autonomous' }, evidence: 'app', procedures: true, flex: false, unconfined: true, sharedMemory: false, showReasoning: false, commitMessage: 'fix: {summary} {iid}', prTitle: '#{iid} {title}', linkDependencies: true, release: { soleMaintainer: true }, conversations: { roundsPerConversation: 8, perStage: 2 } };
+    const r: RunnerConfig = { enabled: true, triggerLabel: 'agents', maxConcurrentRuns: 3, worktreesDir: '~/work', commands: ['npm test'], stageIdleMs: 15 * 60_000, stageMaxMs: 90 * 60_000, turns: { read: 12, write: 40, explore: 6, edit: 14, shell: 9, screen: 22, plain: 8 }, identity: { name: 'Bot', email: 'bot@example.com' }, sandbox: neutralConfig().runner.sandbox, autonomy: neutralConfig().runner.autonomy, screenPolicy: { name: 'autonomous' }, evidence: 'app', procedures: true, flex: false, unconfined: true, sharedMemory: false, showReasoning: false, commitMessage: 'fix: {summary} {iid}', prTitle: '#{iid} {title}', linkDependencies: true, release: { soleMaintainer: true }, conversations: { roundsPerConversation: 8, perStage: 2 } };
     expect(runnerOf(draftOfRunner(r))).toEqual(r);
-    expect(draftOfRunner(r)).toMatchObject({ commandsMode: 'custom', idleMinutes: 15, maxMinutes: 90, turnsRead: 12, turnsWrite: 40 });
+    expect(draftOfRunner(r)).toMatchObject({ commandsMode: 'custom', idleMinutes: 15, maxMinutes: 90, turnsRead: 12, turnsWrite: 40, turnsExplore: 6, turnsEdit: 14, turnsShell: 9, turnsScreen: 22, turnsPlain: 8 });
   });
 
   it('carries the screen step approvals from the computer and keeps the stored ones from a paired browser', () => {
@@ -126,7 +126,26 @@ describe('the problems of the runner draft', () => {
     expect(keys({ ...base(), turnsWrite: 501 })).toEqual(['error:turns']);
     expect(keys({ ...base(), turnsWrite: 2.5 })).toEqual(['error:turns']);
     expect(keys({ ...base(), turnsRead: 1, turnsWrite: 500 })).toEqual([]);
-    expect(runnerOf({ ...base(), turnsRead: 5, turnsWrite: 9 }).turns).toEqual({ read: 5, write: 9 });
+    expect(runnerOf({ ...base(), turnsRead: 5, turnsWrite: 9 }).turns).toEqual({ ...neutralConfig().runner.turns, read: 5, write: 9 });
+  });
+
+  it('keeps the turns of the sub-agents whole numbers from 1 to 500, reported on their own group', () => {
+    const fields = ['turnsExplore', 'turnsEdit', 'turnsShell', 'turnsScreen', 'turnsPlain'] as const;
+    expect(draftOfRunner(neutralConfig().runner)).toMatchObject({ turnsExplore: 12, turnsEdit: 30, turnsShell: 20, turnsScreen: 30, turnsPlain: 12 });
+    for (const f of fields) {
+      expect(runnerProblems({ ...base(), [f]: 0 }, true).map((p) => `${p.field}:${p.key}`), f).toEqual(['subTurns:ui.runner.err.turns']);
+      expect(keys({ ...base(), [f]: 501 }), f).toEqual(['error:turns']);
+      expect(keys({ ...base(), [f]: 2.5 }), f).toEqual(['error:turns']);
+      expect(keys({ ...base(), [f]: Number.NaN }), f).toEqual(['error:turns']);
+      expect(keys({ ...base(), [f]: 1 }), f).toEqual([]);
+      expect(keys({ ...base(), [f]: 500 }), f).toEqual([]);
+    }
+    expect(runnerOf({ ...base(), turnsExplore: 3, turnsEdit: 4, turnsShell: 5, turnsScreen: 6, turnsPlain: 7 }).turns).toEqual({ read: 30, write: 80, explore: 3, edit: 4, shell: 5, screen: 6, plain: 7 });
+  });
+
+  it('lets a paired browser change them: the phone keeps only what the computer alone changes', () => {
+    const stored = neutralConfig().runner;
+    expect(runnerOfWeb({ ...base(), turnsExplore: 40, turnsPlain: 2 }, stored).turns).toMatchObject({ explore: 40, plain: 2 });
   });
 
   it('wants plain commands, one each', () => {

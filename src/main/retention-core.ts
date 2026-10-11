@@ -26,10 +26,13 @@ const APP_PROMPTS: [string, string][] = [
   ['conflict.ask.intro', 'sync'],
   ['reentry.main', 'reentry'],
   ['discussion.main', 'review'],
+  ['discussion.mainMr', 'review'],
   ['deep.options', 'unblock'],
   ['reply.main', 'turn'],
   ['assist.round', 'assist'],
   ['assist.review', 'assist'],
+  ['persona.round', 'assist'],
+  ['persona.review', 'assist'],
 ];
 
 export function appPromptKind(firstPrompt: string | null | undefined): string | null {

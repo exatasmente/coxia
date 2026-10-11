@@ -3,7 +3,8 @@ import { join } from 'node:path';
 import { neutralConfig, neutralPlugins } from '../shared/config/defaults';
 import { expandHome } from '../shared/config/paths';
 import { buildExport, collectCommands, collectPaths, diffConfig, parseImport } from '../shared/config/transfer';
-import type { WorkspaceConfig } from '../shared/config/types';
+import { isPersona, withoutPersona } from '../shared/config/team';
+import type { AgentDef, WorkspaceConfig } from '../shared/config/types';
 import { collectSecretRequirements, summarizeIssues, validateConfig } from '../shared/config/validate';
 import type { ImportApply, ImportPreview, ImportResult, ImportSource, ImportTarget } from '../shared/configTransfer';
 import { CONFIG_FILE, readConfigFile, writeConfigFile } from './config-bootstrap';
@@ -37,10 +38,15 @@ export function exportText(config: WorkspaceConfig, meta: { workspaceName: strin
   return `${JSON.stringify(buildExport(config, meta), null, 2)}\n`;
 }
 
+function storedOf(deps: TransferDeps, target: ImportTarget): WorkspaceConfig | null {
+  if (target.mode === 'new') return null;
+  return validateConfig(readConfigFile(workspaceDir(deps.root, target.id))).config;
+}
+
+// Compared without its persona: an import keeps the target's own, so the preview must not list it as removed.
 function currentOf(deps: TransferDeps, target: ImportTarget): WorkspaceConfig {
-  if (target.mode === 'new') return neutralConfig();
-  const stored = validateConfig(readConfigFile(workspaceDir(deps.root, target.id)));
-  return stored.config ?? neutralConfig();
+  const stored = storedOf(deps, target);
+  return stored ? withoutPersona(stored) : neutralConfig();
 }
 
 function assertTarget(deps: TransferDeps, target: ImportTarget): void {
@@ -93,7 +99,10 @@ export function applyImport(deps: TransferDeps, req: ImportApply, running: strin
   }
   // What a workspace's plugins are and were allowed is the person's, on that workspace: a file never brings permissions in, nor the folder the code is
   // read from, nor a shorter warning. Replacing a workspace keeps its own; a new one starts with none.
-  writeConfigFile(workspaceDir(deps.root, id), { ...config, plugins: created ? neutralPlugins() : pluginsOf(workspaceDir(deps.root, id)) });
+  // The persona is the person's own too: replacing a workspace keeps its persona (and the test copy of a wizard under way); a new one starts with none.
+  const kept = created ? [] : personasOf(deps, req.target);
+  const team = kept.length ? [...config.agents.team.filter((a) => !kept.some((p) => p.id === a.id)), ...kept.map((p) => fitModel(p, config))] : config.agents.team;
+  writeConfigFile(workspaceDir(deps.root, id), { ...config, agents: { ...config.agents, team }, plugins: created ? neutralPlugins() : pluginsOf(workspaceDir(deps.root, id)) });
   return { workspaceId: id, created, appliedToRunning: id === running, missingSecrets: [...needed].filter((ref) => !deps.secrets.has(ref)) };
 }
 
@@ -106,4 +115,18 @@ function pluginsOf(dir: string): WorkspaceConfig['plugins'] {
   } catch {
     return neutralPlugins();
   }
+}
+
+/** The persona entries the target workspace has now. */
+function personasOf(deps: TransferDeps, target: ImportTarget): AgentDef[] {
+  return storedOf(deps, target)?.agents.team.filter(isPersona) ?? [];
+}
+
+/** A persona whose own model points at a provider the imported file does not have goes back to the `deep` role's, so the written file stays valid. */
+function fitModel(persona: AgentDef, imported: WorkspaceConfig): AgentDef {
+  const m = persona.model;
+  if (m.role !== null) return persona;
+  const providers = new Set(imported.llm.providers.map((p) => p.id));
+  const pooled = [...(m.fallbacks ?? []), ...Object.values(m.activities ?? {}).flat()];
+  return providers.has(m.provider) && pooled.every((e) => providers.has(e.provider)) ? persona : { ...persona, model: { role: 'deep', provider: '', model: '' } };
 }

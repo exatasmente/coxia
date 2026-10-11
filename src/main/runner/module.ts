@@ -11,7 +11,8 @@ import type { ReleaseAction } from '../../shared/types';
 import type { Module } from '../module';
 import { failureText, noteRetroIssue } from '../retroIssues';
 import { callStops } from '../mentions/stop';
-import { callOrigin } from '../rpc';
+import { viaOf } from '../rpc';
+import { whoNow } from '../persona/who';
 import { recordWrite } from '../auditoria';
 import { memoryAuditEntry, type MemoryAuditInput } from '../memory/audit';
 import { attachmentStore } from '../attachments';
@@ -48,6 +49,7 @@ import { type NativeImageLike, createFrameEncoder } from '../screen/frame';
 import { type EncoderHost, createEncoderHost } from '../screen/encoderHost';
 import { realEncoderEnv } from '../screen/encoderWindow';
 import { type HandoffService, createHandoffService } from '../screen/handoff';
+import { turnAsks } from '../turnAsks';
 import { type ScreenHub, createScreenHub } from '../screen/hub';
 import { type GateAction, type IssueSource, type Runner, RunnerError, createRunner } from './service';
 
@@ -124,7 +126,7 @@ const id = (v: unknown): string => {
 /** The origin of a correction of the activities or of a run's memory, in the audit log: the window or a paired browser. Never the text; a failing log is no failure of the move. */
 function auditMove(input: Pick<MemoryAuditInput, 'op' | 'ref'>): void {
   try {
-    recordWrite(memoryAuditEntry({ ...input, via: callOrigin() === 'web' ? 'paired' : 'window' }));
+    recordWrite(memoryAuditEntry({ ...input, via: viaOf() }));
   } catch {
     // The correction already happened.
   }
@@ -187,7 +189,7 @@ export const runsModule: Module = (ctx) => {
       const notice = askNotice(ask);
       if (key?.kind === 'call') ctx.notify({ ...notice, onClick: { type: 'open', screen: { name: 'forum', thread: key.thread } } });
       else if (key) ctx.notify({ ...notice, onClick: { type: 'open', screen: { name: 'run', id: key.run } } });
-      else ctx.notify({ ...notice, onClick: { type: 'navigate', to: 'today' } });
+      else ctx.notify({ ...notice, onClick: { type: 'navigate', to: 'overview' } });
     },
   });
   asks = askStore;
@@ -252,6 +254,7 @@ export const runsModule: Module = (ctx) => {
     sessions: openSessions,
     asks: askStore,
     handoff: handoffs,
+    turnAsks,
     // One small call to a provider whose key ran out of budget, by the sweep: it goes through the engines, so the same refusal mapping applies.
     probeBudget: async (providerId) => {
       const result = await probeProviderBudget(providerId);
@@ -319,7 +322,7 @@ export const runsModule: Module = (ctx) => {
   onRunnerActionDone((action, responses) => retroIssueDone(action, responses, (ref) => r.start(ref)));
   // A person's post that answers the run's question is the answer; a person's @mention calls on the agent, which never writes to the run.
   // The files the message carries ride on that answer: the runner writes them on the answer message it records.
-  interceptPosts((thread, body, attachments) => r.answerPost(thread, body, attachments));
+  interceptPosts((thread, body, attachments, who) => r.answerPost(thread, body, attachments, who));
   forumStore().subscribe((m) => r.onMessage(m));
 
   // Whether this computer can make a sandbox, for the team editor to offer the option; `probe` asks again. Neither changes anything.
@@ -353,7 +356,7 @@ export const runsModule: Module = (ctx) => {
     return found ? readArtifact(found.worktree, found.cycleFolder, text(name)) : null;
   });
   ctx.handle('runs:memory', async (run: unknown, body: unknown) => {
-    const done = await r.editMemory(id(run), text(body));
+    const done = await r.editMemory(id(run), text(body), whoNow());
     if (done) auditMove({ op: 'cycle-memory-edit', ref: id(run) });
     return done;
   });
@@ -378,7 +381,7 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('runs:screenAnswer', (askId: unknown, decision: unknown, note?: unknown) => {
     if (!ASK_DECISIONS.includes(decision as AskDecision)) return { ok: false as const, reason: 'decision' as const };
     try {
-      askStore.answer(text(askId), decision as AskDecision, callOrigin() === 'web' ? 'paired' : 'window', typeof note === 'string' ? note : undefined);
+      askStore.answer(text(askId), decision as AskDecision, viaOf(), typeof note === 'string' ? note : undefined);
       return { ok: true as const };
     } catch (e) {
       if (e instanceof AskGone) return { ok: false as const, reason: 'gone' as const };
@@ -389,19 +392,19 @@ export const runsModule: Module = (ctx) => {
   // for the whole wait). It gives the agent nothing and takes no screen; taking it and giving it back are the window's (`screen:handoffTake`, `screen:handoffGive`).
   ctx.handle('runs:handoffDecline', (askId: unknown) => handoffs.decline(text(askId)));
   // Removing a piece of evidence is the person's action, never an agent's; the file goes and the run drops the record.
-  ctx.handle('runs:evidenceDelete', (run: unknown, evidence: unknown) => r.removeEvidence(id(run), text(evidence)));
-  ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined));
+  ctx.handle('runs:evidenceDelete', (run: unknown, evidence: unknown) => r.removeEvidence(id(run), text(evidence), whoNow()));
+  ctx.handle('runs:start', (ref: unknown, repo?: unknown) => r.start(text(ref), typeof repo === 'string' && repo ? repo : undefined, whoNow()));
   // A release run: its subject is a version (X.Y.Z, and the stable tag a patch is cut from). Like every start, it is the person's; what it asks of the repository goes through Actions.
-  ctx.handle('runs:startRelease', (version: unknown, from?: unknown, repo?: unknown) => r.startRelease(text(version), typeof from === 'string' && from ? from : undefined, typeof repo === 'string' && repo ? repo : undefined));
+  ctx.handle('runs:startRelease', (version: unknown, from?: unknown, repo?: unknown) => r.startRelease(text(version), typeof from === 'string' && from ? from : undefined, typeof repo === 'string' && repo ? repo : undefined, whoNow()));
   // The documentation run of a repository: it writes only in its own worktree, and its push and pull request wait in Actions like every other. The desktop window's:
   // webPolicy.ts denies docs:* to a paired browser. `apply` is the person's yes to adding the docs flow and its agent when the workspace has none.
   // What Settings › Documentation shows: root AGENTS.md status and whether a documentation run is going.
   ctx.handle('docs:status', () => docsStatus({ repos: rc().repos, runs: r.list(), flow: !!docsFlowOf(getConfig())?.length }));
-  ctx.handle('docs:start', (repo: unknown, mode: unknown, apply?: unknown) => startDocsRun({ runner: r, config: getConfig, applyFlow: applyDocsFlow }, text(repo), text(mode), apply === true));
-  ctx.handle('runs:startStage', (run: unknown) => r.startStage(id(run)));
-  ctx.handle('runs:accept', (run: unknown, note?: unknown) => r.accept(id(run), text(note)));
-  ctx.handle('runs:return', (run: unknown, note: unknown) => r.returnStage(id(run), text(note)));
-  ctx.handle('runs:gate', (run: unknown, action: unknown, reason?: unknown) => r.gate(id(run), action as GateAction, text(reason)));
+  ctx.handle('docs:start', (repo: unknown, mode: unknown, apply?: unknown) => startDocsRun({ runner: r, config: getConfig, applyFlow: applyDocsFlow }, text(repo), text(mode), apply === true, whoNow()));
+  ctx.handle('runs:startStage', (run: unknown) => r.startStage(id(run), whoNow()));
+  ctx.handle('runs:accept', (run: unknown, note?: unknown) => r.accept(id(run), text(note), whoNow()));
+  ctx.handle('runs:return', (run: unknown, note: unknown) => r.returnStage(id(run), text(note), whoNow()));
+  ctx.handle('runs:gate', (run: unknown, action: unknown, reason?: unknown) => r.gate(id(run), action as GateAction, text(reason), whoNow()));
   // The files of the answer travel with it: the person attaches them to the message that answers the run's question, and the answer carries the refs.
   ctx.handle('runs:answer', (run: unknown, answer: unknown, attachments?: unknown) =>
     r.answer(
@@ -410,18 +413,19 @@ export const runsModule: Module = (ctx) => {
       Array.isArray(attachments)
         ? attachments.filter((a): a is AttachmentRef => !!a && typeof (a as AttachmentRef).id === 'string').map((a) => ({ id: a.id, name: String(a.name ?? ''), kind: a.kind, bytes: Number(a.bytes) || 0 }))
         : undefined,
+      whoNow(),
     ));
-  ctx.handle('runs:retry', (run: unknown) => r.retry(id(run)));
-  ctx.handle('runs:retryPr', (run: unknown, base: unknown) => r.retryPr(id(run), text(base)));
-  ctx.handle('runs:cancel', (run: unknown) => r.cancel(id(run)));
+  ctx.handle('runs:retry', (run: unknown) => r.retry(id(run), whoNow()));
+  ctx.handle('runs:retryPr', (run: unknown, base: unknown) => r.retryPr(id(run), text(base), whoNow()));
+  ctx.handle('runs:cancel', (run: unknown) => r.cancel(id(run), whoNow()));
   // Lets a `shell: host` agent run a command on this computer: from a paired browser only with the same switch as approving a proposal (webPolicy.ts).
   ctx.handle('runs:command', (run: unknown, command: unknown, decision: unknown, note?: unknown) => r.command(id(run), text(command), decision as CommandDecision, text(note)));
-  ctx.handle('runs:skipWait', (run: unknown, reason: unknown) => r.skipWait(id(run), text(reason)));
-  ctx.handle('runs:sendBack', (run: unknown, stage: unknown, note: unknown) => r.sendBack(id(run), text(stage), text(note)));
-  ctx.handle('runs:migrateFlow', (run: unknown) => r.migrateFlow(id(run)));
+  ctx.handle('runs:skipWait', (run: unknown, reason: unknown) => r.skipWait(id(run), text(reason), whoNow()));
+  ctx.handle('runs:sendBack', (run: unknown, stage: unknown, note: unknown) => r.sendBack(id(run), text(stage), text(note), whoNow()));
+  ctx.handle('runs:migrateFlow', (run: unknown) => r.migrateFlow(id(run), whoNow()));
   ctx.handle('runs:undoPost', (run: unknown, key: unknown) => r.undoPost(id(run), text(key)));
-  ctx.handle('runs:setSquad', (run: unknown, squad: unknown) => r.setSquad(id(run), typeof squad === 'string' && squad ? squad : null));
-  ctx.handle('runs:removeSquad', (squad: unknown, confirm?: unknown) => r.removeSquad(text(squad), confirm === true));
+  ctx.handle('runs:setSquad', (run: unknown, squad: unknown) => r.setSquad(id(run), typeof squad === 'string' && squad ? squad : null, whoNow()));
+  ctx.handle('runs:removeSquad', (squad: unknown, confirm?: unknown) => r.removeSquad(text(squad), confirm === true, whoNow()));
   ctx.handle('runs:setSquadAutonomous', (squad: unknown, on: unknown) => {
     if (typeof on !== 'boolean') throw new RunError('unknown-squad', { squad: '' });
     r.setSquadAutonomous(text(squad), on);

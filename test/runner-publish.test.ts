@@ -54,8 +54,8 @@ const PR = { title: 'Add the thing', ...comment([['What changes for the person u
 
 /** Every agent does its stage at once; a test overrides the ones it is about. */
 function script(b: Boot): void {
-  b.engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md')], comment: REFINE }));
-  b.engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md')], comment: PLAN }));
+  b.engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: REFINE }));
+  b.engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: PLAN }));
   b.engine.script('developer', async (_c, tools) => {
     await tools.write('src/feature.ts', 'export const feature = 1;\n');
     return work('Built.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')], comment: BUILT(), pr: PR });
@@ -241,8 +241,8 @@ describe('a run whose agents are all autonomous', () => {
     setVcsRuntimeForTests(forge.runtime());
     const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
     script(b);
-    b.engine.script('planner', () => work('One thing is missing.', { question: 'Should it also handle Y?' }), () => work('Plan written.', { artifacts: [doc('2_PLAN.md')], comment: PLAN }));
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], comment: REFINE }), () => work('Spec again.', { artifacts: [doc('1_SPEC.md')], comment: comment([['What is asked', '> The thing must do X and not Y.'], ['What changes for the person using it', 'The thing does X, and now Y is said.']]) }));
+    b.engine.script('planner', () => work('One thing is missing.', { question: 'Should it also handle Y?' }), () => work('Plan written.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: PLAN }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: REFINE }), () => work('Spec again.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: comment([['What is asked', '> The thing must do X and not Y.'], ['What changes for the person using it', 'The thing does X, and now Y is said.']]) }));
     const run = await start(b);
     b.runner.gate(run.id, 'reject', 'Say what happens with Y.');
     await b.settle();
@@ -291,7 +291,7 @@ describe('a run whose agents are all autonomous', () => {
     setVcsRuntimeForTests(forge.runtime());
     const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
     script(b);
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], comment: REFINE }), () => work('Spec again.', { artifacts: [doc('1_SPEC.md')], comment: comment([['What is asked', 'Rewritten.']]) }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: REFINE }), () => work('Spec again.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: comment([['What is asked', 'Rewritten.']]) }));
     const run = await start(b);
     const first = issueNotes()[0][0];
     // the run forgets where its comment is
@@ -394,7 +394,7 @@ describe('what waits for the person', () => {
     setVcsRuntimeForTests(forge.runtime());
     const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'planner')!.autonomous = false; } });
     script(b);
-    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')], comment: PLAN }), () => work('Plan again.', { artifacts: [doc('2_PLAN.md')], comment: comment([['Approach', 'A different way.']]) }));
+    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: PLAN }), () => work('Plan again.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: comment([['Approach', 'A different way.']]) }));
     const run = await start(b);
     b.runner.gate(run.id, 'approve');
     await b.settle();
@@ -439,7 +439,7 @@ describe('what waits for the person', () => {
     setVcsRuntimeForTests(forge.runtime());
     const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'planner')!.autonomous = false; } });
     script(b);
-    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')], comment: PLAN }), () => work('Plan again.', { artifacts: [doc('2_PLAN.md')], comment: comment([['Approach', 'Another way.']]) }));
+    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: PLAN }), () => work('Plan again.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: comment([['Approach', 'Another way.']]) }));
     const run = await start(b);
     b.runner.gate(run.id, 'approve');
     await b.settle();
@@ -463,7 +463,7 @@ describe('what waits for the person', () => {
       'refiner',
       () =>
         work('Spec.', {
-          artifacts: [doc('1_SPEC.md')],
+          artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')],
           comment: comment([['What is asked', 'I asked @planner in the forum. The api_key = sk-live-abcdefgh12345678 is in /home/dev/secret/app.env and run r-abc123-x1y2 saw it.'], ['What changes for the person using it', 'The thing does X.']]),
         }),
     );
@@ -745,9 +745,9 @@ describe('an agent whose autonomy is switched in the middle of its stage', () =>
       'planner',
       () => {
         b.runner.setAutonomous('planner', false);
-        return work('Plan.', { artifacts: [doc('2_PLAN.md')], comment: PLAN });
+        return work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: PLAN });
       },
-      () => work('Plan again.', { artifacts: [doc('2_PLAN.md')], comment: comment([['Approach', 'Changed.']]) }),
+      () => work('Plan again.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: comment([['Approach', 'Changed.']]) }),
     );
     const run = await start(b);
     b.runner.gate(run.id, 'approve');

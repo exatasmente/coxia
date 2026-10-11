@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import type { Card, GateOption, GateRoundView, GateView, Talk } from '../shared/types';
+import type { PluginDocumentType } from '../shared/plugins/declaration';
 import { askAgent, obj, str } from './agents';
 import { answerCeremonyMentions } from './mentions/ceremony';
 import { cycle, formatTime, language, prompt as cp, text as cycleWord } from './cyclePrompts';
@@ -100,10 +101,10 @@ function view(g: Gate): GateView {
 }
 
 /**
- * Documents that plugins add to the cycle folder, as `[file, label]`: the types the plugins that are on offer. Set once by the plugins module; empty
- * when none is registered, so a workspace with no plugins behaves exactly as before.
+ * The document types the plugins that are on add to the cycle folder: what they offer, `flow` included. Set once by the plugins module; empty when none is
+ * registered, so a workspace with no plugins behaves exactly as before.
  */
-export const gatePluginDocuments: { files: () => [string, string][] } = {
+export const gatePluginDocuments: { files: () => PluginDocumentType[] } = {
   files: () => [],
 };
 
@@ -116,12 +117,25 @@ export function gateOptions(card: Card): GateOption[] {
   });
   // The document types the plugins that are on add: a second source summed to the cycle's own, never a change to the reader of today's types. A
   // plugin's document lands where the run writes its documents: the folder's root, or a subfolder the layout names; both are looked at, in that order.
+  // A document that says which gate reads it is offered there; one that says none is not a gate's artifact, and one that says nothing (a stage's
+  // by-product) stays at gate 2, where every plugin document landed before.
   const subs = ['', ...new Set(rc().specLayout.gateFiles.map((c) => c.sub).filter(Boolean))];
-  const fromPlugins = gatePluginDocuments.files().flatMap(([f, label]) => {
-    const at = subs.map((sub) => join(folder, sub, f)).find((p) => existsSync(p));
-    return at ? [{ gate: 2 as const, label: cycleWord(label), file: at }] : [];
+  const fromPlugins = gatePluginDocuments.files().flatMap((d) => {
+    const gate = d.flow ? d.flow.gate : 2;
+    if (!gate) return [];
+    const at = subs.map((sub) => join(folder, sub, d.name)).find((p) => existsSync(p));
+    return at ? [{ gate, label: cycleWord(d.label), file: at }] : [];
   });
   return [...fromCycle, ...fromPlugins];
+}
+
+/**
+ * The artifact a gate opens with: the option the screen's button named, when it is one of this card's options for that gate; else the first option of the
+ * gate (what every call that names no file already gets). A file outside the card's options is never opened by parameter.
+ */
+export function pickGateOption(options: GateOption[], gate: 1 | 2, file?: string): GateOption | undefined {
+  const ofGate = options.filter((o) => o.gate === gate);
+  return ofGate.find((o) => o.file === file) ?? ofGate[0];
 }
 
 // The quiz as the cycle defines it: how many questions a round has and the kinds of consequence question it may use.
@@ -171,8 +185,8 @@ function quizRules(): string {
   return cp('gate.rules', { rulesRef: cp('gate.rulesRef'), max, kinds: kinds.join(', ') });
 }
 
-export async function startGate(card: Card, gate: 1 | 2): Promise<GateView> {
-  const option = gateOptions(card).find((o) => o.gate === gate);
+export async function startGate(card: Card, gate: 1 | 2, file?: string): Promise<GateView> {
+  const option = pickGateOption(gateOptions(card), gate, file);
   if (!option) throw new Error(t('main.gate.noArtifact', { iid: card.iid, gate }));
   const { words } = gateParams();
   const prompt = cp('gate.start', { gate, ref: card.ref, title: card.title, file: option.file, words, quizRules: quizRules() });

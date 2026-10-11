@@ -1,4 +1,4 @@
-import type { AuditEntry } from '../../shared/auditoria';
+import type { AuditEntry, Through } from '../../shared/auditoria';
 import { recordWrite } from '../auditoria';
 import { redact } from '../errorlog-core';
 import { type PolicyChange, screenPolicyChanges } from '../../shared/config/screenPolicy';
@@ -16,8 +16,8 @@ export type ScreenPath = 'app-browser' | 'shell' | 'both';
 export type ScreenProfile = 'own' | 'fresh' | 'none';
 export type ScreenEnd = 'idle' | 'person' | 'failed' | 'stopped' | 'config' | 'max' | 'quit' | 'stage' | 'thread';
 export type ScreenAnswer = 'yes' | 'no' | 'site' | 'timeout' | 'closed';
-/** Who answered: the window of the app, a paired browser, or nobody (a timeout, a close). */
-export type AnsweredThrough = 'window' | 'paired' | 'none';
+/** Who answered: the window of the app, a paired browser, the persona, or nobody (a timeout, a close). */
+export type AnsweredThrough = Through | 'none';
 
 interface Who {
   /** The screen key (`run:<id>` or `call:<thread>:<agent>`). */

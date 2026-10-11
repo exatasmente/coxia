@@ -115,14 +115,28 @@ export const roundsLeft = (state: Pick<AssistState, 'rounds' | 'open'>): number 
 /** Whether "next round" is offered: there is one left to ask and the model has not said it has nothing more to ask. */
 export const canAskAnotherRound = (state: Pick<AssistState, 'rounds' | 'open' | 'enough'>): boolean => !state.enough && roundsLeft(state) > 0;
 
+/**
+ * What the rounds need of a state, so the agent assistant and the persona's wizard share them: the answered rounds, the one on screen, the draft the model wrote, whether it
+ * has nothing more to ask, the remark about the test, the step, and the draft saved for the test.
+ */
+export interface RoundState {
+  rounds: AssistRound[];
+  open: AssistRound | null;
+  draft: AssistDraft;
+  enough: boolean;
+  note: string;
+  step: string;
+  testId: string | null;
+}
+
 /** The round on screen moves to the answered ones. A round with no question (nothing usable came) is not a round the person answered and is not kept. */
-export function closeRound(state: AssistState): AssistState {
+export function closeRound<S extends RoundState>(state: S): S {
   if (!state.open) return state;
   return { ...state, rounds: state.open.questions.length ? [...state.rounds, state.open] : state.rounds, open: null };
 }
 
 /** Whether closing the assistant would lose something: an answered round, an answer on the round on screen, or a draft agent saved for the test. */
-export const hasProgress = (state: AssistState): boolean => state.rounds.length > 0 || (state.open !== null && answeredCount(state.open) > 0) || state.testId !== null;
+export const hasProgress = (state: Pick<RoundState, 'rounds' | 'open' | 'testId'>): boolean => state.rounds.length > 0 || (state.open !== null && answeredCount(state.open) > 0) || state.testId !== null;
 
 export interface RoundResult {
   questions: AssistQuestion[];
@@ -131,7 +145,7 @@ export interface RoundResult {
 }
 
 /** The state after a round came back: its questions are on screen, unanswered, and the preview is the draft it wrote. */
-export const withRound = (state: AssistState, result: RoundResult): AssistState => ({ ...state, step: 'questions', open: { questions: result.questions, answers: [] }, draft: result.draft, enough: result.enough, note: '' });
+export const withRound = <S extends RoundState>(state: S, result: RoundResult): S => ({ ...state, step: 'questions', open: { questions: result.questions, answers: [] }, draft: result.draft, enough: result.enough, note: '' });
 
 export interface ReviewResult {
   draft: AssistDraft;
@@ -157,11 +171,11 @@ export interface AssistChannelInput {
   note?: string;
 }
 
-const cut = (text: string, max: number): string => text.trim().slice(0, max).trim();
+export const cut = (text: string, max: number): string => text.trim().slice(0, max).trim();
 
 export const cutDraft = (d: AssistDraft): AssistDraft => ({ name: cut(d.name, ASSIST_LIMITS.name), job: cut(d.job, ASSIST_LIMITS.job), instructions: cut(d.instructions, ASSIST_LIMITS.instructions) });
 
-function cutRound(round: AssistRound): AssistRound {
+export function cutRound(round: AssistRound): AssistRound {
   return {
     questions: round.questions,
     answers: round.answers

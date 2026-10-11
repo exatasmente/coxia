@@ -383,9 +383,9 @@ describe('a run that is told, end to end (acceptance 7)', () => {
     const s = await w.session({ agent: over.agent ?? 'developer', conversation: over.conversation ?? 'squad-core', ref: over.ref ?? 'app#101', repo: over.repo ?? 'app' });
     return (await s.tools!.save!({ kind: over.kind ?? 'decision', title, text: 'Retries go through the queue.' })).text;
   };
-  const scripts = (b: Boot, refiner: Parameters<Boot['engine']['script']>[1] = () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' })): void => {
+  const scripts = (b: Boot, refiner: Parameters<Boot['engine']['script']>[1] = () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' })): void => {
     b.engine.script('refiner', refiner);
-    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   };
   const planner = (b: Boot) => b.engine.calls.filter((c) => c.agent.id === 'planner');
   const SECTION = (): string => cycleWords('runner.section.sharedNew', { text: '' }).split('\n')[0];
@@ -401,7 +401,7 @@ describe('a run that is told, end to end (acceptance 7)', () => {
       const run = b.runner.list()[0];
       await vi.waitFor(() => expect(noticeLines(b, run)).toHaveLength(1));
       heard = (await call.incoming?.(() => undefined)) ?? null;
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' });
     });
     const run = await b.runner.start('app#101');
     await b.settle();
@@ -452,7 +452,7 @@ describe('a run that is told, end to end (acceptance 7)', () => {
     b.engine.script('planner', () => {
       attempts++;
       if (attempts === 1) throw new Error('the model fell over');
-      return work('Plan.', { artifacts: [doc('2_PLAN.md')] });
+      return work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] });
     });
     const run = await b.runner.start('app#101');
     await b.settle();

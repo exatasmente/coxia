@@ -437,8 +437,50 @@ describe('the agent cycle template: the business team', () => {
     expect(c.devCycle.stages.map((s) => [s.id, s.type])).toEqual([['triage', 'work'], ['refine', 'work'], ['gate1', 'gate'], ['plan', 'work'], ['gate2', 'gate'], ['implement', 'work'], ['review', 'work'], ['qa', 'work'], ['ready', 'wait'], ['communicate', 'work']]);
     expect(c.devCycle.stages.find((s) => s.id === 'ready')).toMatchObject({ waitsFor: { kind: 'pr-merged' }, kind: 'reviewApproved' });
     expect(c.devCycle.stages.filter((s) => s.agentId).map((s) => [s.id, s.agentId])).toEqual([['triage', 'support'], ['refine', 'product-owner'], ['plan', 'tech-lead'], ['implement', 'developer'], ['review', 'tech-lead'], ['qa', 'qa'], ['communicate', 'customer-success']]);
-    expect(c.devCycle.stages.flatMap((s) => s.produces ?? [])).toEqual(['0_TRIAGE.md', '1_SPEC.md', '2_PLAN.md', '3_IMPLEMENTATION.md', '4_REVIEW.md', '5_TEST_PLAN.md', '6_RELEASE_NOTE.md']);
+    expect(c.devCycle.stages.flatMap((s) => s.produces ?? [])).toEqual(['0_TRIAGE.md', '1_SPEC.md', 'REQUIREMENTS.md', '2_PLAN.md', 'PROTOTYPE.md', '3_IMPLEMENTATION.md', '4_REVIEW.md', '5_TEST_PLAN.md', '6_RELEASE_NOTE.md', 'USER_MANUAL.md']);
     expect(c.devCycle.stages.filter((s) => s.returnsTo).map((s) => [s.id, s.returnsTo, s.roundLimit])).toEqual([['review', 'implement', 2], ['qa', 'implement', 2]]);
+  });
+
+  it('has each stage produce the documents the flow writes: the requirements in refine, the prototype in plan, the manual beside the release note', () => {
+    const c = applied();
+    expect(c.devCycle.stages.map((s) => [s.id, s.produces ?? []])).toEqual([
+      ['triage', ['0_TRIAGE.md']],
+      ['refine', ['1_SPEC.md', 'REQUIREMENTS.md']],
+      ['gate1', []],
+      ['plan', ['2_PLAN.md', 'PROTOTYPE.md']],
+      ['gate2', []],
+      ['implement', ['3_IMPLEMENTATION.md']],
+      ['review', ['4_REVIEW.md']],
+      ['qa', ['5_TEST_PLAN.md']],
+      ['ready', []],
+      ['communicate', ['6_RELEASE_NOTE.md', 'USER_MANUAL.md']],
+    ]);
+  });
+
+  it('produces the requirements and the prototype in the engineering cycle too, but no manual: there is no stage that closes the run there', () => {
+    const c = applyTemplate(neutralConfig(), builtInTemplate('agent-flow-engineering')!);
+    expect(c.devCycle.stages.filter((s) => (s.produces ?? []).length).map((s) => [s.id, s.produces])).toEqual([
+      ['refine', ['1_SPEC.md', 'REQUIREMENTS.md']],
+      ['plan', ['2_PLAN.md', 'PROTOTYPE.md']],
+      ['implement', ['3_IMPLEMENTATION.md']],
+      ['review', ['4_REVIEW.md']],
+      ['qa', ['5_TEST_PLAN.md']],
+    ]);
+  });
+
+  it('names the three documents in both languages, at the phase and at the gate', () => {
+    const keys: [string, string, string][] = [
+      ['cycle.agentFlow.phase.requirements', 'requisitos escritos', 'requirements written'],
+      ['cycle.agentFlow.phase.prototype', 'protótipo escrito', 'prototype written'],
+      ['cycle.agentFlow.phase.userManual', 'manual do usuário escrito', 'user manual written'],
+      ['cycle.agentFlow.gate.requirements', 'Requisitos', 'Requirements'],
+      ['cycle.agentFlow.gate.prototype', 'Protótipo', 'Prototype'],
+      ['cycle.agentFlow.gate.userManual', 'Manual do usuário', 'User manual'],
+    ];
+    for (const [key, pt, en] of keys) {
+      expect(CATALOGS['pt-BR'][key], `pt-BR ${key}`).toBe(pt);
+      expect(CATALOGS.en[key], `en ${key}`).toBe(en);
+    }
   });
 
   it('has the team of a product: only the developer writes, and each turns to the one it needs before it asks the person', () => {
@@ -506,7 +548,7 @@ describe('the release-flow template', () => {
     expect(c.devCycle.templateId).toBe('agent-flow');
     expect({ ...c.devCycle, flows: null, comments: null }).toEqual({ ...issueFlow.devCycle, flows: null, comments: null });
     expect(c.agents.team.map((a) => a.id)).toContain('release-manager');
-    expect(c.agents.team.filter((a) => a.id !== 'release-manager')).toEqual(issueFlow.agents.team);
+    expect(c.agents.team.filter((a) => a.id !== 'release-manager' && a.id !== 'release-images')).toEqual(issueFlow.agents.team);
   });
 
   it('validates with nothing to say about it: the flow of the release has no problem and the agent works its stages', () => {
@@ -520,12 +562,13 @@ describe('the release-flow template', () => {
     expect(validateConfig(own).warnings).toEqual([]);
   });
 
-  it('goes plan, gate, assemble, merges in, beta, beta on the host, feedback, gate, stable, stable on the host, published, and every stage is reachable', () => {
+  it('goes plan, gate, assemble, the images, merges in, beta, beta on the host, feedback, gate, stable, stable on the host, published, and every stage is reachable', () => {
     const stages = flowOf({ agents: { team: applied().agents.team }, devCycle: { stages: applied().devCycle.flows!.release } });
     expect(stages.map((s) => [s.id, s.type, s.agent])).toEqual([
       ['release-plan', 'work', 'release-manager'],
       ['release-plan-gate', 'gate', null],
       ['release-assemble', 'work', 'release-manager'],
+      ['release-images', 'work', 'release-images'],
       ['release-merged', 'wait', null],
       ['release-beta', 'work', 'release-manager'],
       ['release-beta-out', 'wait', null],
@@ -535,6 +578,8 @@ describe('the release-flow template', () => {
       ['release-stable-out', 'wait', null],
       ['release-published', 'work', null],
     ]);
+    // The stage that keeps the images of the documentation current asks for the display a QA stage gets: that is what makes the capture run.
+    expect(stages.find((s) => s.id === 'release-images')?.display).toBe(true);
     expect(stages.find((s) => s.id === 'release-plan')?.artifacts).toEqual(['RELEASE_PLAN.md']);
     expect(stages.find((s) => s.id === 'release-merged')?.waitsFor).toEqual({ kind: 'release-approved' });
     expect(stages.find((s) => s.id === 'release-feedback')?.waitsFor).toEqual({ kind: 'beta-age', minutes: 1440, label: 'beta-blocker' });
@@ -605,9 +650,11 @@ describe('the release-flow template', () => {
 
   it('a flow of a release that is broken is reported with its path', () => {
     const c = applied();
-    c.devCycle.flows!.release[3] = { ...c.devCycle.flows!.release[3], waitsFor: { kind: 'beta-age' } };
+    // The wait for the merges, whatever its place in the list: it is the stage the release flow carries that must wait for an event.
+    const at = c.devCycle.flows!.release.findIndex((s) => s.waitsFor?.kind === 'release-approved');
+    c.devCycle.flows!.release[at] = { ...c.devCycle.flows!.release[at], waitsFor: { kind: 'beta-age' } };
     const r = validateConfig(c);
-    expect(r.errors.map((e) => e.path)).toContain('devCycle.flows.release[3].waitsFor');
+    expect(r.errors.map((e) => e.path)).toContain(`devCycle.flows.release[${at}].waitsFor`);
   });
 
   it('is not part of the template file a workspace exports: the file is valid and the Release manager lists no stage of a flow it does not carry', () => {
@@ -688,11 +735,11 @@ describe('the docs-flow template', () => {
     for (const id of ['agent-flow', 'agent-flow-engineering', 'sdd', 'scrum', 'kanban', 'github-flow', 'minimal', 'release-flow']) for (const s of cycleOf(builtInTemplate(id)!).stages) expect(ids.has(s.id), `${id}: ${s.id}`).toBe(false);
   });
 
-  it('brings a Documentation writer that changes files, runs nothing and reads no tracker, and a flow that is not offered by the wizard', async () => {
+  it('brings a Documentation writer that changes files and builds the site in a sandbox, and a flow that is not offered by the wizard', async () => {
     const agent = flow.team!.find((a) => a.id === 'docs-writer')!;
-    expect(agent).toMatchObject({ permission: 'worktree', shell: 'none', tracker: 'none', autonomous: true, system: false, turnsTo: null, model: { role: 'deep' } });
+    expect(agent).toMatchObject({ permission: 'worktree', shell: 'sandbox', tracker: 'none', autonomous: true, system: false, turnsTo: null, model: { role: 'deep' } });
     expect(agent.stages.sort()).toEqual(['docs-draft', 'docs-publish']);
-    expect(RECOMMENDED['docs-writer']).toEqual({ tracker: 'none', shell: 'none' });
+    expect(RECOMMENDED['docs-writer']).toEqual({ tracker: 'none', shell: 'sandbox' });
     const { listCycleTemplates } = await import('../src/main/cycles');
     expect(listCycleTemplates('en').map((t) => t.id)).not.toContain('docs-flow');
   });

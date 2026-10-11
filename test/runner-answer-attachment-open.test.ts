@@ -46,8 +46,8 @@ function channels(): Record<string, (...args: unknown[]) => unknown> {
 /** The flow driven to the question the person answers, with two files stored in the data root for that run's own conversation. */
 async function answerWithFiles(): Promise<{ b: Boot; thread: string; seq: number; png: string; log: string }> {
   const b = await boot({ dir: ATAS });
-  b.engine.script('refiner', () => work('I need to know.', { artifacts: [doc('1_SPEC.md')], question: 'Which users does this cover?' }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('I need to know.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], question: 'Which users does this cover?' }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   b.engine.script('developer', () => work('Done.', { artifacts: [doc('3_IMPLEMENTATION.md')] }));
   b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved' }));
   b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')] }));

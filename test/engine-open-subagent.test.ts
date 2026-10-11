@@ -8,7 +8,7 @@ import { type OpenRunParams, type SubAgentHandle, type SubAgentStart, runOpen } 
 import type { PoolMember, PoolSwitch } from '../src/main/engine/open/pool';
 import { restRegistry } from '../src/main/engine/open/rest';
 import { readSession, type UsageRecord } from '../src/main/engine/open/session';
-import { KIND_ACTIVITIES, KIND_TURNS, SUB_KINDS, modelOfKind, offeredKinds, toolsOfKind, type SubKind } from '../src/main/engine/open/subagent';
+import { DEFAULT_SUB_TURNS, KIND_ACTIVITIES, KIND_TURNS, SUB_KINDS, modelOfKind, offeredKinds, subTurnsOf, toolsOfKind, type SubKind } from '../src/main/engine/open/subagent';
 import { type ScreenToolset, screenToolImpls } from '../src/main/browser/engineTool';
 import type { ToolImpl } from '../src/main/engine/open/tools/types';
 import { HANDOFF_HELD_TEXT } from '../src/shared/handoff';
@@ -549,5 +549,89 @@ describe('the model of a kind', () => {
   it('is none for a kind without a list', () => {
     expect(modelOfKind('shell', { name: 'deep', primary: { key: 'a', label: 'a' }, fallbacks: [], activities: { edit: [m('x')] } })).toBeNull();
     expect(modelOfKind('shell', undefined)).toBeNull();
+  });
+});
+
+describe('the turns of a sub-agent are a setting', () => {
+  const forever = () => toolStep([{ id: 'c', name: 'look', args: {} }], { usageTokens: [10, 2] });
+  const fewThenDone = (n: number) => {
+    let seen = 0;
+    return (): Step => (++seen > n ? textStep('sub done', { usageTokens: [10, 2] }) : forever());
+  };
+  const answerOf = (a: Fake): string => usageOf(a.chats()[1]).find((m) => m.role === 'tool')!.content as string;
+
+  it('takes the number from the setting, and the default of its kind when there is none or it is not a sensible number', () => {
+    expect(DEFAULT_SUB_TURNS).toEqual({ explore: 12, edit: 30, shell: 20, screen: 30, plain: 12 });
+    expect(subTurnsOf(undefined, 'edit')).toBe(30);
+    expect(subTurnsOf(undefined, undefined)).toBe(12);
+    expect(subTurnsOf(() => ({ explore: 3, plain: 9 }), 'explore')).toBe(3);
+    expect(subTurnsOf(() => ({ explore: 3, plain: 9 }), undefined)).toBe(9);
+    expect(subTurnsOf(() => ({ explore: 3 }), 'shell')).toBe(20);
+    for (const bad of [0, -1, 2.5, Number.NaN, '4' as unknown as number]) expect(subTurnsOf(() => ({ explore: bad }), 'explore'), String(bad)).toBe(12);
+  });
+
+  it('stops an explore sub-agent at the configured number, and says that number to the principal', async () => {
+    const a = await server([delegating('explore'), textStep('split it then', { usageTokens: [10, 2] })]);
+    const f = await server(forever);
+    const r = await run({ primary: member(a, 'a'), activities: { explore: [member(f, 'f')] }, tools: [tool('look', 'explore')], write: true, over: { subTurns: () => ({ ...DEFAULT_SUB_TURNS, explore: 3 }) } });
+    expect(r.data).toBe('split it then');
+    expect(f.chats()).toHaveLength(3);
+    expect(answerOf(a)).toContain('3');
+    expect(answerOf(a)).not.toContain(String(KIND_TURNS.explore));
+  });
+
+  it('lets the same task finish when the number is larger: it stops asking for more than it needs', async () => {
+    const a = await server([delegating('explore'), textStep('principal done', { usageTokens: [10, 2] })]);
+    const f = await server(fewThenDone(5));
+    await run({ primary: member(a, 'a'), activities: { explore: [member(f, 'f')] }, tools: [tool('look', 'explore')], write: true, over: { subTurns: () => ({ ...DEFAULT_SUB_TURNS, explore: 20 }) } });
+    expect(answerOf(a)).toBe('sub done');
+    expect(f.chats()).toHaveLength(6);
+  });
+
+  it('gives each kind its own number: edit, shell and screen read theirs, not the explore one', async () => {
+    for (const [kind, name] of [['edit', 'Ed'], ['shell', 'Sh'], ['screen', 'Snap']] as const) {
+      restRegistry.clear();
+      const a = await server([delegating(kind), textStep('done', { usageTokens: [10, 2] })]);
+      const f = await server(() => toolStep([{ id: 'c', name, args: {} }], { usageTokens: [10, 2] }));
+      await run({ primary: member(a, 'a'), activities: { [kind]: [member(f, 'f')] }, tools: [tool(name, kind)], write: true, over: { subTurns: () => ({ explore: 1, edit: 4, shell: 5, screen: 6, plain: 2 }) } });
+      expect(f.chats(), kind).toHaveLength({ edit: 4, shell: 5, screen: 6 }[kind]);
+    }
+  });
+
+  it('gives a sub-agent that is not of a kind the number of `plain`, on the principal\'s own model', async () => {
+    const starter = toolStep([{ id: 'call_plain', name: 'Agent', args: { description: 'go', prompt: 'sub task' } }], { usageTokens: [10, 2] });
+    let sub = 0;
+    const a = await server((req) => {
+      const first = String(usageOf(req)[1]?.content);
+      if (first !== 'sub task') return req.body?.messages.at(-1).role === 'tool' ? textStep('principal done', { usageTokens: [10, 2] }) : starter;
+      sub++;
+      return toolStep([{ id: `s${sub}`, name: 'look', args: {} }], { usageTokens: [10, 2] });
+    });
+    await run({ primary: member(a, 'a'), tools: [tool('look', 'explore')], over: { subTurns: () => ({ ...DEFAULT_SUB_TURNS, plain: 2 }) } });
+    expect(sub).toBe(2);
+    // with nothing wired it is the tool error of today
+    sub = 0;
+    restRegistry.clear();
+    await run({ primary: member(a, 'a'), tools: [tool('look', 'explore')] });
+    expect(sub).toBe(12);
+  });
+
+  it('reads the number when the sub-agent really starts: one that waited its turn gets the setting as it is then, and one already running keeps its own', async () => {
+    const live = { ...DEFAULT_SUB_TURNS, edit: 6 };
+    const a = await server([
+      toolStep([{ id: 'c0', name: 'Agent', args: { description: 'one', prompt: 'p1', kind: 'edit' } }, { id: 'c1', name: 'Agent', args: { description: 'two', prompt: 'p2', kind: 'edit' } }], { usageTokens: [10, 2] }),
+      textStep('principal done', { usageTokens: [10, 2] }),
+    ]);
+    const turns = { p1: 0, p2: 0 };
+    const edits = await server((req) => {
+      const who = String(usageOf(req)[1]?.content) as 'p1' | 'p2';
+      turns[who]++;
+      // the first one changes the setting with its first step and then finishes; the second never does
+      if (who === 'p1') return turns.p1 === 1 ? toolStep([{ id: 'e', name: 'Ed', args: {} }], { usageTokens: [10, 2] }) : textStep('one done', { usageTokens: [10, 2] });
+      return toolStep([{ id: `e${turns.p2}`, name: 'Ed', args: {} }], { usageTokens: [10, 2] });
+    });
+    const changing: ToolImpl = { ...tool('Ed', 'edit'), async run() { live.edit = 2; return { response: 'ok', render: () => 'Ed done' }; } };
+    await run({ primary: member(a, 'a'), activities: { edit: [member(edits, 'e')] }, tools: [changing], write: true, over: { subTurns: () => live } });
+    expect(turns).toEqual({ p1: 2, p2: 2 });
   });
 });

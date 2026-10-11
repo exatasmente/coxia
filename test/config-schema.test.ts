@@ -67,6 +67,20 @@ describe('config schema', () => {
     expect(validateConfig({ ...neutralConfig(), runner: { ...neutralConfig().runner, showReasoning: 'yes' } }).errors.map((e) => e.path)).toEqual(['runner.showReasoning']);
   });
 
+  it('has the turns of the sub-agents as integers from 1 to 500 under runner.turns, and refuses a bad one by its path', () => {
+    const keys = ['explore', 'edit', 'shell', 'screen', 'plain'] as const;
+    const turnsSchema = CONFIG_SCHEMA.properties?.runner?.properties?.turns?.properties;
+    expect(neutralConfig().runner.turns).toEqual({ read: 30, write: 80, explore: 12, edit: 30, shell: 20, screen: 30, plain: 12 });
+    for (const k of keys) {
+      expect(turnsSchema?.[k]).toMatchObject({ type: 'integer', minimum: 1, maximum: 500 });
+      const bad = (v: unknown) => validateConfig({ ...neutralConfig(), runner: { ...neutralConfig().runner, turns: { ...neutralConfig().runner.turns, [k]: v } } }).errors.map((e) => e.path);
+      expect(bad(0), k).toEqual([`runner.turns.${k}`]);
+      expect(bad(501), k).toEqual([`runner.turns.${k}`]);
+      expect(bad('12'), k).toEqual([`runner.turns.${k}`]);
+      expect(bad(500), k).toEqual([]);
+    }
+  });
+
   it('reads a config stored without the conversation limits as the defaults, and refuses a limit outside its range', () => {
     const { conversations: _gone, ...runner } = neutralConfig().runner;
     const r = validateConfig({ ...neutralConfig(), runner });
@@ -248,6 +262,32 @@ describe('config schema', () => {
     });
   });
 
+  describe('the display of a stage', () => {
+    const withStage = () => {
+      const c = neutralConfig();
+      c.devCycle.stages = [structuredClone(TEST_STAGES[0])];
+      return c;
+    };
+    const stageOf = (c: ReturnType<typeof neutralConfig>) => c.devCycle.stages[0];
+
+    it('is off until a stage asks for it, in a stage and in a saved flow, and describes itself as a boolean', () => {
+      const c = withStage();
+      expect(c.devCycle.stages.every((s) => !('display' in s))).toBe(true);
+      stageOf(c).display = true;
+      c.devCycle.flows = { release: [{ ...stageOf(c), display: true }] };
+      expect(validateConfig(c).errors).toEqual([]);
+      const props = CONFIG_SCHEMA.properties!.devCycle.properties!.stages.items!.properties!;
+      expect(props.display.type).toBe('boolean');
+      expect(props.id.type).toBe('string');
+    });
+
+    it('refuses a value that is not a boolean, by path', () => {
+      const c = withStage();
+      stageOf(c).display = 'yes' as unknown as boolean;
+      expect(validateConfig(c).errors.map((e) => e.path)).toEqual(['devCycle.stages[0].display']);
+    });
+  });
+
   describe('what the provider offers', () => {
     const withProvider = (features?: Record<string, unknown>) => {
       const c = neutralConfig();
@@ -316,6 +356,14 @@ describe('config schema', () => {
     const bad = validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, { ...agent, draft: 'sim' }] } });
     expect(bad.ok).toBe(false);
     expect(bad.errors.map((e) => e.path)).toEqual([`agents.team[${c.agents.team.length}].draft`]);
+  });
+
+  it('accepts the persona kind of an agent and refuses a kind it does not know', () => {
+    const c = neutralConfig();
+    const agent = { id: 'me', name: 'Me', kind: 'persona' };
+    expect(validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, agent] } }).ok).toBe(true);
+    const bad = validateConfig({ ...c, agents: { ...c.agents, team: [...c.agents.team, { ...agent, kind: 'boss' }] } });
+    expect(bad.errors.map((e) => e.path)).toEqual([`agents.team[${c.agents.team.length}].kind`]);
   });
 
   describe('the screen, hosts and browser profile of an agent', () => {

@@ -51,8 +51,10 @@ export interface OpenOptions {
   onNote?: (note: SandboxNote) => void;
   /** Aborting it stops the copy of a reader's tree. */
   signal?: AbortSignal;
-  /** The stage asks for a virtual display (a QA stage); it is started only when the workspace's `display` switch is on too. */
+  /** The stage asks for a virtual display (a QA stage, or a stage of the flow with `display: true`); a QA stage is started only when the workspace's `display` switch is on too. */
   display?: boolean;
+  /** The stage of the flow carries `display: true`: that alone starts the display, without the workspace's `display` switch (the seeded-images change, acceptance 4). */
+  stageDisplay?: boolean;
   /**
    * The repository a tree that is not a git worktree was copied from (a mention's throwaway copy): its dependency links lead there, and are bound read-only like a
    * worktree's. Ignored when the tree is a worktree, whose clone git names.
@@ -75,7 +77,7 @@ export interface OpenOptions {
 export const TEST_ENV_DATA_VARS = ['CERIMONIAS_DATA_DIR', 'CERIMONIAS_SPECS_DIR'];
 
 /** What a stage of an agent set to `shell: host` asks for: no sandbox, so no proxy and no extra folders; to test an interface it asks, like a sandbox, for the browsers folder and (a QA stage) a display. */
-export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display' | 'held' | 'mask' | 'testEnv'> & Pick<HostSessionOptions, 'approve'>;
+export type HostOpenOptions = Pick<OpenOptions, 'worktree' | 'reader' | 'config' | 'onExec' | 'signal' | 'display' | 'held' | 'mask' | 'testEnv'> & Pick<OpenOptions, 'stageDisplay'> & Pick<HostSessionOptions, 'approve'>;
 
 export interface SandboxService {
   /** The cached answer to "can this machine make a sandbox"; `force` asks again. */
@@ -267,7 +269,8 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
         }
         const { browsers, browsersGone } = browsersOf(opts.config);
         const pathDirs = roFolders.flatMap((p) => [join(p, 'bin'), p]);
-        const askedDisplay = opts.display === true && opts.config.display === true;
+        // A stage of the flow that carries `display: true` gets the display on its own; a QA stage's comes only when the workspace's switch is on too.
+        const askedDisplay = opts.display === true && (opts.stageDisplay === true || opts.config.display === true);
         const xvfb = askedDisplay ? displayProgram(pathDirs) : null;
         // A shared network still needs to resolve names: the computer's own resolver configuration is bound in, read-only, and nothing else of it.
         const resolver = openNet ? nameResolverBinds() : [];
@@ -298,7 +301,8 @@ export function createSandboxService(o: SandboxServiceOptions): SandboxService {
       const worktree = realpathSync(opts.worktree);
       const env = o.hostEnv ?? (() => loginEnv());
       const { browsers, browsersGone } = browsersOf(opts.config);
-      const askedDisplay = opts.display === true && opts.config.display === true;
+      // A stage of the flow that carries `display: true` gets the display on its own; a QA stage's comes only when the workspace's switch is on too.
+      const askedDisplay = opts.display === true && (opts.stageDisplay === true || opts.config.display === true);
       const wantsGui = !!browsers || !!browsersGone || askedDisplay;
       // An agent that only reads works in a copy, as in a sandbox: what it builds or installs there is thrown away. Its commands still reach the whole computer.
       let cwd = worktree;

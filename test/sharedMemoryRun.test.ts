@@ -22,8 +22,8 @@ describe('the record of the activities in a run', () => {
   it('a start leaves a front, and a move keeps it up to date', async () => {
     const dir = dataDir();
     const b = await boot({ dir });
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
-    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
+    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
     const run = await b.runner.start('app#101');
     await b.settle();
     const written = readIndex(dir);
@@ -43,7 +43,7 @@ describe('the record of the activities in a run', () => {
     let seen = '';
     b.engine.script('refiner', (call) => {
       seen = call.prompt;
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')] });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] });
     });
     await b.runner.start('app#101');
     await b.settle();
@@ -53,8 +53,8 @@ describe('the record of the activities in a run', () => {
   it('the person corrects a front, and the correction is kept until the activity moves again', async () => {
     const dir = dataDir();
     const b = await boot({ dir });
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
-    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
+    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
     const run = await b.runner.start('app#101');
     await b.settle();
     const corrected = b.runner.correctActivity('app#101', 'Waiting on the fixtures, per the person.');
@@ -69,8 +69,8 @@ describe('the record of the activities in a run', () => {
   it('the activities are listed without a model call, one entry per activity', async () => {
     const dir = dataDir();
     const b = await boot({ dir });
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
-    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
+    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
     await b.runner.start('app#101');
     await b.settle();
     const calls = b.engine.calls.length;
@@ -93,8 +93,8 @@ describe('the record of the activities in a run', () => {
     booted = b;
     // The Electron module routes every forum message to the runner; the test harness wires it here, as the app does.
     b.forum.subscribe((m) => b.runner.onMessage(m));
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
-    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
+    b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
     // The developer's stage holds the mailbox in its closing window: the person's message lands after `closing()`, so `post` refuses it.
     b.engine.script('developer', () => {
       const run = booted!.runner.get(booted!.runner.list()[0]!.id);

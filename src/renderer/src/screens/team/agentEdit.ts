@@ -3,7 +3,7 @@ import { MAX_REGISTRY_HOSTS, isRegistryHost } from '../../../../shared/sandboxPa
 import { flowStagesOf, setAgentSquad } from '../../../../shared/config/squads';
 import { poolFieldsOf } from '../../../../shared/config/pool';
 import { withoutLead } from '../../wizard/poolEdit';
-import { addAgent, isDraft, isSystemId, modelPoolOf, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
+import { addAgent, isDraft, isPersona, isSystemId, modelPoolOf, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
 import { t } from '../../../../shared/i18n';
 import { MAX_POOL_ENTRIES, type AgentDef, type AgentModel, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type ModelOffer, type ModelPool, type ModelRef, type PoolMode, type StageDef, type WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
@@ -214,7 +214,7 @@ export function applyAgent(config: WorkspaceConfig, draft: AgentDraft, isNew: bo
 export function promoteDraft(config: WorkspaceConfig, draft: AgentDraft): WorkspaceConfig {
   const found = config.agents.team.find((a) => a.id === draft.id);
   if (!found) throw new Error(t('main.team.unknown', { id: draft.id }));
-  if (!isDraft(found)) throw new Error(t('main.assist.error.notDraft', { id: draft.id }));
+  if (!isDraft(found) || isPersona(found)) throw new Error(t('main.assist.error.notDraft', { id: draft.id }));
   // `updateAgent` drops a key the patch sets to undefined.
   return withSquad(updateAgent(config, draft.id, { ...fieldsOf(draft), draft: undefined }), draft);
 }

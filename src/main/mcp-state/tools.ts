@@ -38,7 +38,8 @@ export interface StateTool {
   /** Translated for the workspace language when the tool list is built (see `stateTools`). */
   description: string;
   inputSchema: Record<string, unknown>;
-  run(args: ToolArgs): TextResult;
+  /** A read answers at once; a persona tool answers when the open app does (bridge.ts). */
+  run(args: ToolArgs): TextResult | Promise<TextResult>;
 }
 
 interface Resolved {
@@ -46,6 +47,8 @@ interface Resolved {
   dir: string;
   id: string;
   language: Language;
+  /** The second switch: the persona's tools are offered too (`mcpState.act`). */
+  act: boolean;
 }
 
 /** Why a workspace is not served, in words every tool answers with: the workspace is never guessed and never another one's. */
@@ -59,10 +62,10 @@ export function resolveWorkspace(env: NodeJS.ProcessEnv = process.env): Resolved
   const dir = workspaceDir(root, id);
   // Served only while the workspace's own opt-in is on (its config): a config a newer app wrote, an unreadable one and a plain absence are all
   // "off", so nothing is guessed and nothing of a workspace that never asked for it leaves the machine.
-  const config = readConfigFile(dir) as { schemaVersion?: unknown; mcpState?: { enabled?: unknown }; language?: unknown } | undefined;
+  const config = readConfigFile(dir) as { schemaVersion?: unknown; mcpState?: { enabled?: unknown; act?: unknown }; language?: unknown } | undefined;
   if (config?.schemaVersion !== CONFIG_SCHEMA_VERSION || config.mcpState?.enabled !== true) return { ok: false, text: t('main.mcpstate.workspaceOff') };
   const language: Language = config.language === 'en' ? 'en' : 'pt-BR';
-  return { ok: true, dir, id, language };
+  return { ok: true, dir, id, language, act: config.mcpState.act === true };
 }
 
 const HOME = homedir();

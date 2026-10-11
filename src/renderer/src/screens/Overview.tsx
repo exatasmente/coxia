@@ -1,57 +1,50 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { isReadyForQa } from '../../../shared/cycles/stages';
+import type { AgentDef } from '../../../shared/config/types';
 import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
-import { api } from '../api';
 import type { Ceremony } from '../ceremony';
 import { useCycle } from '../cycleApi';
-import { type AgoraAction, agoraPlan, greeting, needsYou, pendingQuestions, retroDue } from '../dashboard';
-import { useIsPhone } from '../useIsPhone';
+import { HOME, type OverviewSection, blockedCards, qaCandidates } from '../home';
+import { needsYou, pendingQuestions } from '../dashboard';
 import { useWatcherAlerts } from '../watchersApi';
-import { BellIcon } from './dashIcons';
-import { HeaderModuleButtons } from './moduleSlots';
-import { isRunBlocker, runOfCard } from '../../../shared/runs/view';
+import { BackIcon } from './icons';
+import { ChatHeader } from './persona/ChatHeader';
+import { HomeShell } from './persona/HomeShell';
 import { RunNeeds } from './cycle/RunNeeds';
 import { SquadPicker } from './cycle/SquadPicker';
 import { useRuns } from './cycle/runsApi';
-import { RadarButton } from './radarSlots';
-import { SaudeButton } from './SaudeButton';
+import { useAgora } from './useAgora';
 import { TempoHoje } from './TempoHoje';
-import { UpdateBadge } from './UpdateBadge';
 import { ActivityRow, AgoraCard, NeedsList, Tiles } from './TodayParts';
-import { VoiceToggle } from './VoiceToggle';
-import { runningWorkspace, useWorkspaces } from '../workspaceApi';
 import { intlLocale, useT, useTv } from '../i18n';
-import { useDay } from '../minutesApi';
+import { useIsPhone } from '../useIsPhone';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
 const TOP = 3;
 
-export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[] }) {
+export function Overview({ ceremony: c, go, pendingActions, actions, section, persona }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[]; section?: OverviewSection; persona: AgentDef | null }) {
   const t = useT();
   const tv = useTv();
-  const phone = useIsPhone();
-  const testWorkspace = runningWorkspace(useWorkspaces())?.test === true;
   const cycle = useCycle();
+  const phone = useIsPhone();
   const on = cycle?.ceremonies;
   // The cards come from the card source tool when there is one, else from the host.
   const cardsFrom = cycle?.cardsFrom ?? t('ui.today.row.hostButton');
   const [filter, setFilter] = useState<Filter>('all');
   const [listOpen, setListOpen] = useState(false);
   const [openRef, setOpenRef] = useState<string | null>(null);
-  const [retro, setRetro] = useState<{ day: number; time: string } | null>(null);
   const { alerts, dismiss } = useWatcherAlerts();
   const actsRef = useRef<HTMLElement>(null);
+  const needsRef = useRef<HTMLDivElement>(null);
 
   const cards = useMemo(() => c.cards?.cards ?? [], [c.cards]);
-  const ready = cards.filter((card) => c.turns[card.ref]).length;
   // `cards` is already in the agenda's order (blocked, priority, last update): Today lists them as the call will, without sorting again.
   // A run stopped on a question or a failure blocks its card as much as a blocker the tracker shows.
   const runs = useRuns();
-  const blocked = cards.filter((card) => card.blockers.length || (runs && isRunBlocker(runOfCard(runs, card.ref))));
+  const blocked = blockedCards(cards, runs);
   const asking = pendingQuestions(cards, c.turns, c.answered);
-  const forQa = cycle ? cards.filter((card) => isReadyForQa(cycle, card.stage, !!card.spec)) : [];
+  const { ready: forQa, all: qaChoices } = qaCandidates(cards, cycle);
   const shown = filter === 'blocked' ? blocked : filter === 'ask' ? asking : cards;
   const visible = listOpen || filter !== 'all' ? shown : shown.slice(0, TOP);
   const needs = needsYou({ cards, turns: c.turns, answered: c.answered, actions, alerts });
@@ -61,44 +54,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
   const date = now.toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
   const today = date.charAt(0).toUpperCase() + date.slice(1);
 
-  // Turns already prepared (or restored from disk) come from the cache; only the missing ones call an agent.
-  useEffect(() => {
-    if (c.cards) void c.prepareAll();
-  }, [c.cards, c.prepareAll]);
-
-  useEffect(() => {
-    void api.getSettings().then((s) => setRetro({ day: s.schedule.retroDay, time: s.schedule.retroTime }), () => undefined);
-  }, []);
-
-  const { day: todayDay } = useDay(c.snapshot.id.slice(0, 10), c.startedAt);
-  const todayVersion = todayDay?.versions.find((v) => v.ceremonyId === c.snapshot.id)?.n ?? null;
-  const retroToday = on?.retro !== false && !!retro && retroDue(now, retro.day, retro.time);
-  const plan = agoraPlan({
-    hasCards: !!c.cards,
-    loadingCards: c.loadingCards,
-    startedAt: c.startedAt,
-    callEnded: c.callEnded,
-    saved: !!c.saveResult,
-    resumed: c.resumed,
-    ready,
-    total: cards.length,
-    decisions: c.decisions.length,
-    effects: c.effects.length,
-    retroDue: retroToday,
-    label: cycle?.preDailyLabel,
-    sameDay: {
-      version: todayVersion,
-      unchanged: Object.values(c.marks).filter((x) => x.kind === 'unchanged').length,
-      changed: Object.values(c.marks).filter((x) => x.kind === 'changed').length,
-    },
-  });
-
-  const onAgora = (a: AgoraAction) => {
-    if (a === 'call') go({ name: 'call' });
-    else if (a === 'ata') go({ name: 'ata' });
-    else if (a === 'retro') go({ name: 'retro' });
-    else void c.reset();
-  };
+  const { plan, onAgora, ready, retroToday } = useAgora(c, go);
 
   const showFilter = (f: Filter) => {
     setFilter(f);
@@ -106,47 +62,28 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
     requestAnimationFrame(() => actsRef.current?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }));
   };
 
-  const header = (
+  // The strip of the chat opens the Overview at what it counted: the filter of blocked or asking, or the list of what needs the person. Once, when the screen opens.
+  useEffect(() => {
+    if (section === 'blocked') showFilter('blocked');
+    else if (section === 'asking') showFilter('ask');
+    else if (section === 'needs') requestAnimationFrame(() => needsRef.current?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- showFilter only sets state and scrolls
+  }, [section]);
+
+  // With a persona the Overview is a screen beside the chat: its name and the date (the update badge, the voice switch and the bell are the chat's), the sidebar to go back on
+  // the computer and a back button on a phone. Without one it is where "Not now" left the person, so it keeps the chat's header, and offers the wizard again.
+  const header = persona ? (
     <header className="dash-top">
       <div className="dash-hello">
-        {!phone && (
-          <div className="dash-logo" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
-            </svg>
-          </div>
-        )}
+        {phone && <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go(HOME)}><BackIcon /></button>}
         <div className="dash-hello-text">
           <div className="faint">{today}</div>
-          <h1>{cycle?.userName ? t('ui.today.greetingName', { greeting: greeting(now.getHours()), name: cycle.userName }) : greeting(now.getHours())}</h1>
+          <h1>{t('ui.overview.title')}</h1>
         </div>
       </div>
-      <div className="dash-top-actions">
-        <UpdateBadge go={go} />
-        {testWorkspace && <span className="ws-test-chip" title={t('ui.today.testWorkspaceHint')}>{t('ui.today.testWorkspace')}</span>}
-        {!phone && (
-          <nav className="dash-nav" aria-label={t('ui.today.navLabel')}>
-            <button type="button" className="btn" onClick={() => go({ name: 'history' })}>{t('ui.nav.history')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'runs' })}>{t('ui.runs.nav')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'board' })}>{t('ui.board.nav')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'forum' })}>{t('ui.forum.nav')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'procedures' })}>{t('ui.procedures.nav')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'memory' })}>{t('ui.memory.nav')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'settings' })}>{t('ui.nav.settings')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'custo' })}>{t('ui.nav.cost')}</button>
-            <RadarButton go={go} />
-            <SaudeButton go={go} />
-            <button type="button" className="btn" onClick={() => go({ name: 'auditoria' })}>{t('ui.nav.audit')}</button>
-            <button type="button" className="btn" title={t('ui.today.helpShortcut')} onClick={() => go({ name: 'help' })}>{t('ui.nav.help')}</button>
-            <HeaderModuleButtons />
-          </nav>
-        )}
-        <VoiceToggle />
-        <button type="button" className="btn icon-btn" aria-label={t('ui.today.jobs')} title={t('ui.today.jobsRunning')} onClick={() => window.dispatchEvent(new CustomEvent('cerimonias:jobs-open'))}>
-          <BellIcon />
-        </button>
-      </div>
     </header>
+  ) : (
+    <ChatHeader persona={null} title={t('ui.overview.title')} go={go} ceremony={c} actions={actions} current="overview" invite />
   );
 
   // A cycle with no daily preparation has no call to start: the card and the filters that lead to it are left out.
@@ -252,7 +189,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
         <div className="cer">
           <h3>{t('ui.today.unblock')}</h3>
           <p className="small muted">{blocked.length ? t('ui.today.withBlockers', { count: blocked.length }) : t('ui.today.noneBlocked')}</p>
-          <button type="button" className="btn" disabled={!firstBlocked} onClick={() => firstBlocked && go({ name: 'deep', ref: firstBlocked.ref, back: 'today' })}>
+          <button type="button" className="btn" disabled={!firstBlocked} onClick={() => firstBlocked && go({ name: 'deep', ref: firstBlocked.ref, back: 'chat' })}>
             {firstBlocked ? t('ui.today.deepenIssue', { iid: firstBlocked.iid }) : t('ui.today.deepen')}
           </button>
         </div>
@@ -271,7 +208,7 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
             }}
           >
             <option value="">{t('ui.today.choose')}</option>
-            {[...forQa, ...cards.filter((x) => x.spec && !forQa.includes(x))].map((x) => (
+            {qaChoices.map((x) => (
               <option key={x.ref} value={x.ref}>#{x.iid} {x.title.slice(0, 50)}</option>
             ))}
           </select>
@@ -289,23 +226,25 @@ export function Today({ ceremony: c, go, pendingActions, actions }: { ceremony: 
   );
 
   return (
-    <div className="page">
-      <div className="wrap dash">
-        {header}
-        {c.cardsError && <div className="error">{t('ui.today.cardsError', { error: c.cardsError })}</div>}
-        <div className="dash-cols">
-          <div className="dash-col">
-            <div className="d-o1">{agora}</div>
-            <div className="d-o2">{tiles}</div>
-            <div className="d-o3">{needsBlock}</div>
-            <div className="d-o6">{tempo}</div>
-          </div>
-          <div className="dash-col">
-            <div className="d-o4">{activities}</div>
-            <div className="d-o5">{ceremonies}</div>
+    <HomeShell go={go} ceremony={c} actions={actions} current="overview" persona={!!persona}>
+      <div className="page">
+        <div className="wrap dash">
+          {header}
+          {c.cardsError && <div className="error">{t('ui.today.cardsError', { error: c.cardsError })}</div>}
+          <div className="dash-cols">
+            <div className="dash-col">
+              <div className="d-o1">{agora}</div>
+              <div className="d-o2">{tiles}</div>
+              <div className="d-o3" ref={needsRef}>{needsBlock}</div>
+              <div className="d-o6">{tempo}</div>
+            </div>
+            <div className="dash-col">
+              <div className="d-o4">{activities}</div>
+              <div className="d-o5">{ceremonies}</div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </HomeShell>
   );
 }

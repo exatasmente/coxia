@@ -34,21 +34,28 @@ import { RetroScreen } from './screens/RetroScreen';
 import { Saude } from './screens/Saude';
 import { SettingsScreen } from './screens/Settings';
 import { BottomNav } from './screens/BottomNav';
-import { Today } from './screens/Today';
+import { Overview } from './screens/Overview';
+import { ChatScreen } from './screens/persona/ChatScreen';
+import { PersonaWizard } from './screens/persona/PersonaWizard';
+import { useConfigView } from './screens/team/teamApi';
 import { JobsDock } from './JobsDock';
+import { PersonaIndicator } from './screens/persona/PersonaIndicator';
 import { UpdatePrompt } from './UpdatePrompt';
 import { UpdateToast } from './UpdateToast';
 import { useReportUpdateBusy } from './updateApi';
 import { useJobsSnapshot } from './useJobs';
+import { type DeepBack, HOME, OVERVIEW, type OverviewSection, homeView, personaIn, snoozeWizard, wizardSnoozed } from './home';
+import { useAnyLive } from './liveApi';
 import { targetToScreen } from './pushTarget';
 import { useWorkspaces } from './workspaceApi';
 import { SetupWizard } from './wizard/SetupWizard';
 import { wizardApi } from './wizard/wizardApi';
 
 export type Screen =
-  | { name: 'today' }
+  | { name: 'chat' }
+  | { name: 'overview'; section?: OverviewSection }
   | { name: 'call' }
-  | { name: 'deep'; ref: string; back: 'today' | 'call'; card?: Card }
+  | { name: 'deep'; ref: string; back: DeepBack; card?: Card }
   | { name: 'ata' }
   | { name: 'history' }
   | { name: 'settings' }
@@ -61,9 +68,11 @@ export type Screen =
   | { name: 'quick'; ref: string; card?: Card }
   | { name: 'reentry'; ref: string; card?: Card }
   | { name: 'discussions'; ref: string; mr?: string; card?: Card }
+  // A merge request that is not a card of the day, named by its project and number; `back` is the conversation whose button opened it.
+  | { name: 'discussions'; project: string; number: number; back?: Screen }
   | { name: 'radar' }
   | { name: 'saude' }
-  | { name: 'auditoria' }
+  | { name: 'auditoria'; id?: string }
   | { name: 'help' }
   | { name: 'glossario' }
   | { name: 'wizard' }
@@ -88,8 +97,15 @@ export function App() {
   const ceremony = useCeremony();
   useWorkspaces();
   const player = usePlayer();
-  const [screen, setScreen] = useState<Screen>({ name: 'today' });
+  const [screen, setScreen] = useState<Screen>(HOME);
   const [actions, setActions] = useState<ReleaseAction[]>([]);
+  // The persona of the workspace: whose conversation the chat is. Kept current by the configuration event.
+  const { view: configView, error: configError, reload: reloadConfig } = useConfigView();
+  const persona = personaIn(configView?.config);
+  // A workspace known to have none: a notice about a ceremony opens the Overview and not the wizard (until the configuration is read the answer is "unknown", not "none").
+  const noPersona = !!configView && !persona;
+  // The persona was just saved: the wizard waits for the configuration that holds it, so it is not drawn again for the instant in between.
+  const [made, setMade] = useState(false);
   // A workspace whose setup never finished lands in the wizard; one that did (every migrated install) never sees it unless it is opened.
   const [setup, setSetup] = useState<'checking' | 'needed' | 'done'>('checking');
   useEffect(() => {
@@ -133,7 +149,7 @@ export function App() {
           // The board follows what became of its proposals (approved, skipped, failed) without asking Actions itself.
           moduleEvents.dispatchEvent(new CustomEvent('actions:changed'));
         }
-        else if (ev.type === 'deep') go({ name: 'deep', ref: ev.card.ref, back: 'today', card: ev.card });
+        else if (ev.type === 'deep') go({ name: 'deep', ref: ev.card.ref, back: 'chat', card: ev.card });
         else if (ev.type === 'conflict') go({ name: 'conflict', id: ev.id });
         else if (ev.type === 'open') go(ev.screen as unknown as Screen);
         else if (ev.type === 'module') moduleEvents.dispatchEvent(new CustomEvent(ev.name, { detail: ev.payload }));
@@ -142,19 +158,24 @@ export function App() {
           setSpeechEnabled(ev.settings.voice.speak);
           setBargeIn(ev.settings.voice.bargeIn);
         }
-        else if (ev.to === 'call') go(cards ? { name: 'call' } : { name: 'today' });
-        else go({ name: ev.to });
+        else {
+          // The old names stay: a tray entry or a notice that says `today` opens the Overview, and the pre-daily without cards opens the home.
+          const next = targetToScreen({ to: ev.to }, !!cards, noPersona);
+          if (next) go(next);
+        }
       }),
     // go only touches the player and the screen state
-    [mergeStatus, cards],
+    [mergeStatus, cards, noPersona],
   );
 
   // A tapped push notification arrives as ?open=... (app was closed) or as a message from the service worker (app was open).
   const cardsLoaded = useRef(false);
   cardsLoaded.current = !!cards;
+  const noPersonaRef = useRef(noPersona);
+  noPersonaRef.current = noPersona;
   useEffect(() => {
     const open = (t: PushTarget) => {
-      const next = targetToScreen(t, cardsLoaded.current);
+      const next = targetToScreen(t, cardsLoaded.current, noPersonaRef.current);
       if (next) go(next);
     };
     const fromUrl = targetFromSearch(location.search);
@@ -170,16 +191,50 @@ export function App() {
     // go only touches the player and the screen state
   }, []);
 
-  // Something is running that an update restart would cut: the call, the speech, an agent job.
+  // Every card's turn is prepared as soon as the cards are there, whichever screen is open (the Overview did it when it was Today). Turns already prepared, or restored from
+  // disk, come from the cache; only the missing ones call an agent.
+  const { cards: loadedCards, prepareAll } = ceremony;
+  useEffect(() => {
+    if (loadedCards) void prepareAll();
+  }, [loadedCards, prepareAll]);
+
+  // Something is running that an update restart would cut: the call, the speech, an agent job, an answer of the persona being written (anywhere, a paired phone included).
   const callLive = !!ceremony.startedAt && !ceremony.callEnded;
   const jobsRunning = useJobsSnapshot().some((j) => j.status === 'running');
-  useReportUpdateBusy(callLive || !!player.speaking || jobsRunning);
+  const writing = useAnyLive();
+  useReportUpdateBusy(callLive || !!player.speaking || jobsRunning || writing);
 
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
   const view = ((): ReactElement => { switch (screen.name) {
-    case 'today':
-      return <Today ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} />;
+    case 'chat':
+    case 'overview': {
+      // The home: the chat with the persona; with none, the wizard that makes it (the Overview if the person said "Not now"). The Overview is also a screen of its own.
+      // A configuration that cannot be read leaves the Overview, which does not need it, rather than a spinner with no end.
+      const home = screen.name !== 'chat' || (!configView && configError) ? 'overview' : homeView({ config: configView?.config ?? null, snoozed: wizardSnoozed() });
+      if (home === 'loading' || (home === 'wizard' && made)) return <div className="page"><div className="wrap"><span className="spinner" aria-hidden="true" /></div></div>;
+      if (home === 'wizard') {
+        return (
+          <PersonaWizard
+            presentation="screen"
+            persona={null}
+            onDone={() => {
+              setMade(true);
+              void reloadConfig().then(() => {
+                setMade(false);
+                go(HOME);
+              });
+            }}
+            onClose={() => {
+              snoozeWizard();
+              go(OVERVIEW);
+            }}
+          />
+        );
+      }
+      if (home === 'chat') return <ChatScreen ceremony={ceremony} go={go} persona={persona} team={configView?.config.agents.team} actions={actions} />;
+      return <Overview ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} section={screen.name === 'overview' ? screen.section : undefined} persona={persona} />;
+    }
     case 'call':
       return <Call ceremony={ceremony} player={player} go={go} />;
     case 'deep':
@@ -205,6 +260,7 @@ export function App() {
     case 'reentry':
       return <Reentry card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} ceremony={ceremony} player={player} go={go} />;
     case 'discussions':
+      if ('project' in screen) return <Discussions key={`${screen.project}!${screen.number}`} card={undefined} initialMr={undefined} target={{ project: screen.project, number: screen.number }} back={screen.back} ceremony={ceremony} player={player} go={go} />;
       return <Discussions card={ceremony.cards?.cards.find((x) => x.ref === screen.ref) ?? screen.card} initialMr={screen.mr} ceremony={ceremony} player={player} go={go} />;
     case 'help':
       return <Ajuda go={go} />;
@@ -224,7 +280,7 @@ export function App() {
     case 'run':
       return <RunScreen id={screen.id} go={go} ceremony={ceremony} actions={actions} tab={screen.tab} back={screen.from === 'runs' ? { name: 'runs' } : undefined} />;
     case 'auditoria':
-      return <Auditoria go={go} />;
+      return <Auditoria go={go} act={screen.id} />;
     case 'radar':
       return <Radar go={go} />;
     case 'saude':
@@ -243,8 +299,9 @@ export function App() {
   return (
     <>
       {away && origin && player.speaking && <NowPlaying who={player.speaking} origin={origin} go={go} stop={player.stop} />}
+      <PersonaIndicator screen={screen.name} />
       {view}
-      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} hasCards={!!cards} callLive={callLive} />
+      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} callLive={callLive} />
       <JobsDock screen={screen} go={go} />
       <UpdateToast />
       <UpdatePrompt hidden={screen.name === 'settings'} />

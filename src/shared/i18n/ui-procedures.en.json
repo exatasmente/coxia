@@ -118,6 +118,7 @@
   "ui.procedures.panel.usage.savedCost": "About {tokens} tokens saved, and about {cost} reported by the provider.",
   "ui.procedures.panel.usage.savedCostEstimated": "About {tokens} tokens saved, and about {cost} estimated.",
   "ui.procedures.panel.usage.uses": "{uses} uses, {share} with no failure reported.",
+  "ui.procedures.panel.viaPersona": "Saved by the persona, for the person.",
   "ui.procedures.panel.waits": "What to wait for",
   "ui.procedures.panel.withheld": "It failed twice since it was last saved, so the agents' list leaves it out. Correct it or delete it.",
   "ui.procedures.person": "you",

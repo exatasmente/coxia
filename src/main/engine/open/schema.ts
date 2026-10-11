@@ -1,7 +1,29 @@
 // A small JSON Schema validator for the answers and tool arguments of the open engine. It covers what the app's schemas use
 // (type, enum, const, properties, required, additionalProperties, items, min/max, anyOf/oneOf/allOf), not the whole spec.
 import type { Json } from './types';
-import { t } from '../../../shared/i18n';
+
+// i18n-ignore-start: what the model reads when its own call or answer is wrong: English by design, like the tool descriptions
+const MESSAGES = {
+  anyOf: "{path}: matches none of the alternatives",
+  const: "{path}: must be {value}",
+  enum: "{path}: must be one of {values}",
+  type: "{path}: expected {expected}, got {got}",
+  or: " or ",
+  tooShort: "{path}: text too short",
+  tooLong: "{path}: text too long",
+  min: "{path}: less than {value}",
+  max: "{path}: greater than {value}",
+  minItems: "{path}: needs at least {value} items",
+  maxItems: "{path}: at most {value} items",
+  required: "{path}: required field missing",
+  unexpected: "{path}: unexpected field",
+} as const;
+// i18n-ignore-end
+
+/** One finding of the validator, as the model reads it. */
+function say(key: keyof typeof MESSAGES, params: Record<string, string | number>): string {
+  return MESSAGES[key].replace(/\{(\w+)\}/g, (_, name: string) => String(params[name] ?? ''));
+}
 
 function typeOf(value: unknown): string {
   if (value === null) return 'null';
@@ -21,41 +43,41 @@ export function validate(value: unknown, schema: Json | undefined, path = '$'): 
   const s = schema as Record<string, unknown>;
   if (Array.isArray(s.anyOf) || Array.isArray(s.oneOf)) {
     const options = (s.anyOf ?? s.oneOf) as Json[];
-    if (!options.some((o) => validate(value, o, path).length === 0)) errors.push(t('main.engine.text.schema.anyOf', { path }));
+    if (!options.some((o) => validate(value, o, path).length === 0)) errors.push(say('anyOf', { path }));
     return errors;
   }
   if (Array.isArray(s.allOf)) for (const sub of s.allOf as Json[]) errors.push(...validate(value, sub, path));
-  if (s.const !== undefined && JSON.stringify(value) !== JSON.stringify(s.const)) errors.push(t('main.engine.text.schema.const', { path, value: JSON.stringify(s.const) }));
+  if (s.const !== undefined && JSON.stringify(value) !== JSON.stringify(s.const)) errors.push(say('const', { path, value: JSON.stringify(s.const) }));
   if (Array.isArray(s.enum) && !s.enum.some((e) => JSON.stringify(e) === JSON.stringify(value))) {
-    errors.push(t('main.engine.text.schema.enum', { path, values: JSON.stringify(s.enum) }));
+    errors.push(say('enum', { path, values: JSON.stringify(s.enum) }));
   }
   const types = s.type === undefined ? null : Array.isArray(s.type) ? (s.type as string[]) : [s.type as string];
   if (types && !types.some((t) => matchesType(value, t))) {
-    errors.push(t('main.engine.text.schema.type', { path, expected: types.join(t('main.engine.text.schema.or')), got: typeOf(value) }));
+    errors.push(say('type', { path, expected: types.join(say('or', {})), got: typeOf(value) }));
     return errors;
   }
   if (typeof value === 'string') {
-    if (typeof s.minLength === 'number' && value.length < s.minLength) errors.push(t('main.engine.text.schema.tooShort', { path }));
-    if (typeof s.maxLength === 'number' && value.length > s.maxLength) errors.push(t('main.engine.text.schema.tooLong', { path }));
+    if (typeof s.minLength === 'number' && value.length < s.minLength) errors.push(say('tooShort', { path }));
+    if (typeof s.maxLength === 'number' && value.length > s.maxLength) errors.push(say('tooLong', { path }));
   }
   if (typeof value === 'number') {
-    if (typeof s.minimum === 'number' && value < s.minimum) errors.push(t('main.engine.text.schema.min', { path, value: s.minimum }));
-    if (typeof s.maximum === 'number' && value > s.maximum) errors.push(t('main.engine.text.schema.max', { path, value: s.maximum }));
+    if (typeof s.minimum === 'number' && value < s.minimum) errors.push(say('min', { path, value: s.minimum }));
+    if (typeof s.maximum === 'number' && value > s.maximum) errors.push(say('max', { path, value: s.maximum }));
   }
   if (Array.isArray(value)) {
-    if (typeof s.minItems === 'number' && value.length < s.minItems) errors.push(t('main.engine.text.schema.minItems', { path, value: s.minItems }));
-    if (typeof s.maxItems === 'number' && value.length > s.maxItems) errors.push(t('main.engine.text.schema.maxItems', { path, value: s.maxItems }));
+    if (typeof s.minItems === 'number' && value.length < s.minItems) errors.push(say('minItems', { path, value: s.minItems }));
+    if (typeof s.maxItems === 'number' && value.length > s.maxItems) errors.push(say('maxItems', { path, value: s.maxItems }));
     if (s.items && typeof s.items === 'object') value.forEach((v, i) => errors.push(...validate(v, s.items as Json, `${path}[${i}]`)));
   }
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     const obj = value as Json;
     const props = (s.properties ?? {}) as Record<string, Json>;
     for (const key of Array.isArray(s.required) ? (s.required as string[]) : []) {
-      if (!(key in obj)) errors.push(t('main.engine.text.schema.required', { path: `${path}.${key}` }));
+      if (!(key in obj)) errors.push(say('required', { path: `${path}.${key}` }));
     }
     for (const [key, sub] of Object.entries(props)) if (key in obj) errors.push(...validate(obj[key], sub, `${path}.${key}`));
     if (s.additionalProperties === false) {
-      for (const key of Object.keys(obj)) if (!(key in props)) errors.push(t('main.engine.text.schema.unexpected', { path: `${path}.${key}` }));
+      for (const key of Object.keys(obj)) if (!(key in props)) errors.push(say('unexpected', { path: `${path}.${key}` }));
     }
   }
   return errors;

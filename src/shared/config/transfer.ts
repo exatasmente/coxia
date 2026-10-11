@@ -1,6 +1,7 @@
 // i18n-lint: allow-file English diagnostics of the import file, shown next to the JSON path they are about
 import { migrateConfig } from './migrations';
 import { releasedIn } from './screenPolicy';
+import { withoutPersona } from './team';
 import { CONFIG_SCHEMA_VERSION, type SecretRequirement, type WorkspaceConfig } from './types';
 import { collectSecretRequirements, validateConfig, type ConfigIssue } from './validate';
 
@@ -21,7 +22,9 @@ export interface ExportFile {
   config: WorkspaceConfig;
 }
 
-export function buildExport(config: WorkspaceConfig, meta: { workspaceName: string; appVersion: string; now: Date }): ExportFile {
+export function buildExport(source: WorkspaceConfig, meta: { workspaceName: string; appVersion: string; now: Date }): ExportFile {
+  // The persona (and its test copy) is the person's own: its instructions describe them, so the file people share never carries it.
+  const config = withoutPersona(source);
   return {
     format: EXPORT_FORMAT,
     formatVersion: EXPORT_FORMAT_VERSION,
@@ -72,6 +75,10 @@ export function parseImport(text: string): ParsedImport {
   const leaked = findSecretValues(raw);
   if (leaked.length) return fail(`secret values are not accepted in a config file (${leaked.join(', ')}); use a secretRef`, leaked[0]);
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return fail('the file has no configuration object', envelope ? 'config' : '');
+  // A file never brings a persona (a hand-made one, or one from a build that exported it): it is taken out before anything is checked, so it can neither fail the
+  // import nor be written over the persona the workspace has.
+  const personas = personaEntries(raw);
+  if (personas) raw = withoutPersonaEntries(raw);
   const current = (raw as { schemaVersion?: unknown }).schemaVersion === CONFIG_SCHEMA_VERSION;
   let notes: string[] = [];
   let result;
@@ -85,8 +92,23 @@ export function parseImport(text: string): ParsedImport {
       return fail(e instanceof Error ? e.message : String(e));
     }
   }
-  if (!result.ok || !result.config) return { ok: false, errors: result.errors, warnings: result.warnings, config: null, workspaceName, requiredSecrets: [], migrated: notes };
-  return { ok: true, errors: [], warnings: result.warnings, config: result.config, workspaceName, requiredSecrets: collectSecretRequirements(result.config), migrated: notes };
+  const warnings = personas ? [...result.warnings, { path: 'agents.team', message: 'the persona in the file was not imported: it is the person\'s own, made in the app' }] : result.warnings;
+  if (!result.ok || !result.config) return { ok: false, errors: result.errors, warnings, config: null, workspaceName, requiredSecrets: [], migrated: notes };
+  return { ok: true, errors: [], warnings, config: result.config, workspaceName, requiredSecrets: collectSecretRequirements(result.config), migrated: notes };
+}
+
+const teamOf = (raw: unknown): unknown[] | null => {
+  const agents = isRecord(raw) ? raw.agents : null;
+  return isRecord(agents) && Array.isArray(agents.team) ? agents.team : null;
+};
+const isPersonaEntry = (a: unknown): boolean => isRecord(a) && a.kind === 'persona';
+
+/** Whether the document has an entry of kind persona in its team. */
+const personaEntries = (raw: unknown): boolean => !!teamOf(raw)?.some(isPersonaEntry);
+
+function withoutPersonaEntries(raw: unknown): unknown {
+  const doc = raw as { agents: Record<string, unknown> };
+  return { ...doc, agents: { ...doc.agents, team: (doc.agents.team as unknown[]).filter((a) => !isPersonaEntry(a)) } };
 }
 
 // Field names that would carry a credential if someone pasted one into the wrong place.

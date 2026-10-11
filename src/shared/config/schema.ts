@@ -2,9 +2,9 @@
 import type { JsonSchema } from './jsonSchema';
 import { STEP_KINDS } from '../browser';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
-import { ACTIVITIES, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
+import { ACTIVITIES, AGENT_KINDS, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 29). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 33). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -173,6 +173,7 @@ const stage = object(
     trackerStatus: string('A label the issue gets on the tracker when the run enters the stage.', { maxLength: 200 }),
     poolMode: enumOf('How the pool of the stage\'s agent is used here (work stages): fallback: one model, the pool only when it is busy; switch: each turn goes to the model of its activity; delegate: a fixed main model hands edit, command and screen work to sub-agents. Left out: the workspace\'s llm.poolMode.', POOL_MODES),
     testEnv: boolean('This stage receives the workspace\'s test environment (plain variables and secret references from testEnvironment). Left out: a QA stage of the current editor reads as yes, an already-saved template reads as no.'),
+    display: boolean('This stage gets the same virtual display a QA stage gets (Xvfb, no TCP, never the person\'s screen). Left out: off.'),
   },
   ['id', 'kind'],
 );
@@ -290,6 +291,7 @@ const agentDef = object(
     turnsTo: { type: ['string', 'null'], description: 'Who the agent turns to when it cannot decide: another agent of the team, or null for the person.', pattern: ID },
     squad: { type: ['string', 'null'], description: 'The squad the agent belongs to (a squads id); absent or null: a shared agent, which works for every squad.', pattern: ID },
     draft: boolean('An agent the AI assistant saved to be tested in a direct conversation: it works no stage, is not asked and is not called by another agent. Absent: an agent of the team.'),
+    kind: enumOf('The persona of the workspace, the person\'s representative in the app: one per workspace, with no stage, squad, turnsTo, autonomy or system mark, and out of every cycle template. Absent: an ordinary agent.', AGENT_KINDS),
     screen: boolean('A virtual screen for the agent and the app\'s browser tools, which the person can watch. Absent: off. A paired browser may turn it off, never on; a template or an import never brings it.'),
     allowedHosts: list('The hosts the agent may reach through the app\'s filtering proxy: exact lowercase names, HTTPS port 443, no wildcard or port. Not used by an agent on shell: host. Absent: none.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
     browserProfile: boolean('The agent\'s browser keeps its logins between uses, in a profile folder of its own in the workspace\'s data. Absent: off, a fresh profile every time.'),
@@ -569,7 +571,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         commands: { type: ['array', 'null'], description: 'The only commands an agent that writes may run in its worktree, each one exactly as typed (one plain command: no pipe, ;, && or redirect). null: the test and typecheck scripts the repository declares. []: none.', items: string('One command.', { minLength: 1, maxLength: 300 }), maxItems: 20 },
         stageIdleMs: integer('An agent that shows no sign of life (no model event) for this long fails the stage, which can be retried (ms).', 10_000, 21_600_000),
         stageMaxMs: integer('A stage still going after this long fails whatever the agent shows; the cap on a stage that keeps talking and never finishes (ms).', 60_000, 86_400_000),
-        turns: object('How many steps (model turns) an agent may take in one pass of a stage.', { read: integer('An agent that only reads and writes its documents.', 1, 500), write: integer('An agent that changes files.', 1, 500) }),
+        turns: object('How many steps (model turns) an agent may take in one pass of a stage.', { read: integer('An agent that only reads and writes its documents.', 1, 500), write: integer('An agent that changes files.', 1, 500), explore: integer('A sub-agent of kind explore (reads and searches).', 1, 500), edit: integer('A sub-agent of kind edit (changes files).', 1, 500), shell: integer('A sub-agent of kind shell (runs commands).', 1, 500), screen: integer('A sub-agent of kind screen (drives the virtual screen).', 1, 500), plain: integer('A sub-agent that is not of a kind.', 1, 500) }),
         autonomy: workspaceAutonomy,
         screenPolicy: screenPolicy('The workspace\'s screen step approvals: what the agents\' screens let run without asking when neither the agent nor its squad says. Empty: everything asks.'),
         sandbox: object('What the sandbox of an agent set to `shell: sandbox` may reach and use.', {
@@ -625,8 +627,9 @@ export const CONFIG_SCHEMA: JsonSchema = {
         },
         required: ['variables', 'secrets'],
       },
-      mcpState: object('The local read-only state server of the workspace: a terminal session adds it over stdio. It answers the workspace\'s cycles, runs, conversations, evidence and memories, always masked; it never writes.', {
+      mcpState: object('The local state server of the workspace: a terminal session adds it over stdio. It answers the workspace\'s cycles, runs, conversations, evidence and memories, always masked; with `act` on, it also offers the persona\'s tools, which the open app runs through the persona\'s door.', {
         enabled: boolean('A terminal session with the setup entry may list the state server\'s read tools. Off: the server answers every call with the refusal.'),
+        act: boolean('With `enabled` on and the app open, the terminal session may also act through the persona\'s tools, as the persona with the terminal as the door. Off: those tools are not listed.'),
       }),
     },
     ['schemaVersion'],

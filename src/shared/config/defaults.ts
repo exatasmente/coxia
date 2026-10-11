@@ -34,7 +34,7 @@ export function neutralAutonomy(): WorkspaceAutonomy {
 }
 
 export function neutralRunner(): RunnerConfig {
-  return { enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 10 * 60_000, stageMaxMs: 2 * 60 * 60_000, turns: { read: 30, write: 80 }, identity: { name: '', email: '' }, sandbox: neutralSandbox(), autonomy: neutralAutonomy(), screenPolicy: {}, evidence: 'app', procedures: true, flex: true, unconfined: false, sharedMemory: true, showReasoning: true, commitMessage: 'feat: {summary} #{iid}', prTitle: '{title} #{iid}', linkDependencies: true, release: { soleMaintainer: false }, conversations: { roundsPerConversation: 6, perStage: 3 } };
+  return { enabled: false, triggerLabel: 'coxia', maxConcurrentRuns: 1, worktreesDir: null, commands: null, stageIdleMs: 10 * 60_000, stageMaxMs: 2 * 60 * 60_000, turns: { read: 30, write: 80, explore: 12, edit: 30, shell: 20, screen: 30, plain: 12 }, identity: { name: '', email: '' }, sandbox: neutralSandbox(), autonomy: neutralAutonomy(), screenPolicy: {}, evidence: 'app', procedures: true, flex: true, unconfined: false, sharedMemory: true, showReasoning: true, commitMessage: 'feat: {summary} #{iid}', prTitle: '{title} #{iid}', linkDependencies: true, release: { soleMaintainer: false }, conversations: { roundsPerConversation: 6, perStage: 3 } };
 }
 
 /** A workspace with no plugins: no folder listed, nothing read and nothing offered; an allowed irreversible write is announced for 30 seconds. */
@@ -89,7 +89,7 @@ export function neutralConfig(): WorkspaceConfig {
     runner: neutralRunner(),
     plugins: neutralPlugins(),
     testEnvironment: neutralTestEnvironment(),
-    mcpState: { enabled: false },
+    mcpState: { enabled: false, act: false },
   };
 }
 

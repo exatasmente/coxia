@@ -34,6 +34,8 @@ const TMP_STALE_MS = 60 * 60 * 1000;
 
 export interface Writer {
   by: string;
+  /** Written through the persona's door: the same permissions as the person's, and the record says so. */
+  persona?: true;
   surface: ProcedureOrigin['surface'];
   stage?: string;
   ref?: string;

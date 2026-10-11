@@ -16,6 +16,14 @@ import { ScreenPolicyFields } from './ScreenPolicyFields';
 import { resolveLevels } from '../../../../shared/config/screenPolicy';
 import { useSandboxStatus } from './sandboxStatus';
 
+const SUB_TURN_FIELDS = [
+  ['turnsExplore', 'ui.runner.turnsExplore', 'ui.runner.turnsExploreHint'],
+  ['turnsEdit', 'ui.runner.turnsEdit', 'ui.runner.turnsEditHint'],
+  ['turnsShell', 'ui.runner.turnsShell', 'ui.runner.turnsShellHint'],
+  ['turnsScreen', 'ui.runner.turnsScreen', 'ui.runner.turnsScreenHint'],
+  ['turnsPlain', 'ui.runner.turnsPlain', 'ui.runner.turnsPlainHint'],
+] as const;
+
 /**
  * Settings › Runner: what starts runs by itself, how many at once, where they work, which commands an agent that writes may run, and who its commits are made as.
  * In a paired browser the commands, the folder, the identity and the only maintainer switch are shown and not edited: they decide what runs on the computer and where it
@@ -116,6 +124,19 @@ export function RunnerSection({ config, save }: SectionProps) {
           {(id) => <input id={id} type="number" min={MIN_TURNS} max={MAX_TURNS} step={1} className="text-input" style={{ maxWidth: 160 }} value={Number.isNaN(draft.turnsWrite) ? '' : draft.turnsWrite} onChange={(e) => set({ turnsWrite: num(e.target.value) })} />}
         </Labeled>
       </div>
+
+      <fieldset className="wz-fieldset">
+        <legend className="wz-label">{t('ui.runner.subTurns')}</legend>
+        <p className="small muted">{t('ui.runner.subTurnsHint', { min: MIN_TURNS, max: MAX_TURNS })}</p>
+        <div className="wz-two">
+          {SUB_TURN_FIELDS.map(([field, label, hint]) => (
+            <Labeled key={field} label={t(label)} hint={t(hint)}>
+              {(id) => <input id={id} type="number" min={MIN_TURNS} max={MAX_TURNS} step={1} className="text-input" style={{ maxWidth: 160 }} value={Number.isNaN(draft[field]) ? '' : draft[field]} onChange={(e) => set({ [field]: num(e.target.value) })} />}
+            </Labeled>
+          ))}
+        </div>
+        {at('subTurns') && <div className="tm-field-error small" role="alert">{at('subTurns')}</div>}
+      </fieldset>
 
       {!web && (
         <fieldset className="wz-fieldset">

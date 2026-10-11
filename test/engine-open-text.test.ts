@@ -99,13 +99,13 @@ describe('schema validation', () => {
     expect(validate({ fala: 'x', pergunta: 'p', opcoes: [], decisao: null }, schema)).toEqual([]);
   });
 
-  it('reports what is wrong, with paths', () => {
+  it('reports what is wrong, with paths, in English whatever the language of the app: the model reads it', () => {
     const errors = validate({ fala: 1, opcoes: ['a', 'b', 'c', 'd'], decisao: { alvo: 'zzz' }, extra: true }, schema);
     const text = describeErrors(errors);
-    expect(text).toContain('$.fala: esperado string');
-    expect(text).toContain('$.pergunta: campo obrigatório ausente');
-    expect(text).toContain('$.opcoes: no máximo 3 itens');
-    expect(text).toContain('$.extra: campo não previsto');
+    expect(text).toContain('$.fala: expected string');
+    expect(text).toContain('$.pergunta: required field missing');
+    expect(text).toContain('$.opcoes: at most 3 items');
+    expect(text).toContain('$.extra: unexpected field');
     expect(text).toContain('$.decisao');
   });
 

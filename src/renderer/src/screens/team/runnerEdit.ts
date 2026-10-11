@@ -26,6 +26,12 @@ export interface RunnerDraft {
   /** Steps an agent that only reads may take in a pass, and one that changes files. */
   turnsRead: number;
   turnsWrite: number;
+  /** Steps of a sub-agent of each kind, and of one that is not of a kind. */
+  turnsExplore: number;
+  turnsEdit: number;
+  turnsShell: number;
+  turnsScreen: number;
+  turnsPlain: number;
   identityName: string;
   identityEmail: string;
   commitMessage: string;
@@ -68,6 +74,11 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     maxMinutes: r.stageMaxMs / 60_000,
     turnsRead: r.turns.read,
     turnsWrite: r.turns.write,
+    turnsExplore: r.turns.explore,
+    turnsEdit: r.turns.edit,
+    turnsShell: r.turns.shell,
+    turnsScreen: r.turns.screen,
+    turnsPlain: r.turns.plain,
     identityName: r.identity.name,
     identityEmail: r.identity.email,
     commitMessage: r.commitMessage,
@@ -96,7 +107,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     commands: d.commandsMode === 'repo' ? null : d.commands,
     stageIdleMs: Math.round(d.idleMinutes * 60_000),
     stageMaxMs: Math.round(d.maxMinutes * 60_000),
-    turns: { read: d.turnsRead, write: d.turnsWrite },
+    turns: { read: d.turnsRead, write: d.turnsWrite, explore: d.turnsExplore, edit: d.turnsEdit, shell: d.turnsShell, screen: d.turnsScreen, plain: d.turnsPlain },
     identity: { name: d.identityName.trim(), email: d.identityEmail.trim() },
     sandbox: { ...d.sandbox, registryHosts: d.sandbox.registryHosts.map((h) => h.trim().toLowerCase()), readOnlyPaths: d.sandbox.readOnlyPaths.map((p) => p.trim()), browsersPath: d.sandbox.browsersPath?.trim() || null, display: d.sandbox.display === true },
     autonomy: structuredClone(d.autonomy),
@@ -123,7 +134,7 @@ export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig 
   return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', screenPolicy: { ...(stored.screenPolicy ?? {}) }, procedures: stored.procedures, flex: stored.flex, unconfined: stored.unconfined, release: stored.release && { ...stored.release }, conversations: { ...stored.conversations } };
 }
 
-export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'identity' | 'commitMessage' | 'prTitle' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxBrowsers' | 'sandboxLimits';
+export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'subTurns' | 'identity' | 'commitMessage' | 'prTitle' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxBrowsers' | 'sandboxLimits';
 
 export interface RunnerProblem {
   severity: 'error' | 'warning';
@@ -158,6 +169,7 @@ export function runnerProblems(d: RunnerDraft, cycleIsFlow: boolean): RunnerProb
   if (!(d.idleMinutes >= MIN_IDLE_MINUTES && d.idleMinutes <= MAX_IDLE_MINUTES)) error('idle', 'ui.runner.err.idle', { min: String(MIN_IDLE_MINUTES), max: String(MAX_IDLE_MINUTES) });
   if (!(d.maxMinutes >= MIN_CAP_MINUTES && d.maxMinutes <= MAX_CAP_MINUTES)) error('max', 'ui.runner.err.max', { min: String(MIN_CAP_MINUTES), max: String(MAX_CAP_MINUTES) });
   for (const n of [d.turnsRead, d.turnsWrite]) if (!Number.isInteger(n) || n < MIN_TURNS || n > MAX_TURNS) error('turns', 'ui.runner.err.turns', { min: String(MIN_TURNS), max: String(MAX_TURNS) });
+  for (const n of [d.turnsExplore, d.turnsEdit, d.turnsShell, d.turnsScreen, d.turnsPlain]) if (!Number.isInteger(n) || n < MIN_TURNS || n > MAX_TURNS) error('subTurns', 'ui.runner.err.turns', { min: String(MIN_TURNS), max: String(MAX_TURNS) });
   if (d.commandsMode === 'custom') {
     d.commands.forEach((c) => {
       if (!c.trim() || c !== c.trim()) error('commands', 'ui.runner.err.commandBlank');

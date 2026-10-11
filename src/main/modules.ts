@@ -20,6 +20,8 @@ import { minutes } from './minutes';
 import { memoryModule } from './memory/module';
 import { mentionsModule } from './mentions/module';
 import { mcpStateModule } from './mcp-state/module';
+import { personaModule } from './persona/module';
+import { pluginsConversationModule } from './plugins/conversation';
 import { pluginsModule } from './plugins/module';
 import { proceduresModule } from './procedures/module';
 import { register as radar } from './radar';
@@ -29,6 +31,7 @@ import { runsModule } from './runner/module';
 import { suggestionsModule } from './suggestionsModule';
 import { saude } from './saude';
 import { screenModule } from './screen/module';
+import { register as turnAsks } from './turnAsks';
 import { update } from './update';
 import { updates } from './updates';
 import { vcsModule } from './vcs/module';
@@ -57,9 +60,12 @@ const ALL: Module[] = [
   forumModule,
   gitlabQuick,
   glossary,
+  mcpStateModule,
   memoryModule,
   mentionsModule,
   minutes,
+  personaModule,
+  pluginsConversationModule,
   pluginsModule,
   proceduresModule,
   radar,
@@ -68,6 +74,7 @@ const ALL: Module[] = [
   saude,
   screenModule,
   suggestionsModule,
+  turnAsks,
   update,
   updates,
   vcsModule,

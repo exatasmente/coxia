@@ -3,7 +3,7 @@ import { mergeDeep, neutralConfig } from '../config/defaults';
 import type { AgentDef, AgentModel, AgentShell, AgentTracker, DeepPartial, DevCycleConfig, WorkspaceConfig } from '../config/types';
 import { validateConfig, type ConfigIssue } from '../config/validate';
 import { DOCS_FLOW_KEY, RELEASE_FLOW_KEY } from '../config/squads';
-import { isDraft, newAgent, pruneAgentStages, withoutSandbox } from '../config/team';
+import { isPersona, newAgent, outOfCycle, pruneAgentStages, withoutSandbox } from '../config/team';
 import { heldOnly, releasedIn } from '../config/screenPolicy';
 import { neutralDevCycle } from './neutral';
 import { TEMPLATE_FORMAT, TEMPLATE_FORMAT_VERSION, type CycleTemplate, type TemplateFile, type TemplateNeed } from './types';
@@ -62,7 +62,8 @@ export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], br
   // A template has no squads: an agent it brings is shared until the person puts it in one. A sandbox it asks for is only given where one works, and `host` never:
   // running commands on the computer is set by the person, on the computer, so a template that asks for it gets a sandbox at most.
   const added = brought
-    .filter((a) => !have.has(a.id))
+    // A template never brings the persona: that agent is the person's, made in the app.
+    .filter((a) => !have.has(a.id) && !isPersona(a))
     .map((a) => {
       // Nor does it bring commands allowed always: those are the person's answers on this computer.
       // The screen, the hosts it reaches and its logged-in browser are the person's choice on this computer too: a template never brings them.
@@ -106,8 +107,8 @@ export function templateFromConfig(config: WorkspaceConfig, meta: TemplateMeta):
   cycle.qa = { user: null };
   cycle.priority = { labels: [] };
   // The flows of the squads and of a release or documentation run are not part of a template file, so an agent that works only their stages does not list them there.
-  // A draft is an agent still being tried out: it is not part of the cycle that is shared.
-  const team = pruneAgentStages(config.agents.team.filter((a) => !a.system && !isDraft(a)), cycle).map((a) => {
+  // A draft is an agent still being tried out, and the persona is the person's own: neither is part of the cycle that is shared.
+  const team = pruneAgentStages(config.agents.team.filter((a) => !a.system && !outOfCycle(a)), cycle).map((a) => {
     // The squad is the workspace's own, and so are the screen, the hosts and the logged-in browser: a shared template carries none of them.
     // A template keeps only the holds of the screen step approvals: letting a kind run without asking is the person's choice on the computer (#269).
     const { squad: _squad, screen: _screen, allowedHosts: _hosts, browserProfile: _profile, screenPolicy, ...rest } = structuredClone(a);
@@ -188,6 +189,9 @@ export function parseTemplate(raw: unknown): TemplateCheck {
     if (t.team.some((a) => (a as Record<string, unknown>).system === true)) return fail('template.team', 'a template cannot define built-in agents');
     template.team = t.team as unknown as AgentDef[];
   }
+  // The persona is the person's own and never comes in a template: the kind is dropped (the agent stays an ordinary one) and the file says so below.
+  const withKind = (template.team ?? []).filter((a) => isObject(a) && a.kind !== undefined);
+  if (template.team) template.team = template.team.map((a) => (isObject(a) && a.kind !== undefined ? (({ kind: _kind, ...rest }) => rest)(a) : a));
   // Said below, then dropped before the template is checked or kept.
   const withPool = (template.team ?? []).filter((a) => isObject(a.model) && hasPool(a.model));
   if (template.team) template.team = template.team.map((a) => (isObject(a.model) ? { ...a, model: withoutPool(a.model) } : a));
@@ -209,6 +213,7 @@ export function parseTemplate(raw: unknown): TemplateCheck {
     ...(a.allowedHosts?.length ? [{ path: `template.team[${a.id}].allowedHosts`, message: 'ignored: a template never gives an agent hosts to reach; add them in Settings, on the computer' }] : []),
     ...(a.browserProfile ? [{ path: `template.team[${a.id}].browserProfile`, message: 'ignored: a template never gives an agent a logged-in browser; turn it on in Settings, on the computer' }] : []),
     ...(releasedIn(a.screenPolicy).length ? [{ path: `template.team[${a.id}].screenPolicy`, message: 'ignored: a template never lets a step on the screen run without asking; set it in Settings, on the computer' }] : []),
+    ...(withKind.some((p) => p.id === a.id) ? [{ path: `template.team[${a.id}].kind`, message: 'ignored: a template never brings the persona; it is made in the app' }] : []),
     ...(withPool.some((p) => p.id === a.id) ? [{ path: `template.team[${a.id}].model`, message: 'ignored: a template never brings fallback models; they point at providers of one workspace, add them in Settings' }] : []),
   ]);
   return { ok: issues.length === 0, template: issues.length ? null : template, errors: issues, warnings: [...prefix(checked.warnings), ...notes, ...ignored], powers };

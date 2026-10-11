@@ -60,7 +60,7 @@ O job `Windows NSIS package` da CI empacota um instalador sem assinatura em push
 
 - A verificação roda `git rev-list --count <commit instalado>..main` e `git log` na árvore registrada (**só leitura**: nenhum arquivo, índice ou branch é alterado; `GIT_OPTIONAL_LOCKS=0`). O commit instalado é o do carimbo do build (`+dirty` é descartado).
 - Quando: 4 s depois de abrir, a cada 30 min, e quando a janela volta ao primeiro plano (no máximo uma vez por minuto). Desligando "Verificar automaticamente", só "Verificar agora".
-- Mostra o aviso **Atualização disponível** na barra de cima do Hoje e, em Configurações › Atualizações, quantos commits são e a lista deles (até 50, os mais novos primeiro).
+- Mostra o aviso **Atualização disponível** no cabeçalho do chat e, em Configurações › Atualizações, quantos commits são e a lista deles (até 50, os mais novos primeiro).
 - "Buscar do remoto (`git fetch`) ao verificar" é opcional e vem **desligado**. Ligado, roda `git fetch origin main` (30 s no máximo, sem pedir senha) e mostra, como informação, quantos commits o `origin/main` tem além da `main` local; o aviso continua contando a `main` local, porque é ela que o `update.sh` compila (faça o `git pull` para incluir os do remoto).
 - "Atualizar agora" é o fluxo de sempre: `scripts/update.sh` da árvore registrada.
 
@@ -162,7 +162,7 @@ The `Windows NSIS package` CI job builds an unsigned installer on pushes and pul
 
 - The check runs `git rev-list --count <installed commit>..main` and `git log` in the recorded tree (**read-only**: no file, index or branch is changed; `GIT_OPTIONAL_LOCKS=0`). The installed commit is the build stamp (`+dirty` is dropped).
 - When: 4 s after start, every 30 min, and when the window comes back to the front (at most once a minute). With "Check automatically" off, only "Check now".
-- It shows the **Update available** badge in the top bar of Hoje and, in Settings › Updates, how many commits and the list (up to 50, newest first).
+- It shows the **Update available** badge in the header of the chat and, in Settings › Updates, how many commits and the list (up to 50, newest first).
 - "Fetch from the remote (`git fetch`) when checking" is optional and **off** by default. On, it runs `git fetch origin main` (30 s at most, never asks for a password) and shows, as information, how many commits `origin/main` has beyond the local `main`; the badge still counts the local `main`, because that is what `update.sh` builds (`git pull` to include the remote ones).
 - "Update now" is the usual flow: the recorded tree's `scripts/update.sh`.
 

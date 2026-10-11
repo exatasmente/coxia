@@ -1,7 +1,10 @@
 // What an agent run is doing right now, as short redacted lines. Main emits them, the window and the browser show them.
 export type ActivityKind = 'tool' | 'text' | 'thought' | 'answer' | 'status';
-/** `queued` is a call that was accepted while another one of the same run still runs: it is alive, and it has not started. */
-export type ActivityState = 'queued' | 'started' | 'resumed' | 'finished' | 'failed' | 'blocked';
+/**
+ * `queued` is a call that was accepted while another one of the same run still runs: it is alive, and it has not started. `waiting` is work that reached its turn limit and
+ * waits for the person to let it go on or finish it: alive too, and not the same as waiting its turn.
+ */
+export type ActivityState = 'queued' | 'waiting' | 'started' | 'resumed' | 'finished' | 'failed' | 'blocked';
 
 /** The `@` call a run belongs to: which agent answers, in which thread, for which message. */
 /** The activity job of a conversation outside a run (a channel, a general conversation, an agent's direct one): what its calls and their steps are kept under. */

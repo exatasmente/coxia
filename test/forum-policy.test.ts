@@ -85,3 +85,25 @@ describe('the conversation of a draft agent', () => {
     for (const channel of CHANNELS) expect(webAccess(channel), channel).toBe('allow');
   });
 });
+
+describe('the conversation of the persona', () => {
+  type Channels = Record<string, (...args: unknown[]) => unknown>;
+  async function serve(): Promise<Channels> {
+    const { forumModule } = await import('../src/main/forum');
+    const out: Channels = {};
+    forumModule({ handle: (channel: string, fn: (...args: never[]) => unknown) => (out[channel] = fn as unknown as (...args: unknown[]) => unknown), notify: () => undefined, emit: () => undefined, job: () => undefined } as unknown as import('../src/main/module').ModuleContext);
+    return out;
+  }
+
+  it('is made when the forum is listed, and never listed: the home is its one door', async () => {
+    const { updateConfig } = await import('../src/main/workspaceConfig');
+    updateConfig((c) => ({ ...c, agents: { ...c.agents, team: [...c.agents.team.filter((a) => a.id !== 'me' && a.id !== 'me-test'), newAgent({ id: 'me', kind: 'persona' }), newAgent({ id: 'me-test', kind: 'persona', draft: true })] } }));
+    const channels = await serve();
+    const ids = (channels['forum:list']() as ThreadSummary[]).map((t) => t.id);
+    expect(ids).not.toContain(agentThreadId('me'));
+    expect(ids).not.toContain(agentThreadId('me-test'));
+    expect(ids).toContain(agentThreadId('turn'));
+    // Made all the same: the chat reads it by its id.
+    expect(channels['forum:read'](agentThreadId('me'))).toMatchObject({ thread: { kind: 'agent', agent: 'me' } });
+  });
+});

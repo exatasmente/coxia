@@ -48,7 +48,15 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v27 `runner.sharedMemory`: the shared, indexed memory of the agents, off for a workspace that existed and on for a new one; `docs.roadmapFile`: the roadmap pointer,
 //       optional (absent = no roadmap). Nothing else moves.
 //   v28 `runner.showReasoning`: the reasoning of the model as one closed line per turn in the activity, on for every workspace (existing and new). Nothing else moves.
-//   v29 `runner.screenPolicy`: the workspace's screen step approvals, empty (every kind asks, as before); the agent's and the squad's are optional. Nothing else moves.
+//   v29 `runner.turns.explore`, `.edit`, `.shell`, `.screen` and `.plain`: the turns of the sub-agents, 12, 30, 20, 30 and 12, the values they always had. Nothing else moves.
+//   v30 agents.team[].kind: the mark of the persona of the workspace; absent keeps an ordinary agent. Nothing stored changes; the bump makes an older app refuse the file
+//       instead of repairing (and then saving) a team it cannot place.
+//   v31 the requirements, prototype and user manual documents the app ships declarations for (REQUIREMENTS.md in refine, PROTOTYPE.md in plan,
+//       USER_MANUAL.md beside the release note in communicate) are added to what the stages produce, when the list is still exactly what the app delivered.
+//       A list the person changed is left alone, with its own note. Nothing of the format changes and no run in progress is touched: each keeps the flow it
+//       started with.
+//   v32 `mcpState.act`: the persona's tools offered to a terminal session through the state server, off for every workspace. Nothing else moves.
+//   v33 `runner.screenPolicy`: the workspace's screen step approvals, empty (every kind asks, as before); the agent's and the squad's are optional. Nothing else moves.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -414,13 +422,69 @@ function v27ToV28(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
   return { ...old, schemaVersion: 28, runner: { ...old.runner, showReasoning: true } };
 }
 
-// The screen step approvals (#269) start empty: every held step still asks the person, so nothing a workspace did changes. Written so the setting is visible in the file.
-function v28ToV29(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
-  if (!isObject(old.runner)) return { ...old, schemaVersion: 29 };
-  return { ...old, schemaVersion: 29, runner: { ...old.runner, screenPolicy: {} } };
+// The runner gains the turns of the sub-agents, which were constants of the code. The step writes the values they always had, whatever the chain seeded: a v28 file cannot
+// carry a stored choice (the keys are new), and writing them keeps a later change of the defaults from moving a workspace. `read` and `write` stay as they are. It raises
+// no permission; what a limit does (it asks the person instead of stopping) is what the note says.
+function v28ToV29(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  if (!isObject(old.runner) || !isObject(old.runner.turns)) return { ...old, schemaVersion: 29 };
+  notes.push('agents ask you when a stage or a sub-agent reaches its turn limit, and the turns of the sub-agents are in Settings › Runner');
+  return { ...old, schemaVersion: 29, runner: { ...old.runner, turns: { ...old.runner.turns, explore: 12, edit: 30, shell: 20, screen: 30, plain: 12 } } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29 };
+// The team gains the kind of an agent (the persona). The field is optional and absent is an ordinary agent, so nothing is raised or written but the version, as v19 did for `draft`:
+// the bump is what makes an older app refuse the file instead of repairing a team it cannot place.
+function v29ToV30(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
+  return { ...old, schemaVersion: 30 };
+}
+
+// The documents the app ships declarations for (requirements in refine, the prototype in plan, the user manual beside the release note in communicate) are
+// added to what the stages produce. Only a list that is still exactly what the app delivered moves: what the person wrote is the flow of that workspace and
+// keeps its shape, said in a note of its own. The document carries no format change, and a run in progress keeps the flow it started with.
+const FLOW_PRODUCES: Record<string, { was: string[]; now: string[] }> = {
+  refine: { was: ['1_SPEC.md'], now: ['1_SPEC.md', 'REQUIREMENTS.md'] },
+  plan: { was: ['2_PLAN.md'], now: ['2_PLAN.md', 'PROTOTYPE.md'] },
+  communicate: { was: ['6_RELEASE_NOTE.md'], now: ['6_RELEASE_NOTE.md', 'USER_MANUAL.md'] },
+};
+
+function v30ToV31(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const cycle = pick(old.devCycle);
+  const raw = Array.isArray(cycle.stages) ? (cycle.stages as unknown[]) : null;
+  if (!raw) return { ...old, schemaVersion: 31 };
+  let added = 0;
+  let left = 0;
+  const stages = raw.map((s) => {
+    const stage = isObject(s) ? s : null;
+    const change = stage ? FLOW_PRODUCES[String(stage.id ?? '')] : null;
+    if (!stage || !change || !Array.isArray(stage.produces)) return s;
+    const list = (stage.produces as unknown[]).map(String);
+    const same = (other: string[]): boolean => list.length === other.length && list.every((x, i) => x === other[i]);
+    if (same(change.now) || !same(change.was)) {
+      if (!same(change.now)) left++;
+      return s;
+    }
+    added++;
+    return { ...stage, produces: [...change.now] };
+  });
+  if (added) notes.push('the flow now also produces the requirements, prototype and user manual documents (REQUIREMENTS.md, PROTOTYPE.md, USER_MANUAL.md), which the app ships declarations for');
+  if (left) notes.push('a stage keeps the documents you set for it: the new requirements, prototype and user manual documents were not added to that list');
+  return { ...old, schemaVersion: 31, devCycle: { ...cycle, stages } };
+}
+
+// The state server gains its second switch, the persona's tools for a terminal session, off for every workspace (the person turns it on in Settings). A choice a later
+// build carried in stands; nothing else moves.
+function v31ToV32(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  const state = pick(old.mcpState);
+  if (state.act === undefined) notes.push('the state server can now offer the persona\'s tools to a terminal session (off; turn it on in Settings)');
+  return { ...old, schemaVersion: 32, mcpState: { enabled: state.enabled === true, ...state, act: state.act === true } };
+}
+
+// The screen step approvals (#269) start empty: every held step still asks the person, so nothing a workspace did changes. Written so the setting is visible in the file.
+function v32ToV33(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
+  if (!isObject(old.runner)) return { ...old, schemaVersion: 33 };
+  return { ...old, schemaVersion: 33, runner: { ...old.runner, screenPolicy: {} } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29, 29: v29ToV30, 30: v30ToV31, 31: v31ToV32, 32: v32ToV33 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 
@@ -447,6 +511,8 @@ function poolKeyAt(path: (string | number)[]): number {
   if (path[0] === 'llm' && path[1] === 'effort') return path.length > 2 ? 2 : 1;
   if (path[0] === 'runner' && path[1] === 'flex') return 1;
   if (path[0] === 'agents' && path[1] === 'team' && path[3] === 'poolMode') return 3;
+  // The persona's kind: every rule it breaks is reported at `kind`, and dropping that field leaves an ordinary agent and the team intact (a reset would replace the whole team).
+  if (path[0] === 'agents' && path[1] === 'team' && path[3] === 'kind') return 3;
   if (path[0] === 'devCycle' && path[1] === 'stages' && path[3] === 'poolMode') return 3;
   if (path[0] === 'devCycle' && path[1] === 'flows' && path[4] === 'poolMode') return 4;
   const known = (k: string | number | undefined) => typeof k === 'string' && POOL_KEYS.has(k);
@@ -476,8 +542,20 @@ function dropPoolField(out: Doc, path: (string | number)[], drops: { list: unkno
     return true;
   }
   const parent = get(out, path.slice(0, at));
-  if (parent !== null && typeof parent === 'object') delete (parent as Record<string, unknown>)[path[at] as string];
+  if (parent !== null && typeof parent === 'object') {
+    const demoted = path[0] === 'agents' && path[3] === 'kind' && (parent as Record<string, unknown>).kind === 'persona';
+    delete (parent as Record<string, unknown>)[path[at] as string];
+    if (demoted) makeInert(parent as Record<string, unknown>);
+  }
   return true;
+}
+
+// An agent that lost its persona kind keeps its text but takes no part in the cycle: its personal instructions must never work a stage.
+function makeInert(agent: Record<string, unknown>): void {
+  for (const k of ['system', 'squad']) delete agent[k];
+  agent.stages = [];
+  agent.turnsTo = null;
+  agent.autonomous = false;
 }
 
 function repair(doc: Doc, base: WorkspaceConfig, issues: ConfigIssue[], notes: string[]): Doc {

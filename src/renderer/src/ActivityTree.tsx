@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ActivityEntry } from '../../shared/activity';
 import { atBottom } from './activity';
-import { type TreeItem, type TreeNode, createTreeView, defaultOpen, nodeTitle, stepText } from './activityTreeModel';
+import { type TreeItem, type TreeNode, createTreeView, defaultOpen, nodeTitle, stepText, waitsBelow } from './activityTreeModel';
 import { useT } from './i18n';
 import { formatElapsed } from './jobs';
 import { agentName } from './screens/cycle/names';
@@ -99,6 +99,7 @@ function NodeRow({ node, shared }: { node: TreeNode; shared: Shared }) {
         {node.state === 'working' && <span className="spinner act-spinner" aria-hidden="true" />}
         <span className="act-node-title">{title}</span>
         <span className="act-node-state">{t(`activity.node.state.${node.state}`)}</span>
+        {!open && waitsBelow(node) && <span className="act-node-waits">{t('activity.node.waitsBelow')}</span>}
         {!open && node.latest && <span className="act-node-now">{stepText(node.latest, t('activity.thought'))}</span>}
       </button>
       {open && <Items items={node.items} shared={shared} className="act-node-body" />}
@@ -112,6 +113,12 @@ function Items({ items, shared, className }: { items: readonly TreeItem[]; share
       {items.map((item) => (item.type === 'node' ? <NodeRow key={item.node.id} node={item.node} shared={shared} /> : <LineRow key={`${item.entry.runId}:${item.entry.seq}`} entry={item.entry} origin={shared.origin} />))}
     </ol>
   );
+}
+
+/** The lines and levels of one node on their own, for a place that draws the work of a call under something else (the chat's Work section above an answer). */
+export function ActivityItems({ items, origin, className = 'act-node-body' }: { items: readonly TreeItem[]; origin: number; className?: string }) {
+  const team = useRunConfig()?.agents.team;
+  return <Items items={items} shared={{ origin, nameOf: (role) => agentName(team, role) }} className={className} />;
 }
 
 /** The nodes of a tree with their steps; follows the newest line unless the person scrolled up. */
