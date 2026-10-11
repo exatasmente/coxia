@@ -10,7 +10,7 @@ vi.setConfig({ testTimeout: 30_000 });
 describe('a notification about a run opens the run', () => {
   it('says which run in what the desktop does on a click, for a gate and for a failure', async () => {
     const b = await boot();
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     b.engine.script('planner', () => {
       throw new Error('the model is down');
     });

@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { errorHint, errorReport } from '../src/shared/errorlog';
-import { appendEntry, buildEntry, clearLog, createLimiter, groupEntries, readEntries, redact, rpcContext, safeContext } from '../src/main/errorlog-core';
+import { appendEntry, buildEntry, clearLog, createLimiter, groupEntries, readEntries, redact, redactCredentials, rpcContext, safeContext } from '../src/main/errorlog-core';
 import { webAccess } from '../src/main/webPolicy';
 
 const dir = () => mkdtempSync(join(tmpdir(), 'cerimonias-errors-'));
@@ -37,6 +37,27 @@ describe('redact', () => {
 
   it('replaces the home directory', () => {
     expect(redact('at /home/ana/projects/app/x.ts:1:2', '/home/ana')).toBe('at ~/projects/app/x.ts:1:2');
+  });
+});
+
+describe('redactCredentials', () => {
+  it.each([
+    ['glpat-abcdefghij1234567890', 'glpat'],
+    ['Authorization: Bearer abc.def-ghi_jkl', 'abc.def'],
+    ['password: "p4ss w0rd"', 'p4ss'],
+    ['https://user:pw123@host.test/repo.git', 'pw123'],
+    ['eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcDEF123', 'eyJhbGci'],
+  ])('hides %s', (text, secret) => {
+    expect(redactCredentials(text, '/home/x')).not.toContain(secret);
+  });
+
+  it('keeps the query of a link, an email address and a long id, which are the content of a document', () => {
+    const text = 'Write to https://wa.me/5500000000000?text=Hello%20there%2C%20see%20you or to someone@example.com; commit 9f86d081884c7d659a2feaa0c55ad015a3bf4f1b';
+    expect(redactCredentials(text, '/home/x')).toBe(text);
+  });
+
+  it('replaces the home directory', () => {
+    expect(redactCredentials('at /home/ana/projects/app/x.ts', '/home/ana')).toBe('at ~/projects/app/x.ts');
   });
 });
 

@@ -9,6 +9,7 @@
 .chat-row-person { align-items: flex-end; }
 .chat-row-answer, .chat-row-agent { align-items: flex-start; }
 .chat-row-system { align-items: center; }
+.chat-row-act { align-items: center; }
 
 .chat-bubble { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: min(78ch, 92%); padding: 10px 14px; border-radius: 16px; border: 1px solid var(--line-3); background: var(--surface-2); color: var(--ink); overflow-wrap: anywhere; }
 .chat-bubble-person { background: var(--blue-soft); border-color: var(--blue-line); color: var(--blue-ink); border-bottom-right-radius: 4px; }
@@ -21,6 +22,10 @@
 .chat-text .rich { gap: 6px; }
 .chat-time { font-size: 12px; color: var(--faint); align-self: flex-end; }
 .chat-waits { font-size: 12px; font-weight: 600; color: var(--amber-ink); }
+.chat-interrupted { display: block; margin-top: 4px; font-weight: 600; color: var(--amber-ink); }
+.chat-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; max-width: 92%; padding: 6px 12px; border-radius: 12px; border: 1px solid var(--line-3); background: var(--surface-2); color: var(--ink); font-size: 13px; overflow-wrap: anywhere; }
+.chat-row-act-refused .chat-act { border-color: var(--red-line); background: var(--red-soft); color: var(--red-ink); }
+.chat-act-links { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .chat-system { font-size: 13px; color: var(--muted); text-align: center; overflow-wrap: anywhere; max-width: 92%; }
 
 /* the answer being written: a caret at its end while it grows */
@@ -47,43 +52,104 @@
 }
 @media (prefers-reduced-motion: reduce) { .chat-caret { animation: none; } }
 
-/* the chat as the home: the whole window, the conversation taking what the header, the strip, the card and the box leave */
-.chat-page { height: 100%; min-height: 0; max-width: 1100px; margin: 0 auto; padding: 16px 24px 12px; display: flex; flex-direction: column; gap: 12px; }
-.chat-head { display: flex; flex-direction: column; gap: 10px; }
-.chat-name { font-size: 22px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
-.chat-menu { justify-content: flex-start; padding-bottom: 2px; }
+/* the home on the computer: the navigation in a sidebar that stays, the screen beside it with the whole height */
+.home-shell { height: 100%; min-height: 0; display: grid; grid-template-columns: 236px minmax(0, 1fr); }
+.home-shell-folded { grid-template-columns: 64px minmax(0, 1fr); }
+.home-side { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--line); background: var(--surface); }
+.home-side-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 10px 8px 14px; }
+.home-shell-folded .home-side-top { justify-content: center; padding: 12px 0 8px; }
+.home-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.home-logo { width: 32px; height: 32px; border-radius: 9px; }
+.home-brand-name { font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-fold { flex: none; width: 36px; min-height: 36px; border-color: transparent; background: transparent; color: var(--muted); }
+.home-fold:hover { background: var(--surface-2); color: var(--ink); }
+.home-side-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 8px 16px; display: flex; flex-direction: column; gap: 12px; overscroll-behavior: contain; scrollbar-width: thin; }
+.home-shell-folded .home-side-scroll { scrollbar-width: none; }
+.home-side-slot { display: flex; flex-direction: column; gap: 6px; padding: 0 6px; }
+.home-side-slot:empty { display: none; }
+.home-main { min-width: 0; min-height: 0; overflow-y: auto; }
+
+/* the rows of the navigation; a count is a small badge beside the words, absent at zero */
+.home-nav { display: flex; flex-direction: column; gap: 10px; }
+.home-nav-group { display: flex; flex-direction: column; gap: 1px; }
+.home-nav-head { padding: 8px 10px 4px; font-size: 12px; font-weight: 600; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
+.home-nav-row { width: 100%; min-height: 36px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ink-2); font: inherit; font-size: 14px; text-align: left; cursor: pointer; min-width: 0; }
+.home-nav-row:hover { background: var(--surface-2); color: var(--ink); }
+.home-nav-row:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+.home-nav-row[aria-current='page'] { background: var(--surface-2); color: var(--ink); font-weight: 600; box-shadow: inset 3px 0 0 var(--teal); }
+.home-nav-row:disabled { color: var(--faint); cursor: default; background: transparent; }
+.home-nav-icon { position: relative; flex: none; display: inline-flex; color: var(--muted); }
+.home-nav-row[aria-current='page'] .home-nav-icon { color: var(--teal); }
+.home-nav-label { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-nav-count { flex: none; min-width: 22px; padding: 1px 7px; border-radius: 999px; font-size: 12px; font-weight: 700; text-align: center; line-height: 1.5; }
+.home-nav-count.home-nav-warn { background: var(--amber-soft); color: var(--amber-ink); }
+.home-nav-count.home-nav-info { background: var(--blue-soft); color: var(--blue-ink); }
+.home-nav-dot { position: absolute; top: -3px; right: -4px; width: 8px; height: 8px; border-radius: 50%; border: 2px solid var(--surface); }
+.home-nav-dot.home-nav-warn { background: var(--warn-solid); }
+.home-nav-dot.home-nav-info { background: var(--blue-solid); }
+.home-nav-folded .home-nav-row { justify-content: center; padding: 0; min-height: 40px; }
+.home-nav-folded .home-nav-group + .home-nav-group { border-top: 1px solid var(--line-3); padding-top: 8px; }
+/* in the phone's sheet the rows are the sheet's size */
+.sheet-list .home-nav { gap: 6px; }
+.sheet-list .home-nav-row { min-height: 48px; font-size: 16px; }
+
+/* the chat as the home: the header, then the conversation in a readable column taking all the height left */
+.chat-page { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.chat-head { flex: none; display: flex; align-items: center; gap: 12px; padding: 12px 24px; border-bottom: 1px solid var(--line-3); }
+.chat-head-text { flex: 1 1 auto; min-width: 0; }
+.chat-name { font-size: 18px; font-weight: 700; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-head-actions { flex: none; display: flex; align-items: center; gap: 8px; }
+.chat-menu-btn { position: relative; flex: none; }
+.chat-menu-dot { position: absolute; top: 9px; right: 9px; width: 9px; height: 9px; border-radius: 50%; background: var(--warn-solid); border: 2px solid var(--surface); }
+.chat-page > .error, .chat-none { margin: 12px 24px 0; }
 .chat-none { max-width: 640px; }
+.chat-page > .chat { width: 100%; max-width: 920px; margin: 0 auto; padding: 16px 24px 16px; }
 
-/* the four counts, a button each; a zero stays and is quiet */
-.chat-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.strip-item { min-height: 44px; display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
-.strip-item:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
-.strip-n { font-size: 20px; font-weight: 700; line-height: 1.1; }
-.strip-l { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.strip-warn { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-ink); }
-.strip-warn .strip-l { color: var(--amber-ink); }
-.strip-info { background: var(--blue-soft); border-color: var(--blue-line); color: var(--blue-ink); }
-.strip-info .strip-l { color: var(--blue-ink); }
+/* a run of lines the app wrote: one quiet line that opens */
+.chat-notices { max-width: 92%; min-height: 32px; display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border: 0; border-radius: 999px; background: transparent; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; min-width: 0; }
+.chat-notices:hover { background: var(--surface-2); }
+.chat-notices:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.chat-notices-count { flex: none; font-weight: 600; }
+.chat-notices-last { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint); }
+.chat-notices-list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; align-items: center; }
 
-/* the ceremony card pinned above the box: the Agora card, smaller. It has a surface and an edge of its own so that it never melts into a dark page. */
-.chat-card .dash-agora { padding: 12px 14px; gap: 8px; border-radius: 14px; background: var(--night-2); border-color: var(--night-line); }
-.chat-card-chip { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 12px; border: 1px solid var(--night-line); background: var(--night-2); color: var(--on-night); font: inherit; font-size: 14px; text-align: left; cursor: pointer; min-width: 0; }
-.chat-card-chip:focus-visible { outline: 2px solid var(--night-teal-2); outline-offset: 2px; }
-.chat-card-chip-label { flex: none; font-size: 12px; font-weight: 600; color: var(--night-teal); text-transform: uppercase; letter-spacing: 0.06em; }
-.chat-card-chip-title { flex: 1 1 auto; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chat-card-chip-progress { flex: none; color: var(--on-night-muted); }
-.chat-card-chip + div .dash-agora { margin-top: 6px; }
-.chat-card .agora-title { font-size: 17px; }
-.chat-card .agora-primary { min-height: 44px; font-size: 15px; }
+/* the ceremony as one line above the box: quiet when it has ended, the accent while it waits to start or is held */
+.chat-cer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 8px 8px 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-2); min-width: 0; }
+.chat-cer-loud { border-color: var(--teal-line); background: var(--teal-soft); }
+.chat-cer-icon { flex: none; display: inline-flex; color: var(--muted); }
+.chat-cer-loud .chat-cer-icon { color: var(--teal); }
+.chat-cer-text { flex: 1 1 260px; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
+.chat-cer-title { flex: none; max-width: 100%; font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-cer-progress { flex: 0 1 auto; min-width: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-cer-detail { min-width: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-cer-actions { flex: none; display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
+.chat-cer-actions .btn { min-height: 34px; padding: 0 12px; font-size: 13px; border-radius: 9px; }
+
+/* the box of the chat: one line that grows, the buttons as icons inside its edge */
+.composer.cy-composer { position: static; box-shadow: none; padding: 0; border: 0; background: transparent; }
+.cy-composer-inline { display: flex; align-items: flex-end; gap: 6px; padding: 6px; border-radius: 14px; border: 1px solid var(--field-line); background: var(--surface); }
+.cy-composer-inline:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
+.cy-compose.cy-compose-inline { flex: 1 1 auto; min-height: 40px; max-height: 200px; padding: 9px 8px; border: 0; background: transparent; resize: none; box-shadow: none; overflow-y: auto; }
+.cy-compose.cy-compose-inline:focus { outline: none; box-shadow: none; }
+.cy-inline-hint { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.cy-composer:focus-within .cy-inline-hint { position: static; width: auto; height: auto; margin: 2px 8px 0; overflow: visible; clip: auto; white-space: normal; font-size: 12px; color: var(--faint); }
+.cy-inline-btn { flex: none; width: 40px; min-height: 40px; border-radius: 10px; }
+.cy-inline-btn:not(.btn-dark) { border-color: transparent; background: transparent; color: var(--muted); }
+.cy-inline-btn:not(.btn-dark):hover { background: var(--surface-2); color: var(--ink); }
 
 @media (max-width: 600px) {
-  .chat-page { padding: 10px 12px 8px; gap: 8px; }
-  /* the four counts stay one row of four small cells: the conversation needs the height */
-  .chat-strip { gap: 6px; }
-  .strip-item { flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 5px 2px; text-align: center; border-radius: 10px; }
-  .strip-n { font-size: 20px; }
-  /* one line each, at a size that reads: the longest label ("Perguntas", "Bloqueios") fits a quarter of 360 px */
-  .strip-l { font-size: 12px; line-height: 1.2; white-space: nowrap; text-align: center; max-width: 100%; }
+  .chat-head { padding: 8px 12px; gap: 8px; }
+  .chat-head-actions { gap: 4px; }
+  /* the name wraps between words, up to two lines, instead of being cut in the middle of one; the date keeps one line */
+  .chat-name { font-size: 17px; white-space: normal; overflow-wrap: normal; word-break: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .chat-head-text > .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-page > .error, .chat-none { margin: 8px 12px 0; }
+  .chat-page > .chat { padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
+  /* on a phone the ceremony line keeps its buttons under the title and the progress beside it; only the hint, the long part, goes */
+  .chat-cer-text { flex-basis: calc(100% - 40px); }
+  .chat-cer-detail { display: none; }
+  .chat-cer-actions { flex: 1 1 100%; margin-left: 0; gap: 6px; }
+  .chat-cer-actions .btn { flex: 0 1 auto; min-height: 32px; padding: 0 10px; }
 }
 
 /* the wizard as the home: "Not now" is a quiet link at the end of the title row, not a button of its own */
@@ -91,3 +157,14 @@
 .wz-skip { flex: none; min-height: 44px; padding: 0 4px; display: inline-flex; align-items: center; font-size: 15px; }
 .wz-skip:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .wz-skip:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+
+/* the Stop of the persona: the banner over the box while it is stopped, and the small indicator of the shell on the other screens. Tokens only. */
+.persona-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); font-size: 14px; }
+.persona-banner-waiting { font-weight: 600; }
+.persona-stop { border-color: var(--red-line); color: var(--red-ink); background: var(--red-faint); font-weight: 600; }
+.persona-resume { border-color: var(--warn-solid); font-weight: 600; }
+.persona-indicator { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 6px 14px; border-bottom: 1px solid var(--night-line); background: var(--night); color: var(--on-night); font-size: 13px; }
+.persona-indicator-stopped { border-bottom-color: var(--warn-solid); }
+.persona-indicator-btn { min-height: 36px; }
+/* On a phone it is a pill lifted over the bottom bar; on the computer it is a bar in the flow above the screen, so it lies over nothing. */
+@media (max-width: 600px) { .persona-indicator { position: fixed; left: 12px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 40; display: inline-flex; max-width: calc(100vw - 96px); padding: 6px 8px 6px 14px; border: 1px solid var(--night-line); border-radius: 999px; box-shadow: 0 10px 26px -10px color-mix(in srgb, var(--night) 75%, transparent); } .persona-indicator-stopped { border-color: var(--warn-solid); } }

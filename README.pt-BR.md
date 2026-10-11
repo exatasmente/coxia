@@ -4,18 +4,17 @@ Português (Brasil) | [English](README.md)
 
 **Chegue à daily já preparado e saia com os encaminhamentos feitos.** O Coxia é um app de desktop (com companheiro no celular) que conduz o desenvolvedor pelos rituais recorrentes do time, por voz ou por texto: um agente de IA por atividade aberta lê o repositório, as specs e a documentação que você indicar antes de falar, ajuda a destravar o que está parado e entrega a ata. Nada muda fora da sua máquina sem o seu "sim" explícito.
 
-> **Status: 0.1, primeira versão pública.** O autor usa todo dia, mas partes só foram verificadas contra servidores de teste (veja [O que foi verificado](#o-que-foi-verificado)). Espere arestas e leia as notas honestas abaixo.
+> **Status: 0.10.0 (beta).** O autor usa todo dia, mas partes só foram verificadas contra servidores de teste (veja [O que foi verificado](#o-que-foi-verificado)). Espere arestas e leia as notas honestas abaixo. A mesma documentação, publicada como site: [exatasmente.github.io/coxia](https://exatasmente.github.io/coxia/pt-br/).
 
-<!-- TODO(capturas de tela): tirar com dados de demonstração (um repositório descartável e atividades fictícias), nunca com dados reais de empresa ou de pessoas. Veja docs/images/README.md. -->
+<!-- Cada captura sai do próprio aplicativo, sobre um workspace de dados fictícios semeado por scripts/seed-docs-workspace.mjs e escrito por scripts/captures/ (veja docs/images/README.md). -->
 
-| Captura (TODO) | O que mostra |
+| Captura | O que mostra |
 |---|---|
-| `docs/images/chat.png` | O chat com a sua persona, com a faixa de contagens e o cartão da cerimônia |
-| `docs/images/overview.png` | A Visão geral: cartões das atividades abertas com a etapa de cada uma |
-| `docs/images/call.png` | Uma cerimônia em andamento, por voz ou texto, com as fontes do agente |
-| `docs/images/actions.png` | A fila de ações: o comando exato, esperando a sua confirmação |
-| `docs/images/wizard.png` | O assistente de configuração da primeira execução |
-| `docs/images/phone.png` | O companheiro no celular (PWA) |
+| ![O dia](docs/images/today.png) | A tela Hoje: cartões das atividades abertas com a etapa de cada uma |
+| ![Uma cerimônia](docs/images/call.png) | Uma cerimônia em andamento, por voz ou texto, com as fontes do agente |
+| ![A fila de ações](docs/images/actions.png) | A fila de ações: o comando exato, esperando a sua confirmação |
+| ![O assistente de configuração](docs/images/wizard.png) | O assistente de configuração da primeira execução |
+| ![O celular pareado](docs/images/phone.png) | O companheiro no celular (PWA) |
 
 ## Sumário
 
@@ -34,7 +33,7 @@ Português (Brasil) | [English](README.md)
 
 ## O que faz
 
-- **Uma persona e um chat que abre o app.** O app abre num chat com a sua *persona*, um representante que você cria em poucos minutos com uma IA que pergunta quem você é, como você decide, o que importa para você e o que você nunca quer que se faça. Ela responde enquanto escreve, mostra o trabalho por trás de cada resposta e oferece botões que abrem uma cerimônia ou uma tela. Nesta versão ela só conversa e lê. Veja [Persona e chat](docs/persona.md).
+- **Uma persona e um chat que abre o app.** O app abre num chat com a sua *persona*, um representante que você cria em poucos minutos com uma IA que pergunta quem você é, como você decide, o que importa para você e o que você nunca quer que se faça. Ela responde enquanto escreve, mostra o trabalho por trás de cada resposta e oferece botões que abrem uma cerimônia ou uma tela. Ela também age no app por você, com onze ferramentas sobre o que uma pessoa faz ali: cada ato fica no chat e na Auditoria com o nome dela, o motivo e o que ela tinha lido, e um Parar a interrompe no computador e no celular. Veja [Persona e chat](docs/persona.md).
 - **Pré-daily.** Antes da daily, um agente por atividade aberta confere a issue, os merge ou pull requests, o pipeline, as discussões de revisão e a spec, e diz o que mudou e o que está parado. Você responde por voz ou texto; o app produz a ata.
 - **Desbloqueio e aprofundamento.** Converse sobre um problema com um agente que já leu o código, as specs e as regras do time, e que consulta a hospedagem de código. É somente leitura: explica e propõe, não edita o seu repositório.
 - **Gate (quiz).** Antes de uma atividade avançar, um quiz curto gerado a partir da spec confere se você entende o que vai entregar.

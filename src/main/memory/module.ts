@@ -2,7 +2,7 @@ import { recordWrite } from '../auditoria';
 import type { Module } from '../module';
 import { forumStore } from '../forum';
 import { setCeremonyMemory } from './ceremony';
-import { callOrigin } from '../rpc';
+import { viaOf } from '../rpc';
 import { getConfig, onConfigChange } from '../workspaceConfig';
 import { MEMORY_EVENT } from '../../shared/memoryView';
 import { memoryOn } from '../../shared/memory';
@@ -32,7 +32,7 @@ export const memoryModule: Module = (ctx) => {
     store: memoryStore(),
     config: getConfig,
     audit: recordWrite,
-    via: () => (callOrigin() === 'web' ? 'paired' : 'window'),
+    via: viaOf,
     titleOf: (conversation) => forumStore().summary(conversation)?.title ?? null,
   });
   ctx.handle('memory:list', () => c.list());

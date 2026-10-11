@@ -1,4 +1,5 @@
 import { ASSIST_LIMITS, ASSIST_ROUND_SCHEMA, readAssistDraft, type AssistDraft } from '../../shared/agentAssist';
+import type { Through } from '../../shared/auditoria';
 import { agentThreadId } from '../../shared/forum';
 import { addAgent, isDraft, isPersona, personaDraftOf, personaOf, removeAgent, uniqueId, updateAgent } from '../../shared/config/team';
 import { LLM_ROLES, POOL_MODES, type AgentDef, type AgentModel, type PoolMode, type WorkspaceConfig } from '../../shared/config/types';
@@ -16,7 +17,7 @@ import { deleteAgentThread, ensureAgentThread } from '../forum-channels';
 import { memoryStore } from '../memory/instance';
 import { answerPending } from '../mentions/module';
 import { callStops } from '../mentions/stop';
-import { callOrigin } from '../rpc';
+import { viaOf } from '../rpc';
 import { getConfig, updateConfig } from '../workspaceConfig';
 import { personaDraftAgent, personaReviewPrompt, personaRoundPrompt, personaSystem, type PersonaPromptInput } from './assistCore';
 
@@ -35,7 +36,7 @@ function fail(e: unknown): Error {
 }
 
 /** Which door the call came through, for the audit. */
-const through = (): 'window' | 'paired' => (callOrigin() === 'web' ? 'paired' : 'window');
+const through = (): Through => viaOf();
 
 /** Every change of the persona is recorded with the door it came by and the agent's id; never a text. */
 function audit(op: 'draft' | 'conclude' | 'discard' | 'finish' | 'save' | 'clear' | 'delete', agent: string): void {
@@ -258,7 +259,7 @@ export function personaSave(raw: unknown): { id: string } {
     updateConfig((current) => {
       const here = personaNow(current);
       const next = updateAgent(current, here.id, { ...texts, ...(model ? { model } : {}), ...('poolMode' in body ? { poolMode } : {}) });
-      const refused = callOrigin() === 'web' ? refusedPaths(current, next) : [];
+      const refused = viaOf() === 'paired' ? refusedPaths(current, next) : [];
       if (refused.length) throw new AssistError(t('main.persona.error.refused', { paths: refused.join(', ') }));
       return next;
     });

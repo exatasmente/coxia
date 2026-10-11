@@ -14,6 +14,7 @@ import { MARKER_FILE, V1_BACKUP_FILE, bootstrapConfigs, detectExistingInstall, r
 import { TEST_STAGES } from './helpers/config';
 import { ensureWorkspaces, setTestFlag, workspaceDir, createWorkspace } from '../src/main/workspaces-core';
 import { V1_SETTINGS, exampleProfile } from './helpers/config';
+import { applyTemplate, builtInTemplate } from '../src/shared/cycles';
 
 const quiet = { log: () => undefined, now: () => new Date('2026-10-02T12:00:00Z') };
 let root: string;
@@ -1017,9 +1018,61 @@ describe('migrateConfig', () => {
       expect(validateConfig(r.config).ok).toBe(true);
     });
 
-    it('is the newest step: 30 is current and 31 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(30);
-      expect(() => migrateConfig({ schemaVersion: 31 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is followed by later steps: the chain does not stop at 30', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(30);
+    });
+  });
+
+  describe('schema 30 to 31: the flow grows the documents the app ships declarations for', () => {
+    /** A v30 file whose flow produces exactly what the app delivered before this change. */
+    const v30 = (): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(applyTemplate(neutralConfig(), builtInTemplate('agent-flow')!))) as Record<string, any>;
+      c.schemaVersion = 30;
+      const was: Record<string, string[]> = { refine: ['1_SPEC.md'], plan: ['2_PLAN.md'], communicate: ['6_RELEASE_NOTE.md'] };
+      for (const s of c.devCycle.stages as Record<string, any>[]) if (was[s.id]) s.produces = was[s.id];
+      return c;
+    };
+    const produced = (doc: Record<string, any>, id: string): string[] => (doc.devCycle.stages.find((s: { id: string }) => s.id === id)?.produces ?? []) as string[];
+
+    it('adds the requirements, the prototype and the user manual to the lists that are still the ones the app delivered', () => {
+      const r = migrateConfig(v30(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(30);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(produced(r.config, 'refine')).toEqual(['1_SPEC.md', 'REQUIREMENTS.md']);
+      expect(produced(r.config, 'plan')).toEqual(['2_PLAN.md', 'PROTOTYPE.md']);
+      expect(produced(r.config, 'communicate')).toEqual(['6_RELEASE_NOTE.md', 'USER_MANUAL.md']);
+      expect(produced(r.config, 'implement')).toEqual(['3_IMPLEMENTATION.md']);
+      expect(r.notes.join(' ')).toMatch(/requirements, prototype and user manual/);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('leaves a list the person changed alone, and says so in a note of its own', () => {
+      const doc = v30();
+      doc.devCycle.stages.find((s: { id: string }) => s.id === 'refine').produces = ['1_SPEC.md', 'MY_NOTES.md'];
+      const r = migrateConfig(doc, { legacyInstall: false });
+      expect(produced(r.config, 'refine')).toEqual(['1_SPEC.md', 'MY_NOTES.md']);
+      expect(produced(r.config, 'plan')).toEqual(['2_PLAN.md', 'PROTOTYPE.md']);
+      expect(r.notes.join(' ')).toMatch(/keeps the documents you set/);
+    });
+
+    it('is idempotent: a second pass over the migrated file changes nothing', () => {
+      const once = migrateConfig(v30(), { legacyInstall: false });
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config.devCycle.stages).toEqual(once.config.devCycle.stages);
+    });
+
+    it('says nothing about the documents when the file has no flow to grow', () => {
+      const doc = v30();
+      delete doc.devCycle.stages;
+      const r = migrateConfig(doc, { legacyInstall: false });
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.notes.join(' ')).not.toMatch(/requirements, prototype and user manual/);
+    });
+
+    it('is the newest step: 31 is current and 32 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(31);
+      expect(() => migrateConfig({ schemaVersion: 32 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

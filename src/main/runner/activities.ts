@@ -152,7 +152,8 @@ const lifecycleOf = (run: Run): ActivityLifecycle => (run.status === 'cancelled'
 function lastAgentOf(run: Run, team: readonly string[]): string | null {
   for (let i = run.history.length - 1; i >= 0; i--) {
     const by = run.history[i].by;
-    if (by !== 'person' && by !== 'app' && team.includes(by)) return by;
+    // The persona answers and decides for the person: it is not an agent of the cycle, whatever its id is.
+    if (by !== 'person' && by !== 'persona' && by !== 'app' && team.includes(by)) return by;
   }
   return null;
 }

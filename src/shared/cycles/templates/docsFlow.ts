@@ -26,8 +26,10 @@ export const DOCS_FLOW_STAGES: StageDef[] = [
 ];
 
 /**
- * The agent of the docs flow: it reads the code and the repository's Claude Code files, writes only AGENTS.md, runs no command and reads no tracker. Autonomous:
- * the person's gate over the draft and the "sim" of the push and the pull request are the brakes, and without it the person would accept the result twice.
+ * The agent of the docs flow: it reads the code and the repository's Claude Code files, maintains the root AGENTS.md
+ * and the site, and reads no tracker. It runs commands in the stage's sandbox, because the site is built and checked
+ * by command. Autonomous: the person's gate over the draft and the "sim" of the push and the pull request are the
+ * brakes, and without it the person would accept the result twice.
  */
 export function docsWriter(): AgentDef {
   return newAgent({
@@ -38,7 +40,7 @@ export function docsWriter(): AgentDef {
     stages: DOCS_FLOW_STAGES.filter((s) => s.agentId === DOCS_WRITER).map((s) => s.id),
     permission: 'worktree',
     tracker: 'none',
-    shell: 'none',
+    shell: 'sandbox',
     autonomous: true,
     turnsTo: null,
     model: { role: 'deep' },

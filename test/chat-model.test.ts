@@ -9,7 +9,8 @@ import { createTranslator } from '../src/shared/i18n';
 import type { LiveAnswer, LiveEvent } from '../src/shared/persona';
 import { PUSH_SCREENS } from '../src/shared/push';
 import { buildTree, hasWork } from '../src/renderer/src/activityTreeModel';
-import { BUTTON_KEY, bubblesOf, buttonLabel, cardOpen, cardParts, composerAria, composerState, liveKey, menuControls, liveOf, queuedOf, reduceLive, reduceRead, refocusAfterSend, rowKind, workItems, workOf, workOpenByDefault, workShown, workSummary } from '../src/renderer/src/chatModel';
+import { PERSONA_TOOLS } from '../src/shared/personaTools';
+import { BUTTON_KEY, actLine, actTarget, bubblesOf, buttonLabel, composerAria, composerState, liveKey, liveOf, logRows, queuedOf, reduceLive, reduceRead, refocusAfterSend, rowKind, workItems, workOf, workOpenByDefault, workShown, workSummary } from '../src/renderer/src/chatModel';
 
 const THREAD = 'agent-me';
 const event = (to: number, rev: number, offset: number, text: string, over: Partial<LiveEvent> = {}): LiveEvent => ({ thread: THREAD, to, agent: 'me', rev, offset, text, ...over });
@@ -125,6 +126,112 @@ describe('the rows', () => {
     expect(rowKind({ kind: 'system', author: { type: 'app' } }, 'me')).toBe('system');
     expect(rowKind({ kind: 'system', author: { type: 'agent', id: 'me' } }, 'me')).toBe('system');
   });
+
+  it('folds two or more screen notices in a row into one row, and keeps a single one and everything else as it is', () => {
+    const app = (n: number) => stored(n, { kind: 'system', author: { type: 'app' }, code: 'runner.screen.closed' });
+    const rows = logRows([stored(1), app(2), app(3), app(4), stored(5, { author: { type: 'person' } }), app(6), stored(7), app(8), app(9)], 'me');
+    expect(rows.map((r) => (r.kind === 'notices' ? r.items.map((m) => m.seq) : r.m.seq))).toEqual([1, [2, 3, 4], 5, 6, 7, [8, 9]]);
+    expect(logRows([], 'me')).toEqual([]);
+    // the line of an act of the persona is a row of its own and breaks a run of notices
+    const act = stored(10, { kind: 'system', author: { type: 'app' }, code: 'persona.act' });
+    expect(logRows([app(2), act, app(11)], 'me').map((r) => r.kind)).toEqual(['message', 'message', 'message']);
+  });
+
+  it('folds only the screen notices: failures, holds, stops and the count of the rest of the acts stay lines of their own', () => {
+    const line = (n: number, code: string | null) => stored(n, { kind: 'system', author: { type: 'app' }, code });
+    const shape = (rows: ReturnType<typeof logRows>) => rows.map((r) => (r.kind === 'notices' ? r.items.map((m) => m.seq) : r.m.seq));
+    expect(shape(logRows([line(1, 'runner.mentionFailed'), line(2, 'runner.mentionFailed')], 'me'))).toEqual([1, 2]);
+    for (const code of ['runner.model.allBusy', 'runner.mention.budget', 'runner.mention.noShell', 'runner.partial', 'persona.stopped.window', null]) {
+      expect(shape(logRows([line(1, code), line(2, code)], 'me'))).toEqual([1, 2]);
+    }
+    // a failure between two notices splits them; the count of the rest of the acts does not fold with a notice
+    expect(shape(logRows([line(1, 'runner.screen.closed'), line(2, 'runner.mentionFailed'), line(3, 'runner.screen.notKept')], 'me'))).toEqual([1, 2, 3]);
+    expect(shape(logRows([line(1, 'persona.act.more'), line(2, 'runner.screen.closed')], 'me'))).toEqual([1, 2]);
+    expect(shape(logRows([line(1, 'runner.screen.closed'), line(2, 'runner.screen.idleClosed'), line(3, 'runner.screen.notKept')], 'me'))).toEqual([[1, 2, 3]]);
+  });
+
+  it('draws the line of an act of the persona as its own row, and the line that counts the rest as a line of the app', () => {
+    expect(rowKind({ kind: 'system', author: { type: 'app' }, code: 'persona.act' }, 'me')).toBe('act');
+    expect(rowKind({ kind: 'system', author: { type: 'app' }, code: 'persona.act.more' }, 'me')).toBe('system');
+    expect(rowKind({ kind: 'system', author: { type: 'app' }, code: 'persona.stopped.window' }, 'me')).toBe('system');
+  });
+});
+
+describe('the line an act of the persona leaves in the chat', () => {
+  const say = { en: createTranslator('en'), 'pt-BR': createTranslator('pt-BR') };
+  const act = (params: Record<string, string>) => ({ params });
+
+  it('is worded by the viewer\'s catalog from the facts the message stores, so a language change translates the lines already there', () => {
+    const m = act({ tool: 'Actions', op: 'approve', subject: 'Comment on #12', result: 'ok', id: 'a-1x-1' });
+    expect(actLine(m, say.en)).toMatchObject({ text: 'Actions · approved Comment on #12', refused: false, raised: null, auditId: 'a-1x-1', target: null });
+    expect(actLine(m, say['pt-BR']).text).toBe('Ações · aprovou Comment on #12');
+  });
+
+  it('says a refusal as one, with the reason, and a raise of reach with the fields', () => {
+    const refused = actLine(act({ tool: 'Board', op: 'update', result: 'refused', reason: 'The test workspace writes nothing.', id: 'a-2' }), say.en);
+    expect(refused).toMatchObject({ refused: true, text: 'Board · refused: The test workspace writes nothing.' });
+    const onSubject = actLine(act({ tool: 'Board', op: 'update', subject: 'Plan the launch', result: 'refused', reason: 'faltou column', id: 'a-3' }), say.en);
+    expect(onSubject.text).toBe('Board · refused on Plan the launch: faltou column');
+    expect(actLine(act({ tool: 'Board', op: 'update', subject: 'Plan the launch', result: 'refused', reason: 'faltou column' }), say['pt-BR']).text).toBe('Quadro · recusado em Plan the launch: faltou column');
+    const raised = actLine(act({ tool: 'Settings', op: 'set', subject: 'agents.team[me].shell', result: 'ok', raised: 'agents.team[me].shell' }), say.en);
+    expect(raised).toMatchObject({ raised: 'agents.team[me].shell', auditId: null });
+  });
+
+  it('says a call refused before its handler in the viewer\'s language from the stored problem, never from the reason the model was given', () => {
+    const early = act({ tool: 'Board', op: 'create', result: 'refused', stage: 'before-handler', problem: 'required', arg: 'column', reason: 'Board.create: The argument column is missing: the operation needs it.', id: 'a-4' });
+    expect(actLine(early, say.en)).toMatchObject({ refused: true, auditId: 'a-4', text: 'Board · did not try create: the argument column is missing' });
+    expect(actLine(early, say['pt-BR']).text).toBe('Quadro · não tentou create: faltou o argumento column');
+    expect(actLine(act({ tool: 'Runs', op: 'resume', result: 'refused', stage: 'before-handler', problem: 'op' }), say['pt-BR']).text).toBe('Execuções · não tentou resume: essa operação não existe');
+    // A problem this version has no words for falls back to the line of an ordinary refusal.
+    expect(actLine(act({ tool: 'Board', op: 'create', result: 'refused', stage: 'before-handler', problem: 'future', reason: 'because' }), say.en).text).toBe('Board · refused: because');
+  });
+
+  it('words an act from the tool, the operation and the subject in the viewer\'s language, with no code and no repeated word', () => {
+    const create = act({ tool: 'Board', op: 'create', subject: 'Plan the launch', result: 'ok' });
+    expect(actLine(create, say.en).text).toBe('Board · created the card “Plan the launch”');
+    expect(actLine(create, say['pt-BR']).text).toBe('Quadro · criou o cartão “Plan the launch”');
+    expect(actLine(act({ tool: 'Settings', op: 'set', subject: 'runner.triggerLabel', result: 'ok' }), say.en).text).toBe('Settings · changed runner.triggerLabel');
+    expect(actLine(act({ tool: 'Settings', op: 'set', subject: 'runner.triggerLabel', result: 'ok' }), say['pt-BR']).text).toBe('Configurações · mudou runner.triggerLabel');
+    expect(actLine(act({ tool: 'Settings', op: 'applyCycle', subject: 'github-flow', result: 'ok' }), say.en).text).toBe('Settings · applied the cycle template github-flow');
+    // an operation with nothing to name needs no subject
+    expect(actLine(act({ tool: 'Overview', op: 'clearErrors', subject: '', result: 'ok' }), say['pt-BR']).text).toBe('Visão geral · limpou o registro de erros');
+  });
+
+  it.each(['en', 'pt-BR'] as const)('has words in %s for every operation that writes, and none of them is the raw code', async (language) => {
+    const { OPS } = await import('../src/main/persona/doorTable');
+    const { ACT_VERBS } = await import('../src/renderer/src/actVerbs');
+    const writes = OPS.filter((o) => o.write);
+    expect(Object.keys(ACT_VERBS).sort()).toEqual(writes.map((o) => `${o.tool}.${o.op}`).sort());
+    for (const o of writes) {
+      const text = actLine(act({ tool: o.tool, op: o.op, subject: 'the subject', result: 'ok' }), say[language]).text;
+      expect(text, `${o.tool}.${o.op}`).not.toContain('ui.chat.act');
+      expect(text, `${o.tool}.${o.op}`).not.toMatch(/\{\w+\}/);
+      expect(text, `${o.tool}.${o.op}`).not.toContain(`${o.tool}.${o.op}`);
+      expect(text, `${o.tool}.${o.op}`).not.toMatch(new RegExp(` · ${o.op}: `));
+    }
+  });
+
+  it('offers the button of the screen it was about, only when the target is in the vocabulary of the notifications', () => {
+    const target = JSON.stringify({ to: 'run', id: 'r-abc' });
+    expect(actLine(act({ tool: 'Runs', op: 'accept', result: 'ok', target }), say.en).target).toEqual({ to: 'run', id: 'r-abc' });
+    for (const bad of ['', 'not json', JSON.stringify({ to: 'nowhere' }), JSON.stringify({ to: 'run' }), JSON.stringify({ to: 'qa', ref: 'has space' })]) expect(actTarget(bad), bad).toBeNull();
+    expect(actTarget(undefined)).toBeNull();
+  });
+
+  it.each(['en', 'pt-BR'] as const)('has the name of every tool\'s area in %s, and shows an unknown tool by its name', (language) => {
+    for (const tool of PERSONA_TOOLS) {
+      const text = actLine(act({ tool, op: 'x', subject: 's', result: 'ok' }), say[language]).text;
+      expect(text, tool).not.toContain('ui.chat.act');
+      expect(text, tool).not.toMatch(/\{\w+\}/);
+    }
+    expect(actLine(act({ tool: 'Future', op: 'x', subject: 's', result: 'ok' }), say[language]).text).toContain('Future');
+  });
+
+  it('opens the audit at the act\'s entry, and the Audit screen alone when there is no id', async () => {
+    const { targetToScreen } = await import('../src/renderer/src/pushTarget');
+    expect(targetToScreen({ to: 'auditoria', id: 'a-1x-1' }, true)).toEqual({ name: 'auditoria', id: 'a-1x-1' });
+    expect(targetToScreen({ to: 'auditoria' }, true)).toEqual({ name: 'auditoria' });
+  });
 });
 
 let seq = 0;
@@ -234,17 +341,11 @@ describe('the words of a button', () => {
   });
 });
 
-describe('the accessibility attributes of the box and the menu', () => {
+describe('the accessibility attributes of the box', () => {
   it('makes the box a combobox only where @agent is completed', () => {
     expect(composerAria(false, 'x', 3, 1)).toEqual({});
     expect(composerAria(true, 'x', 0, 0)).toEqual({ role: 'combobox', 'aria-expanded': false, 'aria-controls': 'x', 'aria-autocomplete': 'list', 'aria-activedescendant': undefined });
     expect(composerAria(true, 'x', 2, 1)).toMatchObject({ 'aria-expanded': true, 'aria-activedescendant': 'x-1' });
-  });
-
-  it('points the menu button at the menu only while the desktop menu is in the page', () => {
-    expect(menuControls(false, false)).toBeUndefined();
-    expect(menuControls(true, false)).toBe('chat-menu');
-    expect(menuControls(true, true)).toBeUndefined();
   });
 });
 
@@ -262,22 +363,6 @@ describe('what the Work section shows and when', () => {
     }
     const sub = buildTree([status('w3', 'started', { call: call(6) }), status('s3', 'started', { parent: 'w3', node: { type: 'sub', label: 'explore: map' } }), status('s3', 'finished', { parent: 'w3', node: { type: 'sub', label: 'explore: map' } }), status('w3', 'finished', { call: call(6) })]);
     expect(workShown(workOf(sub, 6, 'me') as never)).toBe(true);
-  });
-});
-
-describe('the ceremony card on a small screen', () => {
-  it('is one line on a phone and in full on the computer until the person chooses, and the choice wins', () => {
-    expect(cardOpen(true, null)).toBe(false);
-    expect(cardOpen(false, null)).toBe(true);
-    expect(cardOpen(true, true)).toBe(true);
-    expect(cardOpen(false, false)).toBe(false);
-  });
-});
-
-describe('the card when the chip is its header', () => {
-  it('is the body only on a phone, where the chip says "Now" and the title, and whole on the computer', () => {
-    expect(cardParts(true).head).toBe(false);
-    expect(cardParts(false).head).toBe(true);
   });
 });
 

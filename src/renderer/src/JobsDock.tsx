@@ -10,6 +10,9 @@ import { appInView, systemNotify } from './jobNotify';
 import { type Job, formatElapsed, notificationText, sameScreen } from './jobs';
 import { agentName } from './screens/cycle/names';
 import { useRunConfig, useRuns } from './screens/cycle/runsApi';
+import { isPersonaThread } from '../../shared/forum';
+import { usePersonaState } from './personaStopApi';
+import { withoutHeldPersona } from './personaStopModel';
 import { useActivity, useTopEntries } from './useActivity';
 import { jobs, useJobsSnapshot } from './useJobs';
 import './jobs.css';
@@ -19,7 +22,7 @@ const SHOW_AFTER_MS = 700;
 const TOAST_MS = 10_000;
 const FAB = 52;
 const GAP = 12;
-const AVOID = '.composer, .composer-panel, .outbox-item'; // i18n-ignore: CSS selector
+const AVOID = '.composer, .composer-panel, .outbox-item, .persona-banner, .chat-cer'; // i18n-ignore: CSS selector
 export const JOBS_OPEN = 'cerimonias:jobs-open';
 
 interface Toast {
@@ -144,7 +147,8 @@ export function JobsDock({ screen, go }: { screen: Screen; go: (s: Screen) => vo
   const shown = snap.filter((j) => (j.status === 'running' ? clock - j.startedAt >= SHOW_AFTER_MS : !sameScreen(j.screen as Screen, screen)));
   // What no job on the list owns: a run and a conversation each one entry with the agents working in it, and any other activity one entry named for its agent. Every
   // entry exists only while something in it works, and what runs inside it (sub-agents, called agents) never adds to the count.
-  const tops = useTopEntries(snap.filter((j) => j.status === 'running').map((j) => j.key));
+  const stopped = usePersonaState().stopped;
+  const tops = withoutHeldPersona(useTopEntries(snap.filter((j) => j.status === 'running').map((j) => j.key)), { stopped, isPersonaThread: (thread) => !!team && isPersonaThread(team, thread) });
   const { total, running, failed } = dockCounts(shown, tops.length);
   const lift = useFabLift(total > 0);
 

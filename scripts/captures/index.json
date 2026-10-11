@@ -1,0 +1,49 @@
+{
+  "features": [
+    {
+      "id": "today",
+      "title": { "pt-BR": "O dia", "en": "The day" },
+      "script": "today.mjs",
+      "screens": ["today board with the cards of the day"],
+      "langs": ["pt-BR", "en"],
+      "theme": "light",
+      "usedIn": ["README.md", "README.pt-BR.md", "docs/today.md", "site"]
+    },
+    {
+      "id": "call",
+      "title": { "pt-BR": "Uma cerimônia", "en": "A ceremony" },
+      "script": "call.mjs",
+      "screens": ["a ceremony in progress with the agent's sources"],
+      "langs": ["pt-BR", "en"],
+      "theme": "light",
+      "usedIn": ["README.md", "README.pt-BR.md", "docs/ceremonies.md", "site"]
+    },
+    {
+      "id": "actions",
+      "title": { "pt-BR": "A fila de ações", "en": "The actions queue" },
+      "script": "actions.mjs",
+      "screens": ["the actions queue with a command waiting for the person"],
+      "langs": ["pt-BR", "en"],
+      "theme": "light",
+      "usedIn": ["README.md", "README.pt-BR.md", "docs/actions.md", "site"]
+    },
+    {
+      "id": "wizard",
+      "title": { "pt-BR": "O assistente de configuração", "en": "The setup wizard" },
+      "script": "wizard.mjs",
+      "screens": ["the first-run setup wizard, models step"],
+      "langs": ["pt-BR", "en"],
+      "theme": "light",
+      "usedIn": ["README.md", "README.pt-BR.md", "docs/setup.md", "site"]
+    },
+    {
+      "id": "phone",
+      "title": { "pt-BR": "O celular pareado", "en": "The paired phone" },
+      "script": "phone.mjs",
+      "screens": ["the phone companion from the app's own web mode, at 390 px"],
+      "langs": ["pt-BR", "en"],
+      "theme": "light",
+      "usedIn": ["README.md", "README.pt-BR.md", "docs/phone.md", "site"]
+    }
+  ]
+}

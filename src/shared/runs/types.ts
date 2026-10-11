@@ -512,6 +512,8 @@ export interface FlowStage {
   autonomous: boolean;
   /** The autonomy block of the run has its general switch on: the stage starts by itself whatever the agent's own `autonomous` is. */
   cycleAutonomous: boolean;
+  /** The stage asked for the virtual display a QA stage gets. */
+  display: boolean;
   /** The files the stage must produce. */
   artifacts: string[];
   /** The artifacts the stage is given; null: every earlier one. */

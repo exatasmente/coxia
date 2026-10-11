@@ -21,6 +21,7 @@ import { memoryModule } from './memory/module';
 import { mentionsModule } from './mentions/module';
 import { mcpStateModule } from './mcp-state/module';
 import { personaModule } from './persona/module';
+import { pluginsConversationModule } from './plugins/conversation';
 import { pluginsModule } from './plugins/module';
 import { proceduresModule } from './procedures/module';
 import { register as radar } from './radar';
@@ -63,6 +64,7 @@ const ALL: Module[] = [
   mentionsModule,
   minutes,
   personaModule,
+  pluginsConversationModule,
   pluginsModule,
   proceduresModule,
   radar,

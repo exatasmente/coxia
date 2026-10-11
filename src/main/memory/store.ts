@@ -87,6 +87,8 @@ export interface EditRequest {
   kind?: NoteKind;
   /** The revision the editor read; a note that moved since is refused so the person does not overwrite a newer text unseen. */
   revision?: number;
+  /** Who made the edit: the person (default) or the persona through its door. The lock against agents is the same; the state and the view say who. */
+  by?: 'person' | 'persona';
   mask?: (text: string) => string;
   home?: string;
 }
@@ -143,7 +145,7 @@ export interface MemoryStore {
   /** The person edits a note: it becomes theirs, reviewed, and its agent can no longer replace or remove it. */
   edit(req: EditRequest): EditResult;
   /** The person looked at a note that waited for review, or at a foreign one: it is marked reviewed, the text unchanged. */
-  review(scope: Scope, id: string): ReviewResult;
+  review(scope: Scope, id: string, by?: 'person' | 'persona'): ReviewResult;
   /** The person removes any note, whoever wrote it. */
   removeNote(scope: Scope, id: string): RemoveResult;
   /** Removes an agent's folder in a conversation with its notes, or a whole conversation's. */
@@ -264,6 +266,7 @@ export function createMemoryStore(workspaceDir: string, deps: MemoryStoreDeps = 
       by: st?.by ?? s.agent,
       person,
       revision: st?.revision ?? (Number.isInteger(claimedRevision) && claimedRevision >= 1 ? claimedRevision : 1),
+      ...(st?.persona && st.sha === f.sha ? { persona: true as const } : {}),
       reviewed: st?.reviewed ?? false,
       foreign: st === undefined,
       unsafe,
@@ -560,12 +563,12 @@ export function createMemoryStore(workspaceDir: string, deps: MemoryStoreDeps = 
     const at = iso(now());
     const content = renderNote({ id: req.id, kind, title, by: 'person', at, revision, reviewed: true, activity: shortLine(facts.claims.activity), repo: shortLine(facts.claims.repo) }, body);
     if (!writeFile(path, content)) return { ok: false, code: 'io', text: 'the note could not be written' };
-    read.state.notes[req.id] = { by: st?.by ?? s.agent, person: true, revision, reviewed: true, sha: shaOf(content), at };
+    read.state.notes[req.id] = { by: st?.by ?? s.agent, person: true, ...(req.by === 'persona' ? { persona: true as const } : {}), revision, reviewed: true, sha: shaOf(content), at };
     if (!states.write(folder, prune(s, read.state))) return { ok: false, code: 'io', text: 'the note could not be written' };
     return { ok: true, note: noteOf(s, req.id) };
   }
 
-  function review(s: Scope, id: string): ReviewResult {
+  function review(s: Scope, id: string, by: 'person' | 'persona' = 'person'): ReviewResult {
     if (!validScope(s) || !NOTE_ID.test(id)) return { ok: false, code: 'not-found', text: 'the note is not at a valid place' };
     const facts = factsOf(fileOf(s, id), id);
     if (!facts || facts.noteId === null) return { ok: false, code: 'not-found', text: `there is no note ${id}` };
@@ -580,6 +583,8 @@ export function createMemoryStore(workspaceDir: string, deps: MemoryStoreDeps = 
     read.state.notes[id] = {
       by: st?.by ?? s.agent,
       person: (st?.person ?? false) || changed,
+      // A review keeps who took the note over; a review made by the persona on a note nobody had taken over is the persona's.
+      ...(by === 'persona' && (!st?.person || changed) ? { persona: true as const } : !changed && st?.persona ? { persona: true as const } : {}),
       revision: st?.revision ?? (Number.isInteger(claimedRevision) && claimedRevision >= 1 ? claimedRevision : 1),
       reviewed: true,
       sha: st && !changed ? st.sha : facts.sha,
@@ -646,7 +651,7 @@ export function createMemoryStore(workspaceDir: string, deps: MemoryStoreDeps = 
     },
     remove: (s, id) => announce(drop(s, id, 'agent'), okOf),
     edit: (req) => announce(edit(req), okOf),
-    review: (s, id) => announce(review(s, id), okOf),
+    review: (s, id, by) => announce(review(s, id, by), okOf),
     removeNote: (s, id) => announce(drop(s, id, 'person'), okOf),
     removeFolder: (s) => announce(removeFolder(s), Boolean),
     removeConversation: (c) => announce(removeConversation(c), Boolean),

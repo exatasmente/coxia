@@ -29,11 +29,26 @@ Um plugin publica `plugin.json`:
 | `name` | nome mostrado à pessoa |
 | `contract` | versão de contrato que o plugin segue (esta entrega entende a `1`) |
 | `offers.events` | acontecimentos observados, da lista fixa |
-| `offers.documents` | tipos de documento novos do ciclo (`name`, `label`) |
+| `offers.documents` | tipos de documento novos do ciclo (`name`, `label`, `flow`) |
 | `offers.network` | destinos que o plugin declara precisar, por nome de host |
 | `offers.write` | a escrita externa: `{ "to": "<nome>", "reversible": true\|false }`, para a caixa de saída do plugin neste espaço de trabalho (um destino neutro, nunca um serviço de terceiro). Sem `reversible`, conta como irreversível |
 | `offers.agents` | uma nota curta (até 1000 caracteres) que entra no contexto de todas as etapas enquanto o plugin está ligado, marcada como a palavra do plugin: o que ele oferece aos agentes |
-| `offers.entry` | script de shell da pasta do plugin, rodado quando um acontecimento observado acontece; o aplicativo lê o texto dele e o entrega à sandbox como o próprio comando (a pasta não é montada), com o acontecimento em `$1`; o que ele imprime é o resultado |
+| `offers.entry` | script de shell da pasta do plugin, rodado quando um acontecimento observado acontece; o aplicativo lê o texto dele e o entrega à sandbox como o próprio comando (a pasta não é montada), com o acontecimento em `$1`, e numa chamada feita de uma conversa a pergunta em `$2` e a conversa em `$3` (vazios nos quatro acontecimentos do ciclo); o que ele imprime é o resultado |
+
+**Os documentos.** Um tipo sem `flow` é **colateral** — o efeito de uma etapa, como o resultado de uma busca —:
+fica fora da fase do cartão e continua sendo oferecido no portão 2, como todo documento de plugin era. Um tipo
+com `flow` é **documento do fluxo** e diz onde entra: `gate` (1 ou 2) é o portão que o lê, `phase.before` é o
+arquivo do ciclo logo abaixo do qual ele entra na ordem de fase (mais avançado que esse arquivo) e `phase.label`
+é o rótulo da fase que ele mostra (sem ele, o `label` do documento). Um `flow` sem `gate` não é artefato de
+portão nenhum (é o caso do manual do usuário, escrito depois do último portão), e um `before` que o ciclo daquele
+espaço não tem simplesmente não entra na fase.
+
+**Nota.** Declarações **sem código e sem nada a alcançar** vêm da pasta de plugins do próprio aplicativo e já
+vêm **ligadas por padrão** (uma cópia do mesmo `id` na pasta do workspace vence a do aplicativo). Um plugin
+colado nessa pasta com script, rede, escrita, configuração ou nota para os agentes não é tratado como embutido:
+continua desligado até a pessoa ligar. Os nomes de documento que o próprio aplicativo declara são do fluxo e
+ficam com ele: um plugin da pasta do espaço de trabalho que declare um deles é recusado, com o motivo, e não
+oferece nada — enquanto a declaração do aplicativo estiver ligada, ela é a única fonte daquele documento.
 
 A leitura é uma função pura: o mesmo caminho roda no Linux, no macOS e no Windows, e nada no plugin depende de
 um carregador de biblioteca nativa.
@@ -45,7 +60,8 @@ Lista fixa e pública:
 - `stage-entered` — uma etapa do ciclo entrou;
 - `stage-finished` — uma etapa do ciclo terminou;
 - `gate-decided` — um gate foi decidido;
-- `run-finished` — uma execução terminou.
+- `run-finished` — uma execução terminou;
+- `conversation-called` — uma pessoa ou um agente chamou o plugin de uma conversa.
 
 Um acontecimento fora da lista é recusado com o motivo. Isto não é o canal de interface entre a janela e o
 navegador pareado: é um ponto de extensão à parte.
@@ -53,6 +69,31 @@ navegador pareado: é um ponto de extensão à parte.
 O aplicativo dispara cada um no lugar onde ele já acontece: `stage-entered` quando uma execução entra numa
 etapa, `stage-finished` quando uma etapa conclui, `gate-decided` quando a pessoa decide um gate e `run-finished`
 quando uma execução termina. Um plugin que falha não derruba a execução nem o aplicativo.
+
+### A chamada feita de uma conversa
+
+Uma conversa chama um plugin com uma mensagem que começa com barra, o id do plugin e a pergunta
+(`/web-search como funciona o replay?`); depois do nome é preciso haver uma pergunta, e o `@` continua nomeando um
+agente (a mesma mensagem não é lida das duas maneiras). A resposta volta para a mesma conversa, entre as marcas de
+material e com as fontes, e nunca é lida como instrução. Quando a conversa é a de uma execução, a chamada leva a
+execução ao plugin e o mesmo texto é gravado também como documento na pasta do ciclo; numa conversa qualquer, o plugin
+recebe uma pasta vazia própria e nada é escrito. O contexto traz o que foi pedido (`$2` no shell, `ctx.asked` no
+JavaScript), a conversa (`$3`, `ctx.thread`) e a execução quando há (`ctx.runId`); nos quatro acontecimentos do ciclo
+esses três campos são vazios.
+
+### O que fica de cada chamada
+
+Toda chamada de um plugin deixa uma linha no registro de auditoria do espaço de trabalho (tipo "Chamada de
+plugin"): o plugin, o acontecimento, a etapa, a execução e como terminou — rodou, falhou (com o motivo) ou espera
+a resposta de um pedido em Ações. Nunca o que o plugin devolveu.
+
+Quando a chamada **falha** (não há execução onde escrever, falta uma configuração obrigatória, a sandbox não
+abriu, o script terminou com erro ou sem resultado, uma escrita não pôde seguir), a conversa da execução ganha uma
+linha com o nome do plugin, o acontecimento, a etapa e o motivo. A execução segue. Uma chamada que rodou fica só no
+registro; uma que espera um pedido já aparece como a espera da execução.
+
+A lista de plugins (Configurações → Plugins) mostra a última chamada de cada um desde que o aplicativo abriu: como
+terminou, para qual acontecimento, etapa e issue, o documento escrito ou o motivo.
 
 ### A fronteira
 
@@ -63,7 +104,13 @@ quando uma execução termina. Um plugin que falha não derruba a execução nem
 - O que o plugin pode alcançar está declarado nele e é dito na lista de plugins (Configurações → Plugins); o que
   não estiver declarado é recusado, com o motivo.
 - O que o plugin imprime vira o documento que ele declarou na pasta do ciclo da execução, escrito pelo
-  aplicativo pelo mesmo caminho dos documentos de uma etapa.
+  aplicativo pelo mesmo caminho dos documentos de uma etapa (no máximo 20.000 caracteres). Antes, o aplicativo
+  mascara só o que tem forma de credencial: chave com prefixo conhecido, token `Bearer`/`Basic`, cabeçalho de
+  autorização, JWT, endereço com senha (`https://user:pass@…`), literal entre aspas atribuído a um nome de segredo
+  (`password = "…"`), e troca a pasta pessoal por `~`. A consulta de um link (`https://wa.me/…?text=…`), um
+  e-mail e um id longo (um hash de commit) passam como estão. O plugin não guarda segredo: as chamadas dele quem
+  faz é o aplicativo, e a resposta já chega mascarada — nela, sim, a consulta de um link e um e-mail chegam como
+  `[redacted]` e `[email]`.
 - Um plugin nunca escreve por conta própria: a escrita declarada sai pela porta única de Ações, só com a
   permissão, e entra no registro de auditoria. Num espaço de trabalho de teste nada é pedido e nada sai.
 
@@ -123,7 +170,8 @@ Só um plugin em JavaScript declara **configurações** e **requisições**:
   leitura; outro método tem de ser declarado `"write": true`.
 - Exemplo em JavaScript: [`example-notify/`](example-notify/).
 - `ctx.write(id, …)` pede uma escrita declarada, que segue o contrato de permissão depois
-  que o plugin termina.
+  que o plugin termina. Uma chamada repassa **no máximo 5 escritas**, as primeiras pedidas;
+  as seguintes são descartadas, e o registro de auditoria diz quantas (`dropped`).
 - Leituras precisam da permissão de rede do plugin; escritas, da de escrita. Tudo o que o
   aplicativo faz por um plugin fica na auditoria, sem chave e sem corpo.
 
@@ -154,11 +202,26 @@ A plugin publishes `plugin.json`:
 | `name` | name shown to the person |
 | `contract` | contract version the plugin follows (this delivery understands `1`) |
 | `offers.events` | events it observes, from the fixed list |
-| `offers.documents` | new cycle document types (`name`, `label`) |
+| `offers.documents` | new cycle document types (`name`, `label`, `flow`) |
 | `offers.network` | destinations the plugin declares it needs, by host name |
 | `offers.write` | the external write: `{ "to": "<name>", "reversible": true\|false }`, to the plugin's outbox in this workspace (a neutral destination, never a third-party service). Without `reversible`, it counts as irreversible |
 | `offers.agents` | a short note (up to 1000 characters) added to every stage's context while the plugin is on, marked as the plugin's words: what it offers the agents |
-| `offers.entry` | a shell script of the plugin folder, run when an observed event happens; the app reads its text and hands it to the sandbox as the command itself (the folder is not mounted), with the event as `$1`; what it prints is its result |
+| `offers.entry` | a shell script of the plugin folder, run when an observed event happens; the app reads its text and hands it to the sandbox as the command itself (the folder is not mounted), with the event as `$1` and, on a call made from a conversation, the question as `$2` and that conversation as `$3` (both empty on the four events of a cycle); what it prints is its result |
+
+**The documents.** A type with no `flow` is **collateral** — the by-product of a stage, like a search result: it
+stays out of the card's phase and is still offered at gate 2, where every plugin document landed before. A type
+with a `flow` is a **document of the flow** and says where it lands: `gate` (1 or 2) is the gate that reads it,
+`phase.before` is the cycle file it enters the phase order just above (more advanced than that file) and
+`phase.label` is the phase label it shows (without it, the document's own `label`). A `flow` with no `gate` is
+no gate's artifact (the user manual is the case: written after the last gate), and a `before` the workspace's
+cycle does not have simply does not enter the phase.
+
+**Note.** Declarations with **no code and nothing to reach** come from the app's own plugins folder and come
+**on by default** (a copy of the same `id` in the workspace's folder wins over the app's). A plugin dropped in
+there with a script, a network, a write, settings or a note for the agents is never treated as built in: it stays
+off until the person turns it on. The document names the app itself declares belong to the flow: a plugin of the
+workspace's folder that declares one of them is refused, with the reason, and offers nothing — while the app's
+declaration is on, it is the only source of that document.
 
 The reading is a pure function: the same path runs on Linux, macOS and Windows, and nothing in the plugin
 depends on a native library loader.
@@ -170,7 +233,8 @@ Fixed and public list:
 - `stage-entered` — a cycle stage was entered;
 - `stage-finished` — a cycle stage finished;
 - `gate-decided` — a gate was decided;
-- `run-finished` — a run finished.
+- `run-finished` — a run finished;
+- `conversation-called` — a person or an agent called the plugin from a conversation.
 
 An event outside the list is refused with the reason. This is not the interface channel between the window and
 the paired browser: it is a separate extension point.
@@ -178,6 +242,31 @@ the paired browser: it is a separate extension point.
 The app fires each one where it already happens: `stage-entered` when a run enters a stage, `stage-finished`
 when a stage concludes, `gate-decided` when the person decides a gate and `run-finished` when a run finishes. A
 plugin that fails brings down neither the run nor the app.
+
+### A call made from a conversation
+
+A conversation calls a plugin with a message that starts with a bar, the plugin's id and the question
+(`/web-search how does replay work?`); there must be a question after the name, and `@` keeps naming an agent (one
+message is never read both ways). The answer comes back in the same conversation, inside the material markers and with
+its sources, and is never read as instruction. When the conversation is a run's, the call carries the run to the plugin
+and the same text is also written as a document in the run's cycle folder; in any other conversation the plugin gets an
+empty folder of its own and nothing is written. The context carries what was asked (`$2` in shell, `ctx.asked` in
+JavaScript), the conversation (`$3`, `ctx.thread`) and the run when there is one (`ctx.runId`); on the four events of a
+cycle those three fields are empty.
+
+### What each call leaves
+
+Every call of a plugin leaves a line in the workspace's audit log (kind "Plugin call"): the plugin, the event, the
+stage, the run and how it ended — it ran, it failed (with the reason) or it waits for the answer to a request in
+Actions. Never what the plugin returned.
+
+When a call **fails** (there is no run to write into, a required setting is empty, the sandbox did not open, the
+script ended with an error or without a result, a write could not go on), the run's conversation gets a line with
+the plugin's name, the event, the stage and the reason. The run goes on. A call that ran is only in the log; one
+that waits for a request already shows as the run's wait.
+
+The plugin list (Settings → Plugins) shows each plugin's last call since the app opened: how it ended, for which
+event, stage and issue, the document written or the reason.
 
 ### The boundary
 
@@ -188,7 +277,13 @@ plugin that fails brings down neither the run nor the app.
 - What a plugin may reach is declared in it and is said in the plugin list (Settings → Plugins); whatever is not
   declared is refused, with the reason.
 - What the plugin prints becomes the document it declared in the run's cycle folder, written by the app through
-  the same path as the documents of a stage.
+  the same path as the documents of a stage (20,000 characters at most). Before that, the app masks only what is
+  shaped like a credential: a key with a known prefix, a `Bearer`/`Basic` token, an authorization header, a JWT, an
+  address with a password (`https://user:pass@…`), a quoted literal assigned to a secret's name
+  (`password = "…"`), and it replaces the home folder with `~`. The query of a link (`https://wa.me/…?text=…`), an
+  email address and a long id (a commit hash) go through as they are. A plugin holds no secret: its calls are made
+  by the app, and the response arrives already masked — there, the query of a link and an email address do arrive
+  as `[redacted]` and `[email]`.
 - A plugin never writes by itself: its declared write goes out through the single door of Actions, only with the
   permission, and lands in the audit log. In a test workspace nothing is asked and nothing goes out.
 
@@ -235,6 +330,7 @@ Only a JavaScript plugin declares **settings** and **requests** (see the example
   other method has to be declared `"write": true`.
 - Example in JavaScript: [`example-notify/`](example-notify/).
 - `ctx.write(id, …)` asks for a declared write, which follows the permission contract once
-  the plugin ends.
+  the plugin ends. One call hands on **at most 5 writes**, the first ones asked; the rest
+  are dropped, and the audit log says how many (`dropped`).
 - Reads need the plugin's network permission; writes, its write permission. Everything the
   app does for a plugin lands in the audit log, without the key and without the body.

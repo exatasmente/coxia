@@ -661,11 +661,14 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     events.onToolUse?.(name, input);
     const fail = (text: string): { text: string } => {
       events.onToolResult?.(name, true);
-      return { text: t('main.engine.text.toolError', { text }) };
+      // i18n-ignore-next-line: what the model reads when its tool call fails: English by design, like the tool descriptions
+      return { text: `[tool error] ${text}` };
     };
-    if (!impl) return fail(t('main.engine.text.unknownTool', { name, available: [...byApi.values()].map((tool) => tool.name).join(', ') }));
+    // i18n-ignore-start: what the model reads when its tool call is wrong: English by design, like the tool descriptions
+    if (!impl) return fail(`Unknown tool: ${name}. Available: ${[...byApi.values()].map((tool) => tool.name).join(', ')}`);
     const argErrors = validate(input, impl.parameters);
-    if (argErrors.length) return fail(t('main.engine.text.badArgs', { errors: describeErrors(argErrors) }));
+    if (argErrors.length) return fail(`Invalid arguments: ${describeErrors(argErrors)}`);
+    // i18n-ignore-end
     const denied = await policy.pre(impl.name, input, p.cwd);
     if (denied) return fail(denied);
     try {

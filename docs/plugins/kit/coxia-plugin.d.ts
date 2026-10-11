@@ -8,7 +8,7 @@
 // nothing of the person's machine. It reaches a service only through `request` and `write`, which the app makes for it when the person allowed it.
 
 /** The events of the fixed catalog a plugin may observe. */
-export type PluginEvent = 'stage-entered' | 'stage-finished' | 'gate-decided' | 'run-finished';
+export type PluginEvent = 'stage-entered' | 'stage-finished' | 'gate-decided' | 'run-finished' | 'conversation-called';
 
 /** One query parameter or the body of a request: the app checks the call against the request the plugin declared in `plugin.json`. */
 export interface RequestOptions {
@@ -37,6 +37,12 @@ export interface PluginContext {
   /** The issue of the run, and the stage it is at. */
   readonly issue: number;
   readonly stage: string | null;
+  /** What a call from a conversation asked (the question that follows the command), or null on the four events of a cycle. */
+  readonly asked: string | null;
+  /** The conversation the call was made in, or null on the four events of a cycle. */
+  readonly thread: string | null;
+  /** The run the conversation belongs to (its id), or null outside a run's conversation. */
+  readonly runId: string | null;
   /** Which round this is (1 to 3): see `request`. */
   readonly round: number;
   /** The values of the plugin's `text` and `url` settings. A `secret` setting is never here: the app puts it in the request itself. */
@@ -50,14 +56,20 @@ export interface PluginContext {
    * refused the call (not declared, setting empty, not allowed).
    */
   request(id: string, options?: RequestOptions): Promise<RequestAnswer>;
-  /** Asks for a write the plugin declared. It follows the person's permission after the plugin ends: it may go out, be announced first, or wait. */
+  /**
+   * Asks for a write the plugin declared. It follows the person's permission after the plugin ends: it may go out, be announced first, or wait. One
+   * call hands on at most 5 writes, the first ones asked; the rest are dropped.
+   */
   write(id: string, options?: RequestOptions): void;
   /** A line for the log of the run of the plugin. */
   log(...parts: unknown[]): void;
 }
 
 export interface PluginResult {
-  /** The text of the document the plugin declared, written by the app into the run's cycle folder. Nothing is written when absent or empty. */
+  /**
+   * The text of the document the plugin declared, written by the app into the run's cycle folder (20,000 characters at most). Nothing is written when
+   * absent or empty. Only what is shaped like a credential is masked; the query of a link and an email address are kept.
+   */
   document?: string;
 }
 

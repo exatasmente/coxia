@@ -8,7 +8,8 @@ import { pluginsApi } from '../pluginsApi';
 
 // A plugin in Actions: a request the person answers (once, for the session, always, or refuse), or an allowed irreversible write announced until its
 // deadline, which the person may block or take the permission of back. Neither is a write to "approve": the request is answered with how far the yes
-// reaches, on the computer; a paired browser may only refuse a request or block a write, the two answers that take something away.
+// reaches, on the computer — except what a call from a conversation opened, which the paired browser may also allow. Otherwise a paired browser may
+// only refuse a request or block a write, the two answers that take something away.
 
 export const isPluginAction = (a: ReleaseAction): boolean => a.kind === 'plugin-ask' || a.kind === 'plugin-write';
 
@@ -57,6 +58,8 @@ export function PluginActionCard({ a }: { a: ReleaseAction }) {
   const reversible = unit.reversible === true;
   const ask = a.kind === 'plugin-ask';
   const open = a.state === 'pending';
+  // What a call from a conversation opened is the only request a paired browser may allow; the rest is the computer's to allow.
+  const chatAsk = typeof unit.thread === 'string' && !!unit.thread;
   const left = useSecondsLeft(!ask && open ? String(unit.due ?? '') : null);
 
   const act = async (fn: () => Promise<unknown>) => {
@@ -91,17 +94,17 @@ export function PluginActionCard({ a }: { a: ReleaseAction }) {
       {error && <div className="error">{error}</div>}
       {open && ask && (
         <>
-          {web && <p className="small muted">{t('ui.actions.plugin.ask.webNote')}</p>}
+          {web && !chatAsk && <p className="small muted">{t('ui.actions.plugin.ask.webNote')}</p>}
           <div className="row">
             {pluginAnswers(need, reversible)
-              .filter((answer) => !web || answer === 'refuse')
+              .filter((answer) => !web || chatAsk || answer === 'refuse')
               .map((answer) => (
                 <button
                   key={answer}
                   type="button"
                   className={`btn ${answer === 'refuse' ? '' : answer === 'always' ? 'btn-dark' : ''}`}
                   disabled={busy}
-                  onClick={() => void act(() => (web ? api.skipAction(a.id) : pluginsApi.answer(a.id, answer)))}
+                  onClick={() => void act(() => (web && !chatAsk ? api.skipAction(a.id) : pluginsApi.answer(a.id, answer)))}
                 >
                   {t(answer === 'always' && need === 'write' && !reversible ? 'ui.actions.plugin.answer.addToList' : ANSWER_LABEL[answer])}
                 </button>

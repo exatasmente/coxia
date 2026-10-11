@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 30): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 31): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 30;
+export const CONFIG_SCHEMA_VERSION = 31;
 
 /** The local read-only state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
@@ -321,6 +321,8 @@ export interface StageDef {
   poolMode?: PoolMode;
   /** Whether the stage receives the workspace's test environment. Left out: a QA stage of the current editor reads as yes; every stage carried by an already-saved template reads as no. */
   testEnv?: boolean;
+  /** Whether the stage gets the same virtual display a QA stage gets (sandbox or host, Xvfb with no TCP, never the person's screen). Left out: off. */
+  display?: boolean;
   /** The agent that works this stage in a run (an `agents.team` id). It wins over the `stages` list of the agents. Work stages only. */
   agentId?: string;
   /** Files, in the cycle folder, that this stage must produce. Plain names: no folder, nothing that starts with a dot. */

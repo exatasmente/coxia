@@ -119,6 +119,9 @@ export const personaOf = (team: readonly AgentDef[]): AgentDef | null => team.fi
 /** The persona being made or adjusted in the wizard (kind persona and a draft), or null. */
 export const personaDraftOf = (team: readonly AgentDef[]): AgentDef | null => team.find((a) => isPersona(a) && isDraft(a)) ?? null;
 
+/** The ids of the persona entries of the team: the authors a record worded as the persona's carries. */
+export const personaIdsOf = (team: readonly AgentDef[]): string[] => team.filter(isPersona).map((a) => a.id);
+
 /** The configuration without any entry of kind persona: what leaves the workspace in an export or a template. */
 export const withoutPersona = (config: WorkspaceConfig): WorkspaceConfig =>
   config.agents.team.some(isPersona) ? { ...config, agents: { ...config.agents, team: config.agents.team.filter((a) => !isPersona(a)) } } : config;
@@ -234,7 +237,7 @@ export const RECOMMENDED: Record<string, { tracker: AgentTracker; shell: AgentSh
   planner: { tracker: 'read', shell: 'sandbox' },
   reviewer: { tracker: 'read', shell: 'sandbox' },
   'release-manager': { tracker: 'read', shell: 'none' },
-  'docs-writer': { tracker: 'none', shell: 'none' },
+  'docs-writer': { tracker: 'none', shell: 'sandbox' },
 };
 
 export interface Recommendation {

@@ -7,10 +7,11 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // the workspace test flag and deletion (a browser may create, rename and switch workspaces, not lower the guard),
 // and the app update: it rebuilds or downloads and replaces the installed app, then quits it, so every update:* channel is listed
 // (test/updates-policy.test.ts checks that no update channel is missing), and the VCS probe (it takes a token typed in the setup
-// screen: a token never travels through the browser channel), and the decisions about a plugin: switching it, answering its requests and
-// taking a permission back are the person's on the computer (spec rule 10); blocking an announced write is actions:skip, which only takes away.
+// screen: a token never travels through the browser channel), and the decisions about a plugin: switching one and taking a permission back are the
+// person's on the computer (spec rule 10). Answering a request is open here only for what a call from a conversation opened (the requests of a run's own
+// events are refused whatever the channel says); blocking an announced write is actions:skip, which only takes away.
 // Freeing a release branch held by another worktree (actions:freeBranch) switches that folder's checkout on this machine, so it stays here too.
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited', 'plugins:set-enabled', 'plugins:settings', 'plugins:set-setting', 'plugins:set-secret', 'plugins:answer', 'plugins:revoke', 'plugins:revoke-write', 'actions:freeBranch']);
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited', 'plugins:set-enabled', 'plugins:settings', 'plugins:set-setting', 'plugins:set-secret', 'plugins:revoke', 'plugins:revoke-write', 'actions:freeBranch']);
 
 // The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
@@ -105,7 +106,10 @@ const TURN_ASKS_UNLISTED = /^turnAsks:(?!(list|answer)$)/;
 // main process from the texts alone, and the origin of every change is audited); the conversation itself goes through `forum:*` and the Stop through `runs:callStop`, which are open. The channels of
 // the persona's own are named so a later change of the default cannot close or open them by accident, and a pattern built from the same set denies any other `persona:` channel
 // until somebody classifies it, so the tools of the later issues of the epic start closed. test/persona-policy.test.ts pins both.
-export const PERSONA_CHANNELS = new Set(['persona:live-read', 'persona:round', 'persona:review', 'persona:saveDraft', 'persona:conclude', 'persona:discard', 'persona:finish', 'persona:save', 'persona:clear', 'persona:delete']);
+// The Stop (#248) is the person's: `persona:stop`, `persona:resume` and `persona:state` are open to a paired browser and are not external effects (stopping takes capability away, and
+// resuming is the person's own act on their own persona), so they work from a phone with the external-effects switch off. They are not queueable (an offline Stop replayed later is
+// worse than a failure the person sees), and no tool of the persona names them.
+export const PERSONA_CHANNELS = new Set(['persona:live-read', 'persona:round', 'persona:review', 'persona:saveDraft', 'persona:conclude', 'persona:discard', 'persona:finish', 'persona:save', 'persona:clear', 'persona:delete', 'persona:stop', 'persona:resume', 'persona:state']);
 const PERSONA_UNLISTED = new RegExp(`^persona:(?!(${[...PERSONA_CHANNELS].map((c) => c.slice('persona:'.length)).join('|')})$)`);
 
 // The local state server's doors: the opt-in writes the workspace config, the write offer writes a project folder's .mcp.json (a path of this

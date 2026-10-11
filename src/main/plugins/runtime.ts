@@ -4,7 +4,7 @@ import type { PluginDocumentType } from '../../shared/plugins/declaration';
 import { pluginDocumentText } from '../../shared/plugins/grants';
 import { ARTIFACT_NAME } from '../../shared/runs/output';
 import { checkPath } from '../engine/guard';
-import { redact } from '../errorlog-core';
+import { redact, redactCredentials } from '../errorlog-core';
 import { writeArtifact } from '../runner/cycleFolder';
 import type { RunnerSandbox } from '../../shared/config/types';
 import type { SandboxService } from '../sandbox';
@@ -29,7 +29,7 @@ export interface PluginRuntimeDeps {
 }
 
 /** What the app knows of one document type a plugin offers, for the write below. */
-export interface PluginDocument extends Pick<PluginDocumentType, 'name' | 'label'> {
+export interface PluginDocument extends Pick<PluginDocumentType, 'name' | 'label' | 'chain'> {
   title: string;
 }
 
@@ -37,7 +37,8 @@ export interface RunnablePlugin {
   id: string;
   /**
    * The text of the entry script, read by the app from the plugin folder. It is handed to the sandbox as the command itself: the plugin folder is never
-   * mounted (it may sit in the app's data, which no sandbox sees), and the script reads the event as `$1`.
+   * mounted (it may sit in the app's data, which no sandbox sees), and the script reads the event as `$1`, the question of a call from a conversation as
+   * `$2` and that conversation as `$3` (both empty on the four events of a cycle).
    */
   script: string;
   /** Document types it declares, with the title each document is written under. */
@@ -52,6 +53,8 @@ export interface PluginRun {
   refused: string | null;
   /** The document of the cycle folder the app wrote from what the plugin returned, or null when there was nothing to write. */
   document: { path: string; name: string } | null;
+  /** A request for the person was opened (a network or a write it was not allowed): the call waits for the answer, it did not fail. */
+  asked?: boolean;
 }
 
 /** The most text one plugin's answer keeps. */
@@ -63,15 +66,23 @@ const DOCUMENT_MAX = 40_000;
 export interface PluginTarget {
   worktree: string;
   cycleFolder: string;
+  /** Whether the document a plugin returns is written into the cycle folder. A call from a conversation outside a run hands over an empty folder of its own and writes nothing. */
+  documents?: boolean;
+}
+
+/** What one call was asked: a call from a conversation carries the question and the conversation; a cycle event carries neither. */
+export interface PluginCall {
+  asked?: string;
+  thread?: string;
 }
 
 const fail = (plugin: string, refused: string): PluginRun => ({ plugin, ok: false, text: '', refused, document: null });
 
 /**
- * Runs one plugin's entry script inside the stage sandbox, with the event name as its argument, and applies what it returned: the text comes back as
+ * Runs one plugin's entry script inside the stage sandbox, with the event name as its arguments, and applies what it returned: the text comes back as
  * material for the caller, and the first document type of the plugin gets the document, written by the app through the guard of the cycle folder.
  */
-export async function runPlugin(deps: PluginRuntimeDeps, plugin: RunnablePlugin, event: string, target: PluginTarget): Promise<PluginRun> {
+export async function runPlugin(deps: PluginRuntimeDeps, plugin: RunnablePlugin, event: string, target: PluginTarget, call: PluginCall = {}): Promise<PluginRun> {
   if (!plugin.script.trim()) return fail(plugin.id, 'the plugin has no entry script');
   let session: Awaited<ReturnType<SandboxService['open']>>;
   try {
@@ -81,11 +92,14 @@ export async function runPlugin(deps: PluginRuntimeDeps, plugin: RunnablePlugin,
   }
   let text: string;
   try {
-    const command = `set -- ${shellQuote(event)}\n${plugin.script}`;
+    // The event is `$1`; on a call from a conversation the question is `$2` and the conversation `$3` (empty on the four events of a cycle).
+    const command = `set -- ${shellQuote(event)} ${shellQuote(call.asked ?? '')} ${shellQuote(call.thread ?? '')}\n${plugin.script}`;
     const result = await session.exec(command);
     if (result.refused) return fail(plugin.id, `the command was not run (${result.refused})`);
     if (result.exitCode !== 0) return fail(plugin.id, `the plugin ended with code ${result.exitCode ?? '—'}`);
-    text = redact(result.output).slice(0, OUTPUT_MAX);
+    // A plugin holds no secret (its requests are made by the app, and their answers come masked), so only what is a credential by its shape is taken out here:
+    // the query of a link and an address are often what the plugin is for.
+    text = redactCredentials(result.output).slice(0, OUTPUT_MAX);
   } catch (e) {
     return fail(plugin.id, e instanceof Error ? e.message : String(e));
   } finally {
@@ -100,9 +114,13 @@ export async function runPlugin(deps: PluginRuntimeDeps, plugin: RunnablePlugin,
 
 /**
  * Writes the document a plugin's answer becomes into the run's cycle folder. Nothing is written when the plugin returned nothing or the name is not one
- * the folder takes; the path goes through the same guard as any document of a stage, so a name can never lead anywhere else.
+ * the folder takes; the path goes through the same guard as any document of a stage, so a name can never lead anywhere else. A document of the flow
+ * (`chain`) is never written by a plugin: the file the flow produces belongs to the stage that answers for it.
  */
-export function writePluginDocument(target: PluginTarget, type: { name: string; title: string }, input: { plugin: string; event: string; text: string }): { path: string; name: string } | null {
+export function writePluginDocument(target: PluginTarget, type: { name: string; title: string; chain?: true }, input: { plugin: string; event: string; text: string }): { path: string; name: string } | null {
+  // The only new write this adds: a call from a conversation outside a run writes nothing anywhere.
+  if (target.documents === false) return null;
+  if (type.chain === true) return null;
   const content = pluginDocumentText({ title: type.title, body: input.text.slice(0, DOCUMENT_MAX), plugin: input.plugin, event: input.event });
   if (!content) return null;
   if (!ARTIFACT_NAME.test(type.name)) return null;
@@ -175,6 +193,8 @@ export interface JsRuntimeDeps {
 /** What a JavaScript plugin left: the run, and the writes it asked for (they follow the permission contract afterwards). */
 export interface JsPluginRun extends PluginRun {
   writes: JsCall[];
+  /** The writes it asked for past `JS_REQUESTS_PER_ROUND`, which are not handed on. */
+  dropped?: number;
 }
 
 interface HarnessResult {
@@ -210,6 +230,9 @@ const ctx = Object.freeze({
   event: input.event,
   issue: input.issue,
   stage: input.stage,
+  asked: input.asked ?? null,
+  thread: input.thread ?? null,
+  runId: input.runId ?? null,
   round: input.round,
   settings: Object.freeze({ ...input.settings }),
   async readCycleFile(name) {
@@ -258,7 +281,7 @@ export function harnessResult(text: string | null): HarnessResult | null {
  * Runs a JavaScript plugin for one event: up to `JS_ROUNDS` rounds in one session, the reads it asked made by the app between them. The document it
  * returned is written into the run's cycle folder through the guard of a stage's documents; the writes it asked come back for the permission contract.
  */
-export async function runJsPlugin(deps: JsRuntimeDeps, plugin: JsPlugin, event: string, context: { issue: number; stage?: string }, target: PluginTarget): Promise<JsPluginRun> {
+export async function runJsPlugin(deps: JsRuntimeDeps, plugin: JsPlugin, event: string, context: { issue: number; stage?: string; asked?: string; thread?: string; runId?: string }, target: PluginTarget): Promise<JsPluginRun> {
   const failJs = (refused: string): JsPluginRun => ({ ...fail(plugin.id, refused), writes: [] });
   const exeDir = dirname(deps.executable);
   let session: Awaited<ReturnType<SandboxService['open']>>;
@@ -274,7 +297,7 @@ export async function runJsPlugin(deps: JsRuntimeDeps, plugin: JsPlugin, event: 
     const answers: JsAnswer[] = [];
     let result: HarnessResult | null = null;
     for (let round = 1; round <= JS_ROUNDS; round++) {
-      const input = session.put(`input-${round}.json`, JSON.stringify({ event, issue: context.issue, stage: context.stage ?? null, round, settings: plugin.settings, cycleDir: join(target.worktree, target.cycleFolder), entry: plugin.entry, answers }));
+      const input = session.put(`input-${round}.json`, JSON.stringify({ event, issue: context.issue, stage: context.stage ?? null, asked: context.asked ?? null, thread: context.thread ?? null, runId: context.runId ?? null, round, settings: plugin.settings, cycleDir: join(target.worktree, target.cycleFolder), entry: plugin.entry, answers }));
       const resultName = `plugin-result-${round}.json`;
       const command = `ELECTRON_RUN_AS_NODE=1 ${shellQuote(deps.executable)} ${shellQuote(harness)} ${shellQuote(input)} ${shellQuote(bundle)} ${shellQuote(`${OUT}/${resultName}`)}`;
       const ran = await session.exec(command);
@@ -287,10 +310,12 @@ export async function runJsPlugin(deps: JsRuntimeDeps, plugin: JsPlugin, event: 
       if (result.pending.length > JS_REQUESTS_PER_ROUND) return failJs(`the plugin asked for more than ${JS_REQUESTS_PER_ROUND} requests in one round`);
       for (const call of result.pending) answers.push(await deps.read(call));
     }
-    const text = redact(result?.document ?? '').slice(0, OUTPUT_MAX);
+    // The same masking as the output of a shell plugin: the answers it read already came masked, and its links and addresses are its content.
+    const text = redactCredentials(result?.document ?? '').slice(0, OUTPUT_MAX);
     const type = plugin.documents?.[0];
     const document = type ? writePluginDocument(target, type, { plugin: plugin.id, event, text }) : null;
-    return { plugin: plugin.id, ok: true, text, refused: null, document, writes: (result?.writes ?? []).slice(0, JS_REQUESTS_PER_ROUND) };
+    const writes = result?.writes ?? [];
+    return { plugin: plugin.id, ok: true, text, refused: null, document, writes: writes.slice(0, JS_REQUESTS_PER_ROUND), dropped: Math.max(0, writes.length - JS_REQUESTS_PER_ROUND) };
   } catch (e) {
     return failJs(e instanceof Error ? e.message : String(e));
   } finally {

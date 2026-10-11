@@ -1,10 +1,12 @@
 // The persona's chat as plain functions: what the screen decides above the markup. DOM-free like activity.ts and dashboard.ts, because nothing renders a component in the tests.
 // The live bubble (the text of an answer being written, assembled from events), the rule that the stored answer replaces it, the messages that wait their turn, the Work
 // section found by the message it answers, and the words of a button.
+import { ACT_VERBS } from './actVerbs';
 import { type ActivityEntry } from '../../shared/activity';
 import type { ForumMessage } from '../../shared/forum';
 import { type LiveAnswer, type LiveEvent, applyLive, applyRead } from '../../shared/persona';
-import type { PushTarget } from '../../shared/push';
+import { type PushTarget, parseTarget } from '../../shared/push';
+import type { PersonaToolName } from '../../shared/personaTools';
 import { type TreeItem, type TreeNode, hasWork } from './activityTreeModel';
 
 // ---- the live answers of a device ---------------------------------------------------------------------------------------------------------------
@@ -57,13 +59,44 @@ export function bubblesOf(live: readonly LiveAnswer[], messages: readonly ForumM
 
 // ---- the messages -------------------------------------------------------------------------------------------------------------------------------
 
-export type RowKind = 'person' | 'answer' | 'agent' | 'system';
+export type RowKind = 'person' | 'answer' | 'agent' | 'system' | 'act';
 
-/** How a message of the conversation is drawn: the person's bubble, the persona's answer, another agent's (one the persona called), or a line the app wrote. */
-export function rowKind(m: Pick<ForumMessage, 'kind' | 'author'>, persona: string): RowKind {
+/** How a message of the conversation is drawn: the person's bubble, the persona's answer, another agent's (one the persona called), a line the app wrote, or the line of an act of the persona. */
+export function rowKind(m: Pick<ForumMessage, 'kind' | 'author'> & { code?: string | null }, persona: string): RowKind {
+  if (m.code === 'persona.act') return 'act';
   if (m.kind === 'system' || m.author.type === 'app') return 'system';
   if (m.author.type === 'person') return 'person';
   return m.author.id === persona ? 'answer' : 'agent';
+}
+
+/** A row of the conversation: one message, or a run of lines the app wrote one after another, drawn as one line that opens. */
+export type LogRow = { kind: 'message'; m: ForumMessage } | { kind: 'notices'; items: ForumMessage[] };
+
+/** The notices that only inform and may fold into one row. A failure, a hold, a stop or the line that counts the rest of the acts is never in it: it must stay in sight. */
+export const FOLDABLE_NOTICES: ReadonlySet<string> = new Set(['runner.screen.closed', 'runner.screen.idleClosed', 'runner.screen.notKept']);
+
+/**
+ * The messages as rows: two or more of the informational lines of the app in a row (a screen closed, a recording not kept) become one row, so they do not push the conversation out of sight.
+ * A single line stays a line, and every other line of the app is a row of its own.
+ */
+export function logRows(messages: readonly ForumMessage[], persona: string): LogRow[] {
+  const rows: LogRow[] = [];
+  let run: ForumMessage[] = [];
+  const flush = () => {
+    if (run.length > 1) rows.push({ kind: 'notices', items: run });
+    else if (run.length === 1) rows.push({ kind: 'message', m: run[0] });
+    run = [];
+  };
+  for (const m of messages) {
+    if (rowKind(m, persona) === 'system' && m.code !== null && m.code !== undefined && FOLDABLE_NOTICES.has(m.code)) {
+      run.push(m);
+      continue;
+    }
+    flush();
+    rows.push({ kind: 'message', m });
+  }
+  flush();
+  return rows;
 }
 
 /** The messages of the person that wait their turn behind an answer going on: their call line is still `queued`. */
@@ -126,6 +159,85 @@ export function workShown(root: TreeNode): boolean {
 /** Whether the Work section is open when the person has not chosen: while the call works, and closed once the answer is complete. */
 export const workOpenByDefault = (root: TreeNode): boolean => hasWork(root);
 
+// ---- the acts of the persona --------------------------------------------------------------------------------------------------------------------
+
+/** The line an act of the persona leaves in its conversation, as the window draws it: the app's words, in the language of whoever reads, and the two places it can lead to. */
+export interface ActLine {
+  text: string;
+  /** The handler refused, or the act failed: the line says so, and the reason. */
+  refused: boolean;
+  /** The configuration fields a raise of reach named, or null. */
+  raised: string | null;
+  /** The id of the act in the audit (the link scrolls to it), or null when the line carries none. */
+  auditId: string | null;
+  /** The screen the act was about, validated as every button is, or null. */
+  target: PushTarget | null;
+}
+
+const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/** The catalog key of the name of a tool's area, as the line of an act words it. A record over the names of the tools: a twelfth tool does not compile until it has one. */
+export const ACT_TOOL_KEY: Record<PersonaToolName, string> = {
+  Overview: 'ui.chat.act.tool.Overview',
+  Runs: 'ui.chat.act.tool.Runs',
+  Actions: 'ui.chat.act.tool.Actions',
+  Board: 'ui.chat.act.tool.Board',
+  Conversations: 'ui.chat.act.tool.Conversations',
+  Memory: 'ui.chat.act.tool.Memory',
+  Settings: 'ui.chat.act.tool.Settings',
+  Secrets: 'ui.chat.act.tool.Secrets',
+  Plugins: 'ui.chat.act.tool.Plugins',
+  Asks: 'ui.chat.act.tool.Asks',
+  Ceremonies: 'ui.chat.act.tool.Ceremonies',
+};
+
+/** The words of why a call was refused before it reached any handler, by the code the door stored. A code this version has no words for reads as the stored reason. */
+export const ACT_PROBLEM_KEY: Record<string, string> = {
+  required: 'ui.chat.act.problem.required',
+  type: 'ui.chat.act.problem.type',
+  long: 'ui.chat.act.problem.long',
+  enum: 'ui.chat.act.problem.enum',
+  unknown: 'ui.chat.act.problem.unknown',
+  why: 'ui.chat.act.problem.why',
+  op: 'ui.chat.act.problem.op',
+};
+
+/** The target an act line carries (a JSON string in the stored params): parsed with the vocabulary of the notifications, so a line cannot open what a button could not. */
+export function actTarget(raw: unknown): PushTarget | null {
+  if (typeof raw !== 'string' || !raw) return null;
+  try {
+    return parseTarget(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The words of a `persona.act` line. The message stores only the facts (tool, op, a short masked subject, the result, the audit id), so the sentence is made here, in the viewer's
+ * language: a language change translates the lines already in the thread. An unknown tool is shown by its name.
+ */
+export function actLine(m: Pick<ForumMessage, 'params'>, say: Say): ActLine {
+  const p = m.params ?? {};
+  const tool = text(p.tool);
+  const area = Object.hasOwn(ACT_TOOL_KEY, tool) ? say(ACT_TOOL_KEY[tool as PersonaToolName]) : tool;
+  const op = text(p.op);
+  const refused = p.result === 'refused';
+  const subject = text(p.subject);
+  const reason = text(p.reason);
+  const verb = Object.hasOwn(ACT_VERBS, `${tool}.${op}`) ? ACT_VERBS[`${tool}.${op}`] : null;
+  // Said from the tool, the operation and the subject, with no code in it: the area, then what was done. An operation this version has no words for reads as its name.
+  const problem = text(p.problem);
+  const early = p.stage === 'before-handler' && Object.hasOwn(ACT_PROBLEM_KEY, problem);
+  const sentence = early
+    ? say('ui.chat.act.refused.early', { area, op: op || '—', problem: say(ACT_PROBLEM_KEY[problem], { name: text(p.arg) || '—' }) })
+    : refused
+    ? say(subject ? 'ui.chat.act.refused.on' : 'ui.chat.act.refused', { area, subject, reason: reason || '—' })
+    : verb
+      ? say('ui.chat.act.did', { area, did: say(verb, { subject: subject || '—' }) })
+      : say('ui.chat.act.ok', { area, op, subject: subject || '—' });
+  return { text: sentence, refused, raised: text(p.raised) || null, auditId: text(p.id) || null, target: actTarget(p.target) };
+}
+
 // ---- the buttons --------------------------------------------------------------------------------------------------------------------------------
 
 /** The catalog key of the words of a button, by the screen it opens. The model writes no label: the app words the button from its target. */
@@ -182,24 +294,6 @@ export function composerAria(mentions: boolean, listId: string, options: number,
     'aria-autocomplete': 'list',
     'aria-activedescendant': options ? `${listId}-${active}` : undefined,
   };
-}
-
-/** What the menu button points at: the desktop's menu exists in the page only while it is open; the phone's is a dialog and names nothing. */
-export function menuControls(open: boolean, phone: boolean): string | undefined {
-  return open && !phone ? 'chat-menu' : undefined;
-}
-
-// ---- the ceremony card on a small screen --------------------------------------------------------------------------------------------------------
-
-/** Whether the pinned ceremony card shows in full: on a phone it is one line until the person opens it, on the computer it is open until they close it; their choice wins. */
-export const cardOpen = (phone: boolean, chosen: boolean | null): boolean => (chosen === null ? !phone : chosen);
-
-/**
- * What the pinned card draws of itself. On a phone the chip above it already says "Now", the ceremony's name and its progress, so an open card is only its body (the hint and the
- * buttons) and does not repeat them; on the computer there is no chip and the card is whole.
- */
-export function cardParts(phone: boolean): { head: boolean } {
-  return { head: !phone };
 }
 
 // ---- the focus of the box ---------------------------------------------------------------------------------------------------------------------

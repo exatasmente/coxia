@@ -34,6 +34,9 @@ export function targetToScreen(t: PushTarget, hasCards: boolean, noPersona = fal
       return t.id ? { name: 'run', id: t.id } : null;
     case 'forum':
       return t.id ? { name: 'forum', thread: t.id } : { name: 'forum' };
+    // The line an act of the persona leaves in the chat links to its entry of the audit.
+    case 'auditoria':
+      return t.id ? { name: 'auditoria', id: t.id } : { name: 'auditoria' };
     default:
       return { name: t.to } as Screen;
   }

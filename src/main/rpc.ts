@@ -4,6 +4,8 @@ import { withActivityContext } from './activity';
 import { rpcContext } from './errorlog-core';
 import { logError } from './errorlog';
 import { t } from '../shared/i18n';
+import type { Through } from '../shared/auditoria';
+import { openAct } from './persona/act';
 
 type Handler = (...args: never[]) => unknown;
 type Binder = (channel: string, fn: Handler) => void;
@@ -14,13 +16,25 @@ const table = new Map<string, Handler>();
 const deviceTable = new Map<string, (deviceId: string, ...args: never[]) => unknown>();
 let bind: Binder | null = null;
 
-// Which door a call came through, for a handler that must say who answered (a held step is answered from the window or from a paired browser). It travels with the call,
-// across the awaits of the handler, and is 'ipc' when no call is running.
-const origin = new AsyncLocalStorage<'ipc' | 'web'>();
-export const callOrigin = (): 'ipc' | 'web' => origin.getStore() ?? 'ipc';
+type Via = 'ipc' | 'web' | 'persona';
+
+// Which door a call came through, for a handler that must say who answered (a held step is answered from the window, from a paired browser or by the persona). It travels with
+// the call, across the awaits of the handler, and is 'ipc' when no call is running. 'persona' holds only while the persona's act is open: work its handler leaves running is
+// not the persona's. Nothing outside this file reads it; `viaOf()` is the one name, and a test fails for a second reader.
+const origin = new AsyncLocalStorage<Via>();
+export const callOrigin = (): Via => {
+  const via = origin.getStore() ?? 'ipc';
+  return via === 'persona' && !openAct() ? 'ipc' : via;
+};
+
+/** The door of the current call as the audit and the answers name it: `paired` for the HTTP door, `persona` inside the persona's act, `window` otherwise. */
+export const viaOf = (): Through => {
+  const via = callOrigin();
+  return via === 'web' ? 'paired' : via === 'persona' ? 'persona' : 'window';
+};
 
 // Every failure of a channel call lands in the error log, whichever door it came through. The arguments never do.
-function guarded(channel: string, via: 'ipc' | 'web', run: (...args: never[]) => unknown, raw: never[]): unknown {
+function guarded(channel: string, via: Via, run: (...args: never[]) => unknown, raw: never[]): unknown {
   // A call made for a renderer job carries the job id as a trailing marker; the handler never sees it.
   const { args: given, jobId } = takeContext(raw);
   const args = given as never[];
@@ -72,4 +86,17 @@ export async function invoke(channel: string, args: unknown[], deviceId?: string
   const fn = table.get(channel);
   if (!fn) throw new Error(t('main.rpc.unknownChannel', { channel }));
   return guarded(channel, 'web', fn, args as never[]);
+}
+
+/**
+ * Runs the handler of a channel under the persona origin, through the same wrapper every call goes through (error log, job id, activity context). Only the persona's door calls
+ * it, inside an open act; a `persona:` channel is refused here as a second line behind the door's table, and the phone's policy is not consulted: that is the device's limit.
+ */
+export function invokePersona(channel: string, args: unknown[]): unknown {
+  // i18n-ignore: developer error: the door is the only caller and keeps an act open
+  if (!openAct()) throw new Error(`invokePersona outside an act: ${channel}`);
+  if (channel.startsWith('persona:')) throw new Error(t('main.rpc.unknownChannel', { channel }));
+  const fn = table.get(channel);
+  if (!fn) throw new Error(t('main.rpc.unknownChannel', { channel }));
+  return guarded(channel, 'persona', fn, args as never[]);
 }

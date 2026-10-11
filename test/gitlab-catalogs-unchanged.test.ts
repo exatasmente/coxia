@@ -223,6 +223,23 @@ const REMOVED: Record<string, string> = {
   'ui.retro.entry.proposal': 'the proposal line of the copied improvement entry has no caller any more (rule 1)',
   'ui.retro.problem': 'the problem label of the retro improvement entry has no caller any more (rule 1)',
   'ui.retro.proposal': 'the proposal label of the retro improvement entry has no caller any more (rule 1)',
+  // What the open engine tells its model about a failed tool call is fixed English, like the tool descriptions: no person reads it, so it is not in the catalogs.
+  'main.engine.text.toolError': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.unknownTool': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.badArgs': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.anyOf': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.const': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.enum': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.type': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.or': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.tooShort': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.tooLong': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.min': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.max': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.minItems': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.maxItems': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.required': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.unexpected': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
   // The first item of the phone's bottom bar is the chat; Today is not a screen any more.
   'ui.today.greetingName': 'the header of the Overview no longer greets: the greeting went with the header of Today, and the chat names the persona instead',
   'ui.nav.today': 'the first item of the bottom bar is the Chat now, and no screen is called Today any more (the Overview holds its content)',
@@ -234,6 +251,9 @@ const REMOVED: Record<string, string> = {
   'today.greeting.night': 'the greeting went with the header of Today; the chat header names the persona',
   'today.greeting.morning': 'the greeting went with the header of Today; the chat header names the persona',
   'today.greeting.afternoon': 'the greeting went with the header of Today; the chat header names the persona',
+  // The home's navigation is a sidebar (a sheet on a phone) whose rows carry their counts apart from their words.
+  'ui.nav.radarCount': 'the radar row of the navigation shows its count as a badge beside the word, not in the label',
+  'ui.nav.healthCount': 'the health row of the navigation shows its count as a badge beside the word, not in the label',
   // The panel of running work is a tree: no activity is folded into one generic "Agent" card, each is an entry named for its agent.
   'activity.generic': 'the dock no longer has a generic card for the runs no job owns: each one is an entry of its own, named for its agent',
 };

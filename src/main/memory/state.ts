@@ -13,11 +13,11 @@ const isIso = (v: unknown): v is string => typeof v === 'string' && Number.isFin
 
 function entry(v: unknown): NoteState | null {
   if (!isObj(v)) return null;
-  const { by, person, revision, reviewed, sha, at } = v;
+  const { by, person, revision, reviewed, sha, at, persona } = v;
   if (typeof by !== 'string' || typeof person !== 'boolean' || typeof reviewed !== 'boolean') return null;
   if (typeof revision !== 'number' || !Number.isInteger(revision) || revision < 1) return null;
   if (typeof sha !== 'string' || !/^[0-9a-f]{64}$/.test(sha) || !isIso(at)) return null;
-  return { by, person, revision, reviewed, sha, at };
+  return { by, person, revision, reviewed, sha, at, ...(persona === true ? { persona: true as const } : {}) };
 }
 
 /** A state file as a state. One that is not readable or not shaped like one is empty (every note beside it reads as foreign); one a newer app wrote is left alone. */

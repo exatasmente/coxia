@@ -9,12 +9,12 @@ import { t } from '../shared/i18n';
 import type { SpeechSegment, Voice, VoiceEngine } from '../shared/types';
 import { VOICE_TEST_SENTENCE, type VoiceTestResult, wordMatch } from '../shared/voiceSetup';
 import { logError } from './errorlog';
-import { SIDECAR_DIR, legacyVenvDir, voiceModelsDir, voiceToolsDir, voiceVenvDir } from './paths';
+import { legacyVenvDir, sidecarDir, voiceModelsDir, voiceToolsDir, voiceVenvDir } from './paths';
 import { edgePitch, edgeRate, kokoroSpeed, needsJoin, prosodyPlan, speakable } from './prosody';
 import { type SetupContext, activeVenv, kokoroDir, modelHome } from './voice-setup';
 import { getConfig } from './workspaceConfig';
 
-const SCRIPT = join(SIDECAR_DIR, 'voice_sidecar.py');
+const sidecarScript = (): string => join(sidecarDir(), 'voice_sidecar.py');
 const AUDIO = process.env.CERIMONIAS_AUDIO_DIR ?? join(tmpdir(), 'cerimonias-audio');
 
 // The label of a voice is translated when it is read (the descriptors "grave", "aguda", "rápido"... follow the language), so the voice is
@@ -96,15 +96,15 @@ function requireVoice(): void {
 /** The folders the voice setup works in, in this app (userData moves with CERIMONIAS_DATA_DIR). */
 export function setupContext(): SetupContext {
   const cfg = getConfig().voice;
-  const own = [process.env.CERIMONIAS_KOKORO_DIR, join(SIDECAR_DIR, 'models'), join(voiceModelsDir(), 'kokoro'), cfg.kokoroDir ? expandHome(cfg.kokoroDir, homedir()) : null];
+  const own = [process.env.CERIMONIAS_KOKORO_DIR, join(sidecarDir(), 'models'), join(voiceModelsDir(), 'kokoro'), cfg.kokoroDir ? expandHome(cfg.kokoroDir, homedir()) : null];
   return {
     env: process.env,
     paths: {
       venv: voiceVenvDir(),
       models: voiceModelsDir(),
       tools: voiceToolsDir(),
-      requirements: join(SIDECAR_DIR, 'requirements.txt'),
-      fetchScript: join(SIDECAR_DIR, 'voice_fetch.py'),
+      requirements: join(sidecarDir(), 'requirements.txt'),
+      fetchScript: join(sidecarDir(), 'voice_fetch.py'),
       legacyVenv: legacyVenvDir(),
       kokoroDirs: own.filter((d): d is string => !!d),
       home: homedir(),
@@ -125,7 +125,7 @@ function sidecarEnv(): NodeJS.ProcessEnv {
 
 function launch(python: string): ChildProcessWithoutNullStreams {
   mkdirSync(AUDIO, { recursive: true });
-  const child = spawn(python, [SCRIPT], { stdio: ['pipe', 'pipe', 'pipe'], env: sidecarEnv() });
+  const child = spawn(python, [sidecarScript()], { stdio: ['pipe', 'pipe', 'pipe'], env: sidecarEnv() });
   createInterface({ input: child.stdout }).on('line', (line) => {
     const r = JSON.parse(line) as Reply;
     if (r.ready) ready = true;

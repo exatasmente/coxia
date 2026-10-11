@@ -5,7 +5,7 @@ import type { query } from '@anthropic-ai/claude-agent-sdk';
 import type { ClaudeSdkConfig } from '../shared/config/types';
 import { expandHome } from '../shared/config/paths';
 import { HOME } from './env';
-import { CLAUDE_BIN } from './paths';
+import { claudeBin } from './paths';
 import { getConfig } from './workspaceConfig';
 import { t } from '../shared/i18n';
 
@@ -25,10 +25,14 @@ export interface LocateDeps {
 
 // A packaged build ships the SDK only when its native binary is there: the public package leaves the SDK out (npm run dist:public), so the
 // wizard installs it. COXIA_SDK_BUNDLED=0 simulates that in development (the wizard's install flow is tested that way).
+// A getter: the binary is only known where the host's paths are, which may happen after this module loads.
 const defaults: LocateDeps = {
   exists: existsSync,
   read: (p) => readFileSync(p, 'utf8'),
-  bundled: process.env.COXIA_SDK_BUNDLED !== '0' && (CLAUDE_BIN === undefined || existsSync(CLAUDE_BIN)),
+  get bundled(): boolean {
+    const bin = claudeBin();
+    return process.env.COXIA_SDK_BUNDLED !== '0' && (bin === undefined || existsSync(bin));
+  },
 };
 
 function entryOf(pkg: { exports?: unknown; main?: string; module?: string }): string | null {
@@ -90,5 +94,5 @@ export async function loadClaudeQuery(): Promise<Query> {
 
 /** The packaged app ships the SDK native binary unpacked next to app.asar; a local install resolves its own. */
 export function claudeExecutable(): string | undefined {
-  return locateSdk(getConfig().claudeSdk, HOME).mode === 'bundled' ? CLAUDE_BIN : undefined;
+  return locateSdk(getConfig().claudeSdk, HOME).mode === 'bundled' ? claudeBin() : undefined;
 }

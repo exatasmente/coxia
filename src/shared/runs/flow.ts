@@ -41,6 +41,7 @@ export function flowOf(config: FlowConfig, stages: StageDef[] = config.devCycle.
       agent: who?.id ?? null,
       autonomous: who?.autonomous ?? false,
       cycleAutonomous: cycle,
+      display: s.display === true,
       artifacts: [...(s.produces ?? [])],
       reads: s.reads ? [...s.reads] : null,
       next: s.next === undefined ? (stages[i + 1]?.id ?? null) : s.next,

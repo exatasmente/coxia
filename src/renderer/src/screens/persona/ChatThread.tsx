@@ -3,13 +3,15 @@ import type { AgentDef } from '../../../../shared/config/types';
 import { mentionJob } from '../../../../shared/activity';
 import type { PushTarget } from '../../../../shared/push';
 import { buildTree, hasWork } from '../../activityTreeModel';
-import { bubblesOf, composerState, queuedOf, rowKind, workOf } from '../../chatModel';
+import { bubblesOf, composerState, logRows, queuedOf, rowKind, workOf } from '../../chatModel';
 import { useCycle } from '../../cycleApi';
 import { useT } from '../../i18n';
 import { useActivity } from '../../useActivity';
 import { agentName } from '../cycle/names';
 import { useIsPhone } from '../../useIsPhone';
 import { useLiveAnswers } from '../../liveApi';
+import { usePersonaState } from '../../personaStopApi';
+import { answerGoing } from '../../personaStopModel';
 import { AskCards } from '../cycle/AskCard';
 import { Composer } from '../cycle/Composer';
 import { LiveScreen } from '../cycle/LiveScreen';
@@ -19,7 +21,7 @@ import { asksOf } from '../cycle/askView';
 import { markThreadSeen, useThread } from '../cycle/forumApi';
 import { screenOfCall } from '../cycle/screens';
 import { useScreens } from '../cycle/useScreens';
-import { AgentBubble, AnswerBubble, LiveBubble, PendingBubble, PersonBubble, SystemLine } from './ChatMessage';
+import { ActRow, AgentBubble, AnswerBubble, LiveBubble, NoticeGroup, PendingBubble, PersonBubble, SystemLine } from './ChatMessage';
 import './chat.css';
 
 interface Props {
@@ -48,6 +50,8 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
   const entries = useActivity(mentionJob(thread));
   const roots = useMemo(() => buildTree(entries), [entries]);
   const writing = useLiveAnswers(thread);
+  // The wizard's test copy is never stopped: it cannot act.
+  const stopped = usePersonaState().stopped && !compact;
   const screens = useScreens(thread);
   const asks = useMemo(() => asksOf(screens), [screens]);
   const [watching, setWatching] = useState<string | null>(null);
@@ -64,7 +68,8 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
   const shown = new Set(bubbles.map((b) => b.to));
   // A call at work that has written nothing yet (thinking, or using a tool) and is not waiting its turn: it has its Work section and Stop, and no text.
   const pending = roots.filter((r) => r.call?.agent === persona.id && hasWork(r) && !answered.has(r.call.message) && !shown.has(r.call.message) && !queued.has(r.call.message));
-  const going = composerState(writing, roots, persona.id).going;
+  // A stopped persona runs nothing: what is listed waits for Resume, and the banner says so.
+  const going = answerGoing({ going: composerState(writing, roots, persona.id).going, stopped });
 
   // What is on screen is read: the conversation counts as seen up to its last message. A test conversation is nobody's unread.
   useEffect(() => {
@@ -96,10 +101,13 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
-        {messages.map((m) => {
+        {logRows(messages, persona.id).map((row) => {
+          if (row.kind === 'notices') return <NoticeGroup key={`notices-${row.items[0].seq}`} items={row.items} />;
+          const { m } = row;
           const kind = rowKind(m, persona.id);
           if (kind === 'system') return <SystemLine key={m.seq} m={m} />;
-          if (kind === 'person') return <PersonBubble key={m.seq} m={m} waiting={queued.has(m.seq)} />;
+          if (kind === 'act') return <ActRow key={m.seq} m={m} ceremony={ceremony} onOpen={compact ? undefined : onOpen} />;
+          if (kind === 'person') return <PersonBubble key={m.seq} m={m} waiting={queued.has(m.seq)} stopped={stopped} />;
           if (kind === 'agent') return <AgentBubble key={m.seq} m={m} team={team} ceremony={ceremony} onOpen={compact ? undefined : onOpen} />;
           return <AnswerBubble key={m.seq} m={m} team={team} work={m.answersTo !== undefined ? workOf(roots, m.answersTo, persona.id) : null} ceremony={ceremony} onOpen={compact ? undefined : onOpen} />;
         })}
@@ -123,8 +131,9 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
         enterSends={!phone}
         autoFocus={!phone && !compact}
         className="composer"
+        inline
         hint={phone ? t('ui.chat.hint.phone') : t('ui.chat.hint.desktop')}
-        placeholder={t('ui.chat.placeholder', { agent: name })}
+        placeholder={phone ? t('ui.chat.placeholder.phone') : t('ui.chat.placeholder', { agent: name })}
         onSent={() => {
           stick.current = true;
         }}
