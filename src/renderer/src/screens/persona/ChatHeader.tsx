@@ -16,6 +16,7 @@ import { badgeTitle, SaudeButton, useSaudeBadge } from '../SaudeButton';
 import { Sheet } from '../Sheet';
 import { UpdateBadge } from '../UpdateBadge';
 import { VoiceToggle } from '../VoiceToggle';
+import { StopControl } from './StopControl';
 import { useSeen, useThreads } from '../cycle/forumApi';
 import { waitingRuns } from '../cycle/RunNeeds';
 import { useRuns } from '../cycle/runsApi';
@@ -136,6 +137,7 @@ export function ChatHeader({ persona, go, ceremony, title, invite }: HeaderProps
               {t('ui.chat.invite')}
             </button>
           )}
+          {persona && <StopControl />}
           <UpdateBadge go={go} />
           {testWorkspace && <span className="ws-test-chip" title={t('ui.today.testWorkspaceHint')}>{t('ui.today.testWorkspace')}</span>}
           <VoiceToggle />

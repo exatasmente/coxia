@@ -16,7 +16,7 @@ const { personaModule } = await import('../src/main/persona/module');
 const { refusedPaths } = await import('../src/main/configScope');
 
 const SRC = join(import.meta.dirname, '../src/main');
-const CHANNELS = ['persona:live-read', 'persona:round', 'persona:review', 'persona:saveDraft', 'persona:conclude', 'persona:discard', 'persona:finish', 'persona:save', 'persona:clear', 'persona:delete'];
+const CHANNELS = ['persona:live-read', 'persona:round', 'persona:review', 'persona:saveDraft', 'persona:conclude', 'persona:discard', 'persona:finish', 'persona:save', 'persona:clear', 'persona:delete', 'persona:stop', 'persona:resume', 'persona:state'];
 
 describe('web policy for the persona\'s channels', () => {
   it.each(CHANNELS)('lets a paired browser use %s, with or without the external-effects switch', (channel) => {

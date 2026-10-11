@@ -134,6 +134,11 @@ export interface MentionDeps {
    * in plain text, with nothing shown while it is written and no button.
    */
   persona?: { live: PersonaLive; screens: ScreenFacts };
+  /**
+   * Whether the persona is stopped and this thread is its conversation (#248): an answer that ends because of that Stop does not write the per-answer line, since the one line of
+   * the stop says it, with the acts that were still running. Absent: never.
+   */
+  latched?: (thread: string) => boolean;
 }
 
 /** What a mention answer produced, for a caller that records it elsewhere (a ceremony). */
@@ -475,7 +480,10 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         } catch (err) {
           console.error('[mentions] could not post what was written before the stop', err instanceof Error ? err.message : err);
         }
-        deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: stoppedBy === 'person' ? (partialPosted ? 'runner.mention.stoppedPartial' : 'runner.mention.stopped') : 'runner.mention.stoppedScreen', params: { agent: id }, stage });
+        // The stop of the persona (the latch) says itself, once, in the thread: this answer only keeps what it had written.
+        if (!(stoppedBy === 'person' && deps.latched?.(place.thread) === true)) {
+          deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: stoppedBy === 'person' ? (partialPosted ? 'runner.mention.stoppedPartial' : 'runner.mention.stopped') : 'runner.mention.stoppedScreen', params: { agent: id }, stage });
+        }
       }
       // Every model of the role's pool was busy: the line names the pool and when the first one is back, whole where the reason would be cut.
       else if (e instanceof ProviderBusyError) deps.forum.append(place.thread, { kind: 'system', author: { type: 'app' }, code: 'runner.model.allBusy', params: { agent: id, ...poolBusyParams(e) }, stage });

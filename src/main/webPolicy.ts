@@ -105,7 +105,10 @@ const TURN_ASKS_UNLISTED = /^turnAsks:(?!(list|answer)$)/;
 // main process from the texts alone, and the origin of every change is audited); the conversation itself goes through `forum:*` and the Stop through `runs:callStop`, which are open. The channels of
 // the persona's own are named so a later change of the default cannot close or open them by accident, and a pattern built from the same set denies any other `persona:` channel
 // until somebody classifies it, so the tools of the later issues of the epic start closed. test/persona-policy.test.ts pins both.
-export const PERSONA_CHANNELS = new Set(['persona:live-read', 'persona:round', 'persona:review', 'persona:saveDraft', 'persona:conclude', 'persona:discard', 'persona:finish', 'persona:save', 'persona:clear', 'persona:delete']);
+// The Stop (#248) is the person's: `persona:stop`, `persona:resume` and `persona:state` are open to a paired browser and are not external effects (stopping takes capability away, and
+// resuming is the person's own act on their own persona), so they work from a phone with the external-effects switch off. They are not queueable (an offline Stop replayed later is
+// worse than a failure the person sees), and no tool of the persona names them.
+export const PERSONA_CHANNELS = new Set(['persona:live-read', 'persona:round', 'persona:review', 'persona:saveDraft', 'persona:conclude', 'persona:discard', 'persona:finish', 'persona:save', 'persona:clear', 'persona:delete', 'persona:stop', 'persona:resume', 'persona:state']);
 const PERSONA_UNLISTED = new RegExp(`^persona:(?!(${[...PERSONA_CHANNELS].map((c) => c.slice('persona:'.length)).join('|')})$)`);
 
 // The local state server's doors: the opt-in writes the workspace config, the write offer writes a project folder's .mcp.json (a path of this

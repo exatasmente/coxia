@@ -39,6 +39,7 @@ import { ChatScreen } from './screens/persona/ChatScreen';
 import { PersonaWizard } from './screens/persona/PersonaWizard';
 import { useConfigView } from './screens/team/teamApi';
 import { JobsDock } from './JobsDock';
+import { PersonaIndicator } from './screens/persona/PersonaIndicator';
 import { UpdatePrompt } from './UpdatePrompt';
 import { UpdateToast } from './UpdateToast';
 import { useReportUpdateBusy } from './updateApi';
@@ -298,6 +299,7 @@ export function App() {
       {view}
       <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} callLive={callLive} />
       <JobsDock screen={screen} go={go} />
+      <PersonaIndicator screen={screen.name} />
       <UpdateToast />
       <UpdatePrompt hidden={screen.name === 'settings'} />
     </>

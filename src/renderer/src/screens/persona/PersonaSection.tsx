@@ -12,6 +12,8 @@ import { useConfigView } from '../team/teamApi';
 import { agentName } from '../team/text';
 import { Confirm, Labeled } from '../team/ui';
 import { PersonaWizard } from './PersonaWizard';
+import { StopControl } from './StopControl';
+import { usePersonaState } from '../../personaStopApi';
 import { personaApi } from './personaApi';
 import '../team/team.css';
 
@@ -63,8 +65,14 @@ function Editor({ persona, config, onAdjust, onChat, onChanged }: { persona: Age
     setBusy(null);
   };
 
+  const stopped = usePersonaState().stopped;
+
   return (
     <div className="wz-stack">
+      <div className="wz-actions" role="status">
+        <p className="small muted">{t(stopped ? 'ui.persona.section.state.stopped' : 'ui.persona.section.state.running')}</p>
+        <StopControl />
+      </div>
       <Labeled label={t('ui.persona.f.name')}>
         {(id) => <input id={id} className="text-input" maxLength={ASSIST_LIMITS.name} value={form.name} onChange={(e) => set({ name: e.target.value })} />}
       </Labeled>

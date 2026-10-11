@@ -7,6 +7,7 @@ import { ActivityItems, Chevron, useTreeOpen } from '../../ActivityTree';
 import type { TreeNode } from '../../activityTreeModel';
 import { buttonLabel, workItems, workOpenByDefault, workShown, workSummary } from '../../chatModel';
 import { intlLocale, useT } from '../../i18n';
+import { queuedKey } from '../../personaStopModel';
 import { formatElapsed } from '../../jobs';
 import { RichText } from '../Diagram';
 import { MessageAttachments } from '../cycle/Attachments';
@@ -43,7 +44,7 @@ export function Work({ root }: { root: TreeNode }) {
 }
 
 /** The person's message, with the files it carried; a message that waits its turn behind an answer says so. */
-export function PersonBubble({ m, waiting }: { m: ForumMessage; waiting: boolean }) {
+export function PersonBubble({ m, waiting, stopped = false }: { m: ForumMessage; waiting: boolean; stopped?: boolean }) {
   const t = useT();
   return (
     <li className="chat-row chat-row-person" id={`msg-${m.seq}`}>
@@ -52,7 +53,7 @@ export function PersonBubble({ m, waiting }: { m: ForumMessage; waiting: boolean
           <RichText text={messageText(m)} />
         </div>
         <MessageAttachments thread={m.thread} message={m.seq} refs={m.attachments} />
-        {waiting && <span className="chat-waits" role="status">{t('ui.chat.queued')}</span>}
+        {waiting && <span className="chat-waits" role="status">{t(queuedKey(stopped))}</span>}
         <time className="chat-time" dateTime={m.at}>{stamp(m.at)}</time>
       </div>
     </li>

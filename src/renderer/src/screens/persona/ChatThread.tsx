@@ -10,6 +10,7 @@ import { useActivity } from '../../useActivity';
 import { agentName } from '../cycle/names';
 import { useIsPhone } from '../../useIsPhone';
 import { useLiveAnswers } from '../../liveApi';
+import { usePersonaState } from '../../personaStopApi';
 import { AskCards } from '../cycle/AskCard';
 import { Composer } from '../cycle/Composer';
 import { LiveScreen } from '../cycle/LiveScreen';
@@ -48,6 +49,8 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
   const entries = useActivity(mentionJob(thread));
   const roots = useMemo(() => buildTree(entries), [entries]);
   const writing = useLiveAnswers(thread);
+  // The wizard's test copy is never stopped: it cannot act.
+  const stopped = usePersonaState().stopped && !compact;
   const screens = useScreens(thread);
   const asks = useMemo(() => asksOf(screens), [screens]);
   const [watching, setWatching] = useState<string | null>(null);
@@ -99,7 +102,7 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
         {messages.map((m) => {
           const kind = rowKind(m, persona.id);
           if (kind === 'system') return <SystemLine key={m.seq} m={m} />;
-          if (kind === 'person') return <PersonBubble key={m.seq} m={m} waiting={queued.has(m.seq)} />;
+          if (kind === 'person') return <PersonBubble key={m.seq} m={m} waiting={queued.has(m.seq)} stopped={stopped} />;
           if (kind === 'agent') return <AgentBubble key={m.seq} m={m} team={team} />;
           return <AnswerBubble key={m.seq} m={m} team={team} work={m.answersTo !== undefined ? workOf(roots, m.answersTo, persona.id) : null} ceremony={ceremony} onOpen={compact ? undefined : onOpen} />;
         })}
