@@ -120,6 +120,7 @@
 .chat-cer-loud .chat-cer-icon { color: var(--teal); }
 .chat-cer-text { flex: 1 1 260px; min-width: 0; display: flex; align-items: baseline; gap: 8px; }
 .chat-cer-title { flex: none; max-width: 100%; font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-cer-progress { flex: 0 1 auto; min-width: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-cer-detail { min-width: 0; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-cer-actions { flex: none; display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .chat-cer-actions .btn { min-height: 34px; padding: 0 12px; font-size: 13px; border-radius: 9px; }
@@ -140,10 +141,11 @@
   .chat-name { font-size: 17px; }
   .chat-page > .error, .chat-none { margin: 8px 12px 0; }
   .chat-page > .chat { padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
-  /* on a phone the ceremony line keeps its buttons under the title */
+  /* on a phone the ceremony line keeps its buttons under the title and the progress beside it; only the hint, the long part, goes */
   .chat-cer-text { flex-basis: calc(100% - 40px); }
   .chat-cer-detail { display: none; }
-  .chat-cer-actions { flex: 1 1 100%; margin-left: 0; }
+  .chat-cer-actions { flex: 1 1 100%; margin-left: 0; gap: 6px; }
+  .chat-cer-actions .btn { flex: 0 1 auto; min-height: 32px; padding: 0 10px; }
 }
 
 /* the wizard as the home: "Not now" is a quiet link at the end of the title row, not a button of its own */

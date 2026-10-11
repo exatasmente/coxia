@@ -37,13 +37,13 @@ interface Props {
 function CeremonyBar({ plan, onAction }: { plan: AgoraPlan; onAction: (a: AgoraPlan['primary']['action']) => void }) {
   const t = useT();
   const loud = plan.phase === 'ready' || plan.phase === 'live';
-  const detail = [plan.progress, plan.hint].filter(Boolean).join(' · ');
   return (
     <section className={`chat-cer ${loud ? 'chat-cer-loud' : ''}`} aria-label={t('ui.today.now')}>
       <span className="chat-cer-icon"><NavIcon id="call" /></span>
       <div className="chat-cer-text">
-        <span className="chat-cer-title">{plan.title}</span>
-        {detail && <span className="chat-cer-detail">{detail}</span>}
+        <span className="chat-cer-title" title={plan.title}>{plan.title}</span>
+        {plan.progress && <span className="chat-cer-progress" aria-live="polite" title={plan.progress}>{plan.progress}</span>}
+        {plan.hint && <span className="chat-cer-detail" title={plan.hint}>{plan.hint}</span>}
       </div>
       <div className="chat-cer-actions">
         <button type="button" className={`btn ${loud ? 'btn-accent' : ''}`} disabled={plan.primary.disabled} onClick={() => onAction(plan.primary.action)}>
