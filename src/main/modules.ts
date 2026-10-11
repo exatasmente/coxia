@@ -60,6 +60,7 @@ const ALL: Module[] = [
   forumModule,
   gitlabQuick,
   glossary,
+  mcpStateModule,
   memoryModule,
   mentionsModule,
   minutes,
