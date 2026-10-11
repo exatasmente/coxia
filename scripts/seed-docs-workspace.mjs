@@ -23,7 +23,7 @@ import { buildSync } from 'esbuild';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..');
 
-/** The day the workspace's dates hang from: a Saturday, so the ceremonies of a week read from it. */
+/** The day the workspace's dates hang from: a Monday, so the ceremonies of a week read from it. */
 export const FIXED_DAY = '2026-06-15T09:40:00.000Z';
 export const WORKSPACE_ID = 'docs';
 export const WORKSPACE_NAME = 'Documentação';
@@ -333,24 +333,49 @@ function conversation() {
 /** The activities of the seeded day, by number: the same card serves the board, the ceremony and the turns' fingerprints. */
 const CARD_TITLES = { [CARD_SEARCH]: ['Search the actions the person already answered', 'gate2'], [CARD_TOKEN]: ['Say which token the host refused', 'refine'], [CARD_TODAY]: ['Show the queue of activities of the day', 'ready'] };
 
-/** One card of the day, in the shape the app reads (board and ceremony share it). */
+/** The stage label a card of the ceremony shows, by the column of the board it sits in. */
+const STAGE_LABELS = { gate2: 'Gate 2', refine: 'Refine', ready: 'Ready' };
+
+/** One card of the ceremony, in the shape the app's agenda holds (`Card`). */
 function ceremonyCard(n, stage = CARD_TITLES[n][1]) {
   return {
-    id: String(n),
-    title: CARD_TITLES[n][0],
-    body: stage === 'ready' ? 'The day lists the activities in the order of the morning.' : CARD_TITLES[n][0],
-    column: stage,
-    squad: null,
-    priority: null,
-    labels: [],
-    repo: REPO_ID,
-    state: stage === 'ready' ? 'closed' : 'open',
-    createdAt: at(0),
-    updatedAt: at(2),
-    history: [{ at: at(2), what: stage }],
-    host: { vcs: 'host', project: ISSUE_PROJECT, iid: n, url: `https://example.com/${ISSUE_PROJECT}/issues/${n}` },
     ref: `${REF_PREFIX}${n}`,
+    iid: String(n),
+    title: CARD_TITLES[n][0],
+    stage: STAGE_LABELS[stage] ?? null,
+    spec: null,
+    mrs: [],
+    mrPaths: [],
+    blockers: [],
+    pending: [],
+    changes: [],
+    note: null,
+    url: `https://example.com/${ISSUE_PROJECT}/issues/${n}`,
+    labels: [],
+    updatedAt: at(2),
+    project: ISSUE_PROJECT,
   };
+}
+
+/**
+ * The fingerprint the app gives a card (`fingerprint`, src/main/falas-core.ts), with no spec folder behind it. A turn saved under
+ * the same fingerprint within the last days is served again without calling an agent, which is how a capture shows a ceremony
+ * with its turns while running no model.
+ */
+function cardFingerprint(card) {
+  const sorted = (xs) => [...xs].sort();
+  const body = { v: 1, stage: card.stage, blockers: sorted(card.blockers), pending: sorted(card.pending), mrs: sorted(card.mrs), changes: sorted(card.changes), note: card.note, phase: null, artifacts: [] };
+  return createHash('sha256').update(JSON.stringify(body)).digest('hex').slice(0, 24);
+}
+
+/** The turns the agents prepared the day before, kept by fingerprint: what the app serves again instead of asking a model. */
+function savedTurns() {
+  const turns = {};
+  for (const n of [CARD_SEARCH, CARD_TOKEN]) {
+    const card = ceremonyCard(n);
+    turns[card.ref] = { fp: cardFingerprint(card), turn: ceremonyTurn(card.ref), at: at(-24) };
+  }
+  return { version: 1, turns, reuses: [] };
 }
 
 /** One agent turn of the ceremony, with the sources it read: what the screen shows next to the card. */
@@ -394,10 +419,11 @@ function ceremony(id) {
     decisions: [],
     effects: [],
     answered: {},
+    // `at` is the time into the call (`m:ss`), the way the app writes a line of the transcript.
     log: [
-      { who: 'Moderador', text: 'Pre-daily of 2026-06-15, with two activities on the table.', at: at(0), color: 'ink' },
-      { who: 'Support', text: 'Two activities are open: the search of the answered actions is at its second gate, and the report about the refused token has no owner.', at: at(0, 1), color: 'blue' },
-      { who: 'Você', text: 'Put the report with me and let us look at the search first.', at: at(0, 2), color: 'amber' },
+      { who: 'Moderador', text: 'Pre-daily of 2026-06-15, with two activities on the table.', at: '0:00', color: 'ink' },
+      { who: 'Support', text: 'Two activities are open: the search of the answered actions is at its second gate, and the report about the refused token has no owner.', at: '0:01', color: 'blue' },
+      { who: 'Você', text: 'Put the report with me and let us look at the search first.', at: '0:02', color: 'amber' },
     ],
     startedAt: Date.parse(at(0)),
     endedAt: null,
@@ -490,7 +516,7 @@ export async function seedDocsWorkspace(dir) {
   // The ceremony in progress of the day: the app reads the newest file of `historico/` of today as the state to resume.
   json(join(id, 'historico', `${CEREMONY_ID}.json`), ceremony(CEREMONY_ID));
   written.push(listed(`historico/${CEREMONY_ID}.json`));
-  write(join(id, 'falas.json'), JSON.stringify({ version: 1, turns: {}, reuses: [] }));
+  write(join(id, 'falas.json'), JSON.stringify(savedTurns()));
   written.push(listed('falas.json'));
   for (const p of procedures()) json(join(id, 'memory', 'procedures', `${p.id}.json`), p);
   written.push(listed('memory/procedures/p-1a2b3c4d.json'), listed('memory/procedures/p-5e6f7a8b.json'), listed('memory/procedures/p-9c0d1e2f.json'));

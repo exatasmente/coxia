@@ -8,6 +8,18 @@
  */
 export const CAPTURE_SHAPE = 'capture({ app, page, lang, out, drop })';
 
+/**
+ * What keeps a picture still: the turn clock hidden, no animation or transition left running and no blinking caret, so the
+ * frame the capture takes does not depend on the instant it is taken.
+ */
+export const STILL = '.timer { visibility: hidden; } *, *::before, *::after { animation: none !important; transition: none !important; caret-color: transparent !important; }';
+
+/**
+ * The switches that make the browser draw the same pixels twice: rasterized on the processor in sRGB, with no GPU and no
+ * subpixel text, which otherwise moves a few pixels of text by one shade from one run to the next.
+ */
+export const SAME_PIXELS = ['--disable-gpu', '--force-color-profile=srgb', '--disable-lcd-text', '--font-render-hinting=none', '--num-raster-threads=1', '--disable-partial-raster', '--disable-skia-runtime-opts'];
+
 /** Waits for the app to settle: two animation frames and a short quiet period, so a screen is drawn before the picture. */
 export async function settle(page) {
   await page.waitForLoadState('domcontentloaded');

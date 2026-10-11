@@ -5,8 +5,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { migrateConfig } from '../src/shared/config/migrations';
 import { CONFIG_SCHEMA_VERSION } from '../src/shared/config/types';
 import { parseRun, type Run } from '../src/shared/runs';
+import type { Card } from '../src/shared/types';
+import { fingerprint, isReusable, type Saved } from '../src/main/falas-core';
 // @ts-expect-error plain ESM script, no declaration file
-import { seedDocsWorkspace } from '../scripts/seed-docs-workspace.mjs';
+import { FIXED_DAY, seedDocsWorkspace } from '../scripts/seed-docs-workspace.mjs';
 
 // @ts-expect-error plain ESM script, no declaration file
 import { auditRoot } from '../scripts/public-audit.mjs';
@@ -105,6 +107,16 @@ describe('the seeded documentation workspace', () => {
     await seedDocsWorkspace(dir);
     expect(readFileSync(join(dir, 'workspaces.json'), 'utf8')).toContain('"docs"');
     expect(readdirSync(parent)).toEqual(['green']);
+  });
+
+  // The capture runs no model: the ceremony shows a turn only because the app serves the saved one again, which it does when
+  // the card's fingerprint matches and the turn is recent enough on the seed's day (src/main/falas.ts, `reusableTurn`).
+  it('keeps a turn for every card of the ceremony that the app serves again on the seeded day', async () => {
+    const dir = await seed();
+    const ceremony = read(dir, 'workspaces/docs/historico/2026-06-15T094000.json') as { cards: { cards: Card[] } };
+    const saved = read(dir, 'workspaces/docs/falas.json') as { turns: Record<string, Saved> };
+    expect(ceremony.cards.cards.length).toBeGreaterThan(0);
+    for (const card of ceremony.cards.cards) expect(isReusable(saved.turns[card.ref], fingerprint(card, []), Date.parse(FIXED_DAY))).toBe(true);
   });
 
   // The registry names the workspace itself: a folder named `principal` would be the app's own fresh workspace, which the app

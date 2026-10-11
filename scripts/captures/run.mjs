@@ -7,13 +7,13 @@
 // The window size, the theme, the language and the clock are fixed, and the animations are off, so two runs over the same
 // seed write the same files. The `wizard` feature is captured over an empty data folder: an empty folder opens exactly in
 // the setup wizard, which is what its image shows.
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron } from 'playwright-core';
 import { FIXED_DAY, seedDocsWorkspace } from '../seed-docs-workspace.mjs';
-import { settle, waitForText } from './shared.mjs';
+import { SAME_PIXELS, STILL, settle, waitForText } from './shared.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
@@ -26,25 +26,53 @@ const mainEntry = () => {
   return join(ROOT, pkg.main ?? 'out/main/index.js');
 };
 
-/** Makes the clock of the window stand at the seed's fixed day and asks for no animation, before the app draws. */
-const fixWindow = async (page) => {
-  await page.addInitScript((iso) => {
-    const fixed = Date.parse(iso);
-    const RealDate = Date;
-    const shifted = new Proxy(RealDate, {
-      construct: (target, args) => (args.length ? new target(...args) : new target(fixed + (RealDate.now() - performance.timeOrigin))),
-      apply: () => new RealDate(fixed + (RealDate.now() - performance.timeOrigin)),
-    });
-    Object.defineProperty(shifted, 'now', { value: () => fixed + (RealDate.now() - performance.timeOrigin) });
-    // @ts-ignore the window is the app's own
-    window.Date = shifted;
-  }, FIXED_DAY);
+/**
+ * The environment of the app under capture: the throwaway data folder. The zone is fixed, so the same instant reads as the
+ * same hour on every computer.
+ */
+const appEnv = (dataDir) => ({ ...process.env, CERIMONIAS_DATA_DIR: dataDir, CERIMONIAS_SPECS_DIR: dataDir, TZ: 'UTC' });
+
+/**
+ * A clock that stands at `iso` and moves with real time from there, so timers still fire. With `still`, it never moves: a
+ * screen that draws the time elapsed (the ceremony's live clock, the minute of a line of its transcript) then draws the same
+ * time on every run, while the timers, which do not read this clock, still fire. Written so it can be handed to a page or to
+ * the main process as it is: it reads nothing outside itself.
+ */
+function standingClock(iso, still = false) {
+  const fixed = Date.parse(iso);
+  const RealDate = Date;
+  const realNow = RealDate.now.bind(RealDate);
+  const start = realNow();
+  const now = () => (still ? fixed : fixed + (realNow() - start));
+  // A `get` trap and not a property defined on the proxy: that would land on the real Date and make `now` call itself.
+  globalThis.Date = new Proxy(RealDate, {
+    construct: (target, args, newTarget) => Reflect.construct(target, args.length ? args : [now()], newTarget),
+    apply: () => new RealDate(now()).toString(),
+    get: (target, key, receiver) => (key === 'now' ? now : Reflect.get(target, key, receiver)),
+  });
+}
+
+/**
+ * Makes the main process stand at the seed's fixed day: it is where "today" is decided (the ceremony resumed, the turns a
+ * card may reuse). Playwright's launcher does not hand NODE_OPTIONS to the app, so the clock is set from outside, before the
+ * window is reloaded by `fixWindow` and asks for the day again.
+ */
+const fixMainClock = (app) => app.evaluate((_electron, { source, iso }) => (0, eval)(`(${source})`)(iso), { source: standingClock.toString(), iso: FIXED_DAY });
+
+/**
+ * Makes the clock of the window stand at the seed's fixed day and asks for no animation. An init script only reaches the
+ * next document, and the window has already drawn when the capture gets it, so the window is reloaded once. A feature
+ * script that draws elapsed time exports `STILL_CLOCK`, and its window clock does not move at all.
+ */
+const fixWindow = async (page, still = false) => {
+  await page.addInitScript({ content: `(${standingClock})(${JSON.stringify(FIXED_DAY)}, ${still === true});` });
+  await page.reload();
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
   // A running turn clock is drawn by JavaScript on a timer: the app reaches into the page to move it, which freezes the
   // window the moment the capture is over. Hiding it changes nothing that is drawn. What names where a model would come
   // from is not hidden but taken out of the page by the scripts that reach it (`dropHostPhrases`), so a picture of a
   // public repository carries no vendor name.
-  await page.addStyleTag({ content: '.timer { visibility: hidden; }' }).catch(() => undefined);
+  await page.addStyleTag({ content: STILL }).catch(() => undefined);
 }
 
 /** True when this module is the one the command line asked Node to run, rather than one a feature script imports. */
@@ -54,11 +82,10 @@ const RUN_AS_PROGRAM = process.argv[1] !== undefined && resolve(process.argv[1])
 const LEAF = 'span, b, strong, i, em, s, small, code, time';
 
 /**
- * Takes out of the window every phrase left by the app's own vocabulary rather than by the seeded data: the setup
- * assistant lists the model vendor of the app's default provider, and the screens name the code host where the workspace
- * configures no integration. A capture runs no model and a public picture must carry neither name, so the phrase goes
- * and the sentence it sat in becomes shorter — which is what the screen reads with no provider and no host configured.
- * The sentence is shortened, never emptied: one that loses its whole text stops being drawn.
+ * Takes out of the window a phrase left by the app's own vocabulary rather than by the seeded data, when it names a vendor
+ * (the ceremony's effects note names the vendor's coding tool). A public picture must not carry it, so the phrase goes and
+ * the sentence it sat in becomes shorter. The sentence is shortened, never emptied: one that loses its whole text stops
+ * being drawn.
  */
 export async function dropHostPhrases(page, phrases) {
   const leaves = await page.evaluate((list) => {
@@ -93,11 +120,16 @@ function systemLocale(lang) {
   return lang === 'en' ? 'en-US' : 'pt-BR';
 }
 
-/** Seeds a throwaway workspace for one language, or an empty folder for the features that show a first run. */
-export async function workspaceFor(lang, empty = false) {
+/**
+ * The throwaway data folder of one capture: an empty one for the features that show a first run, a copy of `from` when the
+ * caller seeded one (the release stage does), or a fresh seed. Every capture gets its own: the app writes into the folder it
+ * opens (a ceremony started, a state saved), and one capture must not draw what the one before it left.
+ */
+export async function workspaceFor(lang, empty = false, from = undefined) {
   const dir = mkdtempSync(join(tmpdir(), 'coxia-capture-'));
   if (!empty) {
-    await seedDocsWorkspace(dir);
+    if (from) cpSync(from, dir, { recursive: true });
+    else await seedDocsWorkspace(dir);
     const config = join(dir, 'workspaces', 'docs', 'config.json');
     const doc = JSON.parse(readFileSync(config, 'utf8'));
     doc.language = lang;
@@ -119,18 +151,19 @@ export async function captureFeature(feature, lang, { dataDir, only } = {}) {
   if (only && feature.id !== only) return null;
   const entry = mainEntry();
   if (!existsSync(entry)) throw new Error(`the app is not built (${entry} is missing): run \`npx electron-vite build\` first`);
-  const seeded = dataDir ?? (await workspaceFor(lang, feature.id === 'wizard'));
+  const seeded = await workspaceFor(lang, feature.id === 'wizard', dataDir);
   const mod = await import(new URL(feature.script, import.meta.url).href);
   mkdirSync(IMAGES, { recursive: true });
-  if (feature.id === 'phone') return await capturePhone(mod, { dataDir, lang, seeded });
+  if (feature.id === 'phone') return await capturePhone(mod, { lang, seeded });
   const app = await electron.launch({
-    args: [entry, '--no-sandbox', `--window-size=${WINDOW.width},${WINDOW.height}`],
-    env: { ...process.env, CERIMONIAS_DATA_DIR: seeded, CERIMONIAS_SPECS_DIR: seeded },
+    args: [entry, '--no-sandbox', ...SAME_PIXELS, `--window-size=${WINDOW.width},${WINDOW.height}`],
+    env: appEnv(seeded),
   });
   try {
+    await fixMainClock(app);
     const page = await app.firstWindow();
     await page.setViewportSize(WINDOW);
-    await fixWindow(page);
+    await fixWindow(page, mod.STILL_CLOCK === true);
     await mod.capture({ app, page, lang, out: IMAGES, dataDir: seeded, root: ROOT, drop: (phrases) => dropHostPhrases(page, phrases) });
     await settle(page);
     const name = lang === 'en' ? `${feature.id}-en.png` : `${feature.id}.png`;
@@ -138,17 +171,19 @@ export async function captureFeature(feature, lang, { dataDir, only } = {}) {
     return join(IMAGES, name);
   } finally {
     await app.close().catch(() => undefined);
-    if (!dataDir) rmSync(seeded, { recursive: true, force: true });
+    // Always a folder of this capture (a copy of `dataDir` when one was given), so it goes with it.
+    rmSync(seeded, { recursive: true, force: true });
   }
 }
 
 /** The phone companion: the app up in its web mode over the seeded workspace, driven by a browser at 390 px. */
-async function capturePhone(mod, { dataDir, lang, seeded }) {
+async function capturePhone(mod, { lang, seeded }) {
   const app = await electron.launch({
-    args: [mainEntry(), '--no-sandbox'],
-    env: { ...process.env, CERIMONIAS_DATA_DIR: dataDir ?? seeded, CERIMONIAS_SPECS_DIR: dataDir ?? seeded },
+    args: [mainEntry(), '--no-sandbox', ...SAME_PIXELS],
+    env: appEnv(seeded),
   });
   try {
+    await fixMainClock(app);
     const page = await app.firstWindow();
     await waitForText(page, ['Hoje', 'Today']);
     // The web mode listens a moment after the window opens; asking for it too early answers nothing and the capture waits.
@@ -160,11 +195,11 @@ async function capturePhone(mod, { dataDir, lang, seeded }) {
       if (!up) await page.waitForTimeout(500);
     }
     if (!up) throw new Error('the app\'s web mode is not listening on 127.0.0.1:4330: the phone capture needs it up');
-    const written = await mod.capture({ app, page, lang, out: IMAGES, dataDir: dataDir ?? seeded, root: ROOT });
+    const written = await mod.capture({ app, page, lang, out: IMAGES, dataDir: seeded, root: ROOT, clock: { install: standingClock, at: FIXED_DAY } });
     return join(IMAGES, written.name);
   } finally {
     await app.close().catch(() => undefined);
-    if (!dataDir) rmSync(seeded, { recursive: true, force: true });
+    rmSync(seeded, { recursive: true, force: true });
   }
 }
 
