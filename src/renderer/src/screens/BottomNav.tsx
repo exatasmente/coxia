@@ -1,9 +1,9 @@
 import { type ReactNode, useState } from 'react';
 import type { Screen } from '../App';
 import { bottomNavActive, type NavKey } from '../dashboard';
-import { useT, useTv, useVoiceEnabled } from '../i18n';
+import { useT } from '../i18n';
 import { useIsPhone } from '../useIsPhone';
-import { ActionsIcon, CallIcon, ChatIcon, HistoryIcon, HomeIcon, MoreIcon } from './dashIcons';
+import { ActionsIcon, ChatIcon, HistoryIcon, MoreIcon } from './dashIcons';
 import { HeaderModuleButtons } from './moduleSlots';
 import { badgeTitle, useSaudeBadge } from './SaudeButton';
 import { totalUnread } from '../../../shared/forumView';
@@ -17,7 +17,7 @@ interface Props {
   screen: Screen['name'];
   go: (s: Screen) => void;
   pendingActions: number;
-  hasCards: boolean;
+  /** The pre-daily is being held: the Chat item carries the dot, since the card that leads back to it is in the chat. */
   callLive: boolean;
 }
 
@@ -60,12 +60,10 @@ function MoreSheet({ go, onClose }: { go: (s: Screen) => void; onClose: () => vo
   );
 }
 
-// Phone only: where there is no floating composer. Conversations (call, deep dive, gate, QA...) keep the whole screen.
-export function BottomNav({ screen, go, pendingActions, hasCards, callLive }: Props) {
+// Phone only: where there is no floating composer. The chat and the conversations (call, deep dive, gate, QA...) keep the whole screen; the chat's menu carries what the bar does.
+export function BottomNav({ screen, go, pendingActions, callLive }: Props) {
   const t = useT();
-  const tv = useTv();
   const phone = useIsPhone();
-  const voiceOn = useVoiceEnabled();
   const [more, setMore] = useState(false);
   const active = bottomNavActive(screen);
   if (!phone || !active) return null;
@@ -93,8 +91,7 @@ export function BottomNav({ screen, go, pendingActions, hasCards, callLive }: Pr
   return (
     <>
       <nav className="bnav" aria-label={t('ui.nav.mainLabel')}>
-        {item('today', t('ui.nav.today'), <HomeIcon />, () => go(HOME))}
-        {item('call', tv('nav.call'), voiceOn ? <CallIcon /> : <ChatIcon />, () => go({ name: 'call' }), { disabled: !hasCards, live: callLive, ariaLabel: callLive ? tv('nav.call.live') : tv('nav.call') })}
+        {item('chat', t('ui.nav.chat'), <ChatIcon />, () => go(HOME), { live: callLive, ariaLabel: callLive ? t('ui.nav.chat.live') : t('ui.nav.chat') })}
         {item('actions', t('ui.nav.actions'), <ActionsIcon />, () => go({ name: 'actions' }), { badge: pendingActions, ariaLabel: pendingActions ? t('ui.nav.actionsPending', { count: pendingActions }) : t('ui.nav.actions') })}
         {item('history', t('ui.nav.history'), <HistoryIcon />, () => go({ name: 'history' }))}
         {item('more', t('ui.nav.more'), <MoreIcon />, () => setMore(true))}

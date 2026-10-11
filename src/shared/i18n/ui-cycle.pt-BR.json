@@ -510,7 +510,7 @@
   "ui.runs.activities.noStage": "nada registrado ainda",
   "ui.runs.activities.save": "Salvar",
   "ui.runs.activities.title": "Atividades que o aplicativo conhece",
-  "ui.runs.empty": "Ainda não há execuções. Inicie o ciclo a partir de uma atividade em Hoje.",
+  "ui.runs.empty": "Ainda não há execuções. Inicie o ciclo a partir de uma atividade na Visão geral.",
   "ui.runs.emptyFilter": "Nenhuma execução neste filtro.",
   "ui.runs.filter.all": "Todas · {count}",
   "ui.runs.filter.failed": "Falharam · {count}",

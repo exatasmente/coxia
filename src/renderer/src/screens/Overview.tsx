@@ -1,36 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { AgentDef } from '../../../shared/config/types';
 import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
 import type { Ceremony } from '../ceremony';
 import { useCycle } from '../cycleApi';
-import { type OverviewSection, blockedCards, qaCandidates } from '../home';
-import { greeting, needsYou, pendingQuestions } from '../dashboard';
-import { useIsPhone } from '../useIsPhone';
+import { HOME, type OverviewSection, blockedCards, qaCandidates } from '../home';
+import { needsYou, pendingQuestions } from '../dashboard';
 import { useWatcherAlerts } from '../watchersApi';
-import { BellIcon } from './dashIcons';
-import { HeaderModuleButtons } from './moduleSlots';
+import { BackIcon } from './icons';
+import { ChatHeader } from './persona/ChatHeader';
 import { RunNeeds } from './cycle/RunNeeds';
 import { SquadPicker } from './cycle/SquadPicker';
 import { useRuns } from './cycle/runsApi';
-import { RadarButton } from './radarSlots';
 import { useAgora } from './useAgora';
-import { SaudeButton } from './SaudeButton';
 import { TempoHoje } from './TempoHoje';
-import { UpdateBadge } from './UpdateBadge';
 import { ActivityRow, AgoraCard, NeedsList, Tiles } from './TodayParts';
-import { VoiceToggle } from './VoiceToggle';
-import { runningWorkspace, useWorkspaces } from '../workspaceApi';
 import { intlLocale, useT, useTv } from '../i18n';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
 const TOP = 3;
 
-export function Overview({ ceremony: c, go, pendingActions, actions, section }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[]; section?: OverviewSection }) {
+export function Overview({ ceremony: c, go, pendingActions, actions, section, persona }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[]; section?: OverviewSection; persona: AgentDef | null }) {
   const t = useT();
   const tv = useTv();
-  const phone = useIsPhone();
-  const testWorkspace = runningWorkspace(useWorkspaces())?.test === true;
   const cycle = useCycle();
   const on = cycle?.ceremonies;
   // The cards come from the card source tool when there is one, else from the host.
@@ -58,11 +51,6 @@ export function Overview({ ceremony: c, go, pendingActions, actions, section }: 
   const date = now.toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
   const today = date.charAt(0).toUpperCase() + date.slice(1);
 
-  // Turns already prepared (or restored from disk) come from the cache; only the missing ones call an agent.
-  useEffect(() => {
-    if (c.cards) void c.prepareAll();
-  }, [c.cards, c.prepareAll]);
-
   const { plan, onAgora, ready, retroToday } = useAgora(c, go);
 
   const showFilter = (f: Filter) => {
@@ -79,47 +67,20 @@ export function Overview({ ceremony: c, go, pendingActions, actions, section }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- showFilter only sets state and scrolls
   }, [section]);
 
-  const header = (
+  // With a persona the Overview is a screen to come back from: a back button, its name and the date (the greeting, the update badge, the voice switch, the bell and the
+  // navigation are the chat's). Without one it is where "Not now" left the person, so it keeps the header with the menu, and offers the wizard again.
+  const header = persona ? (
     <header className="dash-top">
       <div className="dash-hello">
-        {!phone && (
-          <div className="dash-logo" aria-hidden="true">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-              <path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4" />
-            </svg>
-          </div>
-        )}
+        <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go(HOME)}><BackIcon /></button>
         <div className="dash-hello-text">
           <div className="faint">{today}</div>
-          <h1>{cycle?.userName ? t('ui.today.greetingName', { greeting: greeting(now.getHours()), name: cycle.userName }) : greeting(now.getHours())}</h1>
+          <h1>{t('ui.overview.title')}</h1>
         </div>
       </div>
-      <div className="dash-top-actions">
-        <UpdateBadge go={go} />
-        {testWorkspace && <span className="ws-test-chip" title={t('ui.today.testWorkspaceHint')}>{t('ui.today.testWorkspace')}</span>}
-        {!phone && (
-          <nav className="dash-nav" aria-label={t('ui.today.navLabel')}>
-            <button type="button" className="btn" onClick={() => go({ name: 'history' })}>{t('ui.nav.history')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'runs' })}>{t('ui.runs.nav')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'board' })}>{t('ui.board.nav')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'forum' })}>{t('ui.forum.nav')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'procedures' })}>{t('ui.procedures.nav')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'memory' })}>{t('ui.memory.nav')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'settings' })}>{t('ui.nav.settings')}</button>
-            <button type="button" className="btn" onClick={() => go({ name: 'custo' })}>{t('ui.nav.cost')}</button>
-            <RadarButton go={go} />
-            <SaudeButton go={go} />
-            <button type="button" className="btn" onClick={() => go({ name: 'auditoria' })}>{t('ui.nav.audit')}</button>
-            <button type="button" className="btn" title={t('ui.today.helpShortcut')} onClick={() => go({ name: 'help' })}>{t('ui.nav.help')}</button>
-            <HeaderModuleButtons />
-          </nav>
-        )}
-        <VoiceToggle />
-        <button type="button" className="btn icon-btn" aria-label={t('ui.today.jobs')} title={t('ui.today.jobsRunning')} onClick={() => window.dispatchEvent(new CustomEvent('cerimonias:jobs-open'))}>
-          <BellIcon />
-        </button>
-      </div>
     </header>
+  ) : (
+    <ChatHeader persona={null} title={t('ui.overview.title')} go={go} ceremony={c} invite />
   );
 
   // A cycle with no daily preparation has no call to start: the card and the filters that lead to it are left out.

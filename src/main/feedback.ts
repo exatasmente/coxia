@@ -203,7 +203,7 @@ export async function detectFeedback(cards: Card[]): Promise<DetectResult & { ne
 function noticesFor(events: FeedbackEvent[]): Notice[] {
   if (events.length > MAX_NOTICES) {
     const refs = [...new Set(events.map((e) => `#${e.card.iid}`))].join(', ');
-    return [{ title: t('main.feedback.returns', { count: events.length }), body: `${refs}\n${t('main.feedback.clickActivities')}`, onClick: { type: 'navigate', to: 'today' } }];
+    return [{ title: t('main.feedback.returns', { count: events.length }), body: `${refs}\n${t('main.feedback.clickActivities')}`, onClick: { type: 'navigate', to: 'overview' } }];
   }
   return events.map((e): Notice => {
     if (e.kind === 'returned') {

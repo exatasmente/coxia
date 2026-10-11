@@ -270,10 +270,10 @@ export function tempoSegments(issues: TempoIssue[]): TempoSegment[] {
   return issues.filter((i) => i.minutes > 0).map((i) => ({ issue: i.issue, minutes: i.minutes, pct: (i.minutes / total) * 100 }));
 }
 
-export type NavKey = 'today' | 'call' | 'actions' | 'history' | 'more';
+export type NavKey = 'chat' | 'actions' | 'history' | 'more';
 
 const NAV_ACTIVE: Record<string, NavKey> = {
-  overview: 'today',
+  overview: 'chat',
   actions: 'actions',
   history: 'history',
   settings: 'more',
@@ -291,7 +291,7 @@ const NAV_ACTIVE: Record<string, NavKey> = {
   memory: 'more',
 };
 
-/** The bottom bar only appears where no floating composer lives: conversations (call, deep, gate, qa...) hide it. */
+/** The bottom bar only appears where no floating composer lives: the chat and the conversations (call, deep, gate, qa...) hide it. The Overview marks the Chat item, the way Today marked its own. */
 export function bottomNavActive(screen: string): NavKey | null {
   return NAV_ACTIVE[screen] ?? null;
 }

@@ -137,7 +137,7 @@
   "ui.retention.wipeNow": "Delete now",
   "ui.retention.wouldDelete_one": "{count} file would be deleted",
   "ui.retention.wouldDelete_other": "{count} files would be deleted",
-  "ui.settings.back": "Back to Today",
+  "ui.settings.back": "Back to Home",
   "ui.settings.docs.blocked": "AGENTS.md exists but is not a regular readable file, or exceeds the size limit. Replace it before starting a documentation run.",
   "ui.settings.docs.budget": "A call hands an agent at most {chars} characters of it (less for a model with a small context window). What does not fit is said to the agent, never cut in silence.",
   "ui.settings.docs.checkout": "Read from the checkout of each repository: after a draft is merged, update the checkout, since the app does not pull.",

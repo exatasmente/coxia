@@ -4,7 +4,7 @@ import { totalUnread } from '../../../../shared/forumView';
 import type { Screen } from '../../App';
 import type { Ceremony } from '../../ceremony';
 import { useCycle } from '../../cycleApi';
-import { blockedCards, menuRows, qaCandidates } from '../../home';
+import { HOME, blockedCards, menuRows, qaCandidates, resumeWizard } from '../../home';
 import { intlLocale, useT, useTv } from '../../i18n';
 import { useIsPhone } from '../../useIsPhone';
 import { runningWorkspace, useWorkspaces } from '../../workspaceApi';
@@ -78,6 +78,7 @@ function MenuRows({ go, ceremony: c, phone, close }: { go: (s: Screen) => void; 
             key={row.id}
             type="button"
             className={phone ? 'sheet-row' : 'btn'}
+            title={row.id === 'help' && !phone ? t('ui.today.helpShortcut') : undefined}
             disabled={disabled}
             onClick={() => screen && open(screen)}
           >
@@ -90,7 +91,17 @@ function MenuRows({ go, ceremony: c, phone, close }: { go: (s: Screen) => void; 
   );
 }
 
-export function ChatHeader({ persona, go, ceremony }: { persona: AgentDef | null; go: (s: Screen) => void; ceremony: Ceremony }) {
+interface HeaderProps {
+  persona: AgentDef | null;
+  go: (s: Screen) => void;
+  ceremony: Ceremony;
+  /** What the title says when it is not the persona's name: the Overview of a workspace that has no persona yet keeps this header, with its menu. */
+  title?: string;
+  /** Offers to make the persona (the wizard asked again after "Not now"). */
+  invite?: boolean;
+}
+
+export function ChatHeader({ persona, go, ceremony, title, invite }: HeaderProps) {
   const t = useT();
   const phone = useIsPhone();
   const testWorkspace = runningWorkspace(useWorkspaces())?.test === true;
@@ -112,10 +123,18 @@ export function ChatHeader({ persona, go, ceremony }: { persona: AgentDef | null
           )}
           <div className="dash-hello-text">
             <div className="faint">{today}</div>
-            <h1 className="chat-name">{persona ? agentName([persona], persona.id) : t('ui.chat.noPersona.title')}</h1>
+            <h1 className="chat-name">{title ?? (persona ? agentName([persona], persona.id) : t('ui.chat.noPersona.title'))}</h1>
           </div>
         </div>
         <div className="dash-top-actions">
+          {invite && (
+            <button type="button" className="btn btn-dark" onClick={() => {
+              resumeWizard();
+              go(HOME);
+            }}>
+              {t('ui.chat.invite')}
+            </button>
+          )}
           <UpdateBadge go={go} />
           {testWorkspace && <span className="ws-test-chip" title={t('ui.today.testWorkspaceHint')}>{t('ui.today.testWorkspace')}</span>}
           <VoiceToggle />

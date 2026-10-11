@@ -36,13 +36,15 @@ import { SettingsScreen } from './screens/Settings';
 import { BottomNav } from './screens/BottomNav';
 import { Overview } from './screens/Overview';
 import { ChatScreen } from './screens/persona/ChatScreen';
+import { PersonaWizard } from './screens/persona/PersonaWizard';
 import { useConfigView } from './screens/team/teamApi';
 import { JobsDock } from './JobsDock';
 import { UpdatePrompt } from './UpdatePrompt';
 import { UpdateToast } from './UpdateToast';
 import { useReportUpdateBusy } from './updateApi';
 import { useJobsSnapshot } from './useJobs';
-import { type DeepBack, HOME, type OverviewSection, personaIn } from './home';
+import { type DeepBack, HOME, OVERVIEW, type OverviewSection, homeView, personaIn, snoozeWizard, wizardSnoozed } from './home';
+import { useAnyLive } from './liveApi';
 import { targetToScreen } from './pushTarget';
 import { useWorkspaces } from './workspaceApi';
 import { SetupWizard } from './wizard/SetupWizard';
@@ -95,8 +97,10 @@ export function App() {
   const [screen, setScreen] = useState<Screen>(HOME);
   const [actions, setActions] = useState<ReleaseAction[]>([]);
   // The persona of the workspace: whose conversation the chat is. Kept current by the configuration event.
-  const configView = useConfigView().view;
+  const { view: configView, error: configError, reload: reloadConfig } = useConfigView();
   const persona = personaIn(configView?.config);
+  // The persona was just saved: the wizard waits for the configuration that holds it, so it is not drawn again for the instant in between.
+  const [made, setMade] = useState(false);
   // A workspace whose setup never finished lands in the wizard; one that did (every migrated install) never sees it unless it is opened.
   const [setup, setSetup] = useState<'checking' | 'needed' | 'done'>('checking');
   useEffect(() => {
@@ -180,18 +184,50 @@ export function App() {
     // go only touches the player and the screen state
   }, []);
 
-  // Something is running that an update restart would cut: the call, the speech, an agent job.
+  // Every card's turn is prepared as soon as the cards are there, whichever screen is open (the Overview did it when it was Today). Turns already prepared, or restored from
+  // disk, come from the cache; only the missing ones call an agent.
+  const { cards: loadedCards, prepareAll } = ceremony;
+  useEffect(() => {
+    if (loadedCards) void prepareAll();
+  }, [loadedCards, prepareAll]);
+
+  // Something is running that an update restart would cut: the call, the speech, an agent job, an answer of the persona being written (anywhere, a paired phone included).
   const callLive = !!ceremony.startedAt && !ceremony.callEnded;
   const jobsRunning = useJobsSnapshot().some((j) => j.status === 'running');
-  useReportUpdateBusy(callLive || !!player.speaking || jobsRunning);
+  const writing = useAnyLive();
+  useReportUpdateBusy(callLive || !!player.speaking || jobsRunning || writing);
 
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
   const view = ((): ReactElement => { switch (screen.name) {
     case 'chat':
-      return <ChatScreen ceremony={ceremony} go={go} persona={persona} team={configView?.config.agents.team} actions={actions} />;
-    case 'overview':
-      return <Overview ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} section={screen.section} />;
+    case 'overview': {
+      // The home: the chat with the persona; with none, the wizard that makes it (the Overview if the person said "Not now"). The Overview is also a screen of its own.
+      // A configuration that cannot be read leaves the Overview, which does not need it, rather than a spinner with no end.
+      const home = screen.name !== 'chat' || (!configView && configError) ? 'overview' : homeView({ config: configView?.config ?? null, snoozed: wizardSnoozed() });
+      if (home === 'loading' || (home === 'wizard' && made)) return <div className="page"><div className="wrap"><span className="spinner" aria-hidden="true" /></div></div>;
+      if (home === 'wizard') {
+        return (
+          <PersonaWizard
+            presentation="screen"
+            persona={null}
+            onDone={() => {
+              setMade(true);
+              void reloadConfig().then(() => {
+                setMade(false);
+                go(HOME);
+              });
+            }}
+            onClose={() => {
+              snoozeWizard();
+              go(OVERVIEW);
+            }}
+          />
+        );
+      }
+      if (home === 'chat') return <ChatScreen ceremony={ceremony} go={go} persona={persona} team={configView?.config.agents.team} actions={actions} />;
+      return <Overview ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} section={screen.name === 'overview' ? screen.section : undefined} persona={persona} />;
+    }
     case 'call':
       return <Call ceremony={ceremony} player={player} go={go} />;
     case 'deep':
@@ -256,7 +292,7 @@ export function App() {
     <>
       {away && origin && player.speaking && <NowPlaying who={player.speaking} origin={origin} go={go} stop={player.stop} />}
       {view}
-      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} hasCards={!!cards} callLive={callLive} />
+      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} callLive={callLive} />
       <JobsDock screen={screen} go={go} />
       <UpdateToast />
       <UpdatePrompt hidden={screen.name === 'settings'} />

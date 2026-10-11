@@ -32,7 +32,7 @@ describe('a notification about a run opens the run', () => {
 
   it('is refused without the run it is about, and the lists open their screens', () => {
     expect(parseTarget({ to: 'run' })).toBeNull();
-    expect(noticeTarget({ type: 'open', screen: { name: 'run' } })).toEqual({ to: 'today' });
+    expect(noticeTarget({ type: 'open', screen: { name: 'run' } })).toEqual({ to: 'overview' });
     expect(targetToScreen({ to: 'runs' }, false)).toEqual({ name: 'runs' });
     expect(targetToScreen({ to: 'forum' }, false)).toEqual({ name: 'forum' });
     expect(targetToScreen({ to: 'forum', id: 'run-r-mfxk2a-q7z9' }, false)).toEqual({ name: 'forum', thread: 'run-r-mfxk2a-q7z9' });

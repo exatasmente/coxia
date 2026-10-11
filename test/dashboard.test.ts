@@ -168,8 +168,10 @@ describe('small helpers', () => {
 
   it('shows the bottom bar only where there is no floating composer', () => {
     // the Overview marks the first item, as Today did; the name `today` is no longer a screen
-    expect(bottomNavActive('overview')).toBe('today');
+    expect(bottomNavActive('overview')).toBe('chat');
     expect(bottomNavActive('today')).toBeNull();
+    // the chat has a box at the bottom, so it has no bar
+    expect(bottomNavActive('chat')).toBeNull();
     expect(bottomNavActive('actions')).toBe('actions');
     expect(bottomNavActive('history')).toBe('history');
     expect(bottomNavActive('radar')).toBe('more');

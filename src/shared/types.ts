@@ -462,7 +462,7 @@ export interface ReleaseAction {
 }
 
 export type AppEvent =
-  | { type: 'navigate'; to: 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro' }
+  | { type: 'navigate'; to: 'chat' | 'overview' | 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro' }
   | { type: 'conflict'; id: string }
   | { type: 'actions'; actions: ReleaseAction[] }
   | { type: 'open'; screen: { name: string; [key: string]: unknown } }

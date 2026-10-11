@@ -184,6 +184,22 @@ const INTENDED: Record<string, Intended> = {
     language: 'both',
     replace: [["Merge branch 'main'", "Merge branch '{target}'"]],
   },
+  // The app opens on a chat with the persona and Today's content is the Overview: no label names the screen that is gone, and "back" lands on the home.
+  'ui.nav.backToday': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.actions.backToday': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.quick.backToday': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.call.backToToday': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.settings.back': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.help.back': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.ata.backToday': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['← Today', '← Home'], ['← Hoje', '← Início']] },
+  'ui.help.agentVoice.text': {
+    reason: 'the voice switch is in the header of the chat now that Today is the Overview',
+    language: 'both',
+    replace: [
+      ['at the top of Today', 'at the top of the chat'],
+      ['no alto de Hoje', 'no alto do chat'],
+    ],
+  },
   // The wizard note no longer calls the open engine read-only: it writes inside the run's worktree and runs commands.
   'wizard.models.openEngineNote': { reason: 'the open engine writes inside the run\'s worktree and runs commands, so the wizard note no longer says read-only', language: 'both' },
 };
@@ -204,6 +220,9 @@ const REMOVED: Record<string, string> = {
   'ui.retro.entry.proposal': 'the proposal line of the copied improvement entry has no caller any more (rule 1)',
   'ui.retro.problem': 'the problem label of the retro improvement entry has no caller any more (rule 1)',
   'ui.retro.proposal': 'the proposal label of the retro improvement entry has no caller any more (rule 1)',
+  // The first item of the phone's bottom bar is the chat; Today is not a screen any more.
+  'ui.today.greetingName': 'the header of the Overview no longer greets: the greeting went with the header of Today, and the chat names the persona instead',
+  'ui.nav.today': 'the first item of the bottom bar is the Chat now, and no screen is called Today any more (the Overview holds its content)',
   // The panel of running work is a tree: no activity is folded into one generic "Agent" card, each is an entry named for its agent.
   'activity.generic': 'the dock no longer has a generic card for the runs no job owns: each one is an entry of its own, named for its agent',
 };

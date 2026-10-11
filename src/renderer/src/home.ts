@@ -10,14 +10,14 @@ import type { Screen } from './App';
 import { type AgoraPlan, isPendingAction, needsYou, pendingQuestions } from './dashboard';
 
 // Where the app opens, where every "back" returns, and what the chat that is the home decides above its markup. A screen asks for the home here and never names it, so which
-// screen is the home is decided in one place. It is the Overview for now, the screen that holds what Today held; the chat takes its place in a later step, and nothing that
-// goes back to it has to change. Plain functions, because nothing renders a component in the tests: the counts of the strip, the card of the ceremony, the rows of the menu.
+// screen is the home is decided in one place. It is the chat with the persona, or the invitation to make one (`homeView`); the Overview holds what Today held. Plain functions,
+// because nothing renders a component in the tests: the counts of the strip, the card of the ceremony, the rows of the menu.
 
 /** The Overview: what Today held, a screen of its own. */
 export const OVERVIEW: Screen = { name: 'overview' };
 
-/** The screen the app opens on and every "back to the start" goes to. */
-export const HOME: Screen = OVERVIEW;
+/** The screen the app opens on and every "back to the start" goes to. `homeView` says what it draws: the chat, or the wizard that makes the persona, or the Overview. */
+export const HOME: Screen = { name: 'chat' };
 
 /** Where a deep dive goes back to: the pre-daily it came from, or the home. */
 export type DeepBack = 'chat' | 'call';
@@ -155,3 +155,18 @@ export function homeView(i: { config: Pick<WorkspaceConfig, 'agents'> | null; sn
 
 /** The persona of the configuration, if any: a draft that was never finished is none. */
 export const personaIn = (config: Pick<WorkspaceConfig, 'agents'> | null | undefined): AgentDef | null => (config ? personaOf(config.agents.team) : null);
+
+// "Not now" on the wizard shows the Overview for the rest of the session. It is not stored: the next opening offers the wizard again.
+let snoozed = false;
+
+export const wizardSnoozed = (): boolean => snoozed;
+
+/** The person said "Not now": the home is the Overview until the app is opened again, or until they ask for the wizard. */
+export function snoozeWizard(): void {
+  snoozed = true;
+}
+
+/** The person asks for the wizard again (from the Overview they were left on). */
+export function resumeWizard(): void {
+  snoozed = false;
+}

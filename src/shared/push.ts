@@ -51,15 +51,15 @@ export function parseTarget(raw: unknown): PushTarget | null {
 
 // The screen a Notice opens, derived from the event the desktop would emit on click.
 export function noticeTarget(ev: AppEvent): PushTarget {
-  const today: PushTarget = { to: 'today' };
-  if (ev.type === 'navigate') return parseTarget({ to: ev.to }) ?? today;
-  if (ev.type === 'deep') return parseTarget({ to: 'deep', ref: ev.card.ref }) ?? today;
-  if (ev.type === 'conflict') return parseTarget({ to: 'conflict', id: ev.id }) ?? today;
+  const fallback: PushTarget = { to: 'overview' };
+  if (ev.type === 'navigate') return parseTarget({ to: ev.to }) ?? fallback;
+  if (ev.type === 'deep') return parseTarget({ to: 'deep', ref: ev.card.ref }) ?? fallback;
+  if (ev.type === 'conflict') return parseTarget({ to: 'conflict', id: ev.id }) ?? fallback;
   if (ev.type === 'open') {
     const { name, ref, id, mr } = ev.screen as { name: string; ref?: unknown; id?: unknown; mr?: unknown };
-    return parseTarget({ to: name, ref, id, mr }) ?? today;
+    return parseTarget({ to: name, ref, id, mr }) ?? fallback;
   }
-  return today;
+  return fallback;
 }
 
 export function targetQuery(t: PushTarget): string {

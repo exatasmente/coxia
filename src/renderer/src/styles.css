@@ -606,7 +606,7 @@ button.need-main { cursor: pointer; }
 .tempo-min { font-weight: 600; white-space: nowrap; }
 .tempo-by { grid-column: 3 / -1; }
 
-.bnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -6px 20px -14px color-mix(in srgb, var(--night) 50%, transparent); }
+.bnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -6px 20px -14px color-mix(in srgb, var(--night) 50%, transparent); }
 .bnav-item { min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 2px; background: transparent; border: 0; color: var(--muted); font: inherit; cursor: pointer; }
 .bnav-item:disabled { opacity: 0.45; cursor: not-allowed; }
 .bnav-item[aria-current="page"] { color: var(--teal); }

@@ -188,7 +188,7 @@ export const runsModule: Module = (ctx) => {
       const notice = askNotice(ask);
       if (key?.kind === 'call') ctx.notify({ ...notice, onClick: { type: 'open', screen: { name: 'forum', thread: key.thread } } });
       else if (key) ctx.notify({ ...notice, onClick: { type: 'open', screen: { name: 'run', id: key.run } } });
-      else ctx.notify({ ...notice, onClick: { type: 'navigate', to: 'today' } });
+      else ctx.notify({ ...notice, onClick: { type: 'navigate', to: 'overview' } });
     },
   });
   asks = askStore;

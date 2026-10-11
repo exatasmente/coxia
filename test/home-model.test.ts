@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Run } from '../src/shared/runs';
 import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
 import { needsYou, pendingQuestions } from '../src/renderer/src/dashboard';
-import { type HomeCountsInput, HOME, OVERVIEW, blockedCards, ceremonyCard, deepBack, homeCounts, homeView, menuRows, stripTarget } from '../src/renderer/src/home';
+import { type HomeCountsInput, HOME, OVERVIEW, blockedCards, ceremonyCard, deepBack, homeCounts, homeView, menuRows, resumeWizard, snoozeWizard, stripTarget, wizardSnoozed } from '../src/renderer/src/home';
 import { agoraPlan, type AgoraInput } from '../src/renderer/src/dashboard';
 import { waitingRuns } from '../src/shared/runs/view';
 import type { WatcherAlert } from '../src/shared/watchers';
@@ -18,8 +18,9 @@ const sources = readdirSync(join(ROOT, 'src/renderer/src'), { recursive: true })
   .map((f) => ({ file: f, text: readFileSync(join(ROOT, 'src/renderer/src', f), 'utf8') }));
 
 describe('the home', () => {
-  it('is the Overview for now, the screen that holds what Today held', () => {
-    expect(HOME).toEqual({ name: 'overview' });
+  it('is the chat with the persona, and the Overview is the screen that holds what Today held', () => {
+    expect(HOME).toEqual({ name: 'chat' });
+    expect(OVERVIEW).toEqual({ name: 'overview' });
   });
 
   it('is where a deep dive goes back to unless it came from the pre-daily', () => {
@@ -111,7 +112,6 @@ describe('the counts of the strip', () => {
     expect(stripTarget('asking')).toEqual({ name: 'overview', section: 'asking' });
     expect(stripTarget('needs')).toEqual({ name: 'overview', section: 'needs' });
     expect(stripTarget('actions')).toEqual({ name: 'actions' });
-    expect(OVERVIEW).toEqual({ name: 'overview' });
   });
 
   it('is read by the chat and the Overview from this module', () => {
@@ -184,5 +184,34 @@ describe('Settings › Persona', () => {
     const section = sources.find((s) => s.file.endsWith('screens/persona/PersonaSection.tsx'));
     expect(section?.text).toMatch(/go\(\{ name: 'chat' \}\)/);
     expect(section?.text).not.toMatch(/ChatThread/);
+  });
+});
+
+describe('"Not now" on the wizard', () => {
+  it('is kept for the session in a variable and never stored: the next opening starts without it', () => {
+    expect(wizardSnoozed()).toBe(false);
+    snoozeWizard();
+    expect(wizardSnoozed()).toBe(true);
+    resumeWizard();
+    expect(wizardSnoozed()).toBe(false);
+    const home = sources.find((s) => s.file === 'home.ts')?.text ?? '';
+    expect(home).not.toMatch(/localStorage|sessionStorage|writeFile|api\./);
+  });
+});
+
+describe('the app shell', () => {
+  const app = sources.find((s) => s.file === 'App.tsx')?.text ?? '';
+
+  it('opens on the home and lets homeView decide between the chat, the wizard and the Overview', () => {
+    expect(app).toMatch(/useState<Screen>\(HOME\)/);
+    expect(app).toMatch(/homeView\(/);
+    expect(app).toMatch(/presentation="screen"/);
+  });
+
+  it('prepares every card\'s turn from the app, not from a screen, and counts an answer being written as work an update would cut', () => {
+    expect(app).toMatch(/prepareAll/);
+    expect(sources.find((s) => s.file.endsWith('screens/Overview.tsx'))?.text).not.toMatch(/prepareAll/);
+    expect(app).toMatch(/useAnyLive\(\)/);
+    expect(app).toMatch(/useReportUpdateBusy\([^)]*writing/);
   });
 });

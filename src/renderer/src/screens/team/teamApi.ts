@@ -31,11 +31,11 @@ export const assistApi = {
 };
 
 /** The configuration as the screens last knew it: loaded once, kept current by the `config` event (a save or an import, anywhere). */
-export function useConfigView(): { view: ConfigView | null; error: string | null; reload: () => void } {
+export function useConfigView(): { view: ConfigView | null; error: string | null; reload: () => Promise<void> } {
   const [view, setView] = useState<ConfigView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const reload = useCallback(() => {
-    teamApi.config().then(
+    return teamApi.config().then(
       (v) => {
         setView(v);
         setError(null);
@@ -44,7 +44,7 @@ export function useConfigView(): { view: ConfigView | null; error: string | null
     );
   }, []);
   useEffect(() => {
-    reload();
+    void reload();
     const onEvent = (e: Event) => setView((e as CustomEvent<ConfigView>).detail);
     moduleEvents.addEventListener(CONFIG_EVENT, onEvent);
     return () => moduleEvents.removeEventListener(CONFIG_EVENT, onEvent);
