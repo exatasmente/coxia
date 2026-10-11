@@ -105,7 +105,7 @@ export function ChatHeader({ persona, go, ceremony, actions, current, title, inv
             {t('ui.chat.invite')}
           </button>
         )}
-        {persona && <StopControl />}
+        {persona && <StopControl compact={phone} />}
         <UpdateBadge go={go} />
         {testWorkspace && <span className="ws-test-chip" title={t('ui.today.testWorkspaceHint')}>{t('ui.today.testWorkspace')}</span>}
         <VoiceToggle />

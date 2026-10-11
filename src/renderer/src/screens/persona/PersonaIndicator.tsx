@@ -16,7 +16,7 @@ export function PersonaIndicator({ screen }: { screen: string }) {
   return (
     <div className={`persona-indicator persona-indicator-${view}`} role="status">
       <span>{t(view === 'stopped' ? 'ui.persona.indicator.stopped' : 'ui.persona.indicator.working')}</span>
-      <StopControl className="btn persona-indicator-btn" />
+      <StopControl className="btn persona-indicator-btn" compact />
     </div>
   );
 }
