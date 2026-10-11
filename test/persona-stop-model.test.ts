@@ -58,6 +58,24 @@ describe('the state on the wire', () => {
   });
 });
 
+describe('where the indicator sits', () => {
+  const css = readFileSync(join(import.meta.dirname, '../src/renderer/src/screens/persona/chat.css'), 'utf8');
+  const rule = (selector: string): string => css.slice(css.indexOf(`${selector} {`), css.indexOf('}', css.indexOf(`${selector} {`)));
+
+  it('is a bar in the flow on the computer, so it lies over no content, and a pill lifted over the bottom bar only on a phone', () => {
+    expect(rule('.persona-indicator')).not.toMatch(/position:\s*fixed/);
+    const phone = css.slice(css.indexOf('@media (max-width: 600px) { .persona-indicator'));
+    expect(phone).toMatch(/position: fixed/);
+    expect(phone).toMatch(/bottom: calc\(76px/);
+  });
+
+  it('is drawn above the screen it belongs to, not after it, in the shell', () => {
+    const app = readFileSync(join(import.meta.dirname, '../src/renderer/src/App.tsx'), 'utf8');
+    expect(app.indexOf('<PersonaIndicator')).toBeGreaterThan(-1);
+    expect(app.indexOf('<PersonaIndicator')).toBeLessThan(app.indexOf('{view}'));
+  });
+});
+
 describe('the words and the colours', () => {
   const keys = ['ui.persona.stop.button', 'ui.persona.stop.title', 'ui.persona.resume.button', 'ui.persona.resume.title', 'ui.persona.banner', 'ui.persona.banner.waiting_one', 'ui.persona.banner.waiting_other', 'ui.persona.indicator.working', 'ui.persona.indicator.stopped', 'ui.persona.section.state.running', 'ui.persona.section.state.stopped', 'ui.chat.queuedStopped'];
 

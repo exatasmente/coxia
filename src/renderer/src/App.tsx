@@ -296,10 +296,10 @@ export function App() {
   return (
     <>
       {away && origin && player.speaking && <NowPlaying who={player.speaking} origin={origin} go={go} stop={player.stop} />}
+      <PersonaIndicator screen={screen.name} />
       {view}
       <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} callLive={callLive} />
       <JobsDock screen={screen} go={go} />
-      <PersonaIndicator screen={screen.name} />
       <UpdateToast />
       <UpdatePrompt hidden={screen.name === 'settings'} />
     </>

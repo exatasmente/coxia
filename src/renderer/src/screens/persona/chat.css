@@ -102,7 +102,8 @@
 .persona-banner-waiting { font-weight: 600; }
 .persona-stop { border-color: var(--red-line); color: var(--red-ink); background: var(--red-faint); font-weight: 600; }
 .persona-resume { border-color: var(--warn-solid); font-weight: 600; }
-.persona-indicator { position: fixed; left: 12px; bottom: 12px; z-index: 40; display: inline-flex; align-items: center; gap: 10px; max-width: calc(100vw - 96px); padding: 6px 8px 6px 14px; border-radius: 999px; border: 1px solid var(--night-line); background: var(--night); color: var(--on-night); font-size: 13px; box-shadow: 0 10px 26px -10px color-mix(in srgb, var(--night) 75%, transparent); }
-.persona-indicator-stopped { border-color: var(--warn-solid); }
+.persona-indicator { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 6px 14px; border-bottom: 1px solid var(--night-line); background: var(--night); color: var(--on-night); font-size: 13px; }
+.persona-indicator-stopped { border-bottom-color: var(--warn-solid); }
 .persona-indicator-btn { min-height: 36px; }
-@media (max-width: 600px) { .persona-indicator { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); } }
+/* On a phone it is a pill lifted over the bottom bar; on the computer it is a bar in the flow above the screen, so it lies over nothing. */
+@media (max-width: 600px) { .persona-indicator { position: fixed; left: 12px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 40; display: inline-flex; max-width: calc(100vw - 96px); padding: 6px 8px 6px 14px; border: 1px solid var(--night-line); border-radius: 999px; box-shadow: 0 10px 26px -10px color-mix(in srgb, var(--night) 75%, transparent); } .persona-indicator-stopped { border-color: var(--warn-solid); } }
