@@ -41,7 +41,7 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   act: { key: 'ui.audit.kind.act' },
 };
 
-const WHO_LABEL: Record<WhoFilter, string> = { all: 'ui.audit.who.all', person: 'ui.audit.who.person', persona: 'ui.audit.who.persona' };
+const WHO_LABEL: Record<WhoFilter, string> = { all: 'ui.audit.who.all', person: 'ui.audit.who.person', persona: 'ui.audit.who.persona', agent: 'ui.audit.who.agent' };
 
 function Row({ e, focused }: { e: AuditEntry; focused: boolean }) {
   const t = useT();
@@ -110,9 +110,12 @@ export function Auditoria({ go, act }: { go: (s: Screen) => void; act?: string }
           <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go(HOME)}><BackIcon /></button>
           <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.audit.title')}</h1>
           <span className="faint">{rows ? t('ui.audit.shownOf', { shown: shown.length, total: rows.length }) : ''}</span>
-          <select value={who} onChange={(e) => isWhoFilter(e.target.value) && setWho(e.target.value)} aria-label={t('ui.audit.who.label')} style={{ marginLeft: 'auto', minHeight: 36, padding: '0 12px', borderRadius: 10, border: '1px solid var(--field-line)' }} /* i18n-ignore */>
-            {WHO_FILTERS.map((w) => <option key={w} value={w}>{t(WHO_LABEL[w])}</option>)}
-          </select>
+          <label className="row small faint" style={{ marginLeft: 'auto', gap: 8 }}>
+            {t('ui.audit.who.label')}
+            <select value={who} onChange={(e) => isWhoFilter(e.target.value) && setWho(e.target.value)} style={{ minHeight: 36, padding: '0 12px', borderRadius: 10, border: '1px solid var(--field-line)' }} /* i18n-ignore */>
+              {WHO_FILTERS.map((w) => <option key={w} value={w}>{t(WHO_LABEL[w])}</option>)}
+            </select>
+          </label>
           <input
             value={issue}
             onChange={(e) => setIssue(e.target.value)}

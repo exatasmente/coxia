@@ -15,6 +15,15 @@ describe('who an entry belongs to', () => {
     expect(whoOf(entry({ actor: 'persona' }))).toBe('persona');
   });
 
+  it('does not read an autonomous agent\'s write as the person\'s: `by` with no actor is an agent', () => {
+    expect(whoOf(entry({ by: 'developer' }))).toBe('agent');
+    // the persona stamps its own lines, whatever else they carry
+    expect(whoOf(entry({ actor: 'persona', by: 'developer' }))).toBe('persona');
+    const rows = [entry({ issue: 101 }), entry({ issue: 101, by: 'developer' }), entry({ issue: 101, actor: 'persona' })];
+    expect(filterEntries(rows, { issue: '', who: 'person' })).toEqual([rows[0]]);
+    expect(filterEntries(rows, { issue: '', who: 'agent' })).toEqual([rows[1]]);
+  });
+
   it('filters by who and by issue together, and lets everything through when asked for all', () => {
     const rows = [entry({ issue: 101 }), entry({ issue: 101, actor: 'persona' }), entry({ issue: 202, actor: 'persona' })];
     expect(filterEntries(rows, { issue: '', who: 'all' })).toHaveLength(3);
@@ -23,10 +32,11 @@ describe('who an entry belongs to', () => {
     expect(filterEntries(rows, { issue: '#101', who: 'persona' })).toEqual([rows[1]]);
   });
 
-  it('knows the three filters and nothing else', () => {
-    expect([...WHO_FILTERS]).toEqual(['all', 'person', 'persona']);
+  it('knows the four filters and nothing else', () => {
+    expect([...WHO_FILTERS]).toEqual(['all', 'person', 'persona', 'agent']);
     expect(isWhoFilter('persona')).toBe(true);
-    expect(isWhoFilter('agent')).toBe(false);
+    expect(isWhoFilter('agent')).toBe(true);
+    expect(isWhoFilter('robot')).toBe(false);
     expect(isWhoFilter(undefined)).toBe(false);
   });
 });
@@ -63,7 +73,7 @@ describe('what a persona line shows', () => {
 });
 
 describe('the words of the screen', () => {
-  const keys = ['ui.audit.kind.config', 'ui.audit.kind.secret', 'ui.audit.kind.pluginDecision', 'ui.audit.kind.act', 'ui.audit.who.label', 'ui.audit.who.all', 'ui.audit.who.person', 'ui.audit.who.persona', 'ui.audit.badge.persona', 'ui.audit.door', 'ui.audit.door.window', 'ui.audit.door.paired', 'ui.audit.said', 'ui.audit.ownProposal', 'ui.audit.basis', 'ui.audit.basis.subject', 'ui.audit.basis.message', 'ui.audit.actOlder'];
+  const keys = ['ui.audit.kind.config', 'ui.audit.kind.secret', 'ui.audit.kind.pluginDecision', 'ui.audit.kind.act', 'ui.audit.who.label', 'ui.audit.who.all', 'ui.audit.who.person', 'ui.audit.who.persona', 'ui.audit.who.agent', 'ui.audit.badge.persona', 'ui.audit.door', 'ui.audit.door.window', 'ui.audit.door.paired', 'ui.audit.said', 'ui.audit.ownProposal', 'ui.audit.basis', 'ui.audit.basis.subject', 'ui.audit.basis.message', 'ui.audit.actOlder'];
 
   it('has the four new kinds, the filter, the badge and the fold in both catalogs, worded differently', () => {
     for (const key of keys) {

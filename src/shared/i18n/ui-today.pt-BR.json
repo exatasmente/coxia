@@ -46,6 +46,7 @@
   "ui.audit.shownOf": "{shown} de {total}",
   "ui.audit.title": "Auditoria das escritas",
   "ui.audit.via": "(via {via})",
+  "ui.audit.who.agent": "Um agente, por autonomia",
   "ui.audit.who.all": "Todos",
   "ui.audit.who.label": "Quem",
   "ui.audit.who.person": "A pessoa",

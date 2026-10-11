@@ -3,14 +3,18 @@ import type { AuditEntry } from '../../shared/auditoria';
 // The decisions of the Audit screen above the markup, as plain functions: who an entry belongs to, the filters, where an act's entry sits in the list, and the lines of the
 // folded "what it had read". An entry written before the persona has no `actor`, and reads as a person's.
 
-export const WHO_FILTERS = ['all', 'person', 'persona'] as const;
+export const WHO_FILTERS = ['all', 'person', 'persona', 'agent'] as const;
 export type WhoFilter = (typeof WHO_FILTERS)[number];
 
 export const isWhoFilter = (v: unknown): v is WhoFilter => typeof v === 'string' && (WHO_FILTERS as readonly string[]).includes(v);
 
-export const whoOf = (e: Pick<AuditEntry, 'actor'>): 'person' | 'persona' => (e.actor === 'persona' ? 'persona' : 'person');
+/**
+ * Who a line belongs to: the persona (it says so), an agent acting by its own autonomy (`by` is set and nobody stamped the line), or the person. A line written before the
+ * persona has neither field, and reads as the person's; an autonomous agent's write is not the person's.
+ */
+export const whoOf = (e: Pick<AuditEntry, 'actor' | 'by'>): 'person' | 'persona' | 'agent' => (e.actor === 'persona' ? 'persona' : e.by ? 'agent' : 'person');
 
-/** The entries the filters let through: those of an issue (digits anywhere in its number) and those of a person or of the persona. */
+/** The entries the filters let through: those of an issue (digits anywhere in its number) and those of the person, of the persona or of an agent's autonomy. */
 export function filterEntries(rows: readonly AuditEntry[], o: { issue: string; who: WhoFilter }): AuditEntry[] {
   const n = o.issue.replace(/\D/g, '');
   return rows.filter((r) => (!n || String(r.issue).includes(n)) && (o.who === 'all' || whoOf(r) === o.who));
