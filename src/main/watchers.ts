@@ -290,8 +290,8 @@ export async function postmortemAlerts(cards: Card[], s: State, now = Date.now()
 
 function noticeFor(a: WatcherAlert): Notice {
   if (a.kind === 'gate' && a.card) return { title: a.message, body: t('main.watchers.clickQuiz'), onClick: { type: 'open', screen: { name: 'gate', ref: a.card.ref, card: a.card } } };
-  if (a.kind === 'rejections') return { title: a.message, body: stop(), onClick: { type: 'navigate', to: 'today' } };
-  return { title: a.message, body: t('main.watchers.clickPostmortem'), onClick: { type: 'navigate', to: 'today' } };
+  if (a.kind === 'rejections') return { title: a.message, body: stop(), onClick: { type: 'navigate', to: 'overview' } };
+  return { title: a.message, body: t('main.watchers.clickPostmortem'), onClick: { type: 'navigate', to: 'overview' } };
 }
 
 let running = false;
@@ -328,7 +328,7 @@ export async function checkWatchers(deps: Deps, notifyEnabled: boolean): Promise
 
     if (notifyEnabled) {
       if (fresh.length > MAX_SEPARATE_NOTICES) {
-        deps.notify({ title: t('main.watchers.many', { count: fresh.length }), body: t('main.watchers.manyBody'), onClick: { type: 'navigate', to: 'today' } });
+        deps.notify({ title: t('main.watchers.many', { count: fresh.length }), body: t('main.watchers.manyBody'), onClick: { type: 'navigate', to: 'overview' } });
       } else {
         for (const a of fresh) deps.notify(noticeFor(a));
       }

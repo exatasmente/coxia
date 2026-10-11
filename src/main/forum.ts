@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { ATTACHMENT_LIMITS, type AttachmentRef } from '../shared/attachments';
-import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, agentThreadId, mentionableIds, parseMentions, unknownMentions } from '../shared/forum';
-import { isDraft, workingTeam } from '../shared/config/team';
+import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, agentThreadId, isPersonaThread, mentionableIds, parseMentions, unknownMentions } from '../shared/forum';
+import { outOfCycle, personaOf, workingTeam } from '../shared/config/team';
 import { t } from '../shared/i18n';
 import { attachmentStore } from './attachments';
 import { ATAS } from './env';
@@ -41,18 +41,19 @@ export function threadAnchor(thread: string): string {
 }
 
 /** A person's post in a thread: `@agent` mentions are resolved against the team, and the message is internal (never mirrored by itself). A `@name` that is no agent of the team is said to be unknown. */
-export function personPost(forum: ForumStore, agentIds: readonly string[], thread: unknown, text: unknown) {
+export function personPost(forum: ForumStore, agentIds: readonly string[], thread: unknown, text: unknown, quiet = false) {
   if (typeof thread !== 'string') throw new ForumError('bad-thread', { id: '' });
   if (typeof text !== 'string') throw new ForumError('empty');
   if (text.length > MAX_TEXT) throw new ForumError('too-long', { max: MAX_TEXT });
-  const [message] = forum.append(thread, { kind: 'post', author: { type: 'person' }, text: text.trim(), mentions: parseMentions(text, agentIds), anchor: threadAnchor(thread) });
-  const unknown = unknownMentions(text, agentIds);
+  // `quiet` (the persona's chat): the other agents are not addressed from there, so a `@name` stays plain text, with no mention and no note.
+  const [message] = forum.append(thread, { kind: 'post', author: { type: 'person' }, text: text.trim(), mentions: quiet ? [] : parseMentions(text, agentIds), anchor: threadAnchor(thread) });
+  const unknown = quiet ? [] : unknownMentions(text, agentIds);
   if (unknown.length) forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'main.forum.mentions.unknown', params: { names: unknown.map((n) => `@${n}`).join(', ') } });
   return message;
 }
 
 /** A person's message that carries files: the bytes come first (one call each), then this writes the message and decides its type. */
-export function attachmentPost(forum: ForumStore, agentIds: readonly string[], thread: string, text: string, refs: AttachmentRef[]): ForumMessage {
+export function attachmentPost(forum: ForumStore, agentIds: readonly string[], thread: string, text: string, refs: AttachmentRef[], quiet = false): ForumMessage {
   const storeApi = attachmentStore();
   const limits = getConfig().attachments?.limits ?? ATTACHMENT_LIMITS;
   const body = text.trim();
@@ -65,14 +66,14 @@ export function attachmentPost(forum: ForumStore, agentIds: readonly string[], t
   if (refs.some((r) => r.kind === 'video')) throw new Error(t('main.attachment.gone'));
   // Every ref must hold a file of this conversation, and be the size it says: a ref that points nowhere is refused, nothing is written.
   for (const r of refs) if (!storeApi.holds(thread, r.id, r.bytes)) throw new Error(t('main.attachment.gone'));
-  const draft = { kind: 'post' as const, author: { type: 'person' as const }, text: body, mentions: parseMentions(body, agentIds), attachments: refs, anchor: threadAnchor(thread) };
+  const draft = { kind: 'post' as const, author: { type: 'person' as const }, text: body, mentions: quiet ? [] : parseMentions(body, agentIds), attachments: refs, anchor: threadAnchor(thread) };
   // A message that answers a run's open question is recorded by the runner: the handler hands it the refs and the runner writes the answer message with them, so
   // the answer carries the files (it shows them, and the retention sees a live message referencing them) and nothing is posted twice. When nothing answers, the
   // message is written here as it stands.
   const answered = interceptor ? interceptor(thread, body, refs) : null;
   if (answered) return answered;
   const [message] = forum.append(thread, draft);
-  const unknown = unknownMentions(body, agentIds);
+  const unknown = quiet ? [] : unknownMentions(body, agentIds);
   if (unknown.length) forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'main.forum.mentions.unknown', params: { names: unknown.map((n) => `@${n}`).join(', ') } });
   return message;
 }
@@ -99,9 +100,12 @@ export const forumModule: Module = (ctx) => {
     const config = getConfig();
     ensureSquadChannels(forum, config.squads ?? [], config.language);
     // One direct conversation per agent of the team, made as soon as the forum is listed, like the general thread and the channels. A draft has none here: the
-    // assistant makes it for the test, and it stays out of the list so an agent being tried out is no noise (no unread count) in the forum.
+    // assistant makes it for the test, and it stays out of the list so an agent being tried out is no noise (no unread count) in the forum. The persona's thread is
+    // made here too (the home is its one door) and is hidden the same way.
     for (const a of workingTeam(config.agents.team)) ensureAgentThread(forum, a, config.language);
-    const hidden = new Set(config.agents.team.filter(isDraft).map((a) => agentThreadId(a.id)));
+    const persona = personaOf(config.agents.team);
+    if (persona) ensureAgentThread(forum, persona, config.language);
+    const hidden = new Set(config.agents.team.filter(outOfCycle).map((a) => agentThreadId(a.id)));
     const runs = runStore();
     const all = forum.list().filter((s) => !hidden.has(s.id)).map((s) => (s.kind === 'run' && s.runId ? { ...s, squad: runs.get(s.runId)?.squad ?? null } : s));
     return typeof squad === 'string' && squad ? all.filter((s) => s.squad === squad) : all;
@@ -112,7 +116,8 @@ export const forumModule: Module = (ctx) => {
   });
   ctx.handle('forum:post', (thread: unknown, text: unknown) => {
     const answered = interceptor && typeof thread === 'string' && typeof text === 'string' && text.trim() && text.length <= MAX_TEXT ? interceptor(thread, text, []) : null;
-    return answered ?? personPost(forum, mentionableIds(getConfig().agents.team, typeof thread === 'string' ? thread : undefined), thread, text);
+    const team = getConfig().agents.team;
+    return answered ?? personPost(forum, mentionableIds(team, typeof thread === 'string' ? thread : undefined), thread, text, isPersonaThread(team, thread));
   });
   ctx.handle('forum:create', (title: unknown): ThreadSummary => {
     if (typeof title !== 'string') throw new ForumError('bad-title');
@@ -153,7 +158,8 @@ export const forumModule: Module = (ctx) => {
     const refs = list.map((id) => have.find((r) => r.id === id)).filter((r): r is AttachmentRef => !!r);
     // An id the conversation no longer holds is a file the person took out: the message is not written with it silently missing.
     if (refs.length !== list.length) throw new Error(t('main.attachment.gone'));
-    return attachmentPost(forum, mentionableIds(getConfig().agents.team, thread), thread, text, refs);
+    const team = getConfig().agents.team;
+    return attachmentPost(forum, mentionableIds(team, thread), thread, text, refs, isPersonaThread(team, thread));
   });
   ctx.handle('forum:attachment-drop', (thread: unknown, ids: unknown): void => {
     if (typeof thread !== 'string') return;

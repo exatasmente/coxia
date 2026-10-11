@@ -1,13 +1,24 @@
 import type { PushTarget } from '../../shared/push';
 import type { Screen } from './App';
+import { HOME, OVERVIEW } from './home';
 
-/** The screen a notification target opens; the call needs the cards loaded, so without them it lands on Hoje. */
-export function targetToScreen(t: PushTarget, hasCards: boolean): Screen | null {
+/**
+ * The screen a notification target opens; the call needs the cards loaded, so without them it lands on the home (a pre-daily notice made before the update says `call`).
+ * `noPersona`: the workspace has no persona, so the home would be the wizard that makes one, which is not what a notice about a ceremony is for: it lands on the Overview,
+ * where the pre-daily card is.
+ */
+export function targetToScreen(t: PushTarget, hasCards: boolean, noPersona = false): Screen | null {
   switch (t.to) {
     case 'call':
-      return hasCards ? { name: 'call' } : { name: 'today' };
+      return hasCards ? { name: 'call' } : noPersona ? OVERVIEW : HOME;
+    case 'chat':
+      return noPersona ? OVERVIEW : { name: 'chat' };
+    // `today` is the old name of what the Overview holds, and stays accepted.
+    case 'overview':
+    case 'today':
+      return OVERVIEW;
     case 'deep':
-      return t.ref ? { name: 'deep', ref: t.ref, back: 'today' } : null;
+      return t.ref ? { name: 'deep', ref: t.ref, back: 'chat' } : null;
     case 'gate':
     case 'qa':
     case 'quick':

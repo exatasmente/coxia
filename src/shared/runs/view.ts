@@ -35,6 +35,12 @@ export function needsPerson(run: Pick<Run, 'status' | 'question' | 'command'>): 
 /** Whether the run is still going (not done, not cancelled). */
 export const isActive = (run: Pick<Run, 'status'>): boolean => !isTerminal(run);
 
+/** What a run waits for the person to do, most urgent first: stuck runs before those waiting for a decision. */
+export function waitingRuns<T extends Pick<Run, 'status' | 'question' | 'command' | 'updatedAt'>>(runs: readonly T[]): T[] {
+  const stuck = (r: T) => (r.status === 'failed' || r.status === 'question' ? 0 : 1);
+  return runs.filter((r) => isActive(r) && needsPerson(r)).sort((a, b) => stuck(a) - stuck(b) || b.updatedAt.localeCompare(a.updatedAt));
+}
+
 /** The run a card stands for: the one still going wins over one that ended, and among equals the newest; null when the issue never had one. */
 export function runOfCard<T extends { issue: { ref: string }; status: string; createdAt: string }>(runs: readonly T[], ref: string): T | null {
   const mine = runs.filter((r) => r.issue.ref === ref);

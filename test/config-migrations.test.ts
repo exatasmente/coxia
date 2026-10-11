@@ -995,9 +995,31 @@ describe('migrateConfig', () => {
       expect(twice.config).toEqual(once.config);
     });
 
-    it('is the newest step: 29 is current and 30 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(29);
-      expect(() => migrateConfig({ schemaVersion: 30 }, { legacyInstall: false })).toThrow(/newer app/);
+  });
+
+  describe('schema 29 to 30: the persona kind', () => {
+    const v29 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 29;
+      change(c);
+      return c;
+    };
+
+    it('changes only the version, leaves no note and yields a valid file', () => {
+      const before = v29();
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect(r.fromVersion).toBe(29);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.notes).toEqual([]);
+      expect({ ...r.config, schemaVersion: 29 }).toEqual(before);
+      expect(r.config.agents.team.some((a) => a.kind !== undefined)).toBe(false);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('is the newest step: 30 is current and 31 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(30);
+      expect(() => migrateConfig({ schemaVersion: 31 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

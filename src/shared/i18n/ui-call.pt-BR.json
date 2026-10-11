@@ -15,7 +15,7 @@
   "ui.call.agendaDone": "Pauta concluída",
   "ui.call.agentFailed": "O agente da #{iid} falhou: {error}",
   "ui.call.answered": "Respondida: {question}",
-  "ui.call.backToToday": "Voltar para Hoje",
+  "ui.call.backToToday": "Voltar ao início",
   "ui.call.blocker": "Bloqueio",
   "ui.call.bringIn": "Trazer",
   "ui.call.bringInLabel": "Trazer #{iid} para a pauta",

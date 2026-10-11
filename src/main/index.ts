@@ -128,7 +128,7 @@ function createWindow(): void {
   else void win.loadFile(join(import.meta.dirname, '../renderer/index.html'));
 }
 
-const go = (to: 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro') => () => {
+const go = (to: 'chat' | 'overview' | 'today' | 'call' | 'settings' | 'history' | 'actions' | 'retro') => () => {
   show();
   emit({ type: 'navigate', to });
 };

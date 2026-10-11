@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 29): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 30): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 29;
+export const CONFIG_SCHEMA_VERSION = 30;
 
 /** The local read-only state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
@@ -622,6 +622,10 @@ export interface AgentModel extends ModelPool, Pick<ModelRef, 'images' | 'contex
   model: string;
 }
 
+/** What kind of member of the team an agent is, when it is not an ordinary one: the persona is the person's representative in the app. */
+export const AGENT_KINDS = ['persona'] as const;
+export type AgentKind = (typeof AGENT_KINDS)[number];
+
 /** A member of the agent team: who works which stages of a run, with which model and which permission. */
 export interface AgentDef {
   /** Lowercase letters, digits, "-" and "_"; also the name an @mention uses. */
@@ -672,6 +676,11 @@ export interface AgentDef {
    * and is not called by another agent; saving it in the editor drops the mark. Absent: an agent of the team.
    */
   draft?: boolean;
+  /**
+   * The persona of the workspace, the person's representative in the app (one per workspace, found by this field and never by its id). It takes no part in the cycle:
+   * it works no stage, is not asked, not called by another agent and not in a squad or a template. Absent: an ordinary agent.
+   */
+  kind?: AgentKind;
   /**
    * Gives the agent a virtual screen and the app's browser tools (the person can watch it work). Absent: off. Only the person at the computer turns it on: a paired
    * browser may lower it, never raise it, and a template or an import never carries it.

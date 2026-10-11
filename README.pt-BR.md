@@ -10,7 +10,8 @@ Português (Brasil) | [English](README.md)
 
 | Captura (TODO) | O que mostra |
 |---|---|
-| `docs/images/today.png` | A tela Hoje: cartões das atividades abertas com a etapa de cada uma |
+| `docs/images/chat.png` | O chat com a sua persona, com a faixa de contagens e o cartão da cerimônia |
+| `docs/images/overview.png` | A Visão geral: cartões das atividades abertas com a etapa de cada uma |
 | `docs/images/call.png` | Uma cerimônia em andamento, por voz ou texto, com as fontes do agente |
 | `docs/images/actions.png` | A fila de ações: o comando exato, esperando a sua confirmação |
 | `docs/images/wizard.png` | O assistente de configuração da primeira execução |
@@ -33,6 +34,7 @@ Português (Brasil) | [English](README.md)
 
 ## O que faz
 
+- **Uma persona e um chat que abre o app.** O app abre num chat com a sua *persona*, um representante que você cria em poucos minutos com uma IA que pergunta quem você é, como você decide, o que importa para você e o que você nunca quer que se faça. Ela responde enquanto escreve, mostra o trabalho por trás de cada resposta e oferece botões que abrem uma cerimônia ou uma tela. Nesta versão ela só conversa e lê. Veja [Persona e chat](docs/persona.md).
 - **Pré-daily.** Antes da daily, um agente por atividade aberta confere a issue, os merge ou pull requests, o pipeline, as discussões de revisão e a spec, e diz o que mudou e o que está parado. Você responde por voz ou texto; o app produz a ata.
 - **Desbloqueio e aprofundamento.** Converse sobre um problema com um agente que já leu o código, as specs e as regras do time, e que consulta a hospedagem de código. É somente leitura: explica e propõe, não edita o seu repositório.
 - **Gate (quiz).** Antes de uma atividade avançar, um quiz curto gerado a partir da spec confere se você entende o que vai entregar.

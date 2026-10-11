@@ -89,6 +89,13 @@ export interface RunEvents {
   onThought?: (text: string) => void;
   // What the model said alongside tool calls it is about to make (its narration between steps); never the final answer.
   onInterim?: (text: string) => void;
+  // The three below are the principal's alone, for the text an answer shows as it is written; a sub-agent's events never carry them (what it writes is a tool result).
+  // A piece of the text of the turn being written, in order; the reasoning is not in it.
+  onPiece?: (text: string) => void;
+  // The turn ended. `toolsFollow`: it ended in tool calls, so what was written is narration and not the answer; false: it is the answer, which the run returns.
+  onTurnEnd?: (toolsFollow: boolean) => void;
+  // What was written is not the answer: the call moved to another model, or the attempt failed and goes again.
+  onRestart?: () => void;
   // The call moved to another model of the role's pool (it was busy, or the turn is for an activity the first one does not serve).
   onSwitch?: (e: PoolSwitch) => void;
   // A call waits in the server's queue (the flex tier): a sign of life every so often, though the model says nothing.
@@ -404,6 +411,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       onWait: () => events.onWait?.(),
       onSwitch: (e) => {
         if (persistent) appendLines(p.sessionsDir as string, sessionId, [{ t: 'switch', at: now().toISOString(), from: e.from.label, to: e.to.label, reason: e.reason, until: e.until, activity: e.activity }]);
+        // A model that fails after it began to write is tried again on the next one from the start: the first one's pieces are not the answer.
+        events.onRestart?.();
         events.onSwitch?.(e);
       },
     });
@@ -488,7 +497,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         ...(own ? { client: own.client, capabilities: own.capabilities, params: own.params, pool: own.pool, poolClient: undefined } : { poolClient: pool }),
         startActivity: 'explore',
         // The sub-agent's own steps go to its node; a model-switch notice, usage and the sign of life stay with the parent. Without a node its thoughts are not the parent's.
-        events: { ...events, onThought: undefined, ...handle?.events, ...(kind ? { onUsage: (u) => { model = u.model; events.onUsage?.(u); } } : {}) },
+        events: { ...events, onThought: undefined, onPiece: undefined, onTurnEnd: undefined, onRestart: undefined, ...handle?.events, ...(kind ? { onUsage: (u) => { model = u.model; events.onUsage?.(u); } } : {}) },
         ...(kind ? { kind, incoming: undefined } : {}),
       });
     };
@@ -604,7 +613,7 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
     let compacted = false;
     for (;;) {
       try {
-        const { completion: c, member } = await pool.complete({ messages, tools: o.tools?.length ? o.tools : undefined, toolChoice: o.toolChoice, responseFormat: o.responseFormat, signal: p.signal, onText: events.onText, onReasoning: events.onReasoning }, need(), p.kind);
+        const { completion: c, member } = await pool.complete({ messages, tools: o.tools?.length ? o.tools : undefined, toolChoice: o.toolChoice, responseFormat: o.responseFormat, signal: p.signal, onText: events.onPiece ? (text) => (events.onText?.(text), events.onPiece?.(text)) : events.onText, onReasoning: events.onReasoning }, need(), p.kind);
         const u: UsageRecord = c.usage
           ? {
               promptTokens: c.usage.promptTokens,
@@ -633,6 +642,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         if (c.reasoning?.trim()) events.onThought?.(c.reasoning);
         return c;
       } catch (e) {
+        // Whatever the failed attempt had written is not the answer, whether the call goes again or ends.
+        events.onRestart?.();
         if (e instanceof EngineError && e.kind === 'context' && !compacted && compact(messages, 1, 600)) {
           compacted = true;
           continue;
@@ -783,6 +794,8 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
         activity = 'write';
         continue;
       }
+      // The text of a turn that ends in tool calls is narration: it moves to the activity and leaves what is being written.
+      events.onTurnEnd?.(true);
       if (c.text.trim()) {
         events.onInterim?.(c.text);
         narration = c.text.trim();
@@ -806,9 +819,14 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       noteSteps = 0;
     }
     if (!p.schema) {
-      // A call without a schema has no shape to collect: the text is the answer, but the door is asked first, since the step just ended and a message that arrived
-      // meanwhile is still due.
-      if ((await throughDoor()).took === 'message') continue;
+      // A call without a schema has no shape to collect: the text is the answer, but the mailbox is asked first, since the step just ended and a message that arrived
+      // meanwhile is still due (`throughDoor` is for a schema's closing call and says nothing for a call without one).
+      if (await deliver()) {
+        // The text just written was not the answer: the model goes on from the message, so what the bubble holds is cleared.
+        events.onRestart?.();
+        continue;
+      }
+      events.onTurnEnd?.(false);
       return done(c.text, turns);
     }
 

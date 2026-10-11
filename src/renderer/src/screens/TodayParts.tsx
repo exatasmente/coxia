@@ -19,7 +19,7 @@ import { WorktreeBadge } from './radarSlots';
 export function needTargetToScreen(t: NeedTarget): Screen {
   switch (t.to) {
     case 'deep':
-      return { name: 'deep', ref: t.ref, back: 'today' };
+      return { name: 'deep', ref: t.ref, back: 'chat' };
     case 'gate':
       return { name: 'gate', ref: t.ref, card: t.card };
     case 'conflict':
@@ -29,23 +29,29 @@ export function needTargetToScreen(t: NeedTarget): Screen {
   }
 }
 
-export function AgoraCard({ plan, onAction }: { plan: AgoraPlan; onAction: (a: AgoraPlan['primary']['action']) => void }) {
+/** `bare`: the card without its own label, progress and title, for where something above it already carries them (the chip of the chat on a phone). */
+export function AgoraCard({ plan, onAction, bare = false }: { plan: AgoraPlan; onAction: (a: AgoraPlan['primary']['action']) => void; bare?: boolean }) {
   const t = useT();
   return (
-    <section className="dash-agora" aria-labelledby="agora-h">
-      <div className="row spread" style={{ gap: 8 }}>
-        <h2 id="agora-h" className="dash-agora-label">{t('ui.today.now')}</h2>
-        {plan.progress && (
-          <span className="small agora-progress" aria-live="polite">
-            {plan.phase === 'loading' && <span className="spinner" aria-hidden="true" />}
-            {plan.progress}
-          </span>
-        )}
-      </div>
-      <div>
-        <p className="agora-title">{plan.title}</p>
-        {plan.hint && <p className="small agora-hint">{plan.hint}</p>}
-      </div>
+    <section className="dash-agora" aria-labelledby={bare ? undefined : 'agora-h'} aria-label={bare ? plan.title : undefined}>
+      {!bare && (
+        <>
+          <div className="row spread" style={{ gap: 8 }}>
+            <h2 id="agora-h" className="dash-agora-label">{t('ui.today.now')}</h2>
+            {plan.progress && (
+              <span className="small agora-progress" aria-live="polite">
+                {plan.phase === 'loading' && <span className="spinner" aria-hidden="true" />}
+                {plan.progress}
+              </span>
+            )}
+          </div>
+          <div>
+            <p className="agora-title">{plan.title}</p>
+            {plan.hint && <p className="small agora-hint">{plan.hint}</p>}
+          </div>
+        </>
+      )}
+      {bare && plan.hint && <p className="small agora-hint">{plan.hint}</p>}
       <div className="agora-actions">
         <button type="button" className="btn btn-accent agora-primary" disabled={plan.primary.disabled} onClick={() => onAction(plan.primary.action)}>
           {plan.primary.label}
@@ -223,7 +229,7 @@ export function ActivityRow({ card, c, go, open, onToggle }: { card: Card; c: Ce
             {card.spec && on?.gate !== false && <button type="button" className="btn" onClick={() => go({ name: 'gate', ref: card.ref, card })}>{t('ui.today.row.gate')}</button>}
             {card.spec && on?.qaHandoff !== false && <button type="button" className="btn" onClick={() => go({ name: 'qa', ref: card.ref, card })} /* i18n-ignore */>QA</button>}
             <ResolveConflict card={card} go={go} place="act" />
-            <button type="button" className="btn btn-dark" onClick={() => go({ name: 'deep', ref: card.ref, back: 'today' })}>{t('ui.today.deepen')}</button>
+            <button type="button" className="btn btn-dark" onClick={() => go({ name: 'deep', ref: card.ref, back: 'chat' })}>{t('ui.today.deepen')}</button>
           </div>
         </div>
       )}

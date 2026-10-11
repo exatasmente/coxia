@@ -30,6 +30,8 @@ const APP_PROMPTS: [string, string][] = [
   ['reply.main', 'turn'],
   ['assist.round', 'assist'],
   ['assist.review', 'assist'],
+  ['persona.round', 'assist'],
+  ['persona.review', 'assist'],
 ];
 
 export function appPromptKind(firstPrompt: string | null | undefined): string | null {

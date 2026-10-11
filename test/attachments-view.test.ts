@@ -8,35 +8,43 @@ import { formatBytes, kindLabelKey } from '../src/shared/attachments';
 
 const root = join(__dirname, '..');
 const thread = readFileSync(join(root, 'src/renderer/src/screens/cycle/Thread.tsx'), 'utf8');
+// The box a person writes in lives in its own file, shared by the run thread, the conversations and the persona's chat.
+const composer = readFileSync(join(root, 'src/renderer/src/screens/cycle/Composer.tsx'), 'utf8');
 const view = readFileSync(join(root, 'src/renderer/src/screens/cycle/Attachments.tsx'), 'utf8');
 const catalogs = ['en', 'pt-BR'].map((l) => readFileSync(join(root, `src/shared/i18n/ui-cycle.${l}.json`), 'utf8'));
 
 describe('the box a person writes in', () => {
   it('takes files by a button, by drag and drop and by paste', () => {
-    expect(thread).toContain('ui.forum.file.attach');
-    expect(thread).toContain('onDrop');
-    expect(thread).toContain('onDragOver');
-    expect(thread).toContain('onPaste');
-    expect(thread).toContain('type="file"');
+    expect(composer).toContain('ui.forum.file.attach');
+    expect(composer).toContain('onDrop');
+    expect(composer).toContain('onDragOver');
+    expect(composer).toContain('onPaste');
+    expect(composer).toContain('type="file"');
   });
 
   it('shows each file with its name and size before sending, and lets it be removed', () => {
-    expect(thread).toContain('PendingFiles');
-    expect(thread).toContain('formatBytes');
-    expect(thread).toContain('ui.forum.file.remove');
-    expect(thread).toContain('ui.forum.file.pending');
+    expect(composer).toContain('PendingFiles');
+    expect(composer).toContain('formatBytes');
+    expect(composer).toContain('ui.forum.file.remove');
+    expect(composer).toContain('ui.forum.file.pending');
   });
 
   it('sends the bytes first, then the message, and keeps nothing of a file it removed', () => {
     // the files wait in the box and are uploaded only when the message is sent: a file taken out was never stored
-    expect(thread).toContain('forumApi.attachmentPut');
-    expect(thread).toContain('forumApi.attachmentPost');
-    expect(thread).toContain('forumApi.post');
-    expect(thread).toContain('removeFile');
+    expect(composer).toContain('forumApi.attachmentPut');
+    expect(composer).toContain('forumApi.attachmentPost');
+    expect(composer).toContain('forumApi.post');
+    expect(composer).toContain('removeFile');
   });
 
   it('warns once that what an agent reads leaves the computer', () => {
-    expect(thread).toContain('main.attachment.notice');
+    expect(composer).toContain('main.attachment.notice');
+  });
+
+  it('is the one box of the thread, and of the persona\'s chat', () => {
+    expect(thread).toContain("from './Composer'");
+    expect(thread).not.toContain('forumApi.attachmentPut');
+    expect(readFileSync(join(root, 'src/renderer/src/screens/persona/ChatThread.tsx'), 'utf8')).toContain("from '../cycle/Composer'");
   });
 });
 

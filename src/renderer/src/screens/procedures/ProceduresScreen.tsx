@@ -14,6 +14,7 @@ import { KIND_LABEL, STATE_LABEL, STATE_TONE } from './labels';
 import { proceduresApi } from './proceduresApi';
 import '../cycle/cycle.css';
 import './procedures.css';
+import { HOME } from '../../home';
 
 // The Procedures view: every record the agents of the workspace kept, filtered by kind, key, writer and state, each opening into its steps, who wrote it and what it saved. It
 // reads whatever the workspace switch says. Where the person is on the computer it also changes them (RecordPanel); in a paired browser it only reads.
@@ -131,7 +132,7 @@ export function ProceduresScreen({ go }: { go: (s: Screen) => void }) {
       <div className="wrap cy-wrap">
         <header className="row spread cy-top">
           <div className="row cy-top-main">
-            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 className="cy-title">{t('ui.procedures.title')}</h1>
           </div>
           {list && <span className="faint">{t('ui.procedures.shown', { shown: shown.length, total: list.items.length })}</span>}

@@ -1,0 +1,93 @@
+/* The persona's chat: the conversation as bubbles, the answer being written, the Work section above an answer and the buttons under it. Tokens only. */
+.chat { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; flex: 1 1 auto; }
+.chat-log { list-style: none; margin: 0; padding: 0 4px 0 0; display: flex; flex-direction: column; gap: 12px; min-width: 0; flex: 1 1 auto; overflow-y: auto; min-height: 160px; overscroll-behavior: contain; }
+.chat-log:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.chat-compact .chat-log { max-height: 46vh; min-height: 120px; }
+.chat-empty { margin: auto; text-align: center; max-width: 46ch; padding: 24px 12px; }
+
+.chat-row { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 100%; }
+.chat-row-person { align-items: flex-end; }
+.chat-row-answer, .chat-row-agent { align-items: flex-start; }
+.chat-row-system { align-items: center; }
+
+.chat-bubble { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: min(78ch, 92%); padding: 10px 14px; border-radius: 16px; border: 1px solid var(--line-3); background: var(--surface-2); color: var(--ink); overflow-wrap: anywhere; }
+.chat-bubble-person { background: var(--blue-soft); border-color: var(--blue-line); color: var(--blue-ink); border-bottom-right-radius: 4px; }
+.chat-bubble-answer, .chat-bubble-agent { border-bottom-left-radius: 4px; }
+.chat-bubble-live { border-color: var(--teal); background: var(--teal-soft); color: var(--teal-ink); }
+.chat-bubble-live .faint { color: var(--teal-ink); opacity: 0.8; }
+.chat-bubble-person .faint, .chat-bubble-person .chat-time { color: var(--blue-ink); opacity: 0.8; }
+.chat-who { font-size: 13px; font-weight: 600; }
+.chat-text { font-size: 15px; line-height: 1.5; }
+.chat-text .rich { gap: 6px; }
+.chat-time { font-size: 12px; color: var(--faint); align-self: flex-end; }
+.chat-waits { font-size: 12px; font-weight: 600; color: var(--amber-ink); }
+.chat-system { font-size: 13px; color: var(--muted); text-align: center; overflow-wrap: anywhere; max-width: 92%; }
+
+/* the answer being written: a caret at its end while it grows */
+.chat-caret { display: inline-block; width: 7px; height: 1.05em; margin-left: 2px; vertical-align: text-bottom; background: currentColor; opacity: 0.7; animation: chat-blink 1s steps(2, start) infinite; }
+@keyframes chat-blink { to { visibility: hidden; } }
+.chat-pending { display: inline-flex; align-items: center; gap: 8px; color: var(--muted); font-size: 14px; }
+.chat-actions { display: inline-flex; flex-wrap: wrap; gap: 6px; align-self: flex-end; }
+
+/* the work of the call, above its answer */
+.chat-work { width: min(78ch, 92%); min-width: 0; border: 1px solid var(--line-3); border-radius: 12px; background: var(--surface); color: var(--ink); }
+.chat-work-head { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; text-align: left; cursor: pointer; border-radius: 12px; }
+.chat-work-head:hover { background: var(--surface-2); }
+.chat-work-head:focus-visible { outline: 2px solid var(--link); outline-offset: -2px; }
+.chat-work-sum { color: var(--muted); font-weight: 400; }
+.chat-work-body { border-top: 1px solid var(--line-3); max-height: 40vh; overflow-y: auto; padding: 4px 0; }
+
+/* the buttons an answer offers */
+.chat-buttons { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.chat-button { max-width: 100%; white-space: normal; text-align: center; line-height: 1.25; padding-top: 8px; padding-bottom: 8px; }
+
+@media (max-width: 600px) {
+  .chat-bubble, .chat-work { max-width: 100%; width: auto; }
+  .chat-work { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { .chat-caret { animation: none; } }
+
+/* the chat as the home: the whole window, the conversation taking what the header, the strip, the card and the box leave */
+.chat-page { height: 100%; min-height: 0; max-width: 1100px; margin: 0 auto; padding: 16px 24px 12px; display: flex; flex-direction: column; gap: 12px; }
+.chat-head { display: flex; flex-direction: column; gap: 10px; }
+.chat-name { font-size: 22px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.chat-menu { justify-content: flex-start; padding-bottom: 2px; }
+.chat-none { max-width: 640px; }
+
+/* the four counts, a button each; a zero stays and is quiet */
+.chat-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.strip-item { min-height: 44px; display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.strip-item:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.strip-n { font-size: 20px; font-weight: 700; line-height: 1.1; }
+.strip-l { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.strip-warn { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-ink); }
+.strip-warn .strip-l { color: var(--amber-ink); }
+.strip-info { background: var(--blue-soft); border-color: var(--blue-line); color: var(--blue-ink); }
+.strip-info .strip-l { color: var(--blue-ink); }
+
+/* the ceremony card pinned above the box: the Agora card, smaller. It has a surface and an edge of its own so that it never melts into a dark page. */
+.chat-card .dash-agora { padding: 12px 14px; gap: 8px; border-radius: 14px; background: var(--night-2); border-color: var(--night-line); }
+.chat-card-chip { width: 100%; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 12px; border: 1px solid var(--night-line); background: var(--night-2); color: var(--on-night); font: inherit; font-size: 14px; text-align: left; cursor: pointer; min-width: 0; }
+.chat-card-chip:focus-visible { outline: 2px solid var(--night-teal-2); outline-offset: 2px; }
+.chat-card-chip-label { flex: none; font-size: 12px; font-weight: 600; color: var(--night-teal); text-transform: uppercase; letter-spacing: 0.06em; }
+.chat-card-chip-title { flex: 1 1 auto; min-width: 0; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-card-chip-progress { flex: none; color: var(--on-night-muted); }
+.chat-card-chip + div .dash-agora { margin-top: 6px; }
+.chat-card .agora-title { font-size: 17px; }
+.chat-card .agora-primary { min-height: 44px; font-size: 15px; }
+
+@media (max-width: 600px) {
+  .chat-page { padding: 10px 12px 8px; gap: 8px; }
+  /* the four counts stay one row of four small cells: the conversation needs the height */
+  .chat-strip { gap: 6px; }
+  .strip-item { flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 5px 2px; text-align: center; border-radius: 10px; }
+  .strip-n { font-size: 20px; }
+  /* one line each, at a size that reads: the longest label ("Perguntas", "Bloqueios") fits a quarter of 360 px */
+  .strip-l { font-size: 12px; line-height: 1.2; white-space: nowrap; text-align: center; max-width: 100%; }
+}
+
+/* the wizard as the home: "Not now" is a quiet link at the end of the title row, not a button of its own */
+.wz-screen-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.wz-skip { flex: none; min-height: 44px; padding: 0 4px; display: inline-flex; align-items: center; font-size: 15px; }
+.wz-skip:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.wz-skip:disabled { color: var(--muted); cursor: default; text-decoration: none; }

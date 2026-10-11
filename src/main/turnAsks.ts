@@ -16,11 +16,11 @@ let notify: ((n: Notice) => void) | null = null;
 
 const event = (list: PendingTurnAsk[]): AppEvent => ({ type: 'module', name: TURN_ASKS_EVENT, payload: list });
 
-/** Where a notification opens: the run, else the conversation, else today. */
+/** Where a notification opens: the run, else the conversation, else the Overview. */
 function openOf(a: PendingTurnAsk): AppEvent {
   if (a.run) return { type: 'open', screen: { name: 'run', id: a.run } };
   if (a.thread) return { type: 'open', screen: { name: 'forum', thread: a.thread } };
-  return { type: 'navigate', to: 'today' };
+  return { type: 'navigate', to: 'overview' };
 }
 
 export const turnAsks = createTurnAsks({

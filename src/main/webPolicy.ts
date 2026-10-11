@@ -100,13 +100,21 @@ const MEMORY_UNLISTED = /^memory:(?!(list|read|save|review|remove|remove-folder)
 export const TURN_ASK_CHANNELS = new Set(['turnAsks:list', 'turnAsks:answer']);
 const TURN_ASKS_UNLISTED = /^turnAsks:(?!(list|answer)$)/;
 
+// The persona's chat (#247): a paired browser does everything the window does with it, on purpose (the maintainer's decision at gate 1). The text of an answer being written is
+// read through `persona:live-read`, a read like the others; the wizard that makes the persona and the editor's writes are `persona:round` to `persona:delete` (the entry is built in the
+// main process from the texts alone, and the origin of every change is audited); the conversation itself goes through `forum:*` and the Stop through `runs:callStop`, which are open. The channels of
+// the persona's own are named so a later change of the default cannot close or open them by accident, and a pattern built from the same set denies any other `persona:` channel
+// until somebody classifies it, so the tools of the later issues of the epic start closed. test/persona-policy.test.ts pins both.
+export const PERSONA_CHANNELS = new Set(['persona:live-read', 'persona:round', 'persona:review', 'persona:saveDraft', 'persona:conclude', 'persona:discard', 'persona:finish', 'persona:save', 'persona:clear', 'persona:delete']);
+const PERSONA_UNLISTED = new RegExp(`^persona:(?!(${[...PERSONA_CHANNELS].map((c) => c.slice('persona:'.length)).join('|')})$)`);
+
 // The local state server's doors: the opt-in writes the workspace config, the write offer writes a project folder's .mcp.json (a path of this
 // machine), and the view answers machine-local paths. Desktop-only in full; a paired browser never sees the panel.
 const MCP_STATE_ADMIN = /^mcpstate:/;
 
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MEMORY_UNLISTED.test(channel) || TURN_ASKS_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel)) return 'deny';
-  if (MEMORY_CHANNELS.has(channel) || TURN_ASK_CHANNELS.has(channel)) return 'allow';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MEMORY_UNLISTED.test(channel) || TURN_ASKS_UNLISTED.test(channel) || PERSONA_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel)) return 'deny';
+  if (MEMORY_CHANNELS.has(channel) || TURN_ASK_CHANNELS.has(channel) || PERSONA_CHANNELS.has(channel)) return 'allow';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

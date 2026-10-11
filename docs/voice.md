@@ -5,7 +5,7 @@
 ## What "off" means
 
 - No sidecar process is started (`startVoice()` returns before anything happens), none is spawned by a request, and none is created behind your back: with the dependencies missing, turning voice on only works after `voice:install`.
-- No microphone UI: the mic buttons, the space shortcut, the barge-in monitor and the recorder are gone; no replay buttons; the "Voz ligada/desligada" speaker switch in Hoje is hidden (it is a sub-option of voice).
+- No microphone UI: the mic buttons, the space shortcut, the barge-in monitor and the recorder are gone; no replay buttons; the "Voz ligada/desligada" speaker switch in the header of the chat is hidden (it is a sub-option of voice).
 - No synthesis: `voice:plan` returns nothing, the player returns at once (no reading-time wait), `voice:segment` and `voice:transcribe` refuse.
 - Every screen works by text through the composers that were always there.
 - The health panel reports the voice as "off" (not as a failure).

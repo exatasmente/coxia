@@ -12,6 +12,7 @@ import { BackIcon, MicIcon } from './icons';
 import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 import { intlLocale, useT, useTv, useVoiceEnabled } from '../i18n';
+import { HOME } from '../home';
 
 const CLASS_LABEL: Record<ReentryClass, string> = {
   'defeito-novo': 'ui.reentry.class.newDefect',
@@ -102,14 +103,14 @@ export function Reentry({ card, ceremony: c, player, go }: { card: Card | undefi
   const talk = useTalk(player, ask, setError);
 
   if (!card) {
-    return <div className="page"><div className="wrap"><div className="error">{t('ui.reentry.notFound')}</div><div><button type="button" className="btn" onClick={() => go({ name: 'today' })}>{t('ui.reentry.back')}</button></div></div></div>;
+    return <div className="page"><div className="wrap"><div className="error">{t('ui.reentry.notFound')}</div><div><button type="button" className="btn" onClick={() => go(HOME)}>{t('ui.reentry.back')}</button></div></div></div>;
   }
 
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
         <header className="panel-dark hero" style={HEADER_STYLE}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.reentry.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.reentry.back')} onClick={() => go(HOME)}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
             <div className="small" style={{ color: 'var(--night-amber)', fontWeight: 600 }}>{t('ui.reentry.title', { iid: card.iid })}{card.stage ? ` · ${card.stage}` : ''}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>

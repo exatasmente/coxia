@@ -14,6 +14,7 @@ import { BackIcon, MicIcon } from './icons';
 import { Presence } from './Avatar';
 import { useT, useTv, useVoiceEnabled } from '../i18n';
 import { type Translate, voiceEnabled } from '../../../shared/i18n';
+import { HOME } from '../home';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -157,7 +158,7 @@ export function Gate({
     return (
       <div className="page"><div className="wrap">
         <div className="error">{t('ui.gate.notFound')}</div>
-        <div><button type="button" className="btn" onClick={() => go({ name: 'today' })}>{t('ui.gate.back')}</button></div>
+        <div><button type="button" className="btn" onClick={() => go(HOME)}>{t('ui.gate.back')}</button></div>
       </div></div>
     );
   }
@@ -168,7 +169,7 @@ export function Gate({
     <div className="page">
       <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
         <header className="panel-dark hero" style={HEADER_STYLE}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.gate.back')} onClick={() => go({ name: 'today' })}>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.gate.back')} onClick={() => go(HOME)}>
             <BackIcon />
           </button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>

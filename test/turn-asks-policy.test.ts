@@ -94,11 +94,11 @@ describe('the channels', () => {
     expect(events.filter((e) => e.name === TURN_ASKS_EVENT).at(-1)?.payload).toEqual([]);
   });
 
-  it('opens the conversation for a question outside a run, and today when there is no thread', async () => {
+  it('opens the conversation for a question outside a run, and the Overview when there is no thread', async () => {
     const a = turnAsks.ask(record({ run: null, thread: 'general' }));
     expect(notices.at(-1)).toMatchObject({ onClick: { type: 'open', screen: { name: 'forum', thread: 'general' } } });
     const b = turnAsks.ask(record({ run: null, thread: '' }));
-    expect(notices.at(-1)).toMatchObject({ onClick: { type: 'navigate', to: 'today' } });
+    expect(notices.at(-1)).toMatchObject({ onClick: { type: 'navigate', to: 'overview' } });
     for (const q of turnAsks.list()) await window('turnAsks:answer', q.id, 'finish');
     await Promise.all([a, b]);
   });

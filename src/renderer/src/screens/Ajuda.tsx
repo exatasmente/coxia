@@ -5,6 +5,7 @@ import { useCycle } from '../cycleApi';
 import { tNodes, tvNodes, useT, useTv, useVoiceEnabled } from '../i18n';
 import { isWeb } from '../platform';
 import { BackIcon } from './icons';
+import { HOME } from '../home';
 
 // F1 opens the help from any screen and closes it when it is already open.
 export function useHelpShortcut(current: Screen['name'], go: (s: Screen) => void) {
@@ -12,7 +13,7 @@ export function useHelpShortcut(current: Screen['name'], go: (s: Screen) => void
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'F1' || e.repeat) return;
       e.preventDefault();
-      go({ name: current === 'help' ? 'today' : 'help' });
+      go(current === 'help' ? HOME : { name: 'help' });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -57,7 +58,7 @@ export function Ajuda({ go }: { go: (s: Screen) => void }) {
       <div className="wrap" style={{ maxWidth: 980, gap: 20 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label={t('ui.help.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.help.back')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.help.title')}</h1>
           </div>
           <span className="small muted">{tNodes('ui.help.f1', { key: <Key>{'F1'}</Key> })}</span>
