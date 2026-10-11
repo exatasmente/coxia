@@ -20,6 +20,7 @@
 - PR com base na release aberta (0.10.0), nunca na main.
 - Todo canal IPC novo precisa de lugar em `doorTable.ts`, senão `persona-door-table` falha.
 - `public-audit` acusa 2 achados só se `out/` existir; apagar `out/` depois do build.
+- Git não funciona na sandbox da integração/QA: base, esquema e PRs abertos não dá para conferir ali.
 
 ## Tentado e descartado
 
@@ -33,8 +34,9 @@
 
 ## Onde o trabalho está
 
-- QA (tentativa 2), rodado depois da mesclagem: `electron-vite build`, tsc, i18n:lint, theme-audit, public-audit (sem out/) e 7 arquivos de teste tocados (124) passam (ev-13, ev-14, ev-15). `out/` apagado.
-- Não verificado: vitest completo (relato do dev: só 4 arquivos de navegador falham, `@playwright/mcp` ausente, e oscilação de `conflict-from-mr`); a tela no app (chat, Fórum, execução, linha no thread, voltar); celular pareado; host sem conflito depois do push.
+- Integração (tentativa 2), nesta etapa: theme, i18n (6150 chaves), public-audit (sem out/), electron-vite build passam; typecheck passou (rodado pelo app); `conflict-resolve` e `conflict-from-mr` rodados sozinhos passam (35). `out/` apagado. `CONFIG_SCHEMA_VERSION` = 31 (da release). CHANGELOG com a linha em Unreleased › Added (ev-16).
+- O `npm test` do app falhou (13 testes, 5 arquivos): `conflict-resolve` oscila sob carga; o resto (navegador, `@playwright/mcp` ausente) não verificado individualmente.
+- Não verificado: base atrás da release, esquema contra a release e PRs abertos, base do PR; a tela no app; celular pareado.
 - Sugestão menor não tratada: `discussionsOpened` grava uma linha por toque.
 - Próximo: abrir o PR com base `release/0.10.0` e conferir que o host não acusa conflito.
 - Passagem support → product-owner: O gate 1 decide se a spec (`1_SPEC.md`) segue. A próxima etapa (plano técnico) precisa tratar os três pontos que a triagem achou e a issue não cobre: construir o rigor de projeto no caminho da tela (`listDiscussions`/`explainDiscussion` hoje vão ao provedor direto), fazer a explicação de cada thread funcionar sem o card inteiro no prompt, e levar projeto + número da MR num destino que hoje só tem `ref`/`id`/`mr` — o que toca `src/shared/push.ts`, `src/renderer/src/pushTarget.ts` e o `openScreen` da persona. Nada aqui foi executado; nenhuma tela foi aberta. <!-- handoff:139 -->
@@ -49,3 +51,4 @@
 - Passagem pessoa → dev-experiencia: a branch está com conflitos com a base, devem ser resolvidos antes do merge Contexto para o pedido acima, não trabalho novo: o que a revisão e a QA deixaram em aberto. Pontos em aberto da revisão (rodada 2), os que bloqueiam e as sugestões. Trate cada um, ou diga por que não vai tratar: [sugestão] src/main/feedback.ts:441-445: Cada toque no mesmo botão grava uma nova linha de sistema; toques repetidos poluem o thread. Não bloqueia. O que o QA não aprovou ou não conseguiu verificar: - Esquema, base atrás da release e base do PR (não rodou): Sandbox sem .git (git falha); vcs_read não lista branc… <!-- handoff:354 -->
 - Passagem dev-experiencia → revisor-experiencia: The branch now contains `release/0.10.0` (`8389197`). The merge is staged without a commit and has no conflicted file. To check: - the resolution of the 4 files (CHANGELOG, `answer.ts`, `ChatScreen.tsx`, `ChatThread.tsx`); - the exclusion of the two `feedback:discussions:*` channels in `doorTable.ts`, with the counts updated in `persona-door-table`. Before the PR (base `release/0.10.0`), run `electron-vite build`, which did not run after the merge. Also confirm the host no longer reports conflicts once the push is done. <!-- handoff:382 -->
 - Passagem revisor-experiencia → qa-experiencia: Revisão aprovada. Antes do PR (base release/0.10.0), rodar electron-vite build, que não rodou depois da mesclagem, e confirmar que o host não acusa mais conflito. A tela não foi exercitada no app. <!-- handoff:388 -->
+- Passagem qa-experiencia → integrator: QA: depois da mesclagem com a release, build, tsc, i18n, theme, public-audit (sem out/) e os 7 testes tocados (124) passam. A tela não foi exercitada no app; Q3, Q5, Q6, Q7 seguem para a pessoa. Abra o PR com base release/0.10.0 e confirme que o host não acusa mais conflito. <!-- handoff:405 -->
