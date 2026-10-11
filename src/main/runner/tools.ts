@@ -5,6 +5,7 @@ import { loadClaudeSdkModule } from '../claudeSdk';
 import type { ToolContext, ToolImpl } from '../engine/open/tools/types';
 import { ToolError } from '../engine/open/tools/types';
 import type { Json } from '../engine/open/types';
+import { looseShape } from '../sdkShape';
 
 // The tools a stage that talks while it works offers the model: `SendMessage` (post to the run's conversation without ending the stage), `CallAgent` (open a
 // conversation with another agent of the team) and `AskConversation` (the tool of the called agent, which answers the other side of a conversation). They are built
@@ -172,12 +173,8 @@ export async function runnerMcpServer(tools: ToolImpl[]): Promise<Record<string,
         tool.name,
         tool.description,
         // The declared parameters are the JSON Schema the open engine uses; the SDK wants the shape, so the model sends the same fields. Each field carries its description
-        // (the model reads it), and stays loose: the app checks an input and answers in its own words, instead of the SDK's schema error.
-        (tool.parameters as { properties?: Record<string, unknown> }).properties
-          ? Object.fromEntries(
-              Object.entries((tool.parameters as { properties: Record<string, { description?: string }> }).properties).map(([k, p]) => [k, p?.description ? z.unknown().describe(p.description) : z.unknown()]),
-            )
-          : { text: z.unknown() },
+        // (the model reads it), stays loose (the app checks an input and answers in its own words, instead of the SDK's schema error) and optional unless it is required.
+        (tool.parameters as { properties?: Record<string, unknown> }).properties ? looseShape(z, tool.parameters) : { text: z.unknown() },
         async (args: Record<string, unknown>) => {
           try {
             const r = await tool.run(args as Json, STUB_CTX);
