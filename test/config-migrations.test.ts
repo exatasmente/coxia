@@ -929,9 +929,45 @@ describe('migrateConfig', () => {
       expect(twice.config).toEqual(once.config);
     });
 
-    it('is the newest step: 28 is current and 29 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(28);
-      expect(() => migrateConfig({ schemaVersion: 29 }, { legacyInstall: false })).toThrow(/newer app/);
+  });
+
+  describe('v28 -> v29: the budget fallback on the signed-in Claude Code CLI', () => {
+    const v28 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 28;
+      delete c.llm.cliFallback;
+      change(c);
+      return c;
+    };
+
+    it('adds the fallback off with no agent, bumps the version, leaves a note and yields a valid file', () => {
+      const r = migrateConfig(v28(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(28);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.llm.cliFallback).toEqual({ enabled: false, agents: [] });
+      expect(r.notes.join(' ')).toContain('the budget fallback on the signed-in Claude Code CLI was added (off; no agent listed)');
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps a fallback the file already has, touches nothing else and a second start changes nothing', () => {
+      const before = v28((c) => (c.llm.cliFallback = { enabled: true, agents: ['deep'] }));
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect(r.config.llm.cliFallback).toEqual({ enabled: true, agents: ['deep'] });
+      expect({ ...r.config, schemaVersion: 28 }).toEqual(before);
+      const twice = migrateConfig(structuredClone(r.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(r.config);
+    });
+
+    it('only bumps a document whose llm is not an object', () => {
+      const r = migrateConfig(v28((c) => (c.llm = 'broken')), { legacyInstall: false });
+      expect(r.fromVersion).toBe(28);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+    });
+
+    it('is the newest step: 29 is current and 30 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(29);
+      expect(() => migrateConfig({ schemaVersion: 30 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

@@ -25,6 +25,8 @@ import { engineFor, registerEngine, runnerFor } from './engine/registry';
 import { scrubShellHooks } from './engine/scrubShell';
 import { type DocSources, type OpenEngineSelection, type PoolMemberSpec, type SelectionPool, type SubAgentHandle, type SubAgentStart, defaultDocSources, openEngineFromEnv, runOpenOnce } from './engine/open';
 import { memberKey, withPool, withoutPool } from './modelPick';
+import { resetMs, withBudgetFallback } from './cliFallback';
+import { isSignedIn } from '../shared/config/signedIn';
 import { ACTIVITIES, type Activity } from '../shared/config/types';
 import { canEffort, canFailFast, canFlex, effortFor } from '../shared/config/offer';
 import { cardSnapshot, recordReuse, rememberTurn, reusableTurn } from './falas';
@@ -864,12 +866,22 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     if (held) held.owner?.thought(held.text.join('\n\n'));
     held = null;
   };
+  // A call the CLI authenticated with its own login is a subscription's use: its tokens count, the SDK's list price never becomes a cost. The fallback has no
+  // API key by construction; a keyless anthropic provider is told apart by where the CLI says its key came from.
+  let subscription = req.target.loginOnly === true;
+  // The CLI's usage limit, from the SDK's structured event and never from the text: refused, with when it resets (null: it did not say).
+  let limit: { until: number | null; kind: string } | null = null;
   try {
     for await (const m of q) {
       req.beat?.();
       if (m.type !== 'assistant') flushThought();
       if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt, req.resume !== undefined);
-      if (m.type === 'system' && m.subtype === 'init') sessionId = m.session_id;
+      if (m.type === 'system' && m.subtype === 'init') {
+        sessionId = m.session_id;
+        const from = (m as { apiKeySource?: unknown }).apiKeySource;
+        if (!subscription && isSignedIn(req.target)) subscription = typeof from === 'string' && !['ANTHROPIC_API_KEY', 'apiKeyHelper', 'none'].includes(from);
+      }
+      if (m.type === 'rate_limit_event') limit = m.rate_limit_info.status === 'rejected' ? { until: resetMs(m.rate_limit_info.resetsAt), kind: m.rate_limit_info.rateLimitType ?? '' } : null;
       if (m.type === 'assistant') {
         // Each content block of one response is a message of its own with the same id: its use is counted once.
         const used = (m.message as { id?: string; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }).usage;
@@ -877,7 +889,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         if (used && (!id || !counted.has(id))) {
           if (id) counted.add(id);
           const cached = used.cache_read_input_tokens ?? 0;
-          req.onUsage?.({ promptTokens: (used.input_tokens ?? 0) + cached + (used.cache_creation_input_tokens ?? 0), completionTokens: used.output_tokens ?? 0, cachedTokens: cached });
+          req.onUsage?.({ promptTokens: (used.input_tokens ?? 0) + cached + (used.cache_creation_input_tokens ?? 0), completionTokens: used.output_tokens ?? 0, cachedTokens: cached, ...(subscription ? { subscription: true } : {}) });
         }
         // What a sub-agent of this call produced goes to its node; anything else (the agent's own turn, or a sub-agent the call has no node for) to the call's activity.
         const parentId = (m as { parent_tool_use_id?: string | null }).parent_tool_use_id;
@@ -930,7 +942,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         closeNodes('finished');
         sessionId = m.session_id;
         // What the SDK says the whole call cost: it arrives as a report with no tokens, so it adds to the cost without counting as a call.
-        if (typeof m.total_cost_usd === 'number') req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd, ...(isAnthropicApi(req.target) ? {} : { costEstimated: true }) });
+        if (typeof m.total_cost_usd === 'number' && !subscription) req.onUsage?.({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, costUsd: m.total_cost_usd, ...(isAnthropicApi(req.target) ? {} : { costEstimated: true }) });
         if (m.subtype === 'error_max_turns') throw new MaxTurnsError(sessionId, sources);
         // The turn ended: the door is asked now, whatever the turn produced. A message that is waiting goes into the same session and the stage goes on; with none,
         // the closing call asks for the final answer with what the session already has.
@@ -938,6 +950,8 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         if (m.subtype !== 'success' || m.structured_output == null) {
           // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.
           const said = clipProviderText([...assistantText, typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : ''].filter(Boolean).join('\n'));
+          // The CLI's own usage limit was reached: a wait until the reset time the event gave.
+          if (limit) throw new ProviderBudgetError(req.target.providerId, 'claude-sdk', redact(said) || limit.kind, limit.until);
           // A refusal by budget is a wait, not a failure of the stage; the SDK prefixes the gateway's message with "Failed to authenticate", so the body decides.
           if (budgetText(said)) throw new ProviderBudgetError(req.target.providerId, 'claude-sdk', redact(said));
           // i18n-ignore: developer error from the SDK result
@@ -1018,8 +1032,7 @@ async function runOnce<T>(
   // wrap-up resume of a call that ran out of turns has no tool, so it gets none of it.
   const memory = extra.resume ? null : await openCeremonyMemory({ agent: ceremonyAgent(getConfig().agents.team, role), tools: role !== 'teams' });
   const added = memory ? ceremonyAddition(memory) : null;
-  try {
-    return await withPool<T>(resolved, { resume: resumeEngine, notify: (n) => activity?.tool(poolNoticeText(n)) }, (target) =>
+  const attempt = (target: ResolvedRole): Promise<Run<T>> =>
       runnerFor(target)<T>({
         role,
         prompt: added ? `${prompt}\n\n${added.prompt}` : prompt,
@@ -1037,7 +1050,13 @@ async function runOnce<T>(
         ask,
         poolMode,
         ...(memory?.tools ? { memoryTools: memory.tools } : {}),
-      }),
+      });
+  try {
+    // A ceremony's system agent has the role as its id, so the fallback list covers the ceremonies too.
+    return await withBudgetFallback<T>(
+      { agentId: id, primary: resolved, ...(resumeEngine ? { resumeEngine } : {}), onFallback: (provider) => activity?.tool(t('main.engine.cliFallback.using', { provider })) },
+      () => withPool<T>(resolved, { resume: resumeEngine, notify: (n) => activity?.tool(poolNoticeText(n)) }, attempt),
+      attempt,
     );
   } finally {
     memory?.finish();
@@ -1546,18 +1565,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     const modelRole = call.agent.model.role ?? 'deep';
     const only = call.procedureOnly === true;
     const poolMode = resolvePoolMode({ agent: call.agent.poolMode, stage: call.stagePoolMode, workspace: getConfig().llm.poolMode });
-    // A round that continues an earlier call runs on the engine that holds its session (a session of the open engine is not one the SDK knows, and the other way
-    // round); a start picks the first model of the pool that is not resting. The thread hears when the call does not open on the first one.
-    const r = await withPool<T>(
-      chosen,
-      {
-        resume: call.resume?.engine,
-        notify: (n) => {
-          activity.tool(poolNoticeText(n));
-          call.onPool?.(n);
-        },
-      },
-      async (picked) => {
+    const attempt = async (picked: ResolvedRole): Promise<Run<T>> => {
         target = picked;
         // The documentation of the repositories goes in the system text, the same for both engines; a failure to read it never fails the call.
         const docs = call.docs && !only ? await harnessSection(call.docs, call.agent, { cwd: call.cwd, contextWindow: picked.capabilities?.contextWindow }).catch((e: unknown) => {
@@ -1613,7 +1621,25 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
             return wrapUpAnswer<T>(request, e, activity);
           }
         });
-      },
+    };
+    // A round that continues an earlier call runs on the engine that holds its session (a session of the open engine is not one the SDK knows, and the other way
+    // round); a start picks the first model of the pool that is not resting. The thread hears when the call does not open on the first one. A refusal for budget
+    // of an agent listed for the fallback is tried once more on the signed-in Claude Code CLI.
+    const r = await withBudgetFallback<T>(
+      { agentId: call.agent.id, primary: chosen, ...(call.resume ? { resumeEngine: call.resume.engine } : {}), onFallback: (provider) => activity.tool(t('main.engine.cliFallback.using', { provider })) },
+      () =>
+        withPool<T>(
+          chosen,
+          {
+            resume: call.resume?.engine,
+            notify: (n) => {
+              activity.tool(poolNoticeText(n));
+              call.onPool?.(n);
+            },
+          },
+          attempt,
+        ),
+      attempt,
     );
     // The engine reports the session it opened or resumed: what a later round of the same stage continues from.
     resumed = r.sessionId;
@@ -1624,7 +1650,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
   } catch (e) {
     activity.status('failed', e instanceof Error ? e.message : String(e));
     // One seam for stages, mentions and the chain: the reason carries the provider that refused (a spare of the pool names itself), else the one the call ran on.
-    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(e.provider || target.providerId, e.engine, e.detail);
+    if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(e.provider || target.providerId, e.engine, e.detail, e.until);
     throw e;
   }
 }

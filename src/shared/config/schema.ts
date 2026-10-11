@@ -3,7 +3,7 @@ import type { JsonSchema } from './jsonSchema';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
 import { ACTIVITIES, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 28). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 29). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -71,7 +71,7 @@ const provider = object(
     engine: enumOf("Agent loop that serves the provider: claude-sdk (Claude models) or open (the app's own loop).", ENGINES),
     baseUrl: string('API root, e.g. https://api.anthropic.com or http://localhost:11434/v1. Cloud kinds may leave it empty.'),
     models: strings('Model ids the provider offers (suggestions; any id may still be typed).'),
-    secretRef: nullableString("Reference into the secrets store (API key). null: no key is sent (local server, or the machine's own cloud credentials)."),
+    secretRef: nullableString("Reference into the secrets store (API key). null: no key is sent (local server, the machine's own cloud credentials, or, for an anthropic provider, the login the Claude Code CLI of this machine already has)."),
     envFile: nullableString('Claude-settings-style JSON file whose "env" block (minus KEY/TOKEN variables) joins the agent environment.'),
     options: { type: 'object', description: 'Kind-specific, non-secret settings (bedrock: region, profile; vertex: project, region; foundry: resource).', additionalProperties: { type: 'string', maxLength: 400 } },
     capabilities: {
@@ -454,6 +454,10 @@ export const CONFIG_SCHEMA: JsonSchema = {
           floors: scoresOf('The score a model must reach to go first, per activity.'),
           models: { type: 'object', description: 'The scores of one model, by its normalized id (lowercase, without the organization prefix).', additionalProperties: scoresOf('Scores of the model.') },
         }),
+        cliFallback: object('Retry once on the signed-in Claude Code CLI (an anthropic provider with no key) when the provider of a listed agent refuses for budget. The app offers no login and never reads the CLI\'s credential files. Refused in a test workspace. Absent: off.', {
+          enabled: boolean('The fallback is on.'),
+          agents: list('Agent ids that may fall back (a built-in agent\'s id is its role).', string('An agent id.', { pattern: ID }), { maxItems: 200 }),
+        }, ['enabled', 'agents']),
       }),
       projects: object('Where the code lives.', {
         roots: strings('Folders that contain the repos; the first is the working directory of the agents.'),

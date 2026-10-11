@@ -110,7 +110,9 @@ function Usage({ usage }: { usage: StageUsage }) {
   const t = useT();
   const p = usageParams(usage, intlLocale());
   const key = p.cost === null ? 'ui.cycle.stage.usage' : p.estimated ? 'ui.cycle.stage.usageCostEstimated' : 'ui.cycle.stage.usageCost';
-  return <p className="faint small cy-usage">{t(key, { calls: p.calls, prompt: p.prompt, cached: p.cached, completion: p.completion, cost: p.cost ?? '' })}</p>;
+  const line = t(key, { calls: p.calls, prompt: p.prompt, cached: p.cached, completion: p.completion, cost: p.cost ?? '' });
+  // Calls on the signed-in Claude Code CLI are said apart: a subscription's use, never an API cost.
+  return <p className="faint small cy-usage">{p.subscription === null ? line : `${line} · ${t('ui.cycle.stage.usageSubscription', { calls: p.subscription })}`}</p>;
 }
 
 const PROCEDURE_KEY = { ok: 'ui.cycle.stage.procedureUsed', failed: 'ui.cycle.stage.procedureFailed', replaced: 'ui.cycle.stage.procedureReplaced' } as const;

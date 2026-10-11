@@ -91,6 +91,8 @@ export interface StageUsage {
   costUsd: number | null;
   /** The cost is an estimate: no provider reported what the calls were charged (outside Anthropic's own API the SDK's figure is only a list price). Absent: charged. */
   costEstimated?: boolean;
+  /** Of the calls, the ones that went through the signed-in Claude Code CLI: a subscription's use, with no API cost. Absent: none. */
+  subscriptionCalls?: number;
 }
 
 export const QUESTION_KINDS = ['agent', 'review-limit', 'squad', 'pr-retry'] as const;

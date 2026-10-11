@@ -18,6 +18,8 @@ export interface SdkEnvInput {
   vcsHost: string | null;
   /** Extra variables for the code host CLIs (GH_HOST for GitHub Enterprise); GitLab uses vcsHost. */
   extraEnv?: Record<string, string>;
+  /** The budget fallback on the signed-in Claude Code CLI: no API key of the environment either, so only the CLI's own login can authenticate the call. */
+  loginOnly?: boolean;
 }
 
 /** The variables of a Claude-settings-style JSON file's "env" block, without anything that looks like a key or token. */
@@ -33,7 +35,7 @@ export function readProfileEnv(file: string | null): Record<string, string> {
 
 export function sdkEnv(input: SdkEnvInput): Record<string, string> {
   const { target, secret } = input;
-  const keepApiKey = target.kind === 'anthropic' && !secret;
+  const keepApiKey = target.kind === 'anthropic' && !secret && !input.loginOnly;
   const clean = Object.fromEntries(
     Object.entries(input.base).filter((e): e is [string, string] => e[1] !== undefined && (!INHERITED.test(e[0]) || (keepApiKey && e[0] === 'ANTHROPIC_API_KEY'))),
   );

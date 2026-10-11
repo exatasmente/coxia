@@ -44,6 +44,7 @@ const stageRecord = object(
         calls: { type: 'integer', description: 'Model calls.', minimum: 0 },
         costUsd: { type: ['number', 'null'], description: 'What a provider or the SDK said it cost; null when none did.', minimum: 0 },
         costEstimated: { type: 'boolean', description: 'The cost is an estimate: no provider reported what the calls were charged. Absent: charged.' },
+        subscriptionCalls: { type: 'integer', description: 'Of the calls, the ones on the signed-in Claude Code CLI: subscription use, never an API cost. Absent: none.', minimum: 0 },
       },
       ['promptTokens', 'completionTokens', 'cachedTokens', 'calls', 'costUsd'],
     ),

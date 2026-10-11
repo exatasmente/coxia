@@ -1,8 +1,8 @@
-// WorkspaceConfig (schema 28): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 29): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 28;
+export const CONFIG_SCHEMA_VERSION = 29;
 
 /** The local read-only state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
@@ -19,8 +19,9 @@ export const THEMES: Theme[] = ['system', 'light', 'dark'];
 export const LLM_ROLES = ['turn', 'reply', 'deep', 'teams', 'fix'] as const;
 export type LlmRole = (typeof LLM_ROLES)[number];
 
-// How a provider is reached. anthropic, bedrock, vertex and foundry are the ways to run Claude (API key or cloud credentials; never a claude.ai
-// subscription login, which Anthropic does not allow third-party apps to offer). openai-compatible covers hosted and local OpenAI-style servers.
+// How a provider is reached. anthropic, bedrock, vertex and foundry are the ways to run Claude (API key or cloud credentials). The app never offers
+// a login of its own; an anthropic provider saved with no key uses the login the person already made in the Claude Code CLI of this machine (the
+// "signed-in Claude Code CLI"), without the app reading or storing any credential. openai-compatible covers hosted and local OpenAI-style servers.
 export const PROVIDER_KINDS = ['anthropic', 'bedrock', 'vertex', 'foundry', 'openai-compatible'] as const;
 export type ProviderKind = (typeof PROVIDER_KINDS)[number];
 
@@ -187,6 +188,17 @@ export interface LlmConfig {
   effort?: Partial<Record<Activity, EffortSetting>>;
   /** The workspace default for how a pool is used. Absent: `delegate`. */
   poolMode?: PoolMode;
+  /** Which agents retry once on the signed-in Claude Code CLI when their provider refuses for budget. Absent: off. */
+  cliFallback?: CliFallbackConfig;
+}
+
+/**
+ * The budget fallback on the signed-in Claude Code CLI (an anthropic provider with no key). Off by default, desktop only, refused in a
+ * `test: true` workspace. `agents` holds agent ids; a built-in agent's id is its role, so the same list covers the ceremonies' roles.
+ */
+export interface CliFallbackConfig {
+  enabled: boolean;
+  agents: string[];
 }
 
 export interface RepoConfig {

@@ -6,13 +6,13 @@
 
 ## Português
 
-Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` (versão do esquema 28). Provedores e motores de agente: [`llm-providers.md`](llm-providers.md). Provedores de VCS (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
+Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` (versão do esquema 29). Provedores e motores de agente: [`llm-providers.md`](llm-providers.md). Provedores de VCS (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Onde as coisas moram
 
 | O quê | Onde | Escopo |
 |---|---|---|
-| Configuração | `<dados>/workspaces/<id>/config.json` (`schemaVersion: 28`) | por workspace |
+| Configuração | `<dados>/workspaces/<id>/config.json` (`schemaVersion: 29`) | por workspace |
 | Segredos (referências resolvidas) | `<dados>/secrets.json` (modo 0600), por `secretRef` | máquina; **nunca exportado** |
 | Acesso pelo navegador | `<dados>/web.json` | máquina (todos os workspaces) |
 | Marcador da migração | `<dados>/config-migration.json` | máquina |
@@ -95,7 +95,9 @@ Tudo isto se edita em **Configurações › Time e ciclo** (time, squads, fluxo,
 
 Decisões do produto já refletidas:
 
-1. **Dois motores.** `claude-sdk` só para modelos Claude (Anthropic, Bedrock, Vertex, Foundry); `open` para OpenAI-compatível e local. Login de assinatura do claude.ai nunca é oferecido: só chave de API ou credenciais de nuvem.
+1. **Dois motores.** `claude-sdk` só para modelos Claude (Anthropic, Bedrock, Vertex, Foundry); `open` para OpenAI-compatível e local. O app não oferece login próprio: usa chave de API, credenciais de nuvem ou, num provedor `anthropic` salvo sem chave (`secretRef: null`), o **CLI do Claude Code já logado** desta máquina.
+   - **CLI do Claude Code já logado.** O app inicia o CLI instalado com o `HOME` real e sem chave; o CLI se autentica com o login que a pessoa já fez nele. O app toca só isso: o CLI instalado e o login dele, pelo próprio CLI. Nunca abre, lê, guarda nem repassa `~/.claude/.credentials.json`, `~/.claude/sessions/*.key` ou `~/.claude/daemon/control.key`. A validação mostra um aviso informativo (nunca erro) dizendo que o login do CLI será usado. O uso dessas chamadas aparece como uso de assinatura, sem custo de API. A conformidade com os termos da Anthropic para uso de assinatura por apps de terceiros não foi verificada.
+   - **Fallback por orçamento** (`llm.cliFallback`, esquema 29: `{ enabled: false, agents: [] }` por padrão). Ligado, quando o provedor de um agente listado (um agente de sistema tem o id igual ao papel: `turn`, `reply`, `deep`, `teams`, `fix`) recusa por orçamento, a chamada é refeita **uma vez** no primeiro provedor `anthropic`/`claude-sdk` sem chave, sem `ANTHROPIC_API_KEY` no ambiente. Qualquer outra falha, um agente não listado ou a falta desse provedor esperam como antes. Se o próprio CLI atingir o limite de uso (evento `rate_limit_event` do SDK, `rejected`), a etapa espera até o horário de renovação e o mostra. Uma pasta de trabalho com `test: true` recusa o fallback; a configuração só se edita no computador (os canais de configuração são negados ao celular pareado).
 2. **Config migrada mantém o comportamento de hoje:** OpenRouter + deepseek pelo SDK, marcado `engine: 'claude-sdk'` e `legacyCustomEndpoint: true`. Uma instalação nova não oferece essa combinação (a validação avisa).
 3. **O SDK não vem junto nos pacotes públicos:** `claudeSdk` registra a instalação e `src/main/claudeSdk.ts` (`locateSdk`, `loadClaudeQuery`) procura primeiro a instalação local (`claudeSdk.path`) e depois a cópia embutida. `npm run dist:public` (`electron-builder.public.yml`) deixa o SDK fora do pacote, e `locateSdk` o dá como ausente quando o app empacotado não tem o binário do SDK ao lado do `app.asar`; `npm run dist` (build pessoal, do código-fonte) continua embutindo.
 
@@ -161,13 +163,13 @@ Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só d
 
 ## English
 
-This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` (schema version 28). Providers and agent engines: [`llm-providers.md`](llm-providers.md). VCS providers (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
+This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` (schema version 29). Providers and agent engines: [`llm-providers.md`](llm-providers.md). VCS providers (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Where things live
 
 | What | Where | Scope |
 |---|---|---|
-| Configuration | `<data>/workspaces/<id>/config.json` (`schemaVersion: 28`) | per workspace |
+| Configuration | `<data>/workspaces/<id>/config.json` (`schemaVersion: 29`) | per workspace |
 | Secrets (resolved references) | `<data>/secrets.json` (mode 0600), by `secretRef` | machine; **never exported** |
 | Browser access | `<data>/web.json` | machine (every workspace) |
 | Migration marker | `<data>/config-migration.json` | machine |
@@ -249,7 +251,9 @@ All of this is edited in **Settings › Team and cycle** (team, squads, flow, co
 
 Product decisions reflected here:
 
-1. **Two engines.** `claude-sdk` only for Claude models (Anthropic, Bedrock, Vertex, Foundry); `open` for OpenAI-compatible and local. A claude.ai subscription login is never offered: API keys or cloud credentials only.
+1. **Two engines.** `claude-sdk` only for Claude models (Anthropic, Bedrock, Vertex, Foundry); `open` for OpenAI-compatible and local. The app offers no login of its own: it uses an API key, cloud credentials or, for an `anthropic` provider saved with no key (`secretRef: null`), the **signed-in Claude Code CLI** of this machine.
+   - **Signed-in Claude Code CLI.** The app starts the installed CLI with the real `HOME` and no key; the CLI authenticates with the login the person already made in it. That is all the app touches: the installed CLI and its login, through the CLI itself. It never opens, reads, stores or forwards `~/.claude/.credentials.json`, `~/.claude/sessions/*.key` or `~/.claude/daemon/control.key`. Validation shows an informative warning (never an error) saying the CLI's login will be used. These calls are reported as subscription usage, with no API cost. Compliance with Anthropic's terms for subscription use by third-party apps has not been verified.
+   - **Budget fallback** (`llm.cliFallback`, schema 29: `{ enabled: false, agents: [] }` by default). When on and the provider of a listed agent (a built-in agent's id is its role: `turn`, `reply`, `deep`, `teams`, `fix`) refuses for budget, the call is retried **once** on the first keyless `anthropic`/`claude-sdk` provider, with no `ANTHROPIC_API_KEY` in its environment. Any other failure, an agent not listed, or no such provider waits as before. When the CLI reaches its own usage limit (the SDK's `rate_limit_event`, `rejected`), the stage waits until the reset time and shows it. A `test: true` workspace refuses the fallback; the setting is edited on the computer only (the config channels are denied to a paired phone).
 2. **A migrated config keeps today's behavior:** OpenRouter + deepseek through the SDK, marked `engine: 'claude-sdk'` and `legacyCustomEndpoint: true`. A fresh install does not offer that combination (validation warns).
 3. **Public packages do not bundle the SDK:** `claudeSdk` records the install and `src/main/claudeSdk.ts` (`locateSdk`, `loadClaudeQuery`) looks for a user-local install (`claudeSdk.path`) first, then the bundled copy. `npm run dist:public` (`electron-builder.public.yml`) leaves the SDK out of the package, and `locateSdk` reports it missing when the packaged app has no SDK binary next to `app.asar`; `npm run dist` (a personal build from source) still bundles it.
 

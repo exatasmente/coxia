@@ -78,6 +78,8 @@ export interface ResolvedRole {
   offer?: ModelOffer;
   /** The other models this call may move to; absent when the role has none (nothing changes). Each entry is resolved like the role itself. */
   pool?: ResolvedPool;
+  /** The budget fallback on the signed-in Claude Code CLI (cliFallback.ts): only the CLI's own login authenticates the call, and its use is a subscription's. */
+  loginOnly?: boolean;
 }
 
 /** `fallbacks` follow the model itself; `activities[a]` is a complete list that replaces `[model, ...fallbacks]` for that activity. */

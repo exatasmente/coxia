@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A run can fall back on the signed-in Claude Code CLI when a provider's budget runs out.** An Anthropic provider saved with no key is now named "signed-in Claude Code CLI" in the setup assistant, the review and the validation (an informative note, no longer "no API key"): it uses the login the Claude Code CLI of the computer already has, and Coxia still offers no login and reads no credential file. In Models, the person can turn on the fallback and choose which agents may use it: when the provider of one of them refuses a call for budget, the call is made once more on the signed-in CLI instead of waiting; other agents wait as before. When the CLI reaches its own usage limit, the stage waits and says the time it resets. Calls through the CLI are shown as subscription use, never as API cost. Off by default, edited on the computer only, and refused in a test workspace. The config moves to schema 29 (the new setting, off).
+
 ### Fixed
 
 - **A plugin that fails is no longer silent.** Every call of a plugin leaves a line in the workspace's audit log ("Plugin call": the plugin, the event, the stage, and whether it ran, failed with the reason, or waits for an answer in Actions). A call that fails also leaves a line in the run's conversation with the plugin's name, the event, the stage and the reason (no run to write into, a required setting empty, the sandbox did not open, the script ended with an error or without a result). Settings › Plugins shows each plugin's last call since the app opened.

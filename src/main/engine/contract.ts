@@ -64,11 +64,18 @@ export class ProviderBudgetError extends Error {
     readonly provider: string,
     readonly engine: 'claude-sdk' | 'open',
     readonly detail: string,
+    /** When the limit resets (epoch ms), read from the SDK's structured rate limit event of the signed-in CLI; null when the provider did not say. */
+    readonly until: number | null = null,
   ) {
     // i18n-ignore-next-line: error text the caller reads and the engines compare
     super(`provider budget exhausted: ${provider}`);
     this.name = 'ProviderBudgetError';
   }
+}
+
+/** The words of when a refused limit resets, for the reason a waiting stage shows. */
+export function budgetResetText(until: number): string {
+  return t('main.runner.error.budget.resets', { time: clockOf(until) });
 }
 
 /**

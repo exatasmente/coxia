@@ -16,6 +16,8 @@ export interface UsageReport {
   estimated?: boolean;
   /** The cost is an estimate: the provider did not report what the call was charged (outside Anthropic's own API the SDK's figure is a list price). */
   costEstimated?: boolean;
+  /** The call went through the signed-in Claude Code CLI: a subscription's use, which never carries an API cost. */
+  subscription?: boolean;
 }
 
 export const emptyUsage = (): StageUsage => ({ promptTokens: 0, completionTokens: 0, cachedTokens: 0, calls: 0, costUsd: null });
@@ -33,9 +35,12 @@ const provenance = (a: boolean | undefined, hasA: boolean, b: boolean | undefine
 /** The total with one more report added. A report with no tokens (the SDK's final cost) adds its cost but is not a call. */
 export function addReport(total: StageUsage, r: UsageReport): StageUsage {
   const tokens = count(r.promptTokens) + count(r.completionTokens);
-  const cost = typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) && r.costUsd >= 0 ? r.costUsd : null;
+  // A subscription's call adds its tokens and never a cost, whatever it carried.
+  const cost = !r.subscription && typeof r.costUsd === 'number' && Number.isFinite(r.costUsd) && r.costUsd >= 0 ? r.costUsd : null;
   const costUsd = cost === null ? total.costUsd : (total.costUsd ?? 0) + cost;
+  const subscriptionCalls = (total.subscriptionCalls ?? 0) + (r.subscription && tokens > 0 ? 1 : 0);
   return {
+    ...(subscriptionCalls > 0 ? { subscriptionCalls } : {}),
     promptTokens: total.promptTokens + count(r.promptTokens),
     completionTokens: total.completionTokens + count(r.completionTokens),
     cachedTokens: total.cachedTokens + count(r.cachedTokens),
@@ -50,7 +55,8 @@ export function addReport(total: StageUsage, r: UsageReport): StageUsage {
 export function mergeUsage(a: StageUsage | undefined, b: StageUsage): StageUsage {
   if (!a) return { ...b };
   const costUsd = a.costUsd === null && b.costUsd === null ? null : (a.costUsd ?? 0) + (b.costUsd ?? 0);
-  return { promptTokens: a.promptTokens + b.promptTokens, completionTokens: a.completionTokens + b.completionTokens, cachedTokens: a.cachedTokens + b.cachedTokens, calls: a.calls + b.calls, costUsd, costEstimated: provenance(a.costEstimated, a.costUsd !== null, b.costEstimated, b.costUsd !== null) };
+  const subscriptionCalls = (a.subscriptionCalls ?? 0) + (b.subscriptionCalls ?? 0);
+  return { promptTokens: a.promptTokens + b.promptTokens, completionTokens: a.completionTokens + b.completionTokens, cachedTokens: a.cachedTokens + b.cachedTokens, calls: a.calls + b.calls, costUsd, costEstimated: provenance(a.costEstimated, a.costUsd !== null, b.costEstimated, b.costUsd !== null), ...(subscriptionCalls > 0 ? { subscriptionCalls } : {}) };
 }
 
 export const hasUsage = (u: StageUsage | undefined): u is StageUsage => !!u && (u.calls > 0 || u.promptTokens + u.completionTokens > 0 || u.costUsd !== null);

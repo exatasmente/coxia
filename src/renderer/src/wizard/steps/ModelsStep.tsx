@@ -3,6 +3,7 @@ import type { LlmProvider, LlmRole, ModelRef, ProviderKind } from '../../../../s
 import type { CatalogModel } from '../../../../shared/modelCatalog';
 import { poolFieldsOf, poolWithoutProvider } from '../../../../shared/config/pool';
 import { DEFAULT_POOL_MODE, LLM_ROLES, POOL_MODES } from '../../../../shared/config/types';
+import { isSignedIn, signedInProvider } from '../../../../shared/config/signedIn';
 import {
   DOC_LINKS,
   OPEN_PRESETS,
@@ -98,7 +99,8 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
   const providers = cfg.llm.providers;
   const kindInfo = PROVIDER_CHOICES.find((k) => k.kind === draft.kind);
   const preset = draft.kind === 'openai-compatible' ? presetById(draft.preset) : null;
-  const keyOptional = draft.kind === 'bedrock' || draft.kind === 'foundry' || (preset !== null && !preset.keyRequired);
+  // An anthropic provider may go without a key: it is then the signed-in Claude Code CLI, which uses the login the CLI of this machine already has.
+  const keyOptional = draft.kind === 'anthropic' || draft.kind === 'bedrock' || draft.kind === 'foundry' || (preset !== null && !preset.keyRequired);
   const keyOffered = draft.kind !== 'vertex';
   const keyOn = keyOffered && (!keyOptional || useKey);
 
@@ -197,7 +199,8 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
       if (keyOn) {
         const r = secretInputFrom(providerSecretRef(provider.id), secret);
         if ('problem' in r) {
-          if (!keyOptional) {
+          // An anthropic key the person chose to give and left empty is a mistake, never a silent switch to the signed-in CLI.
+          if (!keyOptional || draft.kind === 'anthropic') {
             setError(t(secretProblemKey(r.problem)));
             return;
           }
@@ -300,7 +303,8 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
               <li key={p.id} className="wz-card-item">
                 <div className="wz-card-head">
                   <div>
-                    <div className="wz-card-title">{t(`wizard.kind.${p.kind}`)} <span className="small muted mono">{p.id}</span></div>
+                    <div className="wz-card-title">{t(isSignedIn(p) ? 'wizard.kind.anthropic.signedIn' : `wizard.kind.${p.kind}`)} <span className="small muted mono">{p.id}</span></div>
+                    {isSignedIn(p) && <div className="small muted">{t('wizard.models.signedInNote')}</div>}
                     <div className="small muted wz-wrap-anywhere">
                       {p.baseUrl && <span className="mono">{p.baseUrl}</span>}
                       {Object.keys(p.options).length > 0 && <span className="mono"> {Object.entries(p.options).map(([k, v]) => `${k}=${v}`).join(' ')}</span>}
@@ -411,6 +415,7 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
                   </label>
                 )}
                 {keyOn && <SecretFields noun={t(draft.kind === 'bedrock' ? 'wizard.noun.token' : 'wizard.noun.key')} draft={secret} onChange={setSecret} storage={view.storage} onAcceptInsecure={acceptInsecure} />}
+                {draft.kind === 'anthropic' && !keyOn && <Notice tone="info">{t('wizard.models.signedInNote')}</Notice>}
               </div>
             )}
             {kindInfo && !kindInfo.claude && <p className="small muted">{t('wizard.models.openEngineNote')}</p>}
@@ -493,7 +498,37 @@ export function ModelsStep({ cfg, setCfg, view, refreshView }: StepProps) {
         })}
       </fieldset>
 
+      {signedInProvider(cfg.llm) && <CliFallbackFields cfg={cfg} setCfg={setCfg} />}
+
       <EffortFields cfg={cfg} setCfg={setCfg} />
     </div>
+  );
+}
+
+/** Which agents retry once on the signed-in Claude Code CLI when their provider refuses for budget. Off by default; the list only shows once it is on. */
+function CliFallbackFields({ cfg, setCfg }: Pick<StepProps, 'cfg' | 'setCfg'>) {
+  const t = useT();
+  const fb = cfg.llm.cliFallback ?? { enabled: false, agents: [] };
+  const set = (next: typeof fb) => setCfg((c) => ({ ...c, llm: { ...c.llm, cliFallback: next } }));
+  return (
+    <fieldset className="wz-stack wz-fieldset" aria-labelledby="wz-clifallback">
+      <legend id="wz-clifallback" className="wz-sub">{t('wizard.cliFallback.title')}</legend>
+      <p className="small muted">{t('wizard.cliFallback.intro')}</p>
+      <label className="wz-radio">
+        <input type="checkbox" checked={fb.enabled} onChange={(e) => set({ ...fb, enabled: e.target.checked })} />
+        <span>{t('wizard.cliFallback.enable')}</span>
+      </label>
+      {fb.enabled && (
+        <div className="wz-stack" role="group" aria-label={t('wizard.cliFallback.agents')}>
+          <div className="small">{t('wizard.cliFallback.agents')}</div>
+          {cfg.agents.team.map((a) => (
+            <label key={a.id} className="wz-radio">
+              <input type="checkbox" checked={fb.agents.includes(a.id)} onChange={(e) => set({ ...fb, agents: e.target.checked ? [...fb.agents, a.id] : fb.agents.filter((x) => x !== a.id) })} />
+              <span>{t(a.name) || a.id} <span className="small muted mono">{a.id}</span></span>
+            </label>
+          ))}
+        </div>
+      )}
+    </fieldset>
   );
 }
