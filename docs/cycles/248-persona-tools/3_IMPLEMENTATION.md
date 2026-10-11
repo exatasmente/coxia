@@ -170,3 +170,38 @@ Where each criterion is held (all of these pass in the full suite at commit 8):
 - **The Q2 default of `raised`** (the four checks plus a workspace autonomy switch going on and a new `allowedCommands` entry) is as the plan chose; the maintainer's answer was "the plan's default".
 - **A stage skipped by the persona** still counts as a manual stage in the suggestions' evidence (it reads the stage's status), while its answers and gate decisions do not.
 - **A host shell the persona gave itself ends the guarantees** (spec, risks): the Stop and the Audit are limits of the app's doors.
+
+## Review and visual fixes
+
+After the eight commits the branch was brought up to date with `release/0.10.0` (0.10.0-beta.2, schema 31) and then reviewed and looked at in a running window. This is what changed, one `fix:` commit each; the plan and the spec stay as approved, except that the lines that said "the schema stays 30" now say the issue adds no step (the release moved to 31 under it).
+
+### The merge
+
+Conflicts: `CHANGELOG.md` (both sides kept, ours under `[Unreleased]`), `forum.ts` (a persona post is muted for agents **and** plugins: `mute = quiet || not a person's || a plugin command`), `plugins/module.ts` (our `decided()` audit wrappers and the release's `enabledDocuments()` and phase hooks, both kept), `auditoria.ts` (the kinds of both), `ui-today.*.json` (both keys, re-sorted). Semantic issues: `answerPluginAsk` reads `viaOf() === 'paired'` (the persona keeps the window's reach, and `callOrigin` stays named only in `rpc.ts`); `pluginCallOf(message, personaId)` returns null for the persona's own post (it calls nobody, a plugin included); the `plugin-call` kind was already labelled in the screen and both catalogs by the merge; the release's refine stage now also produces `REQUIREMENTS.md`, so `persona-worded-run.test.ts` scripts both documents.
+
+### Review fixes
+
+1. **Excluded channels through `Settings.set`.** `settingsGuard.ts` compares the current configuration with the next one the path would make, and the door refuses, as a refused act (reason in the act line, the `act` audit line with `ok: false`, nothing written): a test-environment secret that becomes test-only (added as test-only or flipped), any change to `mcpState`, and the persona's own entry removed or its **name, kind or instructions** changed. The reach fields of its own entry (`permission`, `shell`, `tracker`, `screen`, hosts, browser profile) stay changeable, because the spec says so (rule 10, criterion 15). *Decision made here:* "editing the persona's own entry" is read as its identity and instructions, which are the editor's (`persona:save`, excluded), and not its reach. The guard is a hook (`guard`) run in the synchronous stretch of the door, before the handler, so the Stop's latch check and the refusal share one turn of the event loop.
+2. **A secret that runs a command** is allowed and made visible: `basis.subject` and the line in the chat say `ref (command: <program>, N arguments)` (the arguments are in neither), the `secret` audit line carries `raised: secret command`, and so does the act line. Docs and the spec's risks say it.
+3. **The persona's write arguments are masked** too: after the secret-marked arguments join the answer's mask, every other string, text and JSON argument of a write goes through it (leaves of a JSON value, shape kept) before the handler runs. Reads are not touched.
+4. **`Settings.get` with no path** returns the top-level names.
+5. **`render`** walks its ancestors only: a value two branches share is shown twice, and only a real cycle prints `[circular]`.
+6. **Outside data fenced:** `Asks.list`, `Actions.list`, `Runs.list`, `Overview.watchers`, `errors` and `cycle` are `outside`.
+7. **Cost.** The paragraph repeated in the eleven descriptions is gone (the persona's prompt says it once, and now says that `[writes]` marks an operation that takes a `why`), the "Used by:" lines are gone, and an argument whose name says it (text, note, reason, body, title, limit, on, enabled, confirm) has no description. **Before: 44,042 characters (descriptions 23,096 + schemas 20,946); after: 32,658 (19,312 + 13,346), a quarter less, about 8,200 tokens at four characters to a token.** The test's ceiling is now 40,000.
+8. **Door-only operations:** the dead `readSecret` branches inside `if (!op.write)` are gone (`Secrets.read` is a write); a comment and a test say that an operation with no channel runs inside the act (so its lines are stamped) but not through the wrapper, so `callOrigin()` is not `persona` there and it names the persona itself.
+9. **Audit Who filter.** `whoOf` has a third value, `agent` (`by` set and no `actor`), so an autonomous agent's write is no longer "the person's"; the select has four options and a visible label. *Known imprecision:* a ceremony's command line also carries `by` (the agent that asked), and reads as "an agent" though the person confirmed it.
+10. **Docs.** `docs/persona.md` says that the engines' session files hold the tools' arguments and results in clear (a secret the persona read included), no longer says how many channels there are (the pinned-table test is what keeps the table true), and describes the command route.
+
+### Visual fixes (the screens in the scratchpad of the visual check)
+
+11. **Act lines** are worded from the tool, the operation and the subject: 128 catalog keys per language (`ui.chat.act.did.<Tool>.<op>`, one for each operation that writes, pinned against the table by a test), e.g. "Board · created the card “Plan the launch”", "Settings · changed runner.triggerLabel", "Configurações · mudou runner.triggerLabel". A refusal reads "{area} · refused: {reason}" (or "refused on {subject}"). The subject of an operation with no hook is now only the arguments that name the target (it used to start with `Tool.op`), `Board.*` read the card's title, `Settings.set` the path (with the mode only when it is not `set`). An operation this version has no words for still reads as before.
+12. **A required argument that is missing or empty** is refused in the door by name before any handler runs, with no audit line: "The argument column is missing: the operation needs it." (`Faltou o argumento column: …`). The case seen was `Board.create`, whose handler needs a column and whose table said it was optional: it is now required.
+13. **The audit fold** reads "What it had read" only when the persona read something, "What it decided on" when only the subject exists, and there is no fold when neither does.
+14. **Stop.** The answer a Stop cut is stored with `params.interrupted = 'stop'` and the chat marks it ("Interrupted: this is only what had been written."); while the persona is stopped, the box does not say an answer is going, the jobs dock leaves out the persona's own conversation (the held call lines read as work, but nothing runs), and the dock lifts its button over the banner as it does over the box.
+15. **The indicator** is a bar in the flow above the screen on the computer (it lies over nothing), and stays a pill over the bottom bar on a phone.
+
+### Not verified
+
+- **None of the visual fixes was seen:** no window was opened after them. The act wording, the interrupted mark, the audit fold and label, the dock and the bar are decided by plain functions, the catalogs and a read of the CSS and the shell in tests; whether the bar looks right, and the dock's button clears the banner, at 360 px and in the dark theme, is for the next run of the visual check.
+- The words of the 128 act lines were written from the table and have not been read by someone who knows each screen.
+- The cost figure is a count of characters, not of tokens.
