@@ -40,7 +40,7 @@ Nome, a frase, as instruções e o modelo (como o editor de agentes), **Salvar**
 
 - **Com persona:** o app abre no chat. **Sem persona:** abre no assistente; **Agora não** mostra a Visão geral só nesta sessão (nada é guardado; o próximo início oferece o assistente de novo, e a Visão geral de um workspace sem persona mantém o menu e um botão **Criar a sua persona**). Vale para workspace novo e para um que já existia.
 - **A faixa de contagens** mostra quatro números, cada um um botão: bloqueados, perguntas, ações aguardando e o que precisa de você. Zero fica quieto, não some. Abre a Visão geral na seção, ou Ações. Não chama modelo e é igual no celular. As contagens saem da mesma função que a Visão geral usa.
-- **O cartão da cerimônia** fica preso acima da caixa quando a pré-daily está pronta, em andamento (com o ponto vivo), encerrada (ata), ou a retro está no dia: é o cartão "Agora" da Visão geral, com os mesmos botões. Um ciclo sem pré-daily não tem o cartão.
+- **O cartão da cerimônia** fica preso acima da caixa quando a pré-daily está pronta, em andamento (com o ponto vivo), encerrada (ata), ou a retro está no dia: é o cartão "Agora" da Visão geral, com os mesmos botões. No celular o cartão é uma linha ("Agora" e o nome da cerimônia) que abre ao toque, e a faixa de contagens cabe numa linha, para a conversa ficar com a altura da tela. Um ciclo sem pré-daily não tem o cartão.
 - **O menu** leva a Visão geral, as cerimônias (pré-daily, desbloqueio, Passagem ao QA, retro) e todas as telas que o cabeçalho do Hoje listava; no celular é a folha, com Ações e Histórico a mais, porque o chat não tem barra de baixo.
 - **A Visão geral** é o que era o Hoje, sem mudança: o cartão Agora, os números, o que precisa de você, o tempo do dia, as atividades com filtros e atualização, as quatro cerimônias com o seletor de squad. O "voltar" dela e o de todas as telas leva ao início ("Voltar ao início").
 - **A barra de baixo do celular** tem Chat (com o ponto vivo de uma pré-daily em andamento), Ações, Histórico e Mais; o chat não tem barra.
@@ -50,7 +50,7 @@ Nome, a frase, as instruções e o modelo (como o editor de agentes), **Salvar**
 
 | Aviso | Abre |
 |---|---|
-| A pré-daily está na hora (e o push dela, de urgência alta) | `chat` (com o cartão da cerimônia) |
+| A pré-daily está na hora (e o push dela, de urgência alta) | `chat` (com o cartão da cerimônia); num workspace sem persona, a Visão geral, que tem o cartão |
 | "Cerimônia agora" da bandeja | `call` (a tela da pré-daily) |
 | Novos bloqueios, mudança de etapa, retorno de feedback, alertas dos observadores, o aviso de vários, o resumo dos avisos em rajada do celular, um job que terminou, uma pergunta de agente sem execução | `overview` |
 | Um aviso feito por uma versão anterior, com `today` ou `call` | `today` abre a Visão geral; `call` abre a pré-daily (sem cartões carregados, o chat) |
@@ -114,7 +114,7 @@ Name, the sentence, instructions and model (as in the agent editor), **Save**, *
 
 - **With a persona:** the app opens on the chat. **With none:** it opens on the wizard; **Not now** shows the Overview for this session only (nothing is stored; the next start offers the wizard again, and the Overview of a workspace with no persona keeps the menu and a **Make your persona** button). This holds for a new workspace and for one that existed.
 - **The strip of counts** shows four numbers, each a button: blocked, asking, waiting in Actions and what needs you. A zero is quiet, not hidden. It opens the Overview at that section, or Actions. It calls no model and is the same on the phone. The counts come from the same function the Overview uses.
-- **The ceremony card** is pinned above the box when the pre-daily is ready, in progress (with the live dot), ended (minutes), or the retro is due: it is the Overview's "Now" card, with the same buttons. A cycle with no pre-daily has no card.
+- **The ceremony card** is pinned above the box when the pre-daily is ready, in progress (with the live dot), ended (minutes), or the retro is due: it is the Overview's "Now" card, with the same buttons. On a phone the card is one line ("Now" and the ceremony's name) that opens when tapped, and the strip of counts fits one row, so the conversation keeps the height of the screen. A cycle with no pre-daily has no card.
 - **The menu** carries the Overview, the ceremonies (pre-daily, unblock, QA hand-off, retro) and every screen the Today header listed; on the phone it is a sheet, with Actions and History added, because the chat has no bottom bar.
 - **The Overview** is what Today was, unchanged: the Now card, the numbers, what needs you, the day's time, the activities with filters and refresh, the four ceremonies with the squad picker. Its "back", and every screen's, goes home ("Back to Home").
 - **The phone's bottom bar** has Chat (with the live dot of a pre-daily in progress), Actions, History and More; the chat itself has no bar.
@@ -124,7 +124,7 @@ Name, the sentence, instructions and model (as in the agent editor), **Save**, *
 
 | Notice | Opens |
 |---|---|
-| The pre-daily is due (and its push, high urgency) | `chat` (with the ceremony card) |
+| The pre-daily is due (and its push, high urgency) | `chat` (with the ceremony card); in a workspace with no persona, the Overview, which has the card |
 | The tray's "ceremony now" | `call` (the pre-daily screen) |
 | New blockers, a changed stage, feedback returned, watcher alerts, the many-at-once notice, the phone's summary of a burst of notices, a job that finished, an agent's question outside a run | `overview` |
 | A notice made by an earlier version, with `today` or `call` | `today` opens the Overview; `call` opens the pre-daily (with no cards loaded, the chat) |
