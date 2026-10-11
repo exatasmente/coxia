@@ -17,6 +17,11 @@ import { memoryPort } from '../memory/runtime';
 import { procedureOffers, proceduresPort } from '../procedures';
 import { answerMentions, type MentionDeps } from './answer';
 import { type MentionPlace, placeOfThread } from './place';
+import { personaOf } from '../../shared/config/team';
+import { agentThreadId } from '../../shared/forum';
+import { viaOf } from '../rpc';
+import { personaDoor } from '../persona/door';
+import { type AnswerSession, createSession } from '../persona/session';
 import { proposeMention } from './propose';
 import { createSharedMemory } from '../runner/activities';
 import { personaLive, personaScreens, personaStop, personaThreadNow, setAnswerPending } from '../persona/runtime';
@@ -83,7 +88,7 @@ export const mentionsModule: Module = () => {
     // What the message names, for the ranking of the memory's list.
     named: (place, message) => ({ refs: refsInMessage(message), agents: callsOf(message, ownerOfThread(forum.summary(place.thread))) }),
     // The persona's chat: the live text of its answers, and what its button tool checks a target against.
-    persona: { live: personaLive(), screens: personaScreens() },
+    persona: { live: personaLive(), screens: personaScreens(), door: personaDoor },
     // An answer the persona's Stop ended does not write the line of a stop of one answer: the stop says it.
     latched: (thread) => held(thread),
     // The last turn of an answer that had trial and error and kept nothing, and the card it may leave (#187).
@@ -106,7 +111,7 @@ export const mentionsModule: Module = () => {
   setAnswerPending((thread, seq) => [...callLines.keys()].some((key) => key.startsWith(`${thread}:${seq}:`)));
 
   /** Chains the answer to a message behind the one going in its thread. A persona's message reached while stopped waits for Resume instead, in the place it holds. */
-  const chain = (message: ForumMessage, place: MentionPlace, calls: string[]): void => {
+  const chain = (message: ForumMessage, place: MentionPlace, calls: string[], door: string, session: AnswerSession | null): void => {
     const prior = inFlight().get(message.thread);
     // An agent set to run commands gets a throwaway copy here; the person's own folder is only the fallback.
     const next = (prior ?? Promise.resolve())
@@ -114,12 +119,14 @@ export const mentionsModule: Module = () => {
       .then(() => {
         // The latch is read again at the moment the answer would begin: a message queued behind an answer that was stopped waits as the ones written after it.
         if (held(message.thread)) {
-          personaStop().hold({ thread: message.thread, seq: message.seq, start: () => chain(message, place, calls) });
+          personaStop().hold({ thread: message.thread, seq: message.seq, start: () => chain(message, place, calls, door, session) });
           return undefined;
         }
         return answerMentions(place, message, {
           ...deps,
           calls,
+          door,
+          ...(session ? { session } : {}),
           callOf: (id) => callLines.get(lineKey(message.thread, message.seq, id)) ?? null,
           release: (id) => void callLines.delete(lineKey(message.thread, message.seq, id)),
         }).then(() => undefined);
@@ -152,19 +159,24 @@ export const mentionsModule: Module = () => {
     const team = getConfig().agents.team;
     const root = rc().projectsRoot ?? ATAS;
     let ahead = !!prior || stopped;
+    // How the message came in, read here: this is inside the call that carried it (the window's or a paired browser's), which the chain that answers it no longer is.
+    const door = viaOf() === 'paired' ? 'paired' : 'window';
+    // The persona's answer keeps a session (what it read, the values it must never write back): made now, so the line of its call shares the mask.
+    const persona = personaOf(team);
+    const session = persona && message.thread === agentThreadId(persona.id) && calls.includes(persona.id) ? createSession({ persona: persona.id, thread: message.thread, seq: message.seq, door }) : null;
     for (const id of calls) {
       if (!team.some((a) => a.id === id) || callLines.has(lineKey(message.thread, message.seq, id))) continue;
-      const activity = beginCallActivity(id, { jobId: mentionJob(message.thread), call: { agent: id, thread: message.thread, message: message.seq }, node: { type: 'call', label: message.text }, isSecretPath: (p) => secretPath(p, root) });
+      const activity = beginCallActivity(id, { jobId: mentionJob(message.thread), call: { agent: id, thread: message.thread, message: message.seq }, node: { type: 'call', label: message.text }, isSecretPath: (p) => secretPath(p, root), ...(session && id === persona?.id ? { mask: (text: string) => session.maskText(text) } : {}) });
       activity.status(ahead ? 'queued' : 'started');
       callLines.set(lineKey(message.thread, message.seq, id), { activity, queued: ahead });
       ahead = true;
     }
     // Written while stopped: nothing begins, and the message is held in its place. Resume starts it through the chain every answer goes through.
     if (stopped) {
-      personaStop().hold({ thread: message.thread, seq: message.seq, start: () => chain(message, place, calls) });
+      personaStop().hold({ thread: message.thread, seq: message.seq, start: () => chain(message, place, calls, door, session) });
       return;
     }
-    chain(message, place, calls);
+    chain(message, place, calls, door, session);
   });
 };
 
