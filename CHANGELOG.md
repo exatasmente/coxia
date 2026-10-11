@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.11.0-beta.1] - 2026-10-11
+
 ### Added
 
 - **A Claude Code session can act in the app through the persona's tools.** The local state server has a second switch, in Settings under the terminal state server: with it on, a terminal session that has the server's entry also gets the persona's tools (runs, Actions, the board, conversations, memory, settings and the rest) next to the reads. Nothing runs in the terminal: each call goes to the open app over a local socket in the workspace's folder, readable by its owner only, with a key the app writes again every time it starts listening. The app runs it through the persona's own door, as the persona, with the terminal as the door. So the Stop refuses these calls too, the persona's limits on the settings hold (the session cannot turn its own switch on), a test workspace writes nothing, each act has its line in the Audit ("Asked from a terminal session") and in the persona's conversation, marked as coming from a terminal session. With the app closed, a call says so and changes nothing. The switch is off in every workspace, needs the first one, is changed only on the computer, and a workspace without a persona refuses every call.
@@ -442,7 +444,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.1...HEAD
+[0.11.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.10.0...v0.11.0-beta.1
 [0.10.0]: https://github.com/exatasmente/coxia/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/exatasmente/coxia/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/exatasmente/coxia/compare/v0.7.0...v0.8.0
