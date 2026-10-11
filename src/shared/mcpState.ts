@@ -11,6 +11,12 @@ export interface McpTarget {
 export interface McpStateView {
   /** The workspace's opt-in (`mcpState.enabled` in its config). */
   enabled: boolean;
+  /** The second switch is on (and so is the first): a terminal session is also offered the persona's tools. */
+  act: boolean;
+  /** The workspace has a persona: the persona's tools act through its door, so without one every call is refused. */
+  persona: boolean;
+  /** The app is listening for a terminal session now (the socket and its token are in the workspace's folder). */
+  listening: boolean;
   workspaceId: string;
   /** This install's out/main/mcp-state.js is a plain file node can spawn (never inside an app archive). */
   available: boolean;

@@ -26,6 +26,14 @@ const TEXTS = {
   'guard.mcpState': "The MCP servers switch is the computer's, not the persona's: it is not changed from here.",
   'guard.ownEntry': "The persona's own entry in the team is not removed from here: clearing or deleting the persona is the person's.",
   'guard.ownEdit': "The persona's name, kind and instructions are edited in its editor by the person, not from here. Its reach (permission, shell, tracker, screen, hosts) can be changed.",
+  'terminal.off': "The persona's tools are off for terminal sessions in this workspace. The person turns them on in the app, in Settings, under the local state server; nothing here changes that.",
+  'terminal.noPersona': "This workspace has no persona, so there is no door to act through. The person makes one in the app.",
+  'terminal.badRequest': "The app did not understand the request.",
+  'terminal.failed': "The app could not run the call: {reason}",
+  'terminal.closed': "The app is not open for this workspace, so nothing was done. Ask the person to open it.",
+  'terminal.token': "The app refused the call: the terminal session's key does not match the one the app holds now. Restart the session's MCP server.",
+  'terminal.timeout': "The app did not answer in time; the call may still finish there. Read the state before trying it again.",
+  'terminal.broken': "The connection to the app was lost; the call may or may not have run. Read the state before trying it again.",
 } as const;
 // i18n-ignore-end
 

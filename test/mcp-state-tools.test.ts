@@ -64,7 +64,8 @@ const tool = (name: string, args: ToolArgs = {}): string => {
   const map = stateTools(env());
   const found = map.find((tl) => tl.name === name);
   if (!found) throw new Error(`no tool ${name}`);
-  return found.run(args).text;
+  // The reads answer at once; only the persona's tools wait on the app.
+  return (found.run(args) as { text: string }).text;
 };
 
 /** A run planted through the store's own write door (the file the store writes is the file every read re-opens). */

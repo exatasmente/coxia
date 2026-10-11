@@ -29,11 +29,12 @@ export const indexOfAct = (rows: readonly AuditEntry[], id: string | undefined):
 /** The persona approved an action it had proposed itself. */
 export const approvedOwn = (e: Pick<AuditEntry, 'actor' | 'proposedBy'>): boolean => e.actor === 'persona' && e.proposedBy === 'persona';
 
-/** How a door reads on the screen: the two known ones by a catalog key, any other value (a later door) as it is. */
+/** How a door reads on the screen: the known ones by a catalog key, any other value (a later door) as it is. */
 export function doorWords(door: string | undefined): { key: string } | { raw: string } | null {
   if (!door) return null;
   if (door === 'window') return { key: 'ui.audit.door.window' };
   if (door === 'paired') return { key: 'ui.audit.door.paired' };
+  if (door === 'terminal') return { key: 'ui.audit.door.terminal' };
   return { raw: door };
 }
 

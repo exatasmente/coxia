@@ -7,6 +7,7 @@
   "ui.audit.basis.subject": "Decided on: {subject}",
   "ui.audit.door": "Asked from {door}",
   "ui.audit.door.paired": "a paired browser",
+  "ui.audit.door.terminal": "a terminal session",
   "ui.audit.door.window": "the window",
   "ui.audit.error": "error",
   "ui.audit.filterLabel": "Filter by issue",

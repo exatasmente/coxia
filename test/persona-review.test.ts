@@ -20,7 +20,7 @@ const { ToolError } = await import('../src/main/engine/open/tools/types');
 const { personaSettingsRefusal } = await import('../src/main/persona/settingsGuard');
 
 const THREAD = agentThreadId('me');
-const session = () => createSession({ persona: 'me', thread: THREAD, seq: 5, door: 'window' });
+const session = (over: { door?: string } = {}) => createSession({ persona: 'me', thread: THREAD, seq: 5, door: 'window', ...over });
 const acts = (): ForumMessage[] => (forumStore().read(THREAD, 0, 2000)?.messages ?? []).filter((m) => m.code === 'persona.act');
 const newest = (kind: AuditEntry['kind']): AuditEntry => listAudit().filter((e) => e.kind === kind)[0];
 const why = 'Because the person asked me to.';
@@ -73,6 +73,14 @@ describe('the channels the door excludes, reached through a path of the settings
     const out = await personaDoor.run(session(), 'Settings', { op: 'set', path: 'mcpState', value: { enabled: true }, why }).catch((e: Error) => e);
     expect((out as Error).message).toMatch(/MCP servers switch is the computer's/);
     expect(newest('act')).toMatchObject({ actor: 'persona', ok: false });
+  });
+
+  it('refuses to turn on the persona tools of a terminal session, from any door, the terminal itself included', async () => {
+    for (const door of ['window', 'terminal']) {
+      const out = await personaDoor.run(session({ door }), 'Settings', { op: 'set', path: 'mcpState.act', value: true, why }).catch((e: Error) => e);
+      expect((out as Error).message).toMatch(/MCP servers switch is the computer's/);
+      expect(getConfig().mcpState?.act).toBe(false);
+    }
   });
 
   it('refuses to remove or rename the persona\'s own entry, and to edit its instructions, and lets its reach change', async () => {

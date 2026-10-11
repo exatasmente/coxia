@@ -287,6 +287,16 @@ describe('the act and its scope', () => {
     expect(newest('act')).toMatchObject({ door: 'paired', actor: 'persona' });
   });
 
+  it('keeps the terminal as the door of a terminal session: the audit says so, the line in the conversation says so, and no message is pointed to', async () => {
+    const before = acts().length;
+    await personaDoor.run(session({ door: 'terminal', seq: 0 }), 'Overview', { op: 'markErrorsSeen', why });
+    expect(newest('act')).toMatchObject({ door: 'terminal', actor: 'persona', basis: { message: null } });
+    expect(acts().slice(before)[0].params).toMatchObject({ door: 'terminal' });
+    // The persona's own answers came from its conversation: their lines carry no door.
+    await personaDoor.run(session(), 'Overview', { op: 'markErrorsSeen', why });
+    expect(acts().at(-1)?.params?.door).toBeUndefined();
+  });
+
   it('does not consult the phone: a channel the phone alone cannot reach is reached', async () => {
     // plugins:set-enabled is desktop-only for a paired browser; through the door it is the handler's own result that decides.
     await expect(personaDoor.run(session({ door: 'paired' }), 'Plugins', { op: 'setEnabled', id: 'no-such-plugin', enabled: true, why })).rejects.toThrow(/Plugins\.setEnabled failed/);

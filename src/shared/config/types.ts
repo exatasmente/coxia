@@ -1,12 +1,14 @@
-// WorkspaceConfig (schema 31): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 32): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 31;
+export const CONFIG_SCHEMA_VERSION = 32;
 
-/** The local read-only state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
+/** The local state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
   enabled: boolean;
+  /** The same server also offers the persona's tools, run by the open app through the persona's door; needs `enabled`. Off unless the person turned it on. */
+  act: boolean;
 }
 
 export type Language = 'pt-BR' | 'en';

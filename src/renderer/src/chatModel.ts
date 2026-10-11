@@ -170,6 +170,8 @@ export interface ActLine {
   raised: string | null;
   /** The id of the act in the audit (the link scrolls to it), or null when the line carries none. */
   auditId: string | null;
+  /** The door the act came by when it is not this conversation (a terminal session), or null. */
+  door: string | null;
   /** The screen the act was about, validated as every button is, or null. */
   target: PushTarget | null;
 }
@@ -235,7 +237,7 @@ export function actLine(m: Pick<ForumMessage, 'params'>, say: Say): ActLine {
     : verb
       ? say('ui.chat.act.did', { area, did: say(verb, { subject: subject || '—' }) })
       : say('ui.chat.act.ok', { area, op, subject: subject || '—' });
-  return { text: sentence, refused, raised: text(p.raised) || null, auditId: text(p.id) || null, target: actTarget(p.target) };
+  return { text: sentence, refused, raised: text(p.raised) || null, auditId: text(p.id) || null, door: text(p.door) || null, target: actTarget(p.target) };
 }
 
 // ---- the buttons --------------------------------------------------------------------------------------------------------------------------------

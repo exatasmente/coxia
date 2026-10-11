@@ -2062,6 +2062,7 @@
   "main.mcpstate.unknownTool": "No such tool: {name}. The state server answers reads only; every write comes later, behind the app's own approvals.",
   "main.mcpstate.unknownMethod": "Unknown method: {method}",
   "main.mcpstate.badToggle": "The opt-in is a boolean.",
+  "main.mcpstate.actNeedsRead": "The persona's tools for a terminal session need the state server on first.",
   "main.mcpstate.unavailable": "The state server cannot be spawned from this install (its built file is not a plain file node can load), so no entry is offered.",
   "main.mcpstate.badTarget": "The folder \"{path}\" is not a project folder of this workspace.",
   "main.mcpstate.mergeConflict": "The .mcp.json file of that project was left as it is: it carries an entry of the same name with a different program, or text that is not a server list."

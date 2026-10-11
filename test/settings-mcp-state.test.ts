@@ -10,6 +10,9 @@ const state = vi.hoisted(() => ({ web: false })) as { web: boolean; };
 
 const fixture: McpStateView = {
   enabled: true,
+  act: false,
+  persona: true,
+  listening: false,
   workspaceId: 'state-server-ws',
   available: true,
   entry: '{"mcpServers":{"coxia-state":{}}}',
@@ -25,7 +28,7 @@ vi.mock('../src/renderer/src/platform', async (orig) => ({ ...(await orig<typeof
 vi.mock('../src/renderer/src/i18n', async (orig) => ({ ...(await orig<typeof import('../src/renderer/src/i18n')>()), useT: () => t }));
 
 beforeEach(() => {
-  Object.assign(fixture, { enabled: true, available: true, entry: '{"mcpServers":{"coxia-state":{}}}', path: '/opt/app/out/main/mcp-state.js' } as Partial<McpStateView>);
+  Object.assign(fixture, { enabled: true, act: false, persona: true, listening: false, available: true, entry: '{"mcpServers":{"coxia-state":{}}}', path: '/opt/app/out/main/mcp-state.js' } as Partial<McpStateView>);
 });
 
 afterEach(() => {
@@ -35,7 +38,7 @@ afterEach(() => {
 
 const Section = async (): Promise<string> => {
   const mod = await import('../src/renderer/src/screens/McpStateSection');
-  return renderToStaticMarkup(createElement(mod.McpStatePanel as never, { shown: fixture, onToggle: () => undefined, onWrite: () => undefined }));
+  return renderToStaticMarkup(createElement(mod.McpStatePanel as never, { shown: fixture, onToggle: () => undefined, onToggleAct: () => undefined, onWrite: () => undefined }));
 };
 
 describe('the panel', () => {
@@ -71,5 +74,23 @@ describe('the panel', () => {
     const html = await Section();
     expect(html).toContain(t('ui.settings.mcp.unavailable'));
     expect(html).not.toContain(t('ui.settings.mcp.copy'));
+  });
+
+  it('offers the second switch (the persona\'s tools) only under the first, and says when there is no persona or no listener', async () => {
+    fixture.enabled = false;
+    expect(await Section()).not.toContain(t('ui.settings.mcp.act.label'));
+    fixture.enabled = true;
+    let html = await Section();
+    expect(html).toContain(t('ui.settings.mcp.act.label'));
+    expect(html).not.toContain(t('ui.settings.mcp.act.noPersona'));
+    expect(html).not.toContain(t('ui.settings.mcp.act.listening'));
+    Object.assign(fixture, { act: true, persona: false, listening: false });
+    html = await Section();
+    expect(html).toContain(t('ui.settings.mcp.act.noPersona'));
+    expect(html).toContain(t('ui.settings.mcp.act.notListening'));
+    Object.assign(fixture, { persona: true, listening: true });
+    html = await Section();
+    expect(html).not.toContain(t('ui.settings.mcp.act.noPersona'));
+    expect(html).toContain(t('ui.settings.mcp.act.listening'));
   });
 });

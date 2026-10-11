@@ -126,7 +126,8 @@ export function createDoor(deps: DoorDeps = {}): Door {
     const relevant = (target: string): boolean => !!target && (subject.includes(target) || named.has(target));
     const newest = [...session.reads].reverse();
     const ordered = [...newest.filter((r) => relevant(r.target)), ...newest.filter((r) => !relevant(r.target))];
-    return { subject, reads: ordered.slice(0, 8), message: session.seq };
+    // A session that began from no message (a terminal session's) has none to point to.
+    return { subject, reads: ordered.slice(0, 8), message: session.seq > 0 ? session.seq : null };
   }
 
   /** The line in the persona's conversation, before the answer is posted: stored, and worded by whoever reads it. */
@@ -151,6 +152,8 @@ export function createDoor(deps: DoorDeps = {}): Door {
           ...(o.reason ? { reason: cut(o.reason, LINE_SUBJECT_MAX) } : {}),
           ...(o.raised.length ? { raised: o.raised.join(', ') } : {}),
           ...(o.target ? { target: JSON.stringify(o.target) } : {}),
+          // The persona's own answers came from this conversation; any other door (a terminal session) is said on the line.
+          ...(session.door !== 'window' && session.door !== 'paired' ? { door: session.door } : {}),
         },
       });
     } catch (e) {

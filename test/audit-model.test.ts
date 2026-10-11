@@ -52,9 +52,10 @@ describe('the link from the chat', () => {
 });
 
 describe('what a persona line shows', () => {
-  it('words the two known doors by a catalog key and shows any other as it is', () => {
+  it('words the known doors by a catalog key and shows any other as it is', () => {
     expect(doorWords('window')).toEqual({ key: 'ui.audit.door.window' });
     expect(doorWords('paired')).toEqual({ key: 'ui.audit.door.paired' });
+    expect(doorWords('terminal')).toEqual({ key: 'ui.audit.door.terminal' });
     expect(doorWords('schedule')).toEqual({ raw: 'schedule' });
     expect(doorWords(undefined)).toBeNull();
   });
