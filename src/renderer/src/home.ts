@@ -158,6 +158,12 @@ export function navGroups(on: Partial<CycleView['ceremonies']> | undefined, pers
   ].filter((g) => g.rows.length > 0) as NavGroup[];
 }
 
+/** The hover text of a row: its detail (what the radar counts, the help's shortcut), and, when the sidebar is folded, its words too, since the icon alone does not say them. */
+export function rowTitle(label: string, detail: string | undefined, folded: boolean): string | undefined {
+  if (!folded) return detail;
+  return detail ? `${label} · ${detail}` : label;
+}
+
 /** The cards the QA hand-off may take, the ones ready for QA first (the Overview's list, and the first of it is what the menu opens). */
 export function qaCandidates(cards: readonly Card[], cycle: CycleView | null | undefined): { ready: Card[]; all: Card[] } {
   const ready = cycle ? cards.filter((card) => isReadyForQa(cycle, card.stage, !!card.spec)) : [];

@@ -18,3 +18,19 @@ describe('the ceremony bar on a phone', () => {
     expect(phone).not.toMatch(/\.chat-cer-progress \{[^}]*display: none/);
   });
 });
+
+describe('the sidebar of the computer', () => {
+  const shell = read('screens/persona/HomeShell.tsx');
+
+  it('toggles by aria-expanded under a label that does not change, and names its landmark', () => {
+    expect(shell).toMatch(/aria-expanded=\{!folded\}/);
+    expect(shell).not.toMatch(/aria-pressed/);
+    expect(shell).toMatch(/aria-label=\{t\('ui\.chat\.nav\.toggle'\)\}/);
+    expect(shell).toMatch(/<aside className="home-side" aria-label=\{t\('ui\.chat\.nav\.sidebar'\)\}/);
+  });
+
+  it('writes the choice from the handler, not from inside a state updater', () => {
+    expect(shell).not.toMatch(/setFolded\(\(/);
+    expect(shell).toMatch(/const next = !folded;\s+setFolded\(next\);\s+writeFolded\(next\);/);
+  });
+});

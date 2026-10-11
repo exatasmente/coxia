@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Run } from '../src/shared/runs';
 import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
 import { needsYou, pendingQuestions } from '../src/renderer/src/dashboard';
-import { type HomeCountsInput, HOME, OVERVIEW, anyCount, blockedCards, ceremonyCard, countTarget, deepBack, homeCounts, homeView, navGroups, resumeWizard, snoozeWizard, wizardSnoozed } from '../src/renderer/src/home';
+import { type HomeCountsInput, HOME, OVERVIEW, anyCount, blockedCards, ceremonyCard, countTarget, deepBack, homeCounts, homeView, navGroups, resumeWizard, rowTitle, snoozeWizard, wizardSnoozed } from '../src/renderer/src/home';
 import { agoraPlan, type AgoraInput } from '../src/renderer/src/dashboard';
 import { waitingRuns } from '../src/shared/runs/view';
 import type { WatcherAlert } from '../src/shared/watchers';
@@ -126,6 +126,15 @@ describe('the counts of the strip', () => {
     expect(chat?.text).toMatch(/homeCounts\(/);
     expect(overview?.text).toMatch(/blockedCards\(/);
     expect(overview?.text).toMatch(/pendingQuestions\(/);
+  });
+});
+
+describe('the hover text of a row', () => {
+  it('is the detail when the sidebar is open, and the words with the detail when it is folded', () => {
+    expect(rowTitle('Radar', '3 findings', false)).toBe('3 findings');
+    expect(rowTitle('Radar', undefined, false)).toBeUndefined();
+    expect(rowTitle('Radar', '3 findings', true)).toBe('Radar · 3 findings');
+    expect(rowTitle('Runs', undefined, true)).toBe('Runs');
   });
 });
 

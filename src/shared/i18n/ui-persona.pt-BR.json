@@ -191,6 +191,8 @@
   "ui.chat.nav.ceremonies": "Cerimônias",
   "ui.chat.nav.cycle": "Ciclo",
   "ui.chat.nav.fold": "Recolher a barra lateral",
+  "ui.chat.nav.sidebar": "Barra lateral de navegação",
+  "ui.chat.nav.toggle": "Barra lateral",
   "ui.chat.nav.unfold": "Abrir a barra lateral",
   "ui.chat.noPersona.body": "Este workspace ainda não tem persona, então não há com quem conversar aqui. Crie uma nas Configurações, ou veja a Visão geral.",
   "ui.chat.noPersona.settings": "Abrir as Configurações",

@@ -4,7 +4,7 @@ import { totalUnread } from '../../../../shared/forumView';
 import type { Screen } from '../../App';
 import type { Ceremony } from '../../ceremony';
 import { useCycle } from '../../cycleApi';
-import { type HomeCounts, type NavId, type NavRow, blockedCards, homeCounts, navGroups, qaCandidates } from '../../home';
+import { type HomeCounts, type NavId, type NavRow, blockedCards, homeCounts, navGroups, qaCandidates, rowTitle } from '../../home';
 import { useT, useTv } from '../../i18n';
 import { useWatcherAlerts } from '../../watchersApi';
 import { useSeen, useThreads } from '../cycle/forumApi';
@@ -103,7 +103,7 @@ export function HomeNav({ go, ceremony: c, actions, current, persona, folded = f
                 className="home-nav-row"
                 aria-current={isCurrent(r) ? 'page' : undefined}
                 aria-label={shown ? `${label}, ${shown.label}` : folded ? label : undefined}
-                title={folded ? label : titles[r.id]}
+                title={rowTitle(label, titles[r.id], folded)}
                 disabled={!screen}
                 onClick={() => {
                   if (!screen) return;

@@ -47,15 +47,14 @@ export function HomeShell({ go, ceremony, actions, current, persona, children }:
   if (phone) return <>{children}</>;
 
   const toggle = () => {
-    setFolded((v) => {
-      writeFolded(!v);
-      return !v;
-    });
+    const next = !folded;
+    setFolded(next);
+    writeFolded(next);
   };
 
   return (
     <div className={`home-shell ${folded ? 'home-shell-folded' : ''}`}>
-      <aside className="home-side">
+      <aside className="home-side" aria-label={t('ui.chat.nav.sidebar')}>
         <div className="home-side-top">
           {!folded && (
             <div className="home-brand">
@@ -67,7 +66,7 @@ export function HomeShell({ go, ceremony, actions, current, persona, children }:
               {workspace && <span className="home-brand-name">{workspace.name}</span>}
             </div>
           )}
-          <button type="button" className="btn icon-btn home-fold" aria-pressed={folded} aria-label={folded ? t('ui.chat.nav.unfold') : t('ui.chat.nav.fold')} title={folded ? t('ui.chat.nav.unfold') : t('ui.chat.nav.fold')} onClick={toggle}>
+          <button type="button" className="btn icon-btn home-fold" aria-expanded={!folded} aria-label={t('ui.chat.nav.toggle')} title={folded ? t('ui.chat.nav.unfold') : t('ui.chat.nav.fold')} onClick={toggle}>
             <SidebarIcon />
           </button>
         </div>
