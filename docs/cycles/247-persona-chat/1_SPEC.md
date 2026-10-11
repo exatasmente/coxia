@@ -149,7 +149,7 @@ Checked against this tree (release `0.9.0-beta.19`, schema 28); every line numbe
 - **Several personas**, one per person, or a persona per squad.
 - **Streaming of any other answer**, of the wizard's rounds or of reasoning (reasoning stays one closed line per turn).
 - **Changing how a mention is answered** for any other agent, or the structured answer other conversations use.
-- **The persona answering from the phone with a different persona** or the phone editing it.
+- **A different persona per device**: the phone and the computer talk to the same persona.
 - **Documentation of the plugin and MCP surfaces** (#251) and anything under the app's settings other than the Persona section.
 
 ## Acceptance criteria
