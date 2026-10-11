@@ -7,7 +7,7 @@
 - Plano: Q1 campos `project` e `number` em `PushTarget`; Q2 sim; Q4 alternativa a (explica sem card).
 - Implementação: `mrOutOfReach` (`readTool.ts`) estrito; `openDiscussions` lê a MR antes da lista; ferramenta `OpenDiscussions` para quem não é a persona; tela sem card sem jobs, sem responder nem resolver.
 - Bloqueantes da revisão tratados: `Thread.tsx` desenha botões de agente; `openButton.ts` + `discussionsOpened` gravam `main.feedback.opened` só para botão do thread; rota por par leva `back`; `PROJECT` recusa segmentos de pontos.
-- Revisão rodadas 2 e 3 aprovadas; QA e integração: gates passaram.
+- Revisão rodadas 2 e 3 aprovadas.
 - Pedido da pessoa (conflitos com a base): mesclada `release/0.10.0` (`8389197`); conflitos em CHANGELOG, `answer.ts`, `ChatScreen.tsx`, `ChatThread.tsx` resolvidos unindo os dois lados. Canais `feedback:discussions:open`/`opened` entraram como exclusão `window` em `doorTable.ts`; teste com 303 canais e 113 exclusões.
 - Resposta: **Spec funcional escrita (refinamento).** Li a issue, a triagem e o código que a triagem cita. O que ela pede está de pé, mas a descrição esconde uma coisa maior do que eu esperava, e é essa a spec. **O que a descrição não diz.** Hoje a única superfície que abre uma tela a partir de uma conversa é o botão da persona — e ela só **oferece**, não abre. Um agente que responde numa conversa (não a persona) não tem nenhuma ferramenta de ação: recebe leitura, a chamada a um par e as tarefas da persona. Então “o agente abre a tela de discussões” não é um encaixe no que existe, é uma superfície nova: u… <!-- answer:127 -->
 - Resposta: tentar novamente <!-- answer:164 -->
@@ -19,6 +19,7 @@
 - Toda string passa por `t()` nos dois catálogos; repositório público.
 - PR com base na release aberta (0.10.0), nunca na main.
 - Todo canal IPC novo precisa de lugar em `doorTable.ts`, senão `persona-door-table` falha.
+- `public-audit` acusa 2 achados só se `out/` existir; apagar `out/` depois do build.
 
 ## Tentado e descartado
 
@@ -32,12 +33,10 @@
 
 ## Onde o trabalho está
 
-- Revisão rodada 3 aprovada por leitura: sem marcador de conflito em src, exclusão em `doorTable.ts` e `answer.ts` conferidos. CHANGELOG, ChatScreen e ChatThread não lidos linha a linha.
-- Segundo o dev (não verificado aqui): tsc, 7 arquivos tocados (124), i18n, theme, public-audit ok; vitest completo falha só nos 4 arquivos de navegador e oscila em `conflict-from-mr`.
-- Não verificado: `electron-vite build` depois do merge; host sem conflito depois do push; a tela no app; celular pareado.
-- `public-audit` acusa 2 achados só se `out/` existir; apagar `out/` depois do build.
+- QA (tentativa 2), rodado depois da mesclagem: `electron-vite build`, tsc, i18n:lint, theme-audit, public-audit (sem out/) e 7 arquivos de teste tocados (124) passam (ev-13, ev-14, ev-15). `out/` apagado.
+- Não verificado: vitest completo (relato do dev: só 4 arquivos de navegador falham, `@playwright/mcp` ausente, e oscilação de `conflict-from-mr`); a tela no app (chat, Fórum, execução, linha no thread, voltar); celular pareado; host sem conflito depois do push.
 - Sugestão menor não tratada: `discussionsOpened` grava uma linha por toque.
-- Próximo: rodar `electron-vite build`, abrir o PR com base `release/0.10.0`.
+- Próximo: abrir o PR com base `release/0.10.0` e conferir que o host não acusa conflito.
 - Passagem support → product-owner: O gate 1 decide se a spec (`1_SPEC.md`) segue. A próxima etapa (plano técnico) precisa tratar os três pontos que a triagem achou e a issue não cobre: construir o rigor de projeto no caminho da tela (`listDiscussions`/`explainDiscussion` hoje vão ao provedor direto), fazer a explicação de cada thread funcionar sem o card inteiro no prompt, e levar projeto + número da MR num destino que hoje só tem `ref`/`id`/`mr` — o que toca `src/shared/push.ts`, `src/renderer/src/pushTarget.ts` e o `openScreen` da persona. Nada aqui foi executado; nenhuma tela foi aberta. <!-- handoff:139 -->
 - Passagem product-owner → pessoa: O gate 1 decide a spec (`1_SPEC.md`) e, em especial, as duas decisões de base que bloqueiam o plano: (a) se um agente que não é a persona pode abrir uma tela a partir de uma resposta — se a pessoa recusar, as regras 15 a 18 saem e a mudança fica nos botões da persona; (b) como a explicação se comporta sem o card (segue e perde a linha do card / só lista / lista com recado). O plano técnico precisa tratar cinco pontos: construir o rigor de projeto no caminho da tela (hoje a lista e a explicação vão ao provedor direto, com a validação só de formato), fazer a explicação funcionar sem o card intei… <!-- handoff:149 -->
 - Passagem tl-experiencia → pessoa: Implementar as mudanças descritas no plano, começando pelos seletores e roteamento, seguido pelas telas e pelos backends. Após cada mudança, executar os testes correspondentes para verificar o comportamento. <!-- handoff:179 -->
@@ -49,3 +48,4 @@
 - Passagem integrator → pessoa: Integração: gates do CI passam (tsc, theme, i18n, public sem out/, build, testes tocados). Não verificados por falta de .git na sandbox: atraso da base, esquema contra a release e PRs abertos. Abra o PR com base release/0.10.0 e confira antes se a branch está atrás. A tela não foi exercitada no app; Q3, Q5, Q6, Q7 ficam para a pessoa. <!-- handoff:346 -->
 - Passagem pessoa → dev-experiencia: a branch está com conflitos com a base, devem ser resolvidos antes do merge Contexto para o pedido acima, não trabalho novo: o que a revisão e a QA deixaram em aberto. Pontos em aberto da revisão (rodada 2), os que bloqueiam e as sugestões. Trate cada um, ou diga por que não vai tratar: [sugestão] src/main/feedback.ts:441-445: Cada toque no mesmo botão grava uma nova linha de sistema; toques repetidos poluem o thread. Não bloqueia. O que o QA não aprovou ou não conseguiu verificar: - Esquema, base atrás da release e base do PR (não rodou): Sandbox sem .git (git falha); vcs_read não lista branc… <!-- handoff:354 -->
 - Passagem dev-experiencia → revisor-experiencia: The branch now contains `release/0.10.0` (`8389197`). The merge is staged without a commit and has no conflicted file. To check: - the resolution of the 4 files (CHANGELOG, `answer.ts`, `ChatScreen.tsx`, `ChatThread.tsx`); - the exclusion of the two `feedback:discussions:*` channels in `doorTable.ts`, with the counts updated in `persona-door-table`. Before the PR (base `release/0.10.0`), run `electron-vite build`, which did not run after the merge. Also confirm the host no longer reports conflicts once the push is done. <!-- handoff:382 -->
+- Passagem revisor-experiencia → qa-experiencia: Revisão aprovada. Antes do PR (base release/0.10.0), rodar electron-vite build, que não rodou depois da mesclagem, e confirmar que o host não acusa mais conflito. A tela não foi exercitada no app. <!-- handoff:388 -->
