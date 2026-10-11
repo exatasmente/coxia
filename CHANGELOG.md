@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The terminal state server's section shows in Settings.** Its switches (read the workspace's state, and act through the persona's tools) and the server entry were never drawn in Settings › Configurations and workspaces, so they could only be turned on by editing the configuration. They are now under the export and import of a configuration, on the computer only.
+
 ## [0.11.0-beta.1] - 2026-10-11
 
 ### Added
