@@ -133,7 +133,7 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
         className="composer"
         inline
         hint={phone ? t('ui.chat.hint.phone') : t('ui.chat.hint.desktop')}
-        placeholder={t('ui.chat.placeholder', { agent: name })}
+        placeholder={phone ? t('ui.chat.placeholder.phone') : t('ui.chat.placeholder', { agent: name })}
         onSent={() => {
           stick.current = true;
         }}

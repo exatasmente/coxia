@@ -200,6 +200,7 @@
   "ui.chat.notices_one": "{count} app notice",
   "ui.chat.notices_other": "{count} app notices",
   "ui.chat.placeholder": "Write to {agent}",
+  "ui.chat.placeholder.phone": "Write a message",
   "ui.chat.queued": "Waiting for the answer before this one",
   "ui.chat.queuedStopped": "Waiting for you to resume the persona",
   "ui.chat.strip.needs": "Needs you",

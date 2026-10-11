@@ -84,7 +84,8 @@ export function ChatHeader({ persona, go, ceremony, actions, current, title, inv
   const phone = useIsPhone();
   const testWorkspace = runningWorkspace(useWorkspaces())?.test === true;
   const now = new Date();
-  const date = now.toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
+  // A phone has no room for the long date: it stays on one line.
+  const date = now.toLocaleDateString(intlLocale(), phone ? { weekday: 'short', day: 'numeric', month: 'short' } : { weekday: 'long', day: 'numeric', month: 'long' });
   const today = date.charAt(0).toUpperCase() + date.slice(1);
   const name = title ?? (persona ? agentName([persona], persona.id) : t('ui.chat.noPersona.title'));
 
@@ -92,7 +93,7 @@ export function ChatHeader({ persona, go, ceremony, actions, current, title, inv
     <header className="chat-head">
       {phone && <PhoneMenu go={go} ceremony={ceremony} actions={actions} current={current} persona={!!persona} />}
       <div className="chat-head-text">
-        <h1 className="chat-name">{name}</h1>
+        <h1 className="chat-name" title={name}>{name}</h1>
         <div className="faint small">{today}</div>
       </div>
       <div className="chat-head-actions">

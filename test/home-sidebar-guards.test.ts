@@ -66,3 +66,25 @@ describe('where the navigation is mounted', () => {
     expect(header).toContain('<PhoneMenu ');
   });
 });
+
+describe('the phone', () => {
+  const css = read('screens/persona/chat.css');
+  const phone = css.slice(css.indexOf('@media (max-width: 600px)'));
+
+  it('keeps the box at one line at rest: the placeholder does not carry the name', () => {
+    const thread = read('screens/persona/ChatThread.tsx');
+    expect(thread).toMatch(/placeholder=\{phone \? t\('ui\.chat\.placeholder\.phone'\) : t\('ui\.chat\.placeholder'/);
+  });
+
+  it('never lets the live dock sit on the ceremony bar', () => {
+    expect(read('JobsDock.tsx')).toMatch(/const AVOID = '[^']*\.chat-cer[^']*'/);
+  });
+
+  it('wraps the name of the header between words and keeps the date on one line, short', () => {
+    expect(phone).toMatch(/\.chat-name \{[^}]*white-space: normal[^}]*overflow-wrap: normal[^}]*-webkit-line-clamp: 2/);
+    expect(phone).toMatch(/\.chat-head-text > \.small \{[^}]*white-space: nowrap/);
+    const header = read('screens/persona/ChatHeader.tsx');
+    expect(header).toMatch(/phone \? \{ weekday: 'short'/);
+    expect(header).toContain('<h1 className="chat-name" title={name}>');
+  });
+});

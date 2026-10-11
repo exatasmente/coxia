@@ -140,7 +140,9 @@
 @media (max-width: 600px) {
   .chat-head { padding: 8px 12px; gap: 8px; }
   .chat-head-actions { gap: 4px; }
-  .chat-name { font-size: 17px; }
+  /* the name wraps between words, up to two lines, instead of being cut in the middle of one; the date keeps one line */
+  .chat-name { font-size: 17px; white-space: normal; overflow-wrap: normal; word-break: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .chat-head-text > .small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .chat-page > .error, .chat-none { margin: 8px 12px 0; }
   .chat-page > .chat { padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); }
   /* on a phone the ceremony line keeps its buttons under the title and the progress beside it; only the hint, the long part, goes */
