@@ -3,6 +3,7 @@ import type { AgentDef } from '../../../../shared/config/types';
 import { totalUnread } from '../../../../shared/forumView';
 import type { Screen } from '../../App';
 import type { Ceremony } from '../../ceremony';
+import { menuControls } from '../../chatModel';
 import { useCycle } from '../../cycleApi';
 import { HOME, blockedCards, menuRows, qaCandidates, resumeWizard } from '../../home';
 import { intlLocale, useT, useTv } from '../../i18n';
@@ -141,7 +142,7 @@ export function ChatHeader({ persona, go, ceremony, title, invite }: HeaderProps
           <button type="button" className="btn icon-btn" aria-label={t('ui.today.jobs')} title={t('ui.today.jobsRunning')} onClick={() => window.dispatchEvent(new CustomEvent('cerimonias:jobs-open'))}>
             <BellIcon />
           </button>
-          <button type="button" className="btn" aria-expanded={menu} aria-haspopup={phone ? 'dialog' : undefined} aria-controls={phone ? undefined : 'chat-menu'} onClick={() => setMenu((v) => !v)}>
+          <button type="button" className="btn" aria-expanded={menu} aria-haspopup={phone ? 'dialog' : undefined} aria-controls={menuControls(menu, phone)} onClick={() => setMenu((v) => !v)}>
             <MoreIcon /> {t('ui.chat.menu.button')}
           </button>
         </div>

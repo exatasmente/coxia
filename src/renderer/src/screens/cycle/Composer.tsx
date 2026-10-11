@@ -1,9 +1,10 @@
-import { useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
 import { type AttachmentRef, ATTACHMENT_LIMITS, formatBytes } from '../../../../shared/attachments';
 import { type ForumMessage, parseMentions } from '../../../../shared/forum';
 import { applyMention, mentionAt, mentionChoices, mentionOptions } from '../../../../shared/forumView';
 import { errorText } from '../../api';
+import { composerAria } from '../../chatModel';
 import { useT } from '../../i18n';
 import { agentName } from './names';
 import { forumApi } from './forumApi';
@@ -67,10 +68,12 @@ export interface ComposerProps {
   /** The line under the box that says how to send; default is the conversations'. */
   hint?: string;
   placeholder?: string;
+  /** Focus the box when it appears (the computer's chat). Default off: a phone would raise its keyboard over the conversation. */
+  autoFocus?: boolean;
 }
 
 /** The box a person writes in, with `@agent` completed from the team as they type and files attached by button, drag and drop or paste. */
-export function Composer({ thread, team, note, onSent, onSendBack, mentions = true, enterSends = false, className = '', hint, placeholder }: ComposerProps) {
+export function Composer({ thread, team, note, onSent, onSendBack, mentions = true, enterSends = false, className = '', hint, placeholder, autoFocus = false }: ComposerProps) {
   const t = useT();
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
@@ -85,6 +88,9 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
   const listId = useId();
   // A draft agent is not offered, except in its own conversation: there the person is talking to it.
   const named = useMemo(() => (mentions ? mentionChoices(team ?? [], thread).map((a) => ({ id: a.id, name: agentName(team, a.id) })) : []), [team, thread, mentions]);
+  useEffect(() => {
+    if (autoFocus) box.current?.focus();
+  }, [autoFocus]);
   const at = dismissed || !mentions ? null : mentionAt(text, caret);
   const options = at ? mentionOptions(named, at.query) : [];
 
@@ -192,14 +198,12 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
           className="text-input cy-textarea cy-compose"
           rows={2}
           value={text}
-          disabled={busy}
+          // Read-only while a message leaves, not disabled: a disabled box drops the focus and the person has to click back into it.
+          readOnly={busy}
+          aria-busy={busy || undefined}
           aria-label={t('ui.forum.compose')}
           placeholder={placeholder ?? t('ui.forum.composePlaceholder')}
-          role="combobox"
-          aria-expanded={options.length > 0}
-          aria-controls={listId}
-          aria-autocomplete="list"
-          aria-activedescendant={options.length ? `${listId}-${active}` : undefined}
+          {...composerAria(mentions, listId, options.length, active)}
           onChange={(e) => {
             setText(e.target.value);
             setCaret(e.target.selectionStart);

@@ -121,6 +121,7 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
         note={going ? t('ui.chat.willWait') : null}
         mentions={false}
         enterSends={!phone}
+        autoFocus={!phone && !compact}
         className="composer"
         hint={phone ? t('ui.chat.hint.phone') : t('ui.chat.hint.desktop')}
         placeholder={t('ui.chat.placeholder', { agent: name })}

@@ -7,7 +7,7 @@ import { createTranslator } from '../src/shared/i18n';
 import type { LiveAnswer, LiveEvent } from '../src/shared/persona';
 import { PUSH_SCREENS } from '../src/shared/push';
 import { buildTree, hasWork } from '../src/renderer/src/activityTreeModel';
-import { BUTTON_KEY, bubblesOf, buttonLabel, composerState, liveKey, liveOf, queuedOf, reduceLive, reduceRead, rowKind, workItems, workOf, workOpenByDefault, workSummary } from '../src/renderer/src/chatModel';
+import { BUTTON_KEY, bubblesOf, buttonLabel, composerAria, composerState, liveKey, menuControls, liveOf, queuedOf, reduceLive, reduceRead, rowKind, workItems, workOf, workOpenByDefault, workSummary } from '../src/renderer/src/chatModel';
 
 const THREAD = 'agent-me';
 const event = (to: number, rev: number, offset: number, text: string, over: Partial<LiveEvent> = {}): LiveEvent => ({ thread: THREAD, to, agent: 'me', rev, offset, text, ...over });
@@ -222,5 +222,19 @@ describe('the words of a button', () => {
     expect(buttonLabel({ to: 'forum', id: 'agent-x' }, say.en, 'c')).toBe('Open the conversation agent-x');
     expect(buttonLabel({ to: 'forum' }, say.en, 'c')).toBe('Open the forum');
     expect(buttonLabel({ to: 'nowhere' }, say.en, 'c')).toBe('Open the screen');
+  });
+});
+
+describe('the accessibility attributes of the box and the menu', () => {
+  it('makes the box a combobox only where @agent is completed', () => {
+    expect(composerAria(false, 'x', 3, 1)).toEqual({});
+    expect(composerAria(true, 'x', 0, 0)).toEqual({ role: 'combobox', 'aria-expanded': false, 'aria-controls': 'x', 'aria-autocomplete': 'list', 'aria-activedescendant': undefined });
+    expect(composerAria(true, 'x', 2, 1)).toMatchObject({ 'aria-expanded': true, 'aria-activedescendant': 'x-1' });
+  });
+
+  it('points the menu button at the menu only while the desktop menu is in the page', () => {
+    expect(menuControls(false, false)).toBeUndefined();
+    expect(menuControls(true, false)).toBe('chat-menu');
+    expect(menuControls(true, true)).toBeUndefined();
   });
 });

@@ -158,3 +158,22 @@ export function buttonLabel(target: PushTarget, say: Say, ceremony: string): str
   const key = target.to === 'forum' && target.id ? 'ui.chat.button.forumThread' : (BUTTON_KEY[target.to] ?? 'ui.chat.button.other');
   return say(key, { ceremony, ref: target.ref ?? '', id: target.id ?? '' });
 }
+
+// ---- the accessibility attributes of the box and the menu ---------------------------------------------------------------------------------------
+
+/** The combobox attributes of the box: only a box that completes `@agent` is a combobox; the persona's chat is a plain text box and must not announce a list it does not have. */
+export function composerAria(mentions: boolean, listId: string, options: number, active: number): Record<string, string | boolean | undefined> {
+  if (!mentions) return {};
+  return {
+    role: 'combobox',
+    'aria-expanded': options > 0,
+    'aria-controls': listId,
+    'aria-autocomplete': 'list',
+    'aria-activedescendant': options ? `${listId}-${active}` : undefined,
+  };
+}
+
+/** What the menu button points at: the desktop's menu exists in the page only while it is open; the phone's is a dialog and names nothing. */
+export function menuControls(open: boolean, phone: boolean): string | undefined {
+  return open && !phone ? 'chat-menu' : undefined;
+}
