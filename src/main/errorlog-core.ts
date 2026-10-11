@@ -210,7 +210,7 @@ const ID_LIKE = /^[\w#!.:/-]{1,64}$/;
 const REF_LIKE = /^[\w./-]{1,100}[#!]\d{1,7}$|^[#!]?\d{1,7}$/;
 
 // What a failed channel call may say about itself: its name, the way it came in and an id. Never the arguments.
-export function rpcContext(channel: string, args: unknown[], via: 'ipc' | 'web'): Record<string, string> {
+export function rpcContext(channel: string, args: unknown[], via: 'ipc' | 'web' | 'persona'): Record<string, string> {
   const out: Record<string, string> = { channel, via };
   const first = args[0];
   if (typeof first === 'string' && ID_FIRST.test(channel) && ID_LIKE.test(first)) out.id = first;

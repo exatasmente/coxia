@@ -1,4 +1,4 @@
-import type { AuditEntry } from '../../shared/auditoria';
+import type { AuditEntry, Through } from '../../shared/auditoria';
 import type { WorkspaceConfig } from '../../shared/config/types';
 import { THREAD_ID } from '../../shared/forum';
 import { AGENT_ID, NOTE_ID, isNoteKind, memoryOn, type NoteSummary } from '../../shared/memory';
@@ -16,7 +16,7 @@ export interface ChannelDeps {
   config(): WorkspaceConfig;
   audit?(entry: Omit<AuditEntry, 'at'>): void;
   /** Which door the call came through. */
-  via(): 'window' | 'paired';
+  via(): Through;
   /** The title of a conversation, when the app knows the thread. */
   titleOf?(conversation: string): string | null;
   now?(): number;

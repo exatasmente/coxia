@@ -11,7 +11,7 @@ import type { ReleaseAction } from '../../shared/types';
 import type { Module } from '../module';
 import { failureText, noteRetroIssue } from '../retroIssues';
 import { callStops } from '../mentions/stop';
-import { callOrigin } from '../rpc';
+import { viaOf } from '../rpc';
 import { recordWrite } from '../auditoria';
 import { memoryAuditEntry, type MemoryAuditInput } from '../memory/audit';
 import { attachmentStore } from '../attachments';
@@ -125,7 +125,7 @@ const id = (v: unknown): string => {
 /** The origin of a correction of the activities or of a run's memory, in the audit log: the window or a paired browser. Never the text; a failing log is no failure of the move. */
 function auditMove(input: Pick<MemoryAuditInput, 'op' | 'ref'>): void {
   try {
-    recordWrite(memoryAuditEntry({ ...input, via: callOrigin() === 'web' ? 'paired' : 'window' }));
+    recordWrite(memoryAuditEntry({ ...input, via: viaOf() }));
   } catch {
     // The correction already happened.
   }
@@ -380,7 +380,7 @@ export const runsModule: Module = (ctx) => {
   ctx.handle('runs:screenAnswer', (askId: unknown, decision: unknown, note?: unknown) => {
     if (!ASK_DECISIONS.includes(decision as AskDecision)) return { ok: false as const, reason: 'decision' as const };
     try {
-      askStore.answer(text(askId), decision as AskDecision, callOrigin() === 'web' ? 'paired' : 'window', typeof note === 'string' ? note : undefined);
+      askStore.answer(text(askId), decision as AskDecision, viaOf(), typeof note === 'string' ? note : undefined);
       return { ok: true as const };
     } catch (e) {
       if (e instanceof AskGone) return { ok: false as const, reason: 'gone' as const };
