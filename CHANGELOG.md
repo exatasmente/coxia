@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.10.0-beta.2] - 2026-10-11
+
 ### Added
 
 - **A conversation can call a plugin and get its answer there.** A message that starts with a bar, the plugin's id and a question (`/web-search how does replay work?`) calls that plugin at once and its answer comes back in the same conversation, inside the material markers and with its sources, never as an instruction; `@` keeps naming an agent and one message is never read both ways. In a run's conversation the call also carries the run (the answer is written as the plugin's document in the cycle folder, keeping what the document had); in any other conversation the plugin runs over an empty folder of its own and nothing is written anywhere. The permission contract is unchanged — the network and the writes a plugin needs are asked in Actions — and the paired phone may now allow the request a call from a conversation opened (it could already refuse the request or block a write); the requests of the four cycle events stay the computer's. An unknown command, a plugin that is off, refused or missing a required setting answers with the reason and disturbs nothing else of the conversation. The web search is the first plugin to use it, and the plugin kit gains the `conversation-called` event with what was asked, the conversation and the run (when there is one) in the plugin's context.
@@ -433,7 +435,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.1...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.2...HEAD
+[0.10.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.1...v0.10.0-beta.2
 [0.10.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.9.0...v0.10.0-beta.1
 [0.9.0]: https://github.com/exatasmente/coxia/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/exatasmente/coxia/compare/v0.7.0...v0.8.0
