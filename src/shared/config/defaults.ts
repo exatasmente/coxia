@@ -89,7 +89,7 @@ export function neutralConfig(): WorkspaceConfig {
     runner: neutralRunner(),
     plugins: neutralPlugins(),
     testEnvironment: neutralTestEnvironment(),
-    mcpState: { enabled: false },
+    mcpState: { enabled: false, act: false },
   };
 }
 

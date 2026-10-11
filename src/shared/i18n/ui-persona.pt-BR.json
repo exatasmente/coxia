@@ -129,6 +129,7 @@
   "ui.chat.act.did.Settings.templateRemove": "removeu o modelo de ciclo {subject}",
   "ui.chat.act.did.Settings.templateSave": "salvou um modelo de ciclo",
   "ui.chat.act.did.Settings.verifySet": "mudou os comandos que verificam um conflito",
+  "ui.chat.act.door.terminal": "por uma sessão de terminal",
   "ui.chat.act.label": "Um ato da persona",
   "ui.chat.act.ok": "{area} · {op}: {subject}",
   "ui.chat.act.problem.enum": "{name} não é um dos valores permitidos",

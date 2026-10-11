@@ -616,8 +616,9 @@ export const CONFIG_SCHEMA: JsonSchema = {
         },
         required: ['variables', 'secrets'],
       },
-      mcpState: object('The local read-only state server of the workspace: a terminal session adds it over stdio. It answers the workspace\'s cycles, runs, conversations, evidence and memories, always masked; it never writes.', {
+      mcpState: object('The local state server of the workspace: a terminal session adds it over stdio. It answers the workspace\'s cycles, runs, conversations, evidence and memories, always masked; with `act` on, it also offers the persona\'s tools, which the open app runs through the persona\'s door.', {
         enabled: boolean('A terminal session with the setup entry may list the state server\'s read tools. Off: the server answers every call with the refusal.'),
+        act: boolean('With `enabled` on and the app open, the terminal session may also act through the persona\'s tools, as the persona with the terminal as the door. Off: those tools are not listed.'),
       }),
     },
     ['schemaVersion'],

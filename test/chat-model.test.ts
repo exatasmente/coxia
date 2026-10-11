@@ -165,6 +165,11 @@ describe('the line an act of the persona leaves in the chat', () => {
     const m = act({ tool: 'Actions', op: 'approve', subject: 'Comment on #12', result: 'ok', id: 'a-1x-1' });
     expect(actLine(m, say.en)).toMatchObject({ text: 'Actions · approved Comment on #12', refused: false, raised: null, auditId: 'a-1x-1', target: null });
     expect(actLine(m, say['pt-BR']).text).toBe('Ações · aprovou Comment on #12');
+    expect(actLine(m, say.en).door).toBeNull();
+  });
+
+  it('carries the door of an act that did not come from the conversation (a terminal session)', () => {
+    expect(actLine(act({ tool: 'Runs', op: 'cancel', result: 'ok', id: 'a-3', door: 'terminal' }), say.en).door).toBe('terminal');
   });
 
   it('says a refusal as one, with the reason, and a raise of reach with the fields', () => {

@@ -6,7 +6,7 @@ import { DESKTOP_ONLY, webAccess, webRefusal } from '../src/main/webPolicy';
 
 vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0', whenReady: () => Promise.resolve() } }));
 
-const CHANNELS = ['mcpstate:get', 'mcpstate:set-enabled', 'mcpstate:write-entry'];
+const CHANNELS = ['mcpstate:get', 'mcpstate:set-enabled', 'mcpstate:set-act', 'mcpstate:write-entry'];
 
 describe('web policy for the mcpstate channels', () => {
   it.each([...CHANNELS, 'mcpstate:made-up', 'mcpstate:', 'mcpstate:get2'])('denies %s, with or without the external-effects switch', (channel) => {

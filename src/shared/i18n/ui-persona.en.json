@@ -129,6 +129,7 @@
   "ui.chat.act.did.Settings.templateRemove": "removed the cycle template {subject}",
   "ui.chat.act.did.Settings.templateSave": "saved a cycle template",
   "ui.chat.act.did.Settings.verifySet": "changed the commands that verify a conflict",
+  "ui.chat.act.door.terminal": "from a terminal session",
   "ui.chat.act.label": "An act of the persona",
   "ui.chat.act.ok": "{area} · {op}: {subject}",
   "ui.chat.act.problem.enum": "{name} is not one of the allowed values",

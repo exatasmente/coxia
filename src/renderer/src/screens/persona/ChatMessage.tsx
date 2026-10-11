@@ -156,6 +156,7 @@ export function ActRow({ m, ceremony, onOpen }: { m: ForumMessage; ceremony: str
     <li className={`chat-row chat-row-act ${line.refused ? 'chat-row-act-refused' : ''}`} id={`msg-${m.seq}`}>
       <div className="chat-act" role="group" aria-label={t('ui.chat.act.label')}>
         <span className="chat-act-text">{line.text}</span>
+        {line.door && <span className="badge chat-act-door">{line.door === 'terminal' ? t('ui.chat.act.door.terminal') : line.door}</span>}
         {line.raised && <span className="badge badge-ask chat-act-raised">{t('ui.chat.act.raised', { fields: line.raised })}</span>}
         {onOpen && (
           <span className="chat-act-links">

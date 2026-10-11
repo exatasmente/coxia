@@ -24,7 +24,7 @@ async function copyToClipboard(text: string): Promise<void> {
 }
 
 /** The view, once the workspace's answer is in: what the person reads and confirms, and nothing of the channels behind it. */
-export function McpStatePanel({ shown, onToggle, onWrite }: { shown: McpStateView; onToggle: (enabled: boolean) => void; onWrite: (target: string) => void }) {
+export function McpStatePanel({ shown, onToggle, onToggleAct, onWrite }: { shown: McpStateView; onToggle: (enabled: boolean) => void; onToggleAct?: (act: boolean) => void; onWrite: (target: string) => void }) {
   const t = useT();
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -74,6 +74,19 @@ export function McpStatePanel({ shown, onToggle, onWrite }: { shown: McpStateVie
           <span style={{ fontWeight: 600, display: 'block' }}>{shown.enabled ? t('ui.settings.mcp.on') : t('ui.settings.mcp.off')}</span>
         </span>
       </label>
+      {shown.enabled && onToggleAct && (
+        <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <label className="check-row">
+            <input type="checkbox" checked={shown.act} onChange={() => onToggleAct(!shown.act)} />
+            <span>
+              <span style={{ fontWeight: 600, display: 'block' }}>{t('ui.settings.mcp.act.label')}</span>
+              <span className="small muted">{t('ui.settings.mcp.act.hint')}</span>
+            </span>
+          </label>
+          {shown.act && !shown.persona && <p className="small" style={{ color: 'var(--warn)' }}>{t('ui.settings.mcp.act.noPersona')}</p>}
+          {shown.act && <p className="small muted">{shown.listening ? t('ui.settings.mcp.act.listening') : t('ui.settings.mcp.act.notListening')}</p>}
+        </div>
+      )}
       {shown.enabled && <div style={{ marginTop: 10 }}>{entryBlock}</div>}
       {confirming && (
         <div className="error" role="alertdialog" aria-label={t('ui.settings.mcp.confirm.aria')} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -124,6 +137,16 @@ export function McpStateSection() {
     }
   };
 
+  const toggleAct = async (act: boolean) => {
+    setError(null);
+    setMessage(null);
+    try {
+      setView((await api.invoke('mcpstate:set-act', act)) as McpStateView);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
   const write = async (target: string) => {
     setError(null);
     try {
@@ -136,7 +159,7 @@ export function McpStateSection() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <McpStatePanel shown={view} onToggle={(enabled) => void toggle(enabled)} onWrite={(target) => void write(target)} />
+      <McpStatePanel shown={view} onToggle={(enabled) => void toggle(enabled)} onToggleAct={(act) => void toggleAct(act)} onWrite={(target) => void write(target)} />
       {error && <div className="error" role="alert">{error}</div>}
       {message && <div className="small muted">{message}</div>}
     </div>

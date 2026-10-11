@@ -2062,6 +2062,7 @@
   "main.mcpstate.unknownTool": "Não existe tal ferramenta: {name}. O servidor de estado responde só leituras; cada escrita vem depois, atrás dos mesmos sim do app.",
   "main.mcpstate.unknownMethod": "Método desconhecido: {method}",
   "main.mcpstate.badToggle": "O valor do interruptor é um booleano.",
+  "main.mcpstate.actNeedsRead": "As ferramentas da persona para uma sessão de terminal precisam do servidor de estado ligado antes.",
   "main.mcpstate.unavailable": "O servidor de estado não pode ser aberto a partir desta instalação (seu arquivo construído não é um arquivo solto que o node carregue), então nenhuma entrada é oferecida.",
   "main.mcpstate.badTarget": "A pasta \"{path}\" não é pasta de projeto deste workspace.",
   "main.mcpstate.mergeConflict": "O .mcp.json desse projeto ficou como está: ele carrega uma entrada de mesmo nome com um programa diferente, ou um texto que não é uma lista de servidores."

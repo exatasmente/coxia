@@ -1070,9 +1070,26 @@ describe('migrateConfig', () => {
       expect(r.notes.join(' ')).not.toMatch(/requirements, prototype and user manual/);
     });
 
-    it('is the newest step: 31 is current and 32 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(31);
-      expect(() => migrateConfig({ schemaVersion: 32 }, { legacyInstall: false })).toThrow(/newer app/);
+  });
+
+  describe('schema 31 to 32: the state server\'s second switch, the persona\'s tools for a terminal session', () => {
+    it('arrives off, keeps the first switch as it was and says so', () => {
+      for (const enabled of [true, false]) {
+        const r = migrateConfig({ schemaVersion: 31, mcpState: { enabled } }, { legacyInstall: false });
+        expect(r.config.mcpState).toEqual({ enabled, act: false });
+        expect(r.notes.join(' ')).toMatch(/persona's tools to a terminal session \(off/);
+      }
+    });
+
+    it('keeps a choice a later build carried in, and never turns the switch on by itself', () => {
+      expect(migrateConfig({ schemaVersion: 31, mcpState: { enabled: true, act: true } }, { legacyInstall: false }).config.mcpState).toEqual({ enabled: true, act: true });
+      expect(migrateConfig({ schemaVersion: 31, mcpState: { enabled: true, act: 'yes' } }, { legacyInstall: false }).config.mcpState).toEqual({ enabled: true, act: false });
+      expect(migrateConfig({ schemaVersion: 31 }, { legacyInstall: false }).config.mcpState).toEqual({ enabled: false, act: false });
+    });
+
+    it('is the newest step: 32 is current and 33 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(32);
+      expect(() => migrateConfig({ schemaVersion: 33 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });
