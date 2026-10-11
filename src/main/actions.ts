@@ -432,6 +432,14 @@ export async function detectRelease(manual: boolean): Promise<string> {
   }
 }
 
+/** What a person is shown to decide an action: its summary, and for a write to the code host the method and endpoint it will run. Null when there is no such action. */
+export function actionSubject(id: string): string | null {
+  const a = read().actions.find((x) => x.id === id);
+  if (!a) return null;
+  const line = isVcsAction(a) ? describe(a.command as VcsCommand).split('\n')[0] : '';
+  return [a.summary, line].filter(Boolean).join(' · ');
+}
+
 export async function previewAction(id: string): Promise<string> {
   const a = read().actions.find((x) => x.id === id);
   if (!a) throw new Error(t('main.actions.missing', { id }));
