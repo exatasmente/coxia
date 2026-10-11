@@ -2,19 +2,15 @@ import { useEffect, useState } from 'react';
 import { ASSIST_LIMITS } from '../../../../shared/agentAssist';
 import type { AgentDef, WorkspaceConfig } from '../../../../shared/config/types';
 import { personaDraftOf, personaOf } from '../../../../shared/config/team';
-import { agentThreadId } from '../../../../shared/forum';
-import type { PushTarget } from '../../../../shared/push';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
-import { targetToScreen } from '../../pushTarget';
 import { forgetNow, reloadThreads } from '../cycle/forumApi';
 import { type AgentDraft, draftOf } from '../team/agentEdit';
 import { ModelFields } from '../team/TeamSection';
 import { useConfigView } from '../team/teamApi';
 import { agentName } from '../team/text';
-import { Confirm, Labeled, SidePanel } from '../team/ui';
-import { ChatThread } from './ChatThread';
+import { Confirm, Labeled } from '../team/ui';
 import { PersonaWizard } from './PersonaWizard';
 import { personaApi } from './personaApi';
 import '../team/team.css';
@@ -113,7 +109,6 @@ export function PersonaSection({ go }: { go: (s: Screen) => void }) {
   const t = useT();
   const { view, error, reload } = useConfigView();
   const [wizard, setWizard] = useState(false);
-  const [chat, setChat] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [discarding, setDiscarding] = useState(false);
   const config = view?.config;
@@ -134,12 +129,6 @@ export function PersonaSection({ go }: { go: (s: Screen) => void }) {
     reload();
   };
 
-  // A tap on a button of an answer opens that screen on this device only.
-  const open = (target: PushTarget): void => {
-    const screen = targetToScreen(target, true);
-    if (screen) go(screen);
-  };
-
   return (
     <section className="wz-stack tm-root" aria-labelledby="persona-title">
       <h2 id="persona-title" className="wz-section-title">{t('ui.persona.section.title')}</h2>
@@ -156,7 +145,7 @@ export function PersonaSection({ go }: { go: (s: Screen) => void }) {
         </div>
       )}
       {config && persona && (
-        <Editor persona={persona} config={config} onAdjust={() => setWizard(true)} onChat={() => setChat(true)} onChanged={reload} />
+        <Editor persona={persona} config={config} onAdjust={() => setWizard(true)} onChat={() => go({ name: 'chat' })} onChanged={reload} />
       )}
       {leftover && (
         <div className="panel" style={{ padding: 16, gap: 10 }}>
@@ -180,7 +169,7 @@ export function PersonaSection({ go }: { go: (s: Screen) => void }) {
             setWizard(false);
             reload();
             // Making the first persona ends in its chat; adjusting one only saves it.
-            if (!persona) setChat(true);
+            if (!persona) go({ name: 'chat' });
           }}
           onClose={(why) => {
             setWizard(false);
@@ -188,11 +177,6 @@ export function PersonaSection({ go }: { go: (s: Screen) => void }) {
             reload();
           }}
         />
-      )}
-      {chat && persona && !wizard && (
-        <SidePanel label={t('ui.persona.section.chatTitle', { name: agentName(persona) })} onClose={() => setChat(false)}>
-          <ChatThread thread={agentThreadId(persona.id)} persona={persona} team={config?.agents.team} onOpen={open} />
-        </SidePanel>
       )}
     </section>
   );

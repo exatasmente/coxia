@@ -50,11 +50,12 @@ describe('the screen a target opens on a device', () => {
     expect(targetToScreen({ to: 'memory' }, true)).toEqual({ name: 'memory' });
   });
 
-  it('opens the Overview for `overview` and for `today`, its old name, and the home for `chat` (which is the Overview until the chat is a screen)', () => {
+  it('opens the Overview for `overview` and for `today`, its old name, and the chat for `chat`', () => {
     expect(targetToScreen({ to: 'overview' }, true)).toEqual({ name: 'overview' });
     expect(targetToScreen({ to: 'today' }, true)).toEqual({ name: 'overview' });
     expect(targetToScreen({ to: 'today' }, false)).toEqual({ name: 'overview' });
-    expect(targetToScreen({ to: 'chat' }, true)).toEqual(HOME);
+    expect(targetToScreen({ to: 'chat' }, true)).toEqual({ name: 'chat' });
+    expect(targetToScreen({ to: 'chat' }, false)).toEqual({ name: 'chat' });
   });
 
   it('opens the pre-daily only with the cards loaded, as before, and the home without them', () => {

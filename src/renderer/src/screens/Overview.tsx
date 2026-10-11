@@ -1,20 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { isReadyForQa } from '../../../shared/cycles/stages';
 import type { ReleaseAction } from '../../../shared/types';
 import type { Screen } from '../App';
-import { api } from '../api';
 import type { Ceremony } from '../ceremony';
 import { useCycle } from '../cycleApi';
-import { type AgoraAction, agoraPlan, greeting, needsYou, pendingQuestions, retroDue } from '../dashboard';
+import { type OverviewSection, blockedCards, qaCandidates } from '../home';
+import { greeting, needsYou, pendingQuestions } from '../dashboard';
 import { useIsPhone } from '../useIsPhone';
 import { useWatcherAlerts } from '../watchersApi';
 import { BellIcon } from './dashIcons';
 import { HeaderModuleButtons } from './moduleSlots';
-import { isRunBlocker, runOfCard } from '../../../shared/runs/view';
 import { RunNeeds } from './cycle/RunNeeds';
 import { SquadPicker } from './cycle/SquadPicker';
 import { useRuns } from './cycle/runsApi';
 import { RadarButton } from './radarSlots';
+import { useAgora } from './useAgora';
 import { SaudeButton } from './SaudeButton';
 import { TempoHoje } from './TempoHoje';
 import { UpdateBadge } from './UpdateBadge';
@@ -22,13 +21,12 @@ import { ActivityRow, AgoraCard, NeedsList, Tiles } from './TodayParts';
 import { VoiceToggle } from './VoiceToggle';
 import { runningWorkspace, useWorkspaces } from '../workspaceApi';
 import { intlLocale, useT, useTv } from '../i18n';
-import { useDay } from '../minutesApi';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
 const TOP = 3;
 
-export function Overview({ ceremony: c, go, pendingActions, actions }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[] }) {
+export function Overview({ ceremony: c, go, pendingActions, actions, section }: { ceremony: Ceremony; go: (s: Screen) => void; pendingActions: number; actions: ReleaseAction[]; section?: OverviewSection }) {
   const t = useT();
   const tv = useTv();
   const phone = useIsPhone();
@@ -40,18 +38,17 @@ export function Overview({ ceremony: c, go, pendingActions, actions }: { ceremon
   const [filter, setFilter] = useState<Filter>('all');
   const [listOpen, setListOpen] = useState(false);
   const [openRef, setOpenRef] = useState<string | null>(null);
-  const [retro, setRetro] = useState<{ day: number; time: string } | null>(null);
   const { alerts, dismiss } = useWatcherAlerts();
   const actsRef = useRef<HTMLElement>(null);
+  const needsRef = useRef<HTMLDivElement>(null);
 
   const cards = useMemo(() => c.cards?.cards ?? [], [c.cards]);
-  const ready = cards.filter((card) => c.turns[card.ref]).length;
   // `cards` is already in the agenda's order (blocked, priority, last update): Today lists them as the call will, without sorting again.
   // A run stopped on a question or a failure blocks its card as much as a blocker the tracker shows.
   const runs = useRuns();
-  const blocked = cards.filter((card) => card.blockers.length || (runs && isRunBlocker(runOfCard(runs, card.ref))));
+  const blocked = blockedCards(cards, runs);
   const asking = pendingQuestions(cards, c.turns, c.answered);
-  const forQa = cycle ? cards.filter((card) => isReadyForQa(cycle, card.stage, !!card.spec)) : [];
+  const { ready: forQa, all: qaChoices } = qaCandidates(cards, cycle);
   const shown = filter === 'blocked' ? blocked : filter === 'ask' ? asking : cards;
   const visible = listOpen || filter !== 'all' ? shown : shown.slice(0, TOP);
   const needs = needsYou({ cards, turns: c.turns, answered: c.answered, actions, alerts });
@@ -66,45 +63,21 @@ export function Overview({ ceremony: c, go, pendingActions, actions }: { ceremon
     if (c.cards) void c.prepareAll();
   }, [c.cards, c.prepareAll]);
 
-  useEffect(() => {
-    void api.getSettings().then((s) => setRetro({ day: s.schedule.retroDay, time: s.schedule.retroTime }), () => undefined);
-  }, []);
-
-  const { day: todayDay } = useDay(c.snapshot.id.slice(0, 10), c.startedAt);
-  const todayVersion = todayDay?.versions.find((v) => v.ceremonyId === c.snapshot.id)?.n ?? null;
-  const retroToday = on?.retro !== false && !!retro && retroDue(now, retro.day, retro.time);
-  const plan = agoraPlan({
-    hasCards: !!c.cards,
-    loadingCards: c.loadingCards,
-    startedAt: c.startedAt,
-    callEnded: c.callEnded,
-    saved: !!c.saveResult,
-    resumed: c.resumed,
-    ready,
-    total: cards.length,
-    decisions: c.decisions.length,
-    effects: c.effects.length,
-    retroDue: retroToday,
-    label: cycle?.preDailyLabel,
-    sameDay: {
-      version: todayVersion,
-      unchanged: Object.values(c.marks).filter((x) => x.kind === 'unchanged').length,
-      changed: Object.values(c.marks).filter((x) => x.kind === 'changed').length,
-    },
-  });
-
-  const onAgora = (a: AgoraAction) => {
-    if (a === 'call') go({ name: 'call' });
-    else if (a === 'ata') go({ name: 'ata' });
-    else if (a === 'retro') go({ name: 'retro' });
-    else void c.reset();
-  };
+  const { plan, onAgora, ready, retroToday } = useAgora(c, go);
 
   const showFilter = (f: Filter) => {
     setFilter(f);
     setListOpen(true);
     requestAnimationFrame(() => actsRef.current?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }));
   };
+
+  // The strip of the chat opens the Overview at what it counted: the filter of blocked or asking, or the list of what needs the person. Once, when the screen opens.
+  useEffect(() => {
+    if (section === 'blocked') showFilter('blocked');
+    else if (section === 'asking') showFilter('ask');
+    else if (section === 'needs') requestAnimationFrame(() => needsRef.current?.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- showFilter only sets state and scrolls
+  }, [section]);
 
   const header = (
     <header className="dash-top">
@@ -271,7 +244,7 @@ export function Overview({ ceremony: c, go, pendingActions, actions }: { ceremon
             }}
           >
             <option value="">{t('ui.today.choose')}</option>
-            {[...forQa, ...cards.filter((x) => x.spec && !forQa.includes(x))].map((x) => (
+            {qaChoices.map((x) => (
               <option key={x.ref} value={x.ref}>#{x.iid} {x.title.slice(0, 50)}</option>
             ))}
           </select>
@@ -297,7 +270,7 @@ export function Overview({ ceremony: c, go, pendingActions, actions }: { ceremon
           <div className="dash-col">
             <div className="d-o1">{agora}</div>
             <div className="d-o2">{tiles}</div>
-            <div className="d-o3">{needsBlock}</div>
+            <div className="d-o3" ref={needsRef}>{needsBlock}</div>
             <div className="d-o6">{tempo}</div>
           </div>
           <div className="dash-col">

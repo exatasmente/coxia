@@ -46,3 +46,31 @@
   .chat-work { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { .chat-caret { animation: none; } }
+
+/* the chat as the home: the whole window, the conversation taking what the header, the strip, the card and the box leave */
+.chat-page { height: 100%; min-height: 0; max-width: 1100px; margin: 0 auto; padding: 16px 24px 12px; display: flex; flex-direction: column; gap: 12px; }
+.chat-head { display: flex; flex-direction: column; gap: 10px; }
+.chat-name { font-size: 22px; font-weight: 700; line-height: 1.2; overflow-wrap: anywhere; }
+.chat-menu { justify-content: flex-start; padding-bottom: 2px; }
+.chat-none { max-width: 640px; }
+
+/* the four counts, a button each; a zero stays and is quiet */
+.chat-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.strip-item { min-height: 44px; display: flex; align-items: baseline; gap: 8px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; text-align: left; cursor: pointer; min-width: 0; }
+.strip-item:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.strip-n { font-size: 20px; font-weight: 700; line-height: 1.1; }
+.strip-l { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.strip-warn { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber-ink); }
+.strip-warn .strip-l { color: var(--amber-ink); }
+.strip-info { background: var(--blue-soft); border-color: var(--blue-line); color: var(--blue-ink); }
+.strip-info .strip-l { color: var(--blue-ink); }
+
+/* the ceremony card pinned above the box: the Agora card, smaller */
+.chat-card .dash-agora { padding: 12px 14px; gap: 8px; border-radius: 14px; }
+.chat-card .agora-title { font-size: 17px; }
+.chat-card .agora-primary { min-height: 44px; font-size: 15px; }
+
+@media (max-width: 600px) {
+  .chat-page { padding: 10px 12px 8px; gap: 8px; }
+  .chat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

@@ -35,19 +35,22 @@ import { Saude } from './screens/Saude';
 import { SettingsScreen } from './screens/Settings';
 import { BottomNav } from './screens/BottomNav';
 import { Overview } from './screens/Overview';
+import { ChatScreen } from './screens/persona/ChatScreen';
+import { useConfigView } from './screens/team/teamApi';
 import { JobsDock } from './JobsDock';
 import { UpdatePrompt } from './UpdatePrompt';
 import { UpdateToast } from './UpdateToast';
 import { useReportUpdateBusy } from './updateApi';
 import { useJobsSnapshot } from './useJobs';
-import { type DeepBack, HOME } from './home';
+import { type DeepBack, HOME, type OverviewSection, personaIn } from './home';
 import { targetToScreen } from './pushTarget';
 import { useWorkspaces } from './workspaceApi';
 import { SetupWizard } from './wizard/SetupWizard';
 import { wizardApi } from './wizard/wizardApi';
 
 export type Screen =
-  | { name: 'overview' }
+  | { name: 'chat' }
+  | { name: 'overview'; section?: OverviewSection }
   | { name: 'call' }
   | { name: 'deep'; ref: string; back: DeepBack; card?: Card }
   | { name: 'ata' }
@@ -91,6 +94,9 @@ export function App() {
   const player = usePlayer();
   const [screen, setScreen] = useState<Screen>(HOME);
   const [actions, setActions] = useState<ReleaseAction[]>([]);
+  // The persona of the workspace: whose conversation the chat is. Kept current by the configuration event.
+  const configView = useConfigView().view;
+  const persona = personaIn(configView?.config);
   // A workspace whose setup never finished lands in the wizard; one that did (every migrated install) never sees it unless it is opened.
   const [setup, setSetup] = useState<'checking' | 'needed' | 'done'>('checking');
   useEffect(() => {
@@ -182,8 +188,10 @@ export function App() {
   const pendingActions = actions.filter((a) => a.state === 'pending' || a.state === 'failed').length;
 
   const view = ((): ReactElement => { switch (screen.name) {
+    case 'chat':
+      return <ChatScreen ceremony={ceremony} go={go} persona={persona} team={configView?.config.agents.team} actions={actions} />;
     case 'overview':
-      return <Overview ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} />;
+      return <Overview ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} section={screen.section} />;
     case 'call':
       return <Call ceremony={ceremony} player={player} go={go} />;
     case 'deep':

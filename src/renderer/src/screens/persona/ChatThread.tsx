@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
 import { mentionJob } from '../../../../shared/activity';
 import type { PushTarget } from '../../../../shared/push';
@@ -32,13 +32,15 @@ interface Props {
   compact?: boolean;
   /** A tap on the button of an answer: opens that screen on this device. Absent: the buttons are not drawn. */
   onOpen?: (target: PushTarget) => void;
+  /** Pinned between the conversation and the box: the ceremony card of the home. */
+  above?: ReactNode;
 }
 
 /**
  * The persona's conversation: the stored messages as bubbles, the answer being written, the Work above each answer, the buttons under it, and the box. One continuous
  * conversation with no list and no new chat. The same component is the home's chat and the test of the wizard (`compact`), so a person tries exactly what they will use.
  */
-export function ChatThread({ thread, persona, team, compact = false, onOpen }: Props) {
+export function ChatThread({ thread, persona, team, compact = false, onOpen, above }: Props) {
   const t = useT();
   const phone = useIsPhone();
   const cycle = useCycle();
@@ -112,6 +114,7 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen }: P
       {!compact && <AskCards asks={asks} team={team} onWatch={setWatching} />}
       {!compact && <OfferCards thread={thread} team={team} />}
       {!compact && <ScreenStrip screens={screens} team={team} onWatch={setWatching} />}
+      {above}
       <Composer
         thread={thread}
         team={team}
