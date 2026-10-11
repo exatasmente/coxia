@@ -206,7 +206,7 @@
   "ui.settings.role.teams.label": "Summary text",
   "ui.settings.role.turn.hint": "Builds each activity's turn in the {ceremony}. It is the most called role: one per activity.",
   "ui.settings.role.turn.label": "Each agent's speech",
-  "ui.settings.save": "Save",
+  "ui.settings.saveAll": "Save settings",
   "ui.settings.savedAt": "Saved at {time}",
   "ui.settings.schedule.checkNow": "Check status now",
   "ui.settings.schedule.days": "Days",

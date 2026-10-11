@@ -67,6 +67,15 @@ export function stripTarget(count: keyof HomeCounts): Screen {
   return count === 'actions' ? { name: 'actions' } : { name: 'overview', section: count };
 }
 
+/**
+ * The catalog key of a count's label. A phone has a quarter of the width for each, and "Precisa de você" does not fit it at a size that reads, so that one has a shorter
+ * wording there; the others are short enough as they are.
+ */
+export function stripLabelKey(count: keyof HomeCounts, phone: boolean): string {
+  if (count === 'needs') return phone ? 'ui.chat.strip.needsShort' : 'ui.chat.strip.needs';
+  return { blocked: 'ui.today.tiles.blockers', asking: 'ui.today.tiles.questions', actions: 'ui.today.tiles.actions' }[count];
+}
+
 // ---- the ceremony card --------------------------------------------------------------------------------------------------------------------------
 
 /** The card pinned above the box: the plan of the Agora card of the Overview when it has something to say, and nothing for a cycle with no pre-daily or while the cards load. */

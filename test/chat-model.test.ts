@@ -1,5 +1,7 @@
 // The persona's chat as plain functions (no component is rendered: the runner is a node environment): the live bubble assembled from events, the rule that the stored answer
 // replaces it, the messages that wait their turn, the Work found by the message each answer answers, and the words of a button in both languages.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { ActivityEntry } from '../src/shared/activity';
 import type { ForumMessage } from '../src/shared/forum';
@@ -7,7 +9,7 @@ import { createTranslator } from '../src/shared/i18n';
 import type { LiveAnswer, LiveEvent } from '../src/shared/persona';
 import { PUSH_SCREENS } from '../src/shared/push';
 import { buildTree, hasWork } from '../src/renderer/src/activityTreeModel';
-import { BUTTON_KEY, bubblesOf, buttonLabel, cardOpen, composerAria, composerState, liveKey, menuControls, liveOf, queuedOf, reduceLive, reduceRead, rowKind, workItems, workOf, workOpenByDefault, workShown, workSummary } from '../src/renderer/src/chatModel';
+import { BUTTON_KEY, bubblesOf, buttonLabel, cardOpen, cardParts, composerAria, composerState, liveKey, menuControls, liveOf, queuedOf, reduceLive, reduceRead, refocusAfterSend, rowKind, workItems, workOf, workOpenByDefault, workShown, workSummary } from '../src/renderer/src/chatModel';
 
 const THREAD = 'agent-me';
 const event = (to: number, rev: number, offset: number, text: string, over: Partial<LiveEvent> = {}): LiveEvent => ({ thread: THREAD, to, agent: 'me', rev, offset, text, ...over });
@@ -262,5 +264,28 @@ describe('the ceremony card on a small screen', () => {
     expect(cardOpen(false, null)).toBe(true);
     expect(cardOpen(true, true)).toBe(true);
     expect(cardOpen(false, false)).toBe(false);
+  });
+});
+
+describe('the card when the chip is its header', () => {
+  it('is the body only on a phone, where the chip says "Now" and the title, and whole on the computer', () => {
+    expect(cardParts(true).head).toBe(false);
+    expect(cardParts(false).head).toBe(true);
+  });
+});
+
+describe('the focus of the box after a send', () => {
+  it('goes back to the box on the computer always, and on a phone only when the box had it', () => {
+    expect(refocusAfterSend(false, false)).toBe(true);
+    expect(refocusAfterSend(false, true)).toBe(true);
+    expect(refocusAfterSend(true, true)).toBe(true);
+    expect(refocusAfterSend(true, false)).toBe(false);
+  });
+
+  it('keeps the box read-only and busy while it sends, never disabled (a disabled box drops the focus)', () => {
+    const text = readFileSync(join(import.meta.dirname, '../src/renderer/src/screens/cycle/Composer.tsx'), 'utf8');
+    expect(text).toMatch(/readOnly=\{busy\}/);
+    expect(text).toMatch(/aria-busy=\{busy \|\| undefined\}/);
+    expect(text.slice(text.indexOf('<textarea'), text.indexOf('onChange='))).not.toMatch(/disabled=\{/);
   });
 });

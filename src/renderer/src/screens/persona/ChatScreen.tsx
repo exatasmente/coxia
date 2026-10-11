@@ -6,7 +6,7 @@ import type { PushTarget } from '../../../../shared/push';
 import type { Screen } from '../../App';
 import type { Ceremony } from '../../ceremony';
 import { Chevron } from '../../ActivityTree';
-import { cardOpen } from '../../chatModel';
+import { cardOpen, cardParts } from '../../chatModel';
 import { useCycle } from '../../cycleApi';
 import { OVERVIEW, ceremonyCard, homeCounts } from '../../home';
 import { useT } from '../../i18n';
@@ -55,7 +55,7 @@ function CeremonyCard({ plan, onAction }: { plan: AgoraPlan; onAction: (a: Agora
       )}
       {open && (
         <div id={body}>
-          <AgoraCard plan={plan} onAction={onAction} />
+          <AgoraCard plan={plan} onAction={onAction} bare={!cardParts(phone).head} />
         </div>
       )}
     </div>

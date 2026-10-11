@@ -128,7 +128,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
           </div>
           <div className="row">
             {saved && <span className="small" style={{ color: 'var(--teal-ink)' }}>{saved}</span>}
-            <button type="button" className="btn btn-dark" onClick={() => void save()}>{t('ui.settings.save')}</button>
+            <button type="button" className="btn btn-dark" onClick={() => void save()}>{t('ui.settings.saveAll')}</button>
           </div>
         </header>
         {error && <div className="error">{error}</div>}

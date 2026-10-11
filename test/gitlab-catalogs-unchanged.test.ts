@@ -210,6 +210,7 @@ const applyIntended = (key: string, was: string): string => (INTENDED[key].repla
 // Keys of main that this change takes out of the catalogs for good: what they said no longer happens. Each one must be gone from CATALOGS.
 const REMOVED: Record<string, string> = {
   'main.conflictMr.notMain': 'the conflict of an MR is resolved against whatever branch it targets, a release branch included, so nothing refuses a target other than main',
+  'ui.settings.save': 'the Settings page\'s save names the page (ui.settings.saveAll), so it is not read as the save of the persona section under it',
   'ui.retro.improvements.title': 'the retro has no section of proposed improvements any more (rule 1)',
   'ui.retro.improvements.hint': 'the retro no longer offers the IMPROVEMENTS.md flow to take by hand (decision 5)',
   'ui.retro.improvements.hintPlain': 'the retro no longer offers the team improvements record to take by hand (decision 5)',

@@ -191,3 +191,19 @@ export function menuControls(open: boolean, phone: boolean): string | undefined 
 
 /** Whether the pinned ceremony card shows in full: on a phone it is one line until the person opens it, on the computer it is open until they close it; their choice wins. */
 export const cardOpen = (phone: boolean, chosen: boolean | null): boolean => (chosen === null ? !phone : chosen);
+
+/**
+ * What the pinned card draws of itself. On a phone the chip above it already says "Now", the ceremony's name and its progress, so an open card is only its body (the hint and the
+ * buttons) and does not repeat them; on the computer there is no chip and the card is whole.
+ */
+export function cardParts(phone: boolean): { head: boolean } {
+  return { head: !phone };
+}
+
+// ---- the focus of the box ---------------------------------------------------------------------------------------------------------------------
+
+/**
+ * Whether the box takes the focus back once a message has left. The computer's box always does (the button took the focus, and the person writes again at once); a phone's box
+ * only if it had it, because a keyboard that was down is not to be raised over the conversation.
+ */
+export const refocusAfterSend = (phone: boolean, hadFocus: boolean): boolean => !phone || hadFocus;

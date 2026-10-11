@@ -47,6 +47,7 @@
   "ui.chat.strip.needs": "Precisa de você",
   "ui.chat.strip.needsAria_one": "{count} coisa precisa de você, ver",
   "ui.chat.strip.needsAria_other": "{count} coisas precisam de você, ver",
+  "ui.chat.strip.needsShort": "Para você",
   "ui.chat.thinking": "Pensando…",
   "ui.chat.willWait": "Uma resposta está em andamento. O que você escrever agora espera a vez.",
   "ui.chat.work.done": "{time}, {steps}",

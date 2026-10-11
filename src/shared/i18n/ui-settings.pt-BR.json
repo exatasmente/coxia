@@ -206,7 +206,7 @@
   "ui.settings.role.teams.label": "Texto do resumo",
   "ui.settings.role.turn.hint": "Monta a vez de cada atividade na {ceremony}. É o papel mais chamado: um por atividade.",
   "ui.settings.role.turn.label": "Fala de cada agente",
-  "ui.settings.save": "Salvar",
+  "ui.settings.saveAll": "Salvar configurações",
   "ui.settings.savedAt": "Salvo às {time}",
   "ui.settings.schedule.checkNow": "Conferir status agora",
   "ui.settings.schedule.days": "Dias",

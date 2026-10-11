@@ -29,23 +29,29 @@ export function needTargetToScreen(t: NeedTarget): Screen {
   }
 }
 
-export function AgoraCard({ plan, onAction }: { plan: AgoraPlan; onAction: (a: AgoraPlan['primary']['action']) => void }) {
+/** `bare`: the card without its own label, progress and title, for where something above it already carries them (the chip of the chat on a phone). */
+export function AgoraCard({ plan, onAction, bare = false }: { plan: AgoraPlan; onAction: (a: AgoraPlan['primary']['action']) => void; bare?: boolean }) {
   const t = useT();
   return (
-    <section className="dash-agora" aria-labelledby="agora-h">
-      <div className="row spread" style={{ gap: 8 }}>
-        <h2 id="agora-h" className="dash-agora-label">{t('ui.today.now')}</h2>
-        {plan.progress && (
-          <span className="small agora-progress" aria-live="polite">
-            {plan.phase === 'loading' && <span className="spinner" aria-hidden="true" />}
-            {plan.progress}
-          </span>
-        )}
-      </div>
-      <div>
-        <p className="agora-title">{plan.title}</p>
-        {plan.hint && <p className="small agora-hint">{plan.hint}</p>}
-      </div>
+    <section className="dash-agora" aria-labelledby={bare ? undefined : 'agora-h'} aria-label={bare ? plan.title : undefined}>
+      {!bare && (
+        <>
+          <div className="row spread" style={{ gap: 8 }}>
+            <h2 id="agora-h" className="dash-agora-label">{t('ui.today.now')}</h2>
+            {plan.progress && (
+              <span className="small agora-progress" aria-live="polite">
+                {plan.phase === 'loading' && <span className="spinner" aria-hidden="true" />}
+                {plan.progress}
+              </span>
+            )}
+          </div>
+          <div>
+            <p className="agora-title">{plan.title}</p>
+            {plan.hint && <p className="small agora-hint">{plan.hint}</p>}
+          </div>
+        </>
+      )}
+      {bare && plan.hint && <p className="small agora-hint">{plan.hint}</p>}
       <div className="agora-actions">
         <button type="button" className="btn btn-accent agora-primary" disabled={plan.primary.disabled} onClick={() => onAction(plan.primary.action)}>
           {plan.primary.label}

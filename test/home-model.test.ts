@@ -6,10 +6,11 @@ import { describe, expect, it } from 'vitest';
 import type { Run } from '../src/shared/runs';
 import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
 import { needsYou, pendingQuestions } from '../src/renderer/src/dashboard';
-import { type HomeCountsInput, HOME, OVERVIEW, blockedCards, ceremonyCard, deepBack, homeCounts, homeView, menuRows, resumeWizard, snoozeWizard, stripTarget, wizardSnoozed } from '../src/renderer/src/home';
+import { type HomeCountsInput, HOME, OVERVIEW, blockedCards, ceremonyCard, deepBack, homeCounts, homeView, menuRows, resumeWizard, snoozeWizard, stripLabelKey, stripTarget, wizardSnoozed } from '../src/renderer/src/home';
 import { agoraPlan, type AgoraInput } from '../src/renderer/src/dashboard';
 import { waitingRuns } from '../src/shared/runs/view';
 import type { WatcherAlert } from '../src/shared/watchers';
+import { setLanguage, t } from '../src/shared/i18n';
 
 const ROOT = join(import.meta.dirname, '..');
 const sources = readdirSync(join(ROOT, 'src/renderer/src'), { recursive: true })
@@ -194,6 +195,38 @@ describe('Settings, in order', () => {
     expect(at('<PersonaSection')).toBeGreaterThan(-1);
     expect(at('<PersonaSection')).toBeLessThan(at('<ConfigWorkspacesSection'));
     expect(at('<PersonaSection')).toBeLessThan(at('<TeamSettings'));
+  });
+});
+
+describe('the page\'s save', () => {
+  it('names the page, so it is not read as the persona\'s save that sits under it', () => {
+    const text = sources.find((s) => s.file.endsWith('screens/Settings.tsx'))?.text ?? '';
+    expect(text).toMatch(/\{t\('ui\.settings\.saveAll'\)\}/);
+    expect(text).not.toMatch(/\{t\('ui\.settings\.save'\)\}/);
+    setLanguage('en');
+    expect(t('ui.settings.saveAll')).toBe('Save settings');
+    setLanguage('pt-BR');
+    expect(t('ui.settings.saveAll')).toBe('Salvar configurações');
+    // The persona keeps its own, with its own words.
+    expect(t('ui.persona.section.save')).not.toBe(t('ui.settings.saveAll'));
+    setLanguage('en');
+  });
+});
+
+describe('the strip on a phone', () => {
+  it('words only the long count shorter there, in both languages and never as the same text', () => {
+    expect(stripLabelKey('needs', false)).toBe('ui.chat.strip.needs');
+    expect(stripLabelKey('needs', true)).toBe('ui.chat.strip.needsShort');
+    for (const count of ['blocked', 'asking', 'actions'] as const) expect(stripLabelKey(count, true)).toBe(stripLabelKey(count, false));
+    for (const language of ['en', 'pt-BR'] as const) {
+      setLanguage(language);
+      const short = t('ui.chat.strip.needsShort');
+      expect(short).not.toBe('ui.chat.strip.needsShort');
+      expect(short.length).toBeLessThan(t('ui.chat.strip.needs').length);
+      // A quarter of 360 px at 12 px holds about 11 characters.
+      for (const count of ['blocked', 'asking', 'actions', 'needs'] as const) expect(t(stripLabelKey(count, true)).length).toBeLessThanOrEqual(11);
+    }
+    setLanguage('en');
   });
 });
 

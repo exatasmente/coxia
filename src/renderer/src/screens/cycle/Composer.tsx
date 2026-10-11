@@ -4,8 +4,9 @@ import { type AttachmentRef, ATTACHMENT_LIMITS, formatBytes } from '../../../../
 import { type ForumMessage, parseMentions } from '../../../../shared/forum';
 import { applyMention, mentionAt, mentionChoices, mentionOptions } from '../../../../shared/forumView';
 import { errorText } from '../../api';
-import { composerAria } from '../../chatModel';
+import { composerAria, refocusAfterSend } from '../../chatModel';
 import { useT } from '../../i18n';
+import { useIsPhone } from '../../useIsPhone';
 import { agentName } from './names';
 import { forumApi } from './forumApi';
 import './cycle.css';
@@ -75,6 +76,7 @@ export interface ComposerProps {
 /** The box a person writes in, with `@agent` completed from the team as they type and files attached by button, drag and drop or paste. */
 export function Composer({ thread, team, note, onSent, onSendBack, mentions = true, enterSends = false, className = '', hint, placeholder, autoFocus = false }: ComposerProps) {
   const t = useT();
+  const phone = useIsPhone();
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -85,6 +87,8 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
   const [drag, setDrag] = useState(false);
   const box = useRef<HTMLTextAreaElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  // Whether the box had the focus when the button was pressed: pressing it moves the focus to the button, and the box must know it was there to take it back on a phone.
+  const hadFocus = useRef(false);
   const listId = useId();
   // A draft agent is not offered, except in its own conversation: there the person is talking to it.
   const named = useMemo(() => (mentions ? mentionChoices(team ?? [], thread).map((a) => ({ id: a.id, name: agentName(team, a.id) })) : []), [team, thread, mentions]);
@@ -126,6 +130,13 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
     if ((!body && !files.length) || busy) return;
     setBusy(true);
     setError(null);
+    const had = hadFocus.current || document.activeElement === box.current;
+    hadFocus.current = false;
+    // The button that sent is disabled while the message leaves, which drops the focus to the page: the box takes it back once it is free again.
+    const settle = () => {
+      setBusy(false);
+      if (refocusAfterSend(phone, had)) requestAnimationFrame(() => box.current?.focus());
+    };
     void (async () => {
       try {
         // The bytes go one by one, so the body of each call stays small; a file the app refuses is dropped and the rest are kept.
@@ -142,17 +153,17 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
         }
         if (!ids.length && files.length) {
           setFiles(kept);
-          setBusy(false);
+          settle();
           return;
         }
         const m = ids.length ? await forumApi.attachmentPost(thread, body, ids) : await forumApi.post(thread, body);
         setText('');
         setFiles([]);
-        setBusy(false);
+        settle();
         onSent(m);
       } catch (e) {
         setError(errorText(e));
-        setBusy(false);
+        settle();
       }
     })();
   };
@@ -271,7 +282,15 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
           <button type="button" className="btn cy-attach-btn" disabled={busy} aria-label={t('ui.forum.file.attach')} onClick={() => picker.current?.click()}>
             {t('ui.forum.file.attach')}
           </button>
-          <button type="button" className="btn btn-dark" disabled={busy || (!text.trim() && !files.length)} onClick={send}>
+          <button
+            type="button"
+            className="btn btn-dark"
+            disabled={busy || (!text.trim() && !files.length)}
+            onPointerDown={() => {
+              hadFocus.current = document.activeElement === box.current;
+            }}
+            onClick={send}
+          >
             {busy ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.forum.send')}
           </button>
         </span>
