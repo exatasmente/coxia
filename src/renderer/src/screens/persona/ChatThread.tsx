@@ -20,7 +20,7 @@ import { asksOf } from '../cycle/askView';
 import { markThreadSeen, useThread } from '../cycle/forumApi';
 import { screenOfCall } from '../cycle/screens';
 import { useScreens } from '../cycle/useScreens';
-import { AgentBubble, AnswerBubble, LiveBubble, PendingBubble, PersonBubble, SystemLine } from './ChatMessage';
+import { ActRow, AgentBubble, AnswerBubble, LiveBubble, PendingBubble, PersonBubble, SystemLine } from './ChatMessage';
 import './chat.css';
 
 interface Props {
@@ -102,6 +102,7 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
         {messages.map((m) => {
           const kind = rowKind(m, persona.id);
           if (kind === 'system') return <SystemLine key={m.seq} m={m} />;
+          if (kind === 'act') return <ActRow key={m.seq} m={m} ceremony={ceremony} onOpen={compact ? undefined : onOpen} />;
           if (kind === 'person') return <PersonBubble key={m.seq} m={m} waiting={queued.has(m.seq)} stopped={stopped} />;
           if (kind === 'agent') return <AgentBubble key={m.seq} m={m} team={team} />;
           return <AnswerBubble key={m.seq} m={m} team={team} work={m.answersTo !== undefined ? workOf(roots, m.answersTo, persona.id) : null} ceremony={ceremony} onOpen={compact ? undefined : onOpen} />;

@@ -1,3 +1,4 @@
+import { PERSONA_TOOLS, type PersonaToolName } from '../../shared/personaTools';
 import { type ArgSpec, arg } from './args';
 
 // The table of the persona's door (#248): every channel the app registers is either named by exactly one operation of one of the eleven tools, or is on the exclusion list with
@@ -5,8 +6,8 @@ import { type ArgSpec, arg } from './args';
 // `persona:` channel is denied to the phone. Data only: what an operation builds, says and runs is in doorOps.ts. The names of the operations follow the channel, and where two
 // channels of a tool share a suffix the group leads.
 
-export const TOOL_NAMES = ['Overview', 'Runs', 'Actions', 'Board', 'Conversations', 'Memory', 'Settings', 'Secrets', 'Plugins', 'Asks', 'Ceremonies'] as const;
-export type ToolName = (typeof TOOL_NAMES)[number];
+export const TOOL_NAMES = PERSONA_TOOLS;
+export type ToolName = PersonaToolName;
 
 export interface Op {
   tool: ToolName;

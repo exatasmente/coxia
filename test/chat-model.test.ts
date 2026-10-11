@@ -9,7 +9,8 @@ import { createTranslator } from '../src/shared/i18n';
 import type { LiveAnswer, LiveEvent } from '../src/shared/persona';
 import { PUSH_SCREENS } from '../src/shared/push';
 import { buildTree, hasWork } from '../src/renderer/src/activityTreeModel';
-import { BUTTON_KEY, bubblesOf, buttonLabel, cardOpen, cardParts, composerAria, composerState, liveKey, menuControls, liveOf, queuedOf, reduceLive, reduceRead, refocusAfterSend, rowKind, workItems, workOf, workOpenByDefault, workShown, workSummary } from '../src/renderer/src/chatModel';
+import { PERSONA_TOOLS } from '../src/shared/personaTools';
+import { BUTTON_KEY, actLine, actTarget, bubblesOf, buttonLabel, cardOpen, cardParts, composerAria, composerState, liveKey, menuControls, liveOf, queuedOf, reduceLive, reduceRead, refocusAfterSend, rowKind, workItems, workOf, workOpenByDefault, workShown, workSummary } from '../src/renderer/src/chatModel';
 
 const THREAD = 'agent-me';
 const event = (to: number, rev: number, offset: number, text: string, over: Partial<LiveEvent> = {}): LiveEvent => ({ thread: THREAD, to, agent: 'me', rev, offset, text, ...over });
@@ -124,6 +125,52 @@ describe('the rows', () => {
     expect(rowKind({ kind: 'post', author: { type: 'agent', id: 'qa' } }, 'me')).toBe('agent');
     expect(rowKind({ kind: 'system', author: { type: 'app' } }, 'me')).toBe('system');
     expect(rowKind({ kind: 'system', author: { type: 'agent', id: 'me' } }, 'me')).toBe('system');
+  });
+
+  it('draws the line of an act of the persona as its own row, and the line that counts the rest as a line of the app', () => {
+    expect(rowKind({ kind: 'system', author: { type: 'app' }, code: 'persona.act' }, 'me')).toBe('act');
+    expect(rowKind({ kind: 'system', author: { type: 'app' }, code: 'persona.act.more' }, 'me')).toBe('system');
+    expect(rowKind({ kind: 'system', author: { type: 'app' }, code: 'persona.stopped.window' }, 'me')).toBe('system');
+  });
+});
+
+describe('the line an act of the persona leaves in the chat', () => {
+  const say = { en: createTranslator('en'), 'pt-BR': createTranslator('pt-BR') };
+  const act = (params: Record<string, string>) => ({ params });
+
+  it('is worded by the viewer\'s catalog from the facts the message stores, so a language change translates the lines already there', () => {
+    const m = act({ tool: 'Actions', op: 'approve', subject: 'Comment on #12', result: 'ok', id: 'a-1x-1' });
+    expect(actLine(m, say.en)).toMatchObject({ text: 'Actions · approve: Comment on #12', refused: false, raised: null, auditId: 'a-1x-1', target: null });
+    expect(actLine(m, say['pt-BR']).text).toBe('Ações · approve: Comment on #12');
+  });
+
+  it('says a refusal as one, with the reason, and a raise of reach with the fields', () => {
+    const refused = actLine(act({ tool: 'Board', op: 'update', result: 'refused', reason: 'The test workspace writes nothing.', id: 'a-2' }), say.en);
+    expect(refused).toMatchObject({ refused: true, text: 'Board · update was refused: The test workspace writes nothing.' });
+    const raised = actLine(act({ tool: 'Settings', op: 'set', subject: 'agents.team[me].shell (set)', result: 'ok', raised: 'agents.team[me].shell' }), say.en);
+    expect(raised).toMatchObject({ raised: 'agents.team[me].shell', auditId: null });
+  });
+
+  it('offers the button of the screen it was about, only when the target is in the vocabulary of the notifications', () => {
+    const target = JSON.stringify({ to: 'run', id: 'r-abc' });
+    expect(actLine(act({ tool: 'Runs', op: 'accept', result: 'ok', target }), say.en).target).toEqual({ to: 'run', id: 'r-abc' });
+    for (const bad of ['', 'not json', JSON.stringify({ to: 'nowhere' }), JSON.stringify({ to: 'run' }), JSON.stringify({ to: 'qa', ref: 'has space' })]) expect(actTarget(bad), bad).toBeNull();
+    expect(actTarget(undefined)).toBeNull();
+  });
+
+  it.each(['en', 'pt-BR'] as const)('has the name of every tool\'s area in %s, and shows an unknown tool by its name', (language) => {
+    for (const tool of PERSONA_TOOLS) {
+      const text = actLine(act({ tool, op: 'x', subject: 's', result: 'ok' }), say[language]).text;
+      expect(text, tool).not.toContain('ui.chat.act');
+      expect(text, tool).not.toMatch(/\{\w+\}/);
+    }
+    expect(actLine(act({ tool: 'Future', op: 'x', subject: 's', result: 'ok' }), say[language]).text).toContain('Future');
+  });
+
+  it('opens the audit at the act\'s entry, and the Audit screen alone when there is no id', async () => {
+    const { targetToScreen } = await import('../src/renderer/src/pushTarget');
+    expect(targetToScreen({ to: 'auditoria', id: 'a-1x-1' }, true)).toEqual({ name: 'auditoria', id: 'a-1x-1' });
+    expect(targetToScreen({ to: 'auditoria' }, true)).toEqual({ name: 'auditoria' });
   });
 });
 

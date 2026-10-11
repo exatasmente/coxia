@@ -5,7 +5,7 @@ import type { PushTarget } from '../../../../shared/push';
 import type { OpenScreenInfo } from '../../../../shared/browser';
 import { ActivityItems, Chevron, useTreeOpen } from '../../ActivityTree';
 import type { TreeNode } from '../../activityTreeModel';
-import { buttonLabel, workItems, workOpenByDefault, workShown, workSummary } from '../../chatModel';
+import { actLine, buttonLabel, workItems, workOpenByDefault, workShown, workSummary } from '../../chatModel';
 import { intlLocale, useT } from '../../i18n';
 import { queuedKey } from '../../personaStopModel';
 import { formatElapsed } from '../../jobs';
@@ -114,6 +114,38 @@ export function SystemLine({ m }: { m: ForumMessage }) {
   return (
     <li className="chat-row chat-row-system" id={`msg-${m.seq}`}>
       <span className="chat-system">{messageText(m)}</span>
+    </li>
+  );
+}
+
+/**
+ * The line an act of the persona leaves in its conversation, before the answer: what it did, in the viewer's words, whether the handler refused it, the fields of a raise of its
+ * own reach, the link to its entry of the audit (the reason and what it had read are there) and the button of the screen the act was about. The links move the device they were
+ * tapped on; with no `onOpen` (the wizard's test) the line is only text.
+ */
+export function ActRow({ m, ceremony, onOpen }: { m: ForumMessage; ceremony: string; onOpen?: (target: PushTarget) => void }) {
+  const t = useT();
+  const line = actLine(m, t);
+  return (
+    <li className={`chat-row chat-row-act ${line.refused ? 'chat-row-act-refused' : ''}`} id={`msg-${m.seq}`}>
+      <div className="chat-act" role="group" aria-label={t('ui.chat.act.label')}>
+        <span className="chat-act-text">{line.text}</span>
+        {line.raised && <span className="badge badge-ask chat-act-raised">{t('ui.chat.act.raised', { fields: line.raised })}</span>}
+        {onOpen && (
+          <span className="chat-act-links">
+            {line.auditId && (
+              <button type="button" className="btn cy-mini" onClick={() => onOpen({ to: 'auditoria', id: line.auditId as string })}>
+                {t('ui.chat.act.audit')}
+              </button>
+            )}
+            {line.target && (
+              <button type="button" className="btn cy-mini" onClick={() => onOpen(line.target as PushTarget)}>
+                {buttonLabel(line.target, t, ceremony)}
+              </button>
+            )}
+          </span>
+        )}
+      </div>
     </li>
   );
 }

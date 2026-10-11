@@ -9,6 +9,7 @@
 .chat-row-person { align-items: flex-end; }
 .chat-row-answer, .chat-row-agent { align-items: flex-start; }
 .chat-row-system { align-items: center; }
+.chat-row-act { align-items: center; }
 
 .chat-bubble { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: min(78ch, 92%); padding: 10px 14px; border-radius: 16px; border: 1px solid var(--line-3); background: var(--surface-2); color: var(--ink); overflow-wrap: anywhere; }
 .chat-bubble-person { background: var(--blue-soft); border-color: var(--blue-line); color: var(--blue-ink); border-bottom-right-radius: 4px; }
@@ -21,6 +22,9 @@
 .chat-text .rich { gap: 6px; }
 .chat-time { font-size: 12px; color: var(--faint); align-self: flex-end; }
 .chat-waits { font-size: 12px; font-weight: 600; color: var(--amber-ink); }
+.chat-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; max-width: 92%; padding: 6px 12px; border-radius: 12px; border: 1px solid var(--line-3); background: var(--surface-2); color: var(--ink); font-size: 13px; overflow-wrap: anywhere; }
+.chat-row-act-refused .chat-act { border-color: var(--red-line); background: var(--red-soft); color: var(--red-ink); }
+.chat-act-links { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .chat-system { font-size: 13px; color: var(--muted); text-align: center; overflow-wrap: anywhere; max-width: 92%; }
 
 /* the answer being written: a caret at its end while it grows */
