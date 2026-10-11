@@ -29,6 +29,8 @@ const base = (): string => (isPackaged() ? port?.resources() ?? '' : join(import
 
 export const resourcesDir = (): string => join(base(), 'resources');
 export const sidecarDir = (): string => join(base(), 'sidecar');
+// The plugin declarations that come with the app: read-only, no code, and the person's own plugins folder is read first.
+export const pluginsBuiltInDir = (): string => join(base(), 'plugins');
 
 // The SDK's native Claude Code binary cannot run from inside app.asar, so it ships unpacked.
 export const claudeBin = (): string | undefined => (isPackaged() ? join(base(), 'app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-linux-x64/claude') : undefined);

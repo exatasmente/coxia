@@ -37,8 +37,8 @@ const comment = (sections: [string, string][]) => ({ sections: sections.map(([he
 const finding = (over: Record<string, unknown> = {}) => ({ path: 'src/feature.ts', line: 1, endLine: null, side: 'new', severity: 'blocking', body: 'The constant must be 2.', suggestion: null, ...over });
 
 function script(b: Boot): void {
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], comment: comment([['What is asked', 'X.']]) }), () => work('Spec again.', { artifacts: [doc('1_SPEC.md')], comment: comment([['What is asked', 'X, and Y.']]) }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')], comment: comment([['Approach', 'One place.']]) }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: comment([['What is asked', 'X.']]) }), () => work('Spec again.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: comment([['What is asked', 'X, and Y.']]) }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: comment([['Approach', 'One place.']]) }));
   b.engine.script('developer', async (_c, tools) => {
     await tools.write('src/feature.ts', 'export const feature = 1;\n');
     return work('Built.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')], comment: comment([['What changed for the person using it', 'It exists.']]), pr: { title: 'Add the thing', ...comment([['What changes for the person using it', 'X.']]) } });

@@ -480,7 +480,7 @@ describe('the tool the Release manager asks for the steps with', () => {
     expect(call.prompt).toContain('does not exist yet');
     // an issue run gets no such tool
     const issueRun = await boot({ dir: ATAS, publish: true, repo: repoOf(), configure: (c) => (c.language = 'en') });
-    issueRun.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    issueRun.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     await issueRun.runner.start('app#101');
     await issueRun.settle();
     expect(issueRun.engine.calls[0].release).toBeUndefined();

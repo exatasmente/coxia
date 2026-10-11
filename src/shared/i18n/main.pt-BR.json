@@ -1269,6 +1269,7 @@
   "main.plugins.call.refused": "a declaração do plugin foi recusada: {reason}",
   "main.plugins.call.notOffered": "o plugin não responde a chamadas feitas de uma conversa",
   "main.plugins.refusal.noRun": "Não existe execução para escrever o documento do plugin {plugin}.",
+  "main.plugins.refused.flowDocument": "O documento {name} é do fluxo, e o app o guarda para si: esta declaração não pode oferecê-lo.",
   "main.plugins.network.allowed": "Alcançado",
   "main.plugins.network.refused.method": "Recusado: o pedido não era um CONNECT",
   "main.plugins.network.refused.host": "Recusado: o destino não foi permitido",
