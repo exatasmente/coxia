@@ -124,7 +124,7 @@ function tick(): void {
   const pre = minutes(s.schedule.preDaily);
   if (cycleOn('preDaily') && workday && s.notifications && snap.preDailyNotified !== today() && nowMin >= pre && nowMin < pre + PRE_DAILY_WINDOW_MIN) {
     write({ ...snap, preDailyNotified: today() });
-    deps?.notify({ title: t('cycle.notice.preDailyTitle', { ceremony: ceremonyLabel() }), body: tv('notify.preDaily.body'), onClick: { type: 'navigate', to: 'chat' } });
+    deps?.notify({ title: t('cycle.notice.preDailyTitle', { ceremony: ceremonyLabel() }), body: tv('notify.preDaily.body', { ceremony: ceremonyLabel() }), onClick: { type: 'navigate', to: 'chat' } });
   }
 
   const retro = minutes(s.schedule.retroTime);

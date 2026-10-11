@@ -99,6 +99,8 @@ export function App() {
   // The persona of the workspace: whose conversation the chat is. Kept current by the configuration event.
   const { view: configView, error: configError, reload: reloadConfig } = useConfigView();
   const persona = personaIn(configView?.config);
+  // A workspace known to have none: a notice about a ceremony opens the Overview and not the wizard (until the configuration is read the answer is "unknown", not "none").
+  const noPersona = !!configView && !persona;
   // The persona was just saved: the wizard waits for the configuration that holds it, so it is not drawn again for the instant in between.
   const [made, setMade] = useState(false);
   // A workspace whose setup never finished lands in the wizard; one that did (every migrated install) never sees it unless it is opened.
@@ -155,20 +157,22 @@ export function App() {
         }
         else {
           // The old names stay: a tray entry or a notice that says `today` opens the Overview, and the pre-daily without cards opens the home.
-          const next = targetToScreen({ to: ev.to }, !!cards);
+          const next = targetToScreen({ to: ev.to }, !!cards, noPersona);
           if (next) go(next);
         }
       }),
     // go only touches the player and the screen state
-    [mergeStatus, cards],
+    [mergeStatus, cards, noPersona],
   );
 
   // A tapped push notification arrives as ?open=... (app was closed) or as a message from the service worker (app was open).
   const cardsLoaded = useRef(false);
   cardsLoaded.current = !!cards;
+  const noPersonaRef = useRef(noPersona);
+  noPersonaRef.current = noPersona;
   useEffect(() => {
     const open = (t: PushTarget) => {
-      const next = targetToScreen(t, cardsLoaded.current);
+      const next = targetToScreen(t, cardsLoaded.current, noPersonaRef.current);
       if (next) go(next);
     };
     const fromUrl = targetFromSearch(location.search);

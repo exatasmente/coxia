@@ -63,6 +63,15 @@ describe('the screen a target opens on a device', () => {
     expect(targetToScreen({ to: 'call' }, false)).toEqual(HOME);
   });
 
+  it('opens the Overview, not the wizard, when the workspace has no persona and a notice points at the home', () => {
+    expect(targetToScreen({ to: 'chat' }, true, true)).toEqual({ name: 'overview' });
+    expect(targetToScreen({ to: 'call' }, false, true)).toEqual({ name: 'overview' });
+    // The pre-daily screen itself, and every other target, are not the home and stay as they are.
+    expect(targetToScreen({ to: 'call' }, true, true)).toEqual({ name: 'call' });
+    expect(targetToScreen({ to: 'settings' }, true, true)).toEqual({ name: 'settings' });
+    expect(targetToScreen({ to: 'chat' }, true, false)).toEqual({ name: 'chat' });
+  });
+
   it('remembers that a deep dive came from the home, and lets the plain names open as they did', () => {
     expect(targetToScreen({ to: 'deep', ref: 'group/project#123' }, true)).toEqual({ name: 'deep', ref: 'group/project#123', back: 'chat' });
     expect(targetToScreen({ to: 'deep' }, true)).toBeNull();
