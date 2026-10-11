@@ -22,7 +22,7 @@ const SHOW_AFTER_MS = 700;
 const TOAST_MS = 10_000;
 const FAB = 52;
 const GAP = 12;
-const AVOID = '.composer, .composer-panel, .outbox-item, .persona-banner'; // i18n-ignore: CSS selector
+const AVOID = '.composer, .composer-panel, .outbox-item, .persona-banner, .chat-cer'; // i18n-ignore: CSS selector
 export const JOBS_OPEN = 'cerimonias:jobs-open';
 
 interface Toast {

@@ -12,8 +12,30 @@ const stopped = (over: Partial<PersonaState> = {}): PersonaState => ({ stopped: 
 
 describe('the control', () => {
   it('is Stop while the persona may act and Resume while it is stopped, the same button', () => {
-    expect(controlOf(NOT_STOPPED)).toEqual({ action: 'stop', label: 'ui.persona.stop.button', title: 'ui.persona.stop.title' });
-    expect(controlOf(stopped())).toEqual({ action: 'resume', label: 'ui.persona.resume.button', title: 'ui.persona.resume.title' });
+    expect(controlOf(NOT_STOPPED)).toEqual({ action: 'stop', label: 'ui.persona.stop.button', short: 'ui.persona.stop.short', title: 'ui.persona.stop.title' });
+    expect(controlOf(stopped())).toEqual({ action: 'resume', label: 'ui.persona.resume.button', short: 'ui.persona.resume.short', title: 'ui.persona.resume.title' });
+  });
+});
+
+describe('the words of the control', () => {
+  const words = en as Record<string, string>;
+  const palavras = ptBR as Record<string, string>;
+
+  it('name the persona, so the header\'s control is not read as the Stop of one answer', () => {
+    expect(words['ui.persona.stop.button']).toBe('Stop the persona');
+    expect(words['ui.persona.resume.button']).toBe('Resume the persona');
+    expect(palavras['ui.persona.stop.button']).toBe('Parar a persona');
+    expect(palavras['ui.persona.resume.button']).toBe('Retomar a persona');
+  });
+
+  it('have a short form that the long one contains, so a header with no room draws it and keeps the long name', () => {
+    for (const [short, long] of [['ui.persona.stop.short', 'ui.persona.stop.button'], ['ui.persona.resume.short', 'ui.persona.resume.button']]) {
+      expect(words[long].startsWith(words[short])).toBe(true);
+      expect(palavras[long].startsWith(palavras[short])).toBe(true);
+    }
+    const control = readFileSync(join(import.meta.dirname, '../src/renderer/src/screens/persona/StopControl.tsx'), 'utf8');
+    expect(control).toMatch(/aria-label=\{compact \? t\(control\.label\) : undefined\}/);
+    expect(readFileSync(join(import.meta.dirname, '../src/renderer/src/screens/persona/ChatHeader.tsx'), 'utf8')).toContain('<StopControl compact={phone} />');
   });
 });
 
@@ -77,7 +99,7 @@ describe('where the indicator sits', () => {
 });
 
 describe('the words and the colours', () => {
-  const keys = ['ui.persona.stop.button', 'ui.persona.stop.title', 'ui.persona.resume.button', 'ui.persona.resume.title', 'ui.persona.banner', 'ui.persona.banner.waiting_one', 'ui.persona.banner.waiting_other', 'ui.persona.indicator.working', 'ui.persona.indicator.stopped', 'ui.persona.section.state.running', 'ui.persona.section.state.stopped', 'ui.chat.queuedStopped'];
+  const keys = ['ui.persona.stop.button', 'ui.persona.stop.short', 'ui.persona.stop.title', 'ui.persona.resume.button', 'ui.persona.resume.short', 'ui.persona.resume.title', 'ui.persona.banner', 'ui.persona.banner.waiting_one', 'ui.persona.banner.waiting_other', 'ui.persona.indicator.working', 'ui.persona.indicator.stopped', 'ui.persona.section.state.running', 'ui.persona.section.state.stopped', 'ui.chat.queuedStopped'];
 
   it('are in both catalogs, worded differently', () => {
     for (const key of keys) {
@@ -98,7 +120,7 @@ describe('the words and the colours', () => {
 
   it('puts the control in the chat header, the banner in the chat screen, the indicator in the shell and the state in Settings', () => {
     const src = join(import.meta.dirname, '../src/renderer/src');
-    expect(readFileSync(join(src, 'screens/persona/ChatHeader.tsx'), 'utf8')).toContain('<StopControl />');
+    expect(readFileSync(join(src, 'screens/persona/ChatHeader.tsx'), 'utf8')).toContain('<StopControl compact={phone} />');
     expect(readFileSync(join(src, 'screens/persona/ChatScreen.tsx'), 'utf8')).toContain('<StoppedBanner />');
     expect(readFileSync(join(src, 'App.tsx'), 'utf8')).toContain('<PersonaIndicator screen={screen.name} />');
     expect(readFileSync(join(src, 'screens/persona/PersonaSection.tsx'), 'utf8')).toContain('<StopControl />');

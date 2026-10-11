@@ -6,14 +6,15 @@ import type { PersonaState } from '../../shared/personaStop';
 export interface Control {
   /** What pressing it asks of the main process. */
   action: 'stop' | 'resume';
-  /** The catalog keys of its label and of the sentence under it. */
+  /** The catalog keys of its label (it names the persona, so it is not read as the Stop of one answer), of its short form for a header with no room, and of the sentence under it. */
   label: string;
+  short: string;
   title: string;
 }
 
 /** The one control: Stop while the persona may act, Resume while it is stopped. */
 export const controlOf = (state: PersonaState): Control =>
-  state.stopped ? { action: 'resume', label: 'ui.persona.resume.button', title: 'ui.persona.resume.title' } : { action: 'stop', label: 'ui.persona.stop.button', title: 'ui.persona.stop.title' };
+  state.stopped ? { action: 'resume', label: 'ui.persona.resume.button', short: 'ui.persona.resume.short', title: 'ui.persona.resume.title' } : { action: 'stop', label: 'ui.persona.stop.button', short: 'ui.persona.stop.short', title: 'ui.persona.stop.title' };
 
 /** The banner over the box: shown while the persona is stopped, with the count of messages waiting for Resume. */
 export function bannerView(state: PersonaState): { shown: boolean; waiting: number } {

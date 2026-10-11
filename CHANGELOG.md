@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **The persona's Stop says what it stops.** The control of the chat's header, of Settings and of the shell is **Stop the persona** and **Resume the persona**, so it is not mistaken for the **Stop** of one answer; where there is no room (the header on a phone) it shows the short word and keeps the long name for assistive tech.
+- **The home on a phone fits better.** The box is one line at rest (its hint no longer carries the persona's name), the floating dock of the jobs rises above the ceremony bar instead of covering it, and the header keeps the date on one line, short, and breaks a long name between words instead of in the middle of one.
+
 ## [0.10.0-beta.3] - 2026-10-11
 
 ### Added
