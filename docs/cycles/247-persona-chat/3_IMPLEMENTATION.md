@@ -155,3 +155,55 @@ Deviations and decisions:
 - **`homeView` without `setupDone`** (see commit 8): the setup wizard is drawn before any screen.
 - **The test of the senders reads the sources** (`test/home-notices.test.ts`), because the senders sit inside the scheduler's timer, the watchers and the feedback check, none of which a test drives; the high urgency and the fallbacks are tested on the real functions (`test/web-push.test.ts`).
 - **Not seen:** the layout of the chat at 360 px, the dot on the bar item and the jobs button over the box were not looked at on a screen; `npx electron-vite build` compiles them.
+
+## Commit 10: document the persona and its chat
+
+Built as planned: `docs/persona.md` (Portuguese and English in one file, as the other pages are), a row in `docs/README.md`, a section in `docs/cycles.md` (the persona stays out of the cycle), the export and import paragraph of `docs/configuration.md`, a bullet in `README.md` and `README.pt-BR.md`, the screenshot list (`chat.png` and `overview.png` in place of `today.png`), and the wording of the pages that named the screen Today (`docs/cycles.md`, `docs/runner.md`, `docs/updates.md`, `docs/voice.md`, `docs/configuration.md`). The CHANGELOG is completed: the persona entry (commit 6), a page of its own, and, under **Changed**, the chat as the home and the Overview in place of Today (commit 9 wrote the two lines in the Added section; they moved to Changed here, since they change what exists).
+
+Deviations and decisions:
+
+- **`docs/images/README.md` lists the two new shots** (the files are not taken, as the others are not); the old `today.png` line is replaced.
+- **`docs/configuration.md` says the persona does not travel** in the export and import section (Q11); the row of `agents.team` and the schema history were written in commit 1.
+- **No claim in `docs/persona.md` outruns the code:** the example of a permission the file may give a persona is `shell: sandbox` or `permission: worktree` (`tracker` has only `none` and `read`), and the page says in "what was not verified" what no test or real run covered.
+
+## Delivery summary against the acceptance criteria
+
+Gates at the head of the branch (`ab6f27e0` plus the documentation commit): `npx tsc --noEmit` clean; `npx vitest run` 488 files passed, 1 skipped, 8179 tests passed, 3 skipped (the full run of commit 9 had one near-limit timeout, `conflict-resolve`, which passed alone, 22 of 22); `node scripts/theme-audit.mjs` exit 0; `npm run i18n:lint` exit 0 (5917 keys in both languages); `node scripts/public-audit.mjs` clean; `npx electron-vite build` compiles (run after commits 8 and 9; `out/` removed). No prompt golden was regenerated.
+
+| # | Criterion | State | Held by |
+|---|---|---|---|
+| 1 | First step: the wizard, full screen, after setup; Not now shows the Overview; reopening shows it again; phone | **Done, with the phone as the gate decided**: the phone gets the same wizard (no note, no app-only refusal), and "Not now" is a module variable | `home-model` (`homeView`, the snooze), `persona-policy`; the screen itself is not rendered by any test |
+| 2 | The wizard: rounds, kinds, four themes, review without settings | Done | `persona-assist-prompts`, `persona-assist-module`, `persona-wizard-state` |
+| 3 | The test persona cannot act | Done | `persona-assist-module`, `persona-team-readers`, `persona-mentions` (a draft is offered no `OpenScreen`) |
+| 4 | Save and open | Done in the main process; the end of the screen (`finish`, then home) is not rendered by a test | `persona-assist-module` |
+| 5 | One persona | Done | `persona-config` |
+| 6 | Out of the cycle | Done | `persona-team-readers` (walk and source scan), `persona-transfer` |
+| 7 | The home: chat on the computer and the phone; no bar on the chat; the menu lists what the bar and the More sheet list | Done as logic; the layout is not seen | `home-model` (`menuRows`, the shell scan), `dashboard` (`bottomNavActive`) |
+| 8 | Nothing lost: every control of Today in the Overview or the menu; the strip equals the counts | Done by moving the file (`git mv`) and extracting `useAgora`, `blockedCards`, `qaCandidates`; the counts are one function | `home-model` (`homeCounts` against the lists the Overview draws) |
+| 9 | Streaming, two engines, a late device, one replacing post | Done | `persona-live`, `persona-stream-open`, `persona-stream-sdk`, `chat-model`; the Claude path by the manual check of commit 3 |
+| 10 | Tool turns | Done | `persona-stream-open`, `persona-stream-sdk` |
+| 11 | Stop and failure | Done | `persona-mentions` |
+| 12 | Queued messages | Done | `persona-queue`, `chat-model` (`queuedOf`) |
+| 13 | The work | Done as logic; the section is not rendered by a test | `chat-model` (`workOf`, `workSummary`) |
+| 14 | Plain text | Done | `persona-mentions`, `mentions-agent-chat` (another agent unchanged) |
+| 15 | Buttons | Done | `persona-open-screen`, `forum-store`, `push-targets` |
+| 16 | Ceremonies run as before | The ceremony screens and `useCeremony` were not touched (only their back button and label); nothing exercises them end to end through the chat, the menu or a button | the existing ceremony tests; `home-model` (the back constant) |
+| 17 | Targets | Done | `push-targets`, `web-push`, `home-notices`, `run-notices`, `turn-asks-policy` |
+| 18 | The ceremony card | Done as logic (`ceremonyCard`, the plan of the Agora card); the dot on the bar item is not seen | `home-model` |
+| 19 | The bar | Done as logic | `dashboard`, `home-model` |
+| 20 | Configuration, schema 30 | Done (the number is 30, not 29: another change took 29 first) | `persona-config`, `config-migrations`, `config-schema`, `docs-schema-version` |
+| 21 | The phone's reach | Done | `persona-policy` |
+| 22 | Clear and delete | Done | `persona-assist-module` |
+| 23 | Updates | The window reports itself busy while an answer is being written, here or on a paired phone; checked by reading the shell, not by running an update | `home-model` (a scan of `App.tsx`) |
+| 24 | Wording and theme | Done | `catalog-screen-names`, `ui-i18n`, `gitlab-catalogs-unchanged`, `host-terms-leak`, the theme audit, the i18n lint |
+
+## Not verified
+
+- **Nothing was run in the app's window or in a paired browser.** The suite renders no component, so the chat, its bubbles, the Work section, the strip, the card, the menu, the Overview's new header, the wizard as a screen and the phone's layout have been compiled (`electron-vite build`) and read, and not seen. The layout at 360 px, the live dot on the Chat item, the jobs button lifting over the box, the sheet of the menu and the keyboard on a phone are the things most likely to need a look.
+- **The Claude engine end to end.** The SDK's streaming was checked with a throwaway script (commit 3); the whole path from a message in the chat to the bubble was run only against scripted messages. A model that thinks before it writes shows its text all at once on that engine (the maintainer accepted this for acceptance 9).
+- **The open engine with a real server.** The streaming was tested against a fake server that sends pieces; a real OpenAI-compatible server was not tried with the persona.
+- **The wording in Brazilian Portuguese** was written for this change and read by its author only.
+- **Ceremonies from the new doors.** Starting the pre-daily, Deep, Gate and the others from the card, the menu and a button goes through `go()` into screens that were not changed; no test and no run did it.
+- **`redact` over a growing text**, up to a dozen times a second per live answer, was not measured.
+- **A long conversation.** Only the last 40 messages are told to the persona; what it should remember beyond them is up to its memory.
+- **The phone with push.** The notices' new targets are tested as data; no notification was delivered to a device.

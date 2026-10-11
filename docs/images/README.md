@@ -4,7 +4,8 @@ The README refers to screenshots that are not taken yet. TODO list:
 
 | File | What to capture |
 |---|---|
-| `today.png` | The Today screen with a few cards in different stages |
+| `chat.png` | The chat with the persona: the strip of counts, a conversation with the Work section open and the ceremony card |
+| `overview.png` | The Overview with a few cards in different stages |
 | `call.png` | A ceremony in progress (voice or text), with the agent's sources visible |
 | `actions.png` | The actions queue with one proposed command waiting for confirmation |
 | `wizard.png` | The first-run setup wizard (models step) |

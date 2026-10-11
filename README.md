@@ -10,7 +10,8 @@
 
 | Screenshot (TODO) | What it shows |
 |---|---|
-| `docs/images/today.png` | The Today screen: cards of your open tasks with their stage |
+| `docs/images/chat.png` | The chat with your persona, with the strip of counts and the ceremony card |
+| `docs/images/overview.png` | The Overview: cards of your open tasks with their stage |
 | `docs/images/call.png` | A ceremony in progress, by voice or text, with the agent's sources |
 | `docs/images/actions.png` | The actions queue: the exact command, waiting for your confirmation |
 | `docs/images/wizard.png` | The first-run setup wizard |
@@ -33,6 +34,7 @@
 
 ## What it does
 
+- **A persona and a chat that opens the app.** The app opens on a chat with your *persona*, a representative you make in a few minutes with an AI that asks who you are, how you decide, what matters to you and what you never want done. It answers as it writes, shows the work behind each answer, and offers buttons that open a ceremony or a screen. It only chats and reads in this version. See [Persona and chat](docs/persona.md).
 - **Pre-stand-up.** Before the daily, one agent per open task checks the issue, its merge or pull requests, the pipeline, the review threads and the spec, and tells you what changed and what is stuck. You answer by voice or text; the app produces the minutes.
 - **Unblock and deep dive.** Talk a problem through with an agent that has already read the code, the specs and your team's rules, and that can look things up on the code host. It is read-only: it explains and proposes, it does not edit your repository.
 - **Gate quiz.** Before a task moves on, a short quiz generated from the spec checks that you understand what you are about to ship.

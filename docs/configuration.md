@@ -115,6 +115,8 @@ Nada devolve valor exceto `resolve()`, e quem chama entrega direto a um processo
 
 Formato (`src/shared/config/transfer.ts`): `{ format: "coxia-workspace-config", formatVersion: 1, exportedAt, app, workspace: { name }, requiredSecrets: [{ ref, usedBy, label }], config }`. Importa também um `config` solto, de qualquer schema anterior (é migrado). Um valor de segredo no arquivo (`apiKey`, `token`...) faz a importação ser recusada. Os comandos que o arquivo mandaria rodar (ferramentas externas, CLIs, comandos de verificação de conflito) aparecem na prévia da importação. Os comandos que o arquivo mandaria rodar (ferramentas externas, CLIs, comandos de verificação de conflito) aparecem na prévia da importação.
 
+**A persona não viaja.** As instruções da [persona](persona.md) descrevem a pessoa, então a exportação deixa de fora toda entrada de `kind: 'persona'` (a cópia de rascunho também), e a importação tira uma persona de qualquer arquivo que a traga, com um aviso em `agents.team`. Importar sobre um workspace que já existe **mantém a persona dele**; para um workspace novo, não há persona até o assistente salvar uma. A prévia da importação não lista a persona como removida.
+
 Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só desktop**, ver `webPolicy.ts`):
 
 | Canal | O que faz | Web |
@@ -149,7 +151,7 @@ Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só d
 - Teste de conexão: provedores abertos usam `probeOpenAIProvider` (capacidades gravadas no provedor); os da família Claude fazem uma chamada curta pelo Claude Agent SDK, com o mesmo ambiente dos agentes.
 - SDK: instalado com `npm` em `<dados>/claude-sdk` depois dos termos da Anthropic; registra `claudeSdk`. `COXIA_SDK_BUNDLED=0` simula uma build sem o SDK embutido; `COXIA_NPM` troca o executável do npm.
 - Peças de outros trabalhos, procuradas em tempo de execução: `src/main/vcs` (`probeVcs`, que o assistente já usa; sem ela, um GET do usuário atual pela API REST) e os canais `voice:check|install|test` (senão "em breve"). Os modelos de ciclo e a varredura "Preparar agentes" fazem parte do app (`src/main/cycles.ts`, ver [`cycles.md`](cycles.md)).
-- `userName` (e `userArticle`, só para o português) é o que os prompts dos agentes e a saudação do Hoje dizem; sem nome, "o usuário".
+- `userName` (e `userArticle`, só para o português) é o que os prompts dos agentes dizem; sem nome, "o usuário".
 
 ### Não verificado
 
@@ -269,6 +271,8 @@ Nothing returns a value except `resolve()`, and its callers hand it straight to 
 
 Format (`src/shared/config/transfer.ts`): `{ format: "coxia-workspace-config", formatVersion: 1, exportedAt, app, workspace: { name }, requiredSecrets: [{ ref, usedBy, label }], config }`. A bare `config` of any earlier schema is accepted too (it is migrated). A secret value in the file (`apiKey`, `token`...) makes the import refuse it. The commands the file would run (external tools, CLIs, conflict verification commands) show in the import preview. The commands the file would run (external tools, CLIs, conflict verification commands) show in the import preview.
 
+**The persona does not travel.** The [persona](persona.md)'s instructions describe the person, so an export leaves out every entry of `kind: 'persona'` (the draft copy too), and an import takes a persona out of any file that carries one, with a warning at `agents.team`. Importing over a workspace that exists **keeps its persona**; a new workspace has none until the wizard saves one. The import preview does not list the persona as removed.
+
 Channels (`configModule.ts`; those that write or touch files are **desktop only**, see `webPolicy.ts`):
 
 | Channel | What it does | Web |
@@ -303,7 +307,7 @@ Channels (`configModule.ts`; those that write or touch files are **desktop only*
 - Connection test: open providers use `probeOpenAIProvider` (capabilities are stored on the provider); Claude-family ones make a short call through the Claude Agent SDK with the environment the agents would get.
 - SDK: installed with `npm` into `<data>/claude-sdk` after Anthropic's terms; records `claudeSdk`. `COXIA_SDK_BUNDLED=0` simulates a build that does not bundle the SDK; `COXIA_NPM` overrides the npm executable.
 - Pieces from other work, looked up at run time: `src/main/vcs` (`probeVcs`, which the wizard now uses; without it, a GET of the current user through the REST API) and the `voice:check|install|test` channels (else "coming soon"). The cycle templates and the "prepare agents" scan are part of the app (`src/main/cycles.ts`, see [`cycles.md`](cycles.md)).
-- `userName` (and `userArticle`, for Portuguese only) is what the agent prompts and the Today greeting say; with no name, "the user".
+- `userName` (and `userArticle`, for Portuguese only) is what the agent prompts say; with no name, "the user".
 
 ### Not verified
 
