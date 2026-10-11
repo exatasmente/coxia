@@ -62,7 +62,7 @@ Nome, a frase, as instruções e o modelo (como o editor de agentes), **Salvar**
 
 ### O que a persona faz
 
-A persona tem **onze ferramentas**, as mesmas nos dois motores (Claude e aberto) e só para ela: nunca para a cópia de teste, para um agente que ela chama ou para um sub-agente. Cada ferramenta recebe um `op` e os argumentos dessa operação; toda operação que escreve exige um `why`, uma frase de até 300 caracteres que fica na Auditoria como o motivo dela. O app confere os argumentos antes de rodar qualquer coisa, e um pedido mal formado volta ao modelo como um erro que ele lê e corrige.
+A persona tem **onze ferramentas**, as mesmas nos dois motores (Claude e aberto) e só para ela: nunca para a cópia de teste, para um agente que ela chama ou para um sub-agente. Cada ferramenta recebe um `op` e os argumentos dessa operação; toda operação que escreve exige um `why`, uma frase de até 300 caracteres que fica na Auditoria como o motivo dela. O app confere os argumentos antes de rodar qualquer coisa, e um pedido mal formado volta ao modelo como um erro que ele lê e corrige. Os textos que a porta devolve ao modelo são sempre em inglês, como as descrições das ferramentas, seja qual for o idioma do app; o que a pessoa vê (as linhas do chat) é no idioma de quem lê.
 
 | Ferramenta | Lê | Age |
 |---|---|---|
@@ -192,7 +192,7 @@ Name, the sentence, instructions and model (as in the agent editor), **Save**, *
 
 ### What the persona does
 
-The persona has **eleven tools**, the same on both engines (Claude and open) and for it alone: never for its test copy, an agent it calls or a sub-agent. A tool takes an `op` and the arguments of that operation; every operation that writes requires a `why`, a sentence of at most 300 characters that is kept in the Audit as its reason. The app checks the arguments before it runs anything, and a call that is not well formed goes back to the model as an error it reads and corrects.
+The persona has **eleven tools**, the same on both engines (Claude and open) and for it alone: never for its test copy, an agent it calls or a sub-agent. A tool takes an `op` and the arguments of that operation; every operation that writes requires a `why`, a sentence of at most 300 characters that is kept in the Audit as its reason. The app checks the arguments before it runs anything, and a call that is not well formed goes back to the model as an error it reads and corrects. The texts the door returns to the model are always English, like the tools' descriptions, whatever the app's language; what the person sees (the chat's lines) is in the viewer's language.
 
 | Tool | Reads | Acts |
 |---|---|---|

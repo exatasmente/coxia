@@ -1,4 +1,4 @@
-import { t } from '../../shared/i18n';
+import { doorText } from './doorText';
 import type { WorkspaceConfig } from '../../shared/config/types';
 import { personaOf } from '../../shared/config/team';
 import { same } from '../configScope';
@@ -15,15 +15,15 @@ import { same } from '../configScope';
 export function personaSettingsRefusal(before: WorkspaceConfig, after: WorkspaceConfig): string | null {
   const wasTestOnly = new Set((before.testEnvironment?.secrets ?? []).filter((s) => s.testOnly).map((s) => s.ref));
   const marked = (after.testEnvironment?.secrets ?? []).find((s) => s.testOnly && !wasTestOnly.has(s.ref));
-  if (marked) return t('main.persona.door.guard.testOnly', { ref: marked.ref });
+  if (marked) return doorText('guard.testOnly', { ref: marked.ref });
 
-  if (!same(before.mcpState, after.mcpState)) return t('main.persona.door.guard.mcpState');
+  if (!same(before.mcpState, after.mcpState)) return doorText('guard.mcpState');
 
   const own = personaOf(before.agents.team);
   if (own) {
     const next = after.agents.team.find((a) => a.id === own.id);
-    if (!next) return t('main.persona.door.guard.ownEntry');
-    if (next.kind !== own.kind || next.instructions !== own.instructions || next.name !== own.name) return t('main.persona.door.guard.ownEdit');
+    if (!next) return doorText('guard.ownEntry');
+    if (next.kind !== own.kind || next.instructions !== own.instructions || next.name !== own.name) return doorText('guard.ownEdit');
   }
   return null;
 }

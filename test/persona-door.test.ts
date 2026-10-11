@@ -91,6 +91,24 @@ describe('what the door refuses before it runs anything', () => {
     }
   });
 
+  it('words every refusal for the model in English whatever the language of the app, and keeps the chat\'s words in the viewer\'s language', async () => {
+    setLanguage('pt-BR');
+    try {
+      const unknown = await personaDoor.run(session(), 'Runs', { op: 'nope', why }).catch((e: Error) => e);
+      expect((unknown as Error).message).toMatch(/^Runs has no operation nope\. Its operations are: /);
+      const missing = await personaDoor.run(session(), 'Board', { op: 'create', title: 'x', why }).catch((e: Error) => e);
+      expect((missing as Error).message).toBe('Board.create: The argument column is missing: the operation needs it.');
+      const failed = await personaDoor.run(session(), 'Runs', { op: 'cancel', run: 'r-nothing', why }).catch((e: Error) => e);
+      expect((failed as Error).message).toMatch(/^Runs\.cancel failed: /);
+      const path = await personaDoor.run(session(), 'Settings', { op: 'set', path: 'agents..team', value: 1, why }).catch((e: Error) => e);
+      expect((path as Error).message).toMatch(/^The path agents\.\.team is not valid: use dot-separated keys/);
+      // what the door words is English; what a handler says of its own refusal ('failed: <reason>') is the handler's, in the app's language
+      for (const e of [unknown, missing, path]) expect((e as Error).message).not.toMatch(/não|faltou|persona está|foi recusada/i);
+    } finally {
+      setLanguage('en');
+    }
+  });
+
   it('tells the person an operation that does not exist was tried, in the audit and in the chat, so a call to resume is not silent', async () => {
     const audit = listAudit().length;
     const said = acts().length;

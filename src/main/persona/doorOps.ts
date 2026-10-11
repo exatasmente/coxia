@@ -1,6 +1,7 @@
 import type { Card } from '../../shared/types';
 import type { WorkspaceConfig } from '../../shared/config/types';
 import { t } from '../../shared/i18n';
+import { doorText } from './doorText';
 import { waitingRuns } from '../../shared/runs/view';
 import { actionSubject } from '../actions';
 import { recordWrite } from '../auditoria';
@@ -61,7 +62,7 @@ const only = <T extends Values>(o: T): Partial<T> => Object.fromEntries(Object.e
 export async function cardOf(ref: string): Promise<Card> {
   const { cards } = await loadCards(100);
   const found = cards.find((c) => c.ref === ref);
-  if (!found) throw new ToolError(t('main.persona.door.noCard', { ref, list: cards.slice(0, 5).map((c) => c.ref).join(', ') || '-' }));
+  if (!found) throw new ToolError(doorText('noCard', { ref, list: cards.slice(0, 5).map((c) => c.ref).join(', ') || '-' }));
   return found;
 }
 
@@ -72,10 +73,10 @@ function targetOf(v: Values): string | { project: string; iid: number } {
   const id = str(v.id);
   const project = str(v.project);
   const hasHost = project !== '' || v.iid !== undefined;
-  if (id && hasHost) throw new ToolError(t('main.persona.door.board.twoTargets'));
+  if (id && hasHost) throw new ToolError(doorText('board.twoTargets'));
   if (id) return id;
   if (project && typeof v.iid === 'number') return { project, iid: v.iid };
-  throw new ToolError(t('main.persona.door.board.noTarget'));
+  throw new ToolError(doorText('board.noTarget'));
 }
 
 /** A setting's path, with how it was changed when it was not simply set. */
@@ -98,12 +99,12 @@ export function schemaAt(schema: unknown, path: string): unknown {
 }
 
 function pathProblem(e: unknown, path: string): ToolError {
-  if (e instanceof PathError) return new ToolError(t(`main.persona.door.path.${e.code}`, { path }));
+  if (e instanceof PathError) return new ToolError(doorText(`path.${e.code}`, { path }));
   return e instanceof ToolError ? e : new ToolError(String(e instanceof Error ? e.message : e));
 }
 
 const needsValue = (v: Values): void => {
-  if ((v.mode ?? 'set') !== 'remove' && v.value === undefined) throw new ToolError(t('main.persona.door.arg.required', { name: 'value' }));
+  if ((v.mode ?? 'set') !== 'remove' && v.value === undefined) throw new ToolError(doorText('arg.required', { name: 'value' }));
 };
 
 /** The pieces of a run, an action or a conversation the person is shown to decide: the app reads them, so the record cannot be wrong because the model misread something. */
@@ -226,14 +227,14 @@ export const HOOKS: Record<string, Hooks> = {
     build(v) {
       const ref = str(v.ref);
       if (v.source === 'stored') {
-        if (typeof v.value !== 'string' || !v.value) throw new ToolError(t('main.persona.door.arg.required', { name: 'value' }));
+        if (typeof v.value !== 'string' || !v.value) throw new ToolError(doorText('arg.required', { name: 'value' }));
         return [{ ref, source: 'stored', value: v.value }];
       }
       if (v.source === 'command') {
-        if (!str(v.command)) throw new ToolError(t('main.persona.door.arg.required', { name: 'command' }));
+        if (!str(v.command)) throw new ToolError(doorText('arg.required', { name: 'command' }));
         return [{ ref, source: 'command', command: str(v.command), args: Array.isArray(v.args) ? v.args.map(String) : [] }];
       }
-      if (!str(v.name)) throw new ToolError(t('main.persona.door.arg.required', { name: 'name' }));
+      if (!str(v.name)) throw new ToolError(doorText('arg.required', { name: 'name' }));
       return [{ ref, source: 'env', name: str(v.name) }];
     },
     // A secret that runs a command is a command the app will run when it resolves it: the executable and how many arguments are said, so the record is not a bare name.
@@ -332,7 +333,7 @@ function slice(doc: unknown, path: unknown): unknown {
 }
 
 async function cards(refs: unknown, c: OpCtx): Promise<Card[]> {
-  if (!Array.isArray(refs)) throw new ToolError(t('main.persona.door.arg.type', { name: 'refs', type: 'list' }));
+  if (!Array.isArray(refs)) throw new ToolError(doorText('arg.type', { name: 'refs', type: 'list' }));
   return Promise.all(refs.slice(0, 50).map((r) => c.card(String(r))));
 }
 

@@ -1,5 +1,4 @@
 import type { AuditBasis, AuditEntry } from '../../shared/auditoria';
-import { t } from '../../shared/i18n';
 import { parseTarget, type PushTarget } from '../../shared/push';
 import { recordWrite } from '../auditoria';
 import { configAuditEntry, raisedFields } from '../configAudit';
@@ -13,6 +12,7 @@ import { type Act, newActId, runAct } from './act';
 import { WHY_MAX, checkArgs } from './args';
 import { type Hooks, type OpCtx, type Values, defaultCtx, hooksOf, positional } from './doorOps';
 import { type Op, OPS, TOOL_NAMES, findOp, isTool, keyOf, opsOf } from './doorTable';
+import { doorText } from './doorText';
 import { signHostText } from './footer';
 import { beginInflight } from './inflight';
 import { personaStop } from './runtime';
@@ -204,23 +204,23 @@ export function createDoor(deps: DoorDeps = {}): Door {
   async function run(session: AnswerSession, toolName: string, input: Record<string, unknown>): Promise<string> {
     const mask = (text: string): string => session.maskText(text);
     const opName = typeof input.op === 'string' ? input.op : '';
-    if (!(deps.table ? table.some((o) => o.tool === toolName) : isTool(toolName))) throw new ToolError(t('main.persona.door.unknownTool', { tool: toolName }));
+    if (!(deps.table ? table.some((o) => o.tool === toolName) : isTool(toolName))) throw new ToolError(doorText('unknownTool', { tool: toolName }));
     const op = find(toolName, opName);
     if (!op) {
       const ops = (deps.table ? table.filter((o) => o.tool === toolName) : opsOf(toolName as (typeof TOOL_NAMES)[number])).map((o) => o.op).join(', ');
-      const reason = t('main.persona.door.unknownOp', { tool: toolName, op: opName.slice(0, 60) || '-', ops });
+      const reason = doorText('unknownOp', { tool: toolName, op: opName.slice(0, 60) || '-', ops });
       refuseEarly(session, { tool: toolName, op: opName, def: null, input, problem: 'op', reason });
       throw new ToolError(reason);
     }
 
     // Refused before anything is attempted: the persona is stopped, or the call is not well formed. The model reads why; the person is told of a malformed write (`refuseEarly`),
     // and the Stop has its own line.
-    if (stopped()) throw new ToolError(t('main.persona.door.stopped'));
+    if (stopped()) throw new ToolError(doorText('stopped'));
     const checked = checkArgs(op.args, input, op.write);
     if (!checked.ok) {
-      const reason = `${op.tool}.${op.op}: ${t(checked.problem.key, checked.problem.params)}`;
+      const reason = `${op.tool}.${op.op}: ${doorText(`arg.${checked.problem.code}`, checked.problem.params)}`;
       const name = checked.problem.params.name;
-      refuseEarly(session, { tool: op.tool, op: op.op, def: op, input, problem: checked.problem.key.slice(checked.problem.key.lastIndexOf('.') + 1), ...(typeof name === 'string' ? { arg: name } : {}), reason });
+      refuseEarly(session, { tool: op.tool, op: op.op, def: op, input, problem: checked.problem.code, ...(typeof name === 'string' ? { arg: name } : {}), reason });
       throw new ToolError(reason);
     }
     const values: Values = { ...checked.values };
@@ -258,7 +258,7 @@ export function createDoor(deps: DoorDeps = {}): Door {
     const before = op.write ? getConfig() : null;
 
     // ---- one synchronous stretch: the latch, the act in flight, the handler's first line. A tool call that was on its way when the Stop was pressed is refused here.
-    if (stopped()) throw new ToolError(t('main.persona.door.stopped'));
+    if (stopped()) throw new ToolError(doorText('stopped'));
     const finished = beginInflight(cut(`${op.tool}.${op.op} ${subject}`.trim(), INFLIGHT_MAX));
     // A change the persona may not make through the settings is refused here, in the same stretch, and recorded as a refused act.
     const blocked = h.guard ? h.guard(args, values, ctx) : null;
@@ -303,7 +303,7 @@ export function createDoor(deps: DoorDeps = {}): Door {
       finished();
     }
 
-    if (refused !== null) throw new ToolError(t(failure !== null ? 'main.persona.door.failed' : 'main.persona.door.refused', { tool: op.tool, op: op.op, reason: refused }));
+    if (refused !== null) throw new ToolError(doorText(failure !== null ? 'failed' : 'refused', { tool: op.tool, op: op.op, reason: refused }));
 
     // What the model reads: the result, masked by the answer's values and the app's redaction, cut, and fenced when it comes from outside the app. A secret read is the one
     // value that is given as it is; it is in the answer's mask from that moment, and the record of what was read holds its name only.
@@ -316,7 +316,7 @@ export function createDoor(deps: DoorDeps = {}): Door {
       const stored = op.tool === 'Settings' && op.op === 'get' && /(?:^|\.)instructions$/.test(String(values.path ?? '')) ? `[${rawText.length} characters]` : cut(oneLine(text), 240);
       session.remember({ tool: op.tool, op: op.op, target: targetText(op, values), excerpt: stored });
     }
-    if (op.write) return text ? `${t('main.persona.door.done')}\n${text}` : t('main.persona.door.done');
+    if (op.write) return text ? `${doorText('done')}\n${text}` : doorText('done');
     return op.outside && text ? `<data>\n${fence(text)}\n</data>` : text;
   }
 

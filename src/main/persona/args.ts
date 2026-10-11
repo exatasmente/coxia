@@ -40,9 +40,12 @@ export function arg(form: string): ArgSpec {
   return { name: m[1], type, ...(m[3] ? { values: m[3].split(',') } : {}), ...(m[4].includes('!') ? { required: true } : {}), ...(m[4].includes('@') ? { target: true } : {}), ...(m[4].includes('*') ? { secret: true } : {}) };
 }
 
-export type Checked = { ok: true; values: Record<string, unknown> } | { ok: false; problem: { key: string; params: Record<string, string | number> } };
+/** What can be wrong with a call's arguments; the door words it for the model (`arg.<code>`) and the chat words it for the person. */
+export type ArgProblem = 'unknown' | 'required' | 'type' | 'long' | 'enum' | 'why';
 
-const bad = (key: string, params: Record<string, string | number>): Checked => ({ ok: false, problem: { key, params } });
+export type Checked = { ok: true; values: Record<string, unknown> } | { ok: false; problem: { code: ArgProblem; params: Record<string, string | number> } };
+
+const bad = (code: ArgProblem, params: Record<string, string | number>): Checked => ({ ok: false, problem: { code, params } });
 
 /** The size of a JSON value once written; a value that cannot be written (a cycle, a bigint) is too big to take. */
 function jsonSize(v: unknown): number {
@@ -61,46 +64,46 @@ export function checkArgs(specs: readonly ArgSpec[], input: Record<string, unkno
   const known = new Set(specs.map((s) => s.name));
   for (const key of Object.keys(input)) {
     if (key === 'op' || key === 'why') continue;
-    if (!known.has(key)) return bad('main.persona.door.arg.unknown', { name: key, args: [...known].join(', ') || '-' });
+    if (!known.has(key)) return bad('unknown', { name: key, args: [...known].join(', ') || '-' });
   }
   const values: Record<string, unknown> = {};
   for (const spec of specs) {
     const v = input[spec.name];
     if (v === undefined || v === null) {
-      if (spec.required) return bad('main.persona.door.arg.required', { name: spec.name });
+      if (spec.required) return bad('required', { name: spec.name });
       continue;
     }
     switch (spec.type) {
       case 'string':
       case 'card':
       case 'text': {
-        if (typeof v !== 'string') return bad('main.persona.door.arg.type', { name: spec.name, type: 'text' });
+        if (typeof v !== 'string') return bad('type', { name: spec.name, type: 'text' });
         const max = spec.max ?? (spec.type === 'text' ? TEXT_MAX : STRING_MAX);
-        if (v.length > max) return bad('main.persona.door.arg.long', { name: spec.name, max });
-        if (spec.required && !v.trim()) return bad('main.persona.door.arg.required', { name: spec.name });
+        if (v.length > max) return bad('long', { name: spec.name, max });
+        if (spec.required && !v.trim()) return bad('required', { name: spec.name });
         break;
       }
       case 'number':
-        if (typeof v !== 'number' || !Number.isFinite(v)) return bad('main.persona.door.arg.type', { name: spec.name, type: 'number' });
+        if (typeof v !== 'number' || !Number.isFinite(v)) return bad('type', { name: spec.name, type: 'number' });
         break;
       case 'integer':
-        if (typeof v !== 'number' || !Number.isInteger(v)) return bad('main.persona.door.arg.type', { name: spec.name, type: 'integer' });
+        if (typeof v !== 'number' || !Number.isInteger(v)) return bad('type', { name: spec.name, type: 'integer' });
         break;
       case 'boolean':
-        if (typeof v !== 'boolean') return bad('main.persona.door.arg.type', { name: spec.name, type: 'boolean' });
+        if (typeof v !== 'boolean') return bad('type', { name: spec.name, type: 'boolean' });
         break;
       case 'enum':
-        if (typeof v !== 'string' || !spec.values?.includes(v)) return bad('main.persona.door.arg.enum', { name: spec.name, values: (spec.values ?? []).join(', ') });
+        if (typeof v !== 'string' || !spec.values?.includes(v)) return bad('enum', { name: spec.name, values: (spec.values ?? []).join(', ') });
         break;
       case 'json':
-        if (jsonSize(v) > JSON_MAX) return bad('main.persona.door.arg.long', { name: spec.name, max: JSON_MAX });
+        if (jsonSize(v) > JSON_MAX) return bad('long', { name: spec.name, max: JSON_MAX });
         break;
     }
     values[spec.name] = v;
   }
   if (write) {
     const why = input.why;
-    if (typeof why !== 'string' || !why.trim() || why.length > WHY_MAX) return bad('main.persona.door.arg.why', { max: WHY_MAX });
+    if (typeof why !== 'string' || !why.trim() || why.length > WHY_MAX) return bad('why', { max: WHY_MAX });
   }
   return { ok: true, values };
 }

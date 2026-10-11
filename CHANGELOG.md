@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- **Two details of the persona.** A write the persona asked for that the app refused before running it (a missing argument or reason, an operation that does not exist) now leaves a refused line in the chat ("Board · did not try create: the argument column is missing") and a line in the Audit marked as refused before the handler; before, the person never learned the call had been made.
+- **Two details of the persona.** A write the persona asked for that the app refused before running it (a missing argument or reason, an operation that does not exist) now leaves a refused line in the chat ("Board · did not try create: the argument column is missing") and a line in the Audit marked as refused before the handler; before, the person never learned the call had been made. And what the door and the open engine tell the model about a failed call ("[tool error]", "The argument column is missing", the schema findings) is now English whatever the app's language, like the tools' descriptions, instead of Portuguese next to English descriptions.
 
 ### Changed
 
