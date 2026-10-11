@@ -4,18 +4,17 @@
 
 **Walk into stand-up already prepared, and leave with the follow-ups done.** Coxia is a desktop app (with a phone companion) that gets a developer through the recurring rituals of a team, by voice or by text: one AI agent per open task reads the repository, the specs and the documentation you point it at before it says a word, helps you unblock the thing you are stuck on, and hands you the minutes. It never changes anything outside your machine without your explicit yes.
 
-> **Status: 0.9.0-beta.15 (beta).** It is used daily by its author, but parts are verified only against test servers (see [What is verified](#what-is-verified)). Expect rough edges and read the honest notes below. The same documentation, published as a site: [exatasmente.github.io/coxia](https://exatasmente.github.io/coxia/).
+> **Status: 0.10.0 (beta).** It is used daily by its author, but parts are verified only against test servers (see [What is verified](#what-is-verified)). Expect rough edges and read the honest notes below. The same documentation, published as a site: [exatasmente.github.io/coxia](https://exatasmente.github.io/coxia/).
 
-<!-- TODO(screenshots): take these with demo data (a throwaway repository and fictitious tasks), never real company or personal data. See docs/images/README.md. -->
+<!-- Every shot comes from the app itself, over a workspace of fictional data seeded by scripts/seed-docs-workspace.mjs and written by scripts/captures/ (see docs/images/README.md). -->
 
-| Screenshot (TODO) | What it shows |
+| Screenshot | What it shows |
 |---|---|
-| `docs/images/chat.png` | The chat with your persona, with the strip of counts and the ceremony card |
-| `docs/images/overview.png` | The Overview: cards of your open tasks with their stage |
-| `docs/images/call.png` | A ceremony in progress, by voice or text, with the agent's sources |
-| `docs/images/actions.png` | The actions queue: the exact command, waiting for your confirmation |
-| `docs/images/wizard.png` | The first-run setup wizard |
-| `docs/images/phone.png` | The phone companion (PWA) |
+| ![The day](docs/images/today.png) | The Today screen: cards of your open tasks with their stage |
+| ![A ceremony](docs/images/call.png) | A ceremony in progress, by voice or text, with the agent's sources |
+| ![The actions queue](docs/images/actions.png) | The actions queue: the exact command, waiting for your confirmation |
+| ![The setup wizard](docs/images/wizard.png) | The first-run setup wizard |
+| ![The paired phone](docs/images/phone.png) | The phone companion (PWA) |
 
 ## Contents
 

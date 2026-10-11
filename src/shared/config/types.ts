@@ -321,6 +321,8 @@ export interface StageDef {
   poolMode?: PoolMode;
   /** Whether the stage receives the workspace's test environment. Left out: a QA stage of the current editor reads as yes; every stage carried by an already-saved template reads as no. */
   testEnv?: boolean;
+  /** Whether the stage gets the same virtual display a QA stage gets (sandbox or host, Xvfb with no TCP, never the person's screen). Left out: off. */
+  display?: boolean;
   /** The agent that works this stage in a run (an `agents.team` id). It wins over the `stages` list of the agents. Work stages only. */
   agentId?: string;
   /** Files, in the cycle folder, that this stage must produce. Plain names: no folder, nothing that starts with a dot. */

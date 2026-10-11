@@ -548,7 +548,7 @@ describe('the release-flow template', () => {
     expect(c.devCycle.templateId).toBe('agent-flow');
     expect({ ...c.devCycle, flows: null, comments: null }).toEqual({ ...issueFlow.devCycle, flows: null, comments: null });
     expect(c.agents.team.map((a) => a.id)).toContain('release-manager');
-    expect(c.agents.team.filter((a) => a.id !== 'release-manager')).toEqual(issueFlow.agents.team);
+    expect(c.agents.team.filter((a) => a.id !== 'release-manager' && a.id !== 'release-images')).toEqual(issueFlow.agents.team);
   });
 
   it('validates with nothing to say about it: the flow of the release has no problem and the agent works its stages', () => {
@@ -562,12 +562,13 @@ describe('the release-flow template', () => {
     expect(validateConfig(own).warnings).toEqual([]);
   });
 
-  it('goes plan, gate, assemble, merges in, beta, beta on the host, feedback, gate, stable, stable on the host, published, and every stage is reachable', () => {
+  it('goes plan, gate, assemble, the images, merges in, beta, beta on the host, feedback, gate, stable, stable on the host, published, and every stage is reachable', () => {
     const stages = flowOf({ agents: { team: applied().agents.team }, devCycle: { stages: applied().devCycle.flows!.release } });
     expect(stages.map((s) => [s.id, s.type, s.agent])).toEqual([
       ['release-plan', 'work', 'release-manager'],
       ['release-plan-gate', 'gate', null],
       ['release-assemble', 'work', 'release-manager'],
+      ['release-images', 'work', 'release-images'],
       ['release-merged', 'wait', null],
       ['release-beta', 'work', 'release-manager'],
       ['release-beta-out', 'wait', null],
@@ -577,6 +578,8 @@ describe('the release-flow template', () => {
       ['release-stable-out', 'wait', null],
       ['release-published', 'work', null],
     ]);
+    // The stage that keeps the images of the documentation current asks for the display a QA stage gets: that is what makes the capture run.
+    expect(stages.find((s) => s.id === 'release-images')?.display).toBe(true);
     expect(stages.find((s) => s.id === 'release-plan')?.artifacts).toEqual(['RELEASE_PLAN.md']);
     expect(stages.find((s) => s.id === 'release-merged')?.waitsFor).toEqual({ kind: 'release-approved' });
     expect(stages.find((s) => s.id === 'release-feedback')?.waitsFor).toEqual({ kind: 'beta-age', minutes: 1440, label: 'beta-blocker' });
@@ -647,9 +650,11 @@ describe('the release-flow template', () => {
 
   it('a flow of a release that is broken is reported with its path', () => {
     const c = applied();
-    c.devCycle.flows!.release[3] = { ...c.devCycle.flows!.release[3], waitsFor: { kind: 'beta-age' } };
+    // The wait for the merges, whatever its place in the list: it is the stage the release flow carries that must wait for an event.
+    const at = c.devCycle.flows!.release.findIndex((s) => s.waitsFor?.kind === 'release-approved');
+    c.devCycle.flows!.release[at] = { ...c.devCycle.flows!.release[at], waitsFor: { kind: 'beta-age' } };
     const r = validateConfig(c);
-    expect(r.errors.map((e) => e.path)).toContain('devCycle.flows.release[3].waitsFor');
+    expect(r.errors.map((e) => e.path)).toContain(`devCycle.flows.release[${at}].waitsFor`);
   });
 
   it('is not part of the template file a workspace exports: the file is valid and the Release manager lists no stage of a flow it does not carry', () => {

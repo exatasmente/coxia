@@ -35,4 +35,4 @@ Start with the [project README](../README.md). These documents go deeper. Severa
 
 | Document | What it covers |
 |---|---|
-| [Screenshots](images/README.md) | The planned screenshots and the rules for taking them |
+| [Screenshots](images/README.md) | The screenshots the README shows, taken from the app by the capture scripts, and the rules for taking them |

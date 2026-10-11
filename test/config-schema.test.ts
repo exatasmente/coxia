@@ -262,6 +262,32 @@ describe('config schema', () => {
     });
   });
 
+  describe('the display of a stage', () => {
+    const withStage = () => {
+      const c = neutralConfig();
+      c.devCycle.stages = [structuredClone(TEST_STAGES[0])];
+      return c;
+    };
+    const stageOf = (c: ReturnType<typeof neutralConfig>) => c.devCycle.stages[0];
+
+    it('is off until a stage asks for it, in a stage and in a saved flow, and describes itself as a boolean', () => {
+      const c = withStage();
+      expect(c.devCycle.stages.every((s) => !('display' in s))).toBe(true);
+      stageOf(c).display = true;
+      c.devCycle.flows = { release: [{ ...stageOf(c), display: true }] };
+      expect(validateConfig(c).errors).toEqual([]);
+      const props = CONFIG_SCHEMA.properties!.devCycle.properties!.stages.items!.properties!;
+      expect(props.display.type).toBe('boolean');
+      expect(props.id.type).toBe('string');
+    });
+
+    it('refuses a value that is not a boolean, by path', () => {
+      const c = withStage();
+      stageOf(c).display = 'yes' as unknown as boolean;
+      expect(validateConfig(c).errors.map((e) => e.path)).toEqual(['devCycle.stages[0].display']);
+    });
+  });
+
   describe('what the provider offers', () => {
     const withProvider = (features?: Record<string, unknown>) => {
       const c = neutralConfig();
