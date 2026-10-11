@@ -294,9 +294,9 @@ export const runsModule: Module = (ctx) => {
     notify: (n) => ctx.notify(n),
     // An event of the fixed catalog happened in the run (a stage was entered or finished, a gate was decided, the run finished): the plugins that
     // observe it are called, each inside the stage sandbox, with what the person granted it and writing its document into the run's cycle folder. The
-    // app reads the run's own state here, never a stored one; a plugin that fails is not the run's to know, and the stage of a run is not started beside
-    // another sandbox over the same worktree.
-    pluginEvent: async (event, { run }) => void (await firePluginEvent(event, liveContext(run))),
+    // app reads the run's own state here, never a stored one; a plugin that fails does not stop the run, but its reason reaches the run's conversation (the
+    // runner writes it) and the workspace's log (the plugin service does), and the stage of a run is not started beside another sandbox over the same worktree.
+    pluginEvent: (event, { run }) => firePluginEvent(event, liveContext(run)),
     // A plugin's request waits for the person: the run does not start another stage until it is answered.
     pluginHold: (runId) => pluginHold(runId),
     pluginRelease: (runId) => releasePluginAsks(runId),

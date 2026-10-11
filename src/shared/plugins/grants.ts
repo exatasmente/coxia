@@ -75,6 +75,7 @@ const EVENT_LABEL: Record<string, string> = {
   'stage-finished': 'main.plugins.event.stageFinished',
   'gate-decided': 'main.plugins.event.gateDecided',
   'run-finished': 'main.plugins.event.runFinished',
+  'conversation-called': 'main.plugins.event.conversationCalled',
 };
 
 /**

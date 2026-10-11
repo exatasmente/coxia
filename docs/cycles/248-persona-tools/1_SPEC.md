@@ -27,7 +27,7 @@ Product decisions from the conversation that opened the epic, restated in #247 a
 
 ## Where things stand today
 
-Checked against this tree (release `0.10.0-beta.1`, schema 30); every line number below was read again for this spec.
+Checked against this tree (release `0.10.0-beta.1`, schema 30; brought up to date with `0.10.0-beta.2`, schema 31, which this issue does not touch); every line number below was read again for this spec.
 
 | Piece | What it does today | Where |
 |---|---|---|
@@ -48,7 +48,7 @@ Checked against this tree (release `0.10.0-beta.1`, schema 30); every line numbe
 | Stopping an answer | Each running call registers an abort under (thread, agent); `runs:callStop` aborts the agent's calls in that thread, and `running(thread)` lists every call registered in it, an agent called by another included | `src/main/mentions/stop.ts:5-12,28-35`; `src/main/mentions/answer.ts:259`; `src/main/runner/module.ts:377` |
 | Answering the persona | One chain of promises per thread, in memory: a message waits for the answer ahead of it; nothing survives a restart | `src/main/mentions/module.ts:30-33,108-146` |
 | The test workspace | `assertExternalWrite` refuses any write that leaves the machine, with one message; `audited()` and the board, the minutes and the proposals call it first | `src/main/workspace.ts:14-21`; `src/main/actions.ts:496` |
-| Schema | Version 30; the persona is a `kind` of team entry | `src/shared/config/types.ts:5` |
+| Schema | Version 30 when this was written (31 on the release it was brought up to date with, which this issue does not touch); the persona is a `kind` of team entry | `src/shared/config/types.ts:5` |
 | The wizard's fixed line and the docs | The review says the persona can read, chat and open screens; the persona doc says it "approves nothing, changes no setting" | `docs/persona.md:9,17` |
 
 ## Rules
@@ -147,7 +147,7 @@ Checked against this tree (release `0.10.0-beta.1`, schema 30); every line numbe
 ### The phone and the configuration
 
 39. **The phone gets the control and the chat, and nothing else new.** `persona:stop`, `persona:resume` and `persona:state` join `PERSONA_CHANNELS` (open to a paired browser, not external effects), pinned by the policy test. The tools are not channels and give a browser nothing it did not have; but a message to the persona from a paired browser makes the persona act with the reach of rule 2, and the audit says `door: paired`.
-40. **No schema step.** The schema stays 30. The latch is a file outside the configuration (rule 28) and the tools need no setting, so there is no `30 → 31`. The persona's review line in the wizard and its Settings text, which say it can read, chat and open screens, are corrected to say what it can do now, and the persona's documentation says it acts, in both languages (Q6).
+40. **No schema step.** This issue does not change the schema: whatever version the release it lands on carries, there is no step of its own. The latch is a file outside the configuration (rule 28) and the tools need no setting, so nothing here needs a step. The persona's review line in the wizard and its Settings text, which say it can read, chat and open screens, are corrected to say what it can do now, and the persona's documentation says it acts, in both languages (Q6).
 
 ## Out of scope
 
@@ -181,7 +181,7 @@ Each one is a check a person makes on screen or by test, with the data folder po
 16. **Test workspace.** In a workspace with `test: true`, an approval, a board write and a push attempted by the persona are refused by the guard and recorded `ok: false`; a configuration change and a memory note succeed.
 17. **Phone.** The same chat on a paired browser makes the persona act with the reach of the table (an act the phone cannot do alone, such as `plugins:answer`, succeeds through the persona) and the audit line says `door: paired`; the stop works from the phone with the external-effects switch off.
 18. **The audit screen.** The Who filter, the badge, the door, the `said` and the folded `basis` show; the four new kinds are labelled in both catalogs; there is no channel that writes the audit.
-19. **No schema change.** The schema is 30 and a workspace written by this version opens in the previous one; the JSON Schema is unchanged.
+19. **No schema change.** This issue adds no step: the schema version is the release's own (31 when it was brought up to date) and the issue's diff does not touch `schema.ts`, `types.ts`' version or the JSON Schema; a workspace written by this version opens in the previous one.
 20. **Wording and theme.** Every new string is in both catalogs through `t()`, the tool descriptions are English prompt text marked as such, the control and the banner use theme tokens only, and the wizard's line and the persona documentation no longer say the persona cannot act.
 
 ## Open questions
@@ -206,7 +206,7 @@ Each has a recommendation; the maintainer decides at this gate.
 *Recommendation: rule 22 as written:* the subject the app read itself, up to eight of the persona's own tool results as short masked excerpts, the message it answers, 2,000 characters, kept with the audit line, which is not swept. The alternative of keeping the model's reasoning is rejected (it is memory-only and a switch). Keeping each read in full would put the persona's reads (issue bodies, memory) into a file that is not swept. If a retention for the audit is added later, the `basis` should be allowed to go first and the line stay.
 
 **Q6. The schema step.**
-*Recommendation: none; the schema stays 30* (rule 40). If the maintainer wants the tools **off for a persona saved before this release and on for a new one**, as a gate for those who tried the beta that "only chats", the cost is a boolean on the persona's entry and a step `30 → 31` that raises nothing and writes `false` for an existing persona; the persona's docs and the wizard's line would say so. I do not recommend it: the persona has not shipped in a stable release, and the maintainer's decision is that it has no fixed limits.
+*Recommendation: none; this issue adds no schema step* (rule 40). If the maintainer wants the tools **off for a persona saved before this release and on for a new one**, as a gate for those who tried the beta that "only chats", the cost is a boolean on the persona's entry and a step `30 → 31` that raises nothing and writes `false` for an existing persona; the persona's docs and the wizard's line would say so. I do not recommend it: the persona has not shipped in a stable release, and the maintainer's decision is that it has no fixed limits.
 
 **Q7. Text the persona writes to the code host.**
 Its comments, issue bodies and descriptions go out under the person's token, so the host shows the person as the author, which is "reading as the person's" outside the app. *Recommendation: a fixed one-line footer on text the persona composes for the host* (the audit already says who for the app's own records), worded by the app and not by the model. Whether the runner's own comments carry a signature today was not checked; the plan checks it and reuses the form. The alternative is to accept the host's author line as the person's and rely on the audit.

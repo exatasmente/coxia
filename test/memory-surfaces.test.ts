@@ -47,7 +47,7 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 /** A run's world over the test's workspace folder, in English, with the memory port on. */
 const start = (over: BootOptions = {}): Promise<Boot> => boot({ dir, memoryPort: w.port(), ...over, configure: (c) => { c.language = 'en'; over.configure?.(c); } });
 const easy = (b: Boot, refiner?: (call: AgentCall) => Promise<unknown> | unknown): void => {
-  b.engine.script('refiner', async (call) => (await refiner?.(call), work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' })));
+  b.engine.script('refiner', async (call) => (await refiner?.(call), work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' })));
   b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
 };
 
@@ -146,7 +146,7 @@ describe('a stage', () => {
           const got = await call.incoming?.(() => undefined);
           if (got) words.push(got);
         }
-        return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+        return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' });
       });
       b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
       await b.runner.start('app#101');

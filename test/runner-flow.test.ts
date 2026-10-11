@@ -45,8 +45,8 @@ const notReady = (c: WorkspaceConfig): void => {
 
 /** Every agent does its stage at once; a test overrides the ones it is about. */
 function easy(b: Boot): void {
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   b.engine.script('developer', async (_c, tools) => {
     await tools.write('src/feature.ts', 'export const feature = 1;\n');
     return work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
@@ -314,7 +314,7 @@ describe('an agent that asks the person who reported the issue', () => {
     setVcsRuntimeForTests(forge.runtime());
     const b = await boot({ dir: ATAS, publish: true, configure: (c) => void (c.language = 'en') });
     easy(b);
-    b.engine.script('refiner', () => work('I need one more thing.', { reporterQuestion: 'Which browser do you use?' }), () => work('Spec, with the browser.', { artifacts: [doc('1_SPEC.md')] }));
+    b.engine.script('refiner', () => work('I need one more thing.', { reporterQuestion: 'Which browser do you use?' }), () => work('Spec, with the browser.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     const run = await start(b);
     expect(run).toMatchObject({ status: 'waiting', stage: 'refine', wait: { kind: 'reporter-reply', by: 'refiner', since: '2026-10-03T11:00:00.000Z' } });
     // the question is on the issue, from the agent's autonomy
@@ -349,7 +349,7 @@ describe('an agent that asks the person who reported the issue', () => {
   it('the person can go on without a reply, with a reason', async () => {
     const b = await boot();
     easy(b);
-    b.engine.script('refiner', () => work('Hm.', { reporterQuestion: 'Which browser?' }), () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    b.engine.script('refiner', () => work('Hm.', { reporterQuestion: 'Which browser?' }), () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     const run = await start(b);
     expect(run.status).toBe('waiting');
     b.runner.skipWait(run.id, 'It does not matter.');

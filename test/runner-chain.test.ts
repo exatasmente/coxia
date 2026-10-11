@@ -16,14 +16,14 @@ afterAll(() => setLanguage('pt-BR'));
 /** Every agent of the business team does its stage at once; the developer is the one that asks. */
 function script(b: Boot, over: { developer?: Parameters<Boot['engine']['script']>[1][]; techLead?: Parameters<Boot['engine']['script']>[1][]; productOwner?: Parameters<Boot['engine']['script']>[1][] } = {}): void {
   b.engine.script('support', () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')] }));
-  b.engine.script('product-owner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }), ...(over.productOwner ?? []));
-  b.engine.script('tech-lead', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }), ...(over.techLead ?? [() => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] })]));
+  b.engine.script('product-owner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }), ...(over.productOwner ?? []));
+  b.engine.script('tech-lead', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }), ...(over.techLead ?? [() => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] })]));
   b.engine.script('developer', ...(over.developer ?? [async (_c, tools) => {
     await tools.write('src/feature.ts', 'export const feature = 1;\n');
     return work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
   }]));
   b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '' }] }));
-  b.engine.script('customer-success', () => work('Told.', { artifacts: [doc('6_RELEASE_NOTE.md')] }));
+  b.engine.script('customer-success', () => work('Told.', { artifacts: [doc('6_RELEASE_NOTE.md'), doc('USER_MANUAL.md')] }));
 }
 
 const build = async (configure: (c: WorkspaceConfig) => void = () => undefined): Promise<Boot> => boot({ flow: 'business', configure: (c) => { c.language = 'en'; configure(c); } });

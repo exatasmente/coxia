@@ -30,8 +30,8 @@ async function withEarlierRecording(configure: (b: Boot) => void = () => undefin
     },
   });
   configure(b);
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan.' }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan.' }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   b.engine.script('developer', () => {
     // The earlier attempt of QA left a recording; it is on the run before QA starts.
     const run = b.runner.list()[0];
@@ -99,8 +99,8 @@ function screens(forum: () => Boot['forum'], sink: FakeSink) {
 }
 
 function easy(b: Boot, qa: Parameters<Boot['engine']['script']>[1]): void {
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   b.engine.script('developer', () => work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] }));
   b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
   b.engine.script('qa', qa);

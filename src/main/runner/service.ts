@@ -7,6 +7,7 @@ import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '..
 import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, mentionableIds, parseMentions, runThreadId } from '../../shared/forum';
 import { runKey } from '../../shared/browser';
 import { ATTACHMENT_KINDS, type AttachmentRef } from '../../shared/attachments';
+import { conversationCommand } from '../../shared/plugins/calls';
 import { createTranslator, t } from '../../shared/i18n';
 import {
   type FlowStage,
@@ -250,10 +251,10 @@ export interface RunnerDeps {
   limits?: Partial<{ idleMs: number; maxMs: number }>;
   /**
    * Told when an event of the fixed catalog happens (a stage was entered or finished, a gate was decided, a run finished), so the plugins that
-   * observe it are called. Optional: without it the runner runs exactly as before. What it hands over is material for the plugins, and a plugin
-   * that fails is not the runner's to know.
+   * observe it are called. Optional: without it the runner runs exactly as before. What it hands over is material for the plugins; what comes back
+   * is how each call ended, and a call that failed gets a line in the run's conversation (the run itself goes on).
    */
-  pluginEvent?(event: PluginEvent, context: { run: Run }): void | Promise<void>;
+  pluginEvent?(event: PluginEvent, context: { run: Run }): void | PluginCallOutcome[] | Promise<void | PluginCallOutcome[]>;
   /**
    * A request of a plugin of this run waits for the person (a network or a write it was not allowed): the runner does not start a stage of the run
    * meanwhile, and the run waits with the reason. Optional: without it nothing is held.
@@ -375,6 +376,21 @@ export interface Runner {
   /** Resolves when nothing is running: stages, mentions and what they started. */
   idle(): Promise<void>;
 }
+
+/** How one plugin call ended, as the runner reads it from what `pluginEvent` returns. */
+export interface PluginCallOutcome {
+  name: string;
+  state: 'ok' | 'failed' | 'waiting';
+  refused: string | null;
+}
+
+/** The line of the run's conversation for a plugin that failed, per event of the cycle (under `main.forum.code.`); a call from a conversation answers there. */
+const PLUGIN_FAILED: Partial<Record<PluginEvent, string>> = {
+  'stage-entered': 'run.plugin.callFailed.stageEntered',
+  'stage-finished': 'run.plugin.callFailed.stageFinished',
+  'gate-decided': 'run.plugin.callFailed.gateDecided',
+  'run-finished': 'run.plugin.callFailed.runFinished',
+};
 
 const MAX_STEPS = 200;
 /** The most the person may paste as the memory from the run screen: the same ceiling the screen reads back, so nothing is written that could not be shown. */
@@ -532,7 +548,12 @@ export function createRunner(deps: RunnerDeps): Runner {
   async function pluginDone(event: PluginEvent, run: Run): Promise<void> {
     if (!deps.pluginEvent) return;
     try {
-      await deps.pluginEvent(event, { run });
+      const calls = (await deps.pluginEvent(event, { run })) ?? [];
+      // A plugin that failed says so where the person follows the run: its name, the event, the stage and the reason. One that waits for an answer is
+      // already the run's wait, and one that ran is only in the log.
+      for (const c of calls.filter((x) => x.state === 'failed')) {
+        deps.forum.append(runThreadId(run.id), { kind: 'system', author: { type: 'app' }, code: PLUGIN_FAILED[event] ?? 'run.plugin.failed', params: { plugin: c.name.slice(0, 80), stage: run.stage, reason: (c.refused ?? '—').slice(0, 500) }, stage: run.stage, public: false });
+      }
     } catch (e) {
       console.error('[runner] could not tell the plugins', run.id, e instanceof Error ? e.message : e);
     }
@@ -1352,6 +1373,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!run || run.status !== 'question' || run.question?.kind === 'squad' || run.question?.kind === 'pr-retry' || !text.trim()) return null;
       // Naming an agent asks that agent something; it is not the answer to the question that waits.
       if (parseMentions(text, mentionableIds(deps.config().agents.team, thread)).length) return null;
+      // A message that calls a plugin is read as that and nothing else: it never answers the question that waits.
+      if (conversationCommand(text)) return null;
       // The files the message carries ride on the answer the runner writes, so the message shows them and the retention sees them as referenced.
       api.answer(run.id, text, attachments ?? [], who);
       const last = deps.forum.read(thread, 0, 2000)?.messages ?? [];

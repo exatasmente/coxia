@@ -4,7 +4,10 @@ Lets the agents of a run search the web through a SearXNG instance of your own. 
 stage ends, the questions an agent wrote in `SEARCH_REQUESTS.md` (one per list item,
 `- question`) are searched, and the next stage reads `WEB_SEARCH.md` with up to five
 results per question — title, address and snippet — and their sources. A question
-already answered is not searched again; up to five new questions per stage.
+already answered is not searched again; up to five new questions per stage. A
+conversation can also call it at any moment, writing `/web-search <question>`: the answer
+comes back in that conversation with its sources, and in a run's conversation the same
+text is kept in `WEB_SEARCH.md`, over what was there.
 
 ## Setting it up
 

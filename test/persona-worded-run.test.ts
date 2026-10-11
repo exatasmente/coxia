@@ -59,7 +59,7 @@ describe('what the persona does in a run, worded as the persona\'s', () => {
 
   it('decides a gate and sends a run back as the persona', async () => {
     const b = await boot();
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     const run = await b.runner.start('app#101');
     for (let i = 0; i < 4 && b.runner.get(run.id)!.status !== 'gate'; i++) await b.settle();
     expect(b.runner.get(run.id)!.status).toBe('gate');

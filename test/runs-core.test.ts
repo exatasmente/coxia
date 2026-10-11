@@ -86,7 +86,7 @@ describe('the flow of the agent cycle', () => {
       ['qa', false, 'qa'],
       ['ready', false, null],
     ]);
-    expect(flow[0].artifacts).toEqual(['1_SPEC.md']);
+    expect(flow[0].artifacts).toEqual(['1_SPEC.md', 'REQUIREMENTS.md']);
     expect(flowProblems(flow)).toEqual([]);
   });
 

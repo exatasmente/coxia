@@ -1,7 +1,7 @@
 /** How a call reached the app: the window, a paired browser, or the persona acting on the person's behalf. One name for what `callOrigin()` says, whichever audit line or answer carries it. */
 export type Through = 'window' | 'paired' | 'persona';
 
-export type AuditKind = 'gitlab' | 'github' | 'bitbucket' | 'graphql' | 'sync' | 'publish' | 'note-edit' | 'push' | 'minutes' | 'exec' | 'release' | 'worktree' | 'plugin-write' | 'plugin-request' | 'screen-open' | 'screen-close' | 'screen-hold' | 'screen-confirm' | 'screen-use' | 'procedure' | 'screen-handoff' | 'test-env' | 'memory' | 'turn-limit' | 'persona' | 'config' | 'secret' | 'plugin-decision' | 'act';
+export type AuditKind = 'gitlab' | 'github' | 'bitbucket' | 'graphql' | 'sync' | 'publish' | 'note-edit' | 'push' | 'minutes' | 'exec' | 'release' | 'worktree' | 'plugin-write' | 'plugin-request' | 'plugin-call' | 'screen-open' | 'screen-close' | 'screen-hold' | 'screen-confirm' | 'screen-use' | 'procedure' | 'screen-handoff' | 'test-env' | 'memory' | 'turn-limit' | 'persona' | 'config' | 'secret' | 'plugin-decision' | 'act';
 
 /** The kinds an agent's virtual screen writes: its opening and closing, a step held for the person, a confirmation the agent asked for, the person's use of the screen, and the agent handing the screen over. */
 export const SCREEN_AUDIT_KINDS = ['screen-open', 'screen-close', 'screen-hold', 'screen-confirm', 'screen-use', 'screen-handoff'] as const satisfies readonly AuditKind[];

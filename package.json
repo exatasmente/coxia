@@ -1,6 +1,6 @@
 {
   "name": "cerimonias",
-  "version": "0.10.0-beta.1",
+  "version": "0.10.0-beta.2",
   "description": "Coxia: cerimônias por voz com agentes por atividade",
   "main": "./out/main/index.js",
   "scripts": {
@@ -9,6 +9,9 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "docs:dev": "vitepress dev site",
+    "docs:build": "node site/scripts/cli.mjs build",
+    "docs:check": "node site/scripts/cli.mjs check",
     "i18n:lint": "node scripts/i18n-lint.mjs --keys --scope renderer --max 0",
     "dist": "electron-vite build && electron-builder --linux AppImage deb",
     "dist:public": "electron-vite build && electron-builder --config electron-builder.public.yml --linux AppImage deb"
@@ -35,6 +38,7 @@
     "playwright-core": "1.63.0",
     "typescript": "^7.0.2",
     "vite": "^7.3.6",
+    "vitepress": "1.6.4",
     "vitest": "^5.0.3"
   },
   "allowScripts": {

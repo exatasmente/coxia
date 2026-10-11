@@ -18,11 +18,11 @@ describe('a run from refine to ready', () => {
     const { engine, runner } = b;
     const seen: Record<string, unknown> = {};
 
-    engine.script('refiner', () => work('Spec written.', { commit: 'write the spec.', artifacts: [doc('1_SPEC.md', '# Spec\nDo X, not Y.\n')], handoff: 'Plan X and leave Z out.' }));
+    engine.script('refiner', () => work('Spec written.', { commit: 'write the spec.', artifacts: [doc('1_SPEC.md', '# Spec\nDo X, not Y.\n'), doc('REQUIREMENTS.md')], handoff: 'Plan X and leave Z out.' }));
     engine.script(
       'planner',
       () => work('One decision is missing.', { question: 'Should the thing also handle Y?' }),
-      () => work('Plan written.', { artifacts: [doc('2_PLAN.md', '# Plan\nStep 1.\n')], handoff: 'Start with step 1.' }),
+      () => work('Plan written.', { artifacts: [doc('2_PLAN.md', '# Plan\nStep 1.\n'), doc('PROTOTYPE.md')], handoff: 'Start with step 1.' }),
     );
     engine.script(
       'developer',
@@ -213,8 +213,8 @@ describe('the cycle memory of a run', () => {
   it('is born with the run, takes what the conversation decided, and the stage that concludes commits it', async () => {
     const b = await boot();
     const { engine, runner } = b;
-    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan X and leave Z out.' }));
-    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md')] }));
+    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan X and leave Z out.' }));
+    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
     engine.script('developer', async (_c, tools) => {
       await tools.write('src/feature.ts', 'export const feature = 1;\n');
       return work('Implemented.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
@@ -255,8 +255,8 @@ describe('the cycle memory of a run', () => {
   it('records what a review sent back, and a stage reads it even after the conversation passes the window it is given', async () => {
     const b = await boot();
     const { engine, runner } = b;
-    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md')] }));
-    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md')] }));
+    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
+    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
     engine.script(
       'developer',
       async (_c, tools) => {
@@ -314,8 +314,8 @@ describe('the cycle memory of a run', () => {
   it('lets the person correct it on the run screen: the next stage reads their version, recorded as theirs', async () => {
     const b = await boot();
     const { engine, runner } = b;
-    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md')] }));
-    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md')] }));
+    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
+    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
     engine.script('developer', async (_c, tools) => {
       await tools.write('src/feature.ts', 'export const feature = 1;\n');
       return work('Implemented.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
@@ -350,8 +350,8 @@ describe('the cycle memory of a run', () => {
   it('hands the memory to the stage first and whole, and says so when it passed its cap', async () => {
     const b = await boot();
     const { engine, runner } = b;
-    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md')] }));
-    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md')] }));
+    engine.script('refiner', () => work('Spec written.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
+    engine.script('planner', () => work('Plan written.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
     engine.script('developer', async (_c, tools) => {
       await tools.write('src/feature.ts', 'export const feature = 1;\n');
       return work('Implemented.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });

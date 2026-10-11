@@ -216,6 +216,8 @@ describe('the release from the plan to the stable', () => {
 
   /** Everything the Release manager says, stage by stage; the calls of the tool are what each stage does. */
   function script(b: Boot, pr: { head: string }): void {
+    // The stage of the images runs between the branch and the wait for the merges, and its agent is not the Release manager: it answers once, running no tool.
+    b.engine.script('release-images', () => work('The images of the documentation are current.'));
     b.engine.script(
       'release-manager',
       async () => {
@@ -317,7 +319,7 @@ describe('the release from the plan to the stable', () => {
     b.runner.gate(run.id, 'approve');
     await b.settle();
     now = current(b, run);
-    // accepting the plan froze the head the pull request had in it
+    // accepting the plan froze the head the pull request had in it; the stage of the images ran with no tool call, and the run waits for the merges to be in
     expect(now.subject?.planned).toEqual({ '7': pr.head });
     expect(now.stage).toBe('release-merged');
     expect(now.status).toBe('waiting');
@@ -480,7 +482,7 @@ describe('the tool the Release manager asks for the steps with', () => {
     expect(call.prompt).toContain('does not exist yet');
     // an issue run gets no such tool
     const issueRun = await boot({ dir: ATAS, publish: true, repo: repoOf(), configure: (c) => (c.language = 'en') });
-    issueRun.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    issueRun.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     await issueRun.runner.start('app#101');
     await issueRun.settle();
     expect(issueRun.engine.calls[0].release).toBeUndefined();

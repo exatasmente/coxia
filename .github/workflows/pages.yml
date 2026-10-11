@@ -1,0 +1,65 @@
+name: Pages
+
+# Publishes the documentation site to the repository's own Pages address. The person turns Pages on once in the
+# repository settings, with the GitHub Actions source; nothing in this repository writes that setting. Every push to
+# the default branch rebuilds and republishes, and a change to `docs/` or `CHANGELOG.md` reaches the site through the
+# merge that brought it, with no step of its own.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One publication at a time, and a run in progress is not cancelled: a half-published site is worse than a slower one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build the site
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The history page and the blog posts are read from CHANGELOG.md while the site is built.
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The site lives under the repository's own Pages address, so the address is read from the host at build time
+      # and never written into a file of the tree.
+      - name: Build the site
+        run: npm run docs:build
+        env:
+          SITE_BASE: /${{ github.event.repository.name }}/
+
+      - name: Upload the built site
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: site/.vitepress/dist
+
+  deploy:
+    name: Publish it
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Publish to Pages
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
