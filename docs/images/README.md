@@ -24,8 +24,7 @@ flow, and the change goes to the release's pull request like any other.
 | `phone.png` | The phone companion (PWA), taken in a phone-sized window |
 
 Each screen is written twice, `docs/images/<name>.png` for the Portuguese pages and `docs/images/<name>-en.png` for the
-English ones; a capture that the list knows and the folder does not have yet stays listed as pending, so the list and
-the folder never disagree in silence.
+English ones.
 
 Rules:
 

@@ -6,7 +6,7 @@
  * `ElectronApplication`), `page` is the first window, `lang` is the language of this capture and `out` is where the PNG
  * goes. A script may keep a marked-up version as well; the plain image is always written by the runner.
  */
-export const CAPTURE_SHAPE = 'capture({ app, page, lang, out })';
+export const CAPTURE_SHAPE = 'capture({ app, page, lang, out, drop })';
 
 /** Waits for the app to settle: two animation frames and a short quiet period, so a screen is drawn before the picture. */
 export async function settle(page) {

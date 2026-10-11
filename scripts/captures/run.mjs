@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron } from 'playwright-core';
-import { FIXED_DAY, PHONE_DATA_DIR, seedDocsWorkspace } from '../seed-docs-workspace.mjs';
+import { FIXED_DAY, seedDocsWorkspace } from '../seed-docs-workspace.mjs';
 import { settle, waitForText } from './shared.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -40,22 +40,69 @@ const fixWindow = async (page) => {
     window.Date = shifted;
   }, FIXED_DAY);
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
-  // The running clock of a ceremony and the activity line of a turn nobody prepared are drawn by JavaScript on a timer: the
-  // app reaches into the page to move them, which freezes the window the moment the capture is over. Both are hidden with a
-  // stylesheet, which changes nothing that is drawn. The line also names where the model would come from, which a public
-  // picture must not carry (a capture runs no model and the app has no provider configured).
-  await page.addStyleTag({ content: '.timer, .act { visibility: hidden; }' }).catch(() => undefined);
-};
+  // A running turn clock is drawn by JavaScript on a timer: the app reaches into the page to move it, which freezes the
+  // window the moment the capture is over. Hiding it changes nothing that is drawn. What names where a model would come
+  // from is not hidden but taken out of the page by the scripts that reach it (`dropHostPhrases`), so a picture of a
+  // public repository carries no vendor name.
+  await page.addStyleTag({ content: '.timer { visibility: hidden; }' }).catch(() => undefined);
+}
+
+/** True when this module is the one the command line asked Node to run, rather than one a feature script imports. */
+const RUN_AS_PROGRAM = process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+/** A node holding no text of its own, so dropping it takes only the phrase inside it. */
+const LEAF = 'span, b, strong, i, em, s, small, code, time';
+
+/**
+ * Takes out of the window every phrase left by the app's own vocabulary rather than by the seeded data: the setup
+ * assistant lists the model vendor of the app's default provider, and the screens name the code host where the workspace
+ * configures no integration. A capture runs no model and a public picture must carry neither name, so the phrase goes
+ * and the sentence it sat in becomes shorter — which is what the screen reads with no provider and no host configured.
+ * The sentence is shortened, never emptied: one that loses its whole text stops being drawn.
+ */
+export async function dropHostPhrases(page, phrases) {
+  const leaves = await page.evaluate((list) => {
+    const out = [];
+    for (const phrase of list) {
+      for (const node of document.querySelectorAll('body *')) {
+        const hit = [...node.childNodes].find((n) => n.nodeType === Node.TEXT_NODE && n.textContent.includes(phrase));
+        if (hit) out.push([hit.textContent, phrase]);
+      }
+    }
+    return out;
+  }, phrases);
+  for (const [text, phrase] of leaves) {
+    await page.evaluate(
+      ([full, cut]) => {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        while (walker.nextNode()) {
+          const node = walker.currentNode;
+          if (node.textContent !== full) continue;
+          node.textContent = full.replace(cut, ' ').replace(/\s+/g, ' ').trim();
+          if (!node.textContent && node.parentElement && node.parentElement.matches('span, b, strong, i, em, s, small, code, time')) node.parentElement.remove();
+          return;
+        }
+      },
+      [text, phrase],
+    );
+  }
+}
+
+/** The language of a first-run screen: the assistant follows the computer's language when the app has no config yet. */
+function systemLocale(lang) {
+  return lang === 'en' ? 'en-US' : 'pt-BR';
+}
 
 /** Seeds a throwaway workspace for one language, or an empty folder for the features that show a first run. */
 export async function workspaceFor(lang, empty = false) {
   const dir = mkdtempSync(join(tmpdir(), 'coxia-capture-'));
-  if (empty) return dir;
-  await seedDocsWorkspace(dir);
-  const config = join(dir, 'workspaces', 'principal', 'config.json');
-  const doc = JSON.parse(readFileSync(config, 'utf8'));
-  doc.language = lang;
-  writeFileSync(config, `${JSON.stringify(doc, null, 2)}\n`);
+  if (!empty) {
+    await seedDocsWorkspace(dir);
+    const config = join(dir, 'workspaces', 'docs', 'config.json');
+    const doc = JSON.parse(readFileSync(config, 'utf8'));
+    doc.language = lang;
+    writeFileSync(config, `${JSON.stringify(doc, null, 2)}\n`);
+  }
   return dir;
 }
 
@@ -84,7 +131,7 @@ export async function captureFeature(feature, lang, { dataDir, only } = {}) {
     const page = await app.firstWindow();
     await page.setViewportSize(WINDOW);
     await fixWindow(page);
-    await mod.capture({ app, page, lang, out: IMAGES, dataDir: seeded, root: ROOT });
+    await mod.capture({ app, page, lang, out: IMAGES, dataDir: seeded, root: ROOT, drop: (phrases) => dropHostPhrases(page, phrases) });
     await settle(page);
     const name = lang === 'en' ? `${feature.id}-en.png` : `${feature.id}.png`;
     await page.screenshot({ path: join(IMAGES, name) });
@@ -95,11 +142,11 @@ export async function captureFeature(feature, lang, { dataDir, only } = {}) {
   }
 }
 
-/** The phone companion: the app up in its web mode over the throwaway copy of the seed, driven by a browser at 390 px. */
+/** The phone companion: the app up in its web mode over the seeded workspace, driven by a browser at 390 px. */
 async function capturePhone(mod, { dataDir, lang, seeded }) {
   const app = await electron.launch({
     args: [mainEntry(), '--no-sandbox'],
-    env: { ...process.env, CERIMONIAS_DATA_DIR: dataDir ?? join(seeded, PHONE_DATA_DIR), CERIMONIAS_SPECS_DIR: dataDir ?? join(seeded, PHONE_DATA_DIR) },
+    env: { ...process.env, CERIMONIAS_DATA_DIR: dataDir ?? seeded, CERIMONIAS_SPECS_DIR: dataDir ?? seeded },
   });
   try {
     const page = await app.firstWindow();
@@ -113,7 +160,7 @@ async function capturePhone(mod, { dataDir, lang, seeded }) {
       if (!up) await page.waitForTimeout(500);
     }
     if (!up) throw new Error('the app\'s web mode is not listening on 127.0.0.1:4330: the phone capture needs it up');
-    const written = await mod.capture({ app, page, lang, out: IMAGES, dataDir: dataDir ?? join(seeded, PHONE_DATA_DIR), root: ROOT });
+    const written = await mod.capture({ app, page, lang, out: IMAGES, dataDir: dataDir ?? seeded, root: ROOT });
     return join(IMAGES, written.name);
   } finally {
     await app.close().catch(() => undefined);
@@ -148,4 +195,4 @@ async function main(argv) {
   }
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) process.exit(await main(process.argv.slice(2)));
+if (RUN_AS_PROGRAM) process.exit(await main(process.argv.slice(2)));

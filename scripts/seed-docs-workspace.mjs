@@ -25,8 +25,8 @@ const ROOT = resolve(HERE, '..');
 
 /** The day the workspace's dates hang from: a Saturday, so the ceremonies of a week read from it. */
 export const FIXED_DAY = '2026-06-15T09:40:00.000Z';
-export const WORKSPACE_ID = 'principal';
-export const WORKSPACE_NAME = 'Aurora';
+export const WORKSPACE_ID = 'docs';
+export const WORKSPACE_NAME = 'Documentação';
 export const REPO_ID = 'docs';
 export const ISSUE_PROJECT = 'group/project';
 
@@ -444,9 +444,8 @@ function procedures() {
 /** The marker a reference is written with. */
 export const REF_MARK = '#';
 
-/** The data folder the seed writes into the throwaway copy of a phone capture, and the session it is signed in with. */
-export const PHONE_DATA_DIR = 'phone-data';
-export const PHONE_TOKEN = 'docs-phone-token';
+/** The token the seeded phone is signed in with. */
+export const PHONE_TOKEN = `docs-phone-${WORKSPACE_ID}-token`;
 
 /** Whether the folder already holds a workspace: the seed never writes over one. */
 function holdsWorkspace(dir) {
@@ -454,7 +453,7 @@ function holdsWorkspace(dir) {
   if (existsSync(join(dir, 'workspaces.json'))) return true;
   if (existsSync(join(dir, 'config.json'))) return true;
   const at = /^\d{4}-\d{2}-\d{2}-pre-daily\.md$/;
-  return readdirSync(dir).some((n) => ['historico', 'atividade', 'gates', 'qa', 'retros', 'feedback', 'conflicts', 'workspaces', PHONE_DATA_DIR].includes(n) || at.test(n));
+  return readdirSync(dir).some((n) => ['historico', 'atividade', 'gates', 'qa', 'retros', 'feedback', 'conflicts', 'workspaces'].includes(n) || at.test(n));
 }
 
 const write = (file, text) => {
@@ -476,34 +475,34 @@ export async function seedDocsWorkspace(dir) {
   const id = join(root, 'workspaces', WORKSPACE_ID);
   mkdirSync(id, { recursive: true });
   const written = [];
-  json(join(root, 'workspaces.json'), { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: WORKSPACE_NAME, createdAt: at(0), test: true }] });
-  written.push('workspaces.json', 'workspaces/principal/config.json');
+  const listed = (rel) => `workspaces/${WORKSPACE_ID}/${rel}`;
+  json(join(root, 'workspaces.json'), { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: WORKSPACE_NAME, createdAt: at(0), test: false }] });
+  written.push('workspaces.json', listed('config.json'));
   json(join(id, 'config.json'), config(root));
   for (const run of runs(id)) json(join(id, 'runs', `${run.id}.json`), run);
-  written.push(`workspaces/principal/runs/${RUN_ONE}.json`, `workspaces/principal/runs/${RUN_TWO}.json`);
+  written.push(listed(`runs/${RUN_ONE}.json`), listed(`runs/${RUN_TWO}.json`));
   json(join(id, 'board.json'), board());
   json(join(id, 'acoes.json'), actions());
-  written.push('workspaces/principal/board.json', 'workspaces/principal/acoes.json');
+  written.push(listed('board.json'), listed('acoes.json'));
   const call = conversation();
   write(join(id, 'forum', `${call.header.id}.jsonl`), [call.header, ...call.messages].map((line) => JSON.stringify(line)).join('\n'));
-  written.push(`workspaces/principal/forum/${call.header.id}.jsonl`);
+  written.push(listed(`forum/${call.header.id}.jsonl`));
   // The ceremony in progress of the day: the app reads the newest file of `historico/` of today as the state to resume.
   json(join(id, 'historico', `${CEREMONY_ID}.json`), ceremony(CEREMONY_ID));
-  written.push(`workspaces/principal/historico/${CEREMONY_ID}.json`);
+  written.push(listed(`historico/${CEREMONY_ID}.json`));
   write(join(id, 'falas.json'), JSON.stringify({ version: 1, turns: {}, reuses: [] }));
-  written.push('workspaces/principal/falas.json');
+  written.push(listed('falas.json'));
   for (const p of procedures()) json(join(id, 'memory', 'procedures', `${p.id}.json`), p);
-  written.push('workspaces/principal/memory/procedures/p-1a2b3c4d.json', 'workspaces/principal/memory/procedures/p-5e6f7a8b.json', 'workspaces/principal/memory/procedures/p-9c0d1e2f.json');
+  written.push(listed('memory/procedures/p-1a2b3c4d.json'), listed('memory/procedures/p-5e6f7a8b.json'), listed('memory/procedures/p-9c0d1e2f.json'));
   write(join(root, '2026-06-15-pre-daily.md'), ['# Pre-daily of 2026-06-15', '', `- The search of the answered actions (#${CARD_SEARCH}) is at its second gate.`, `- The report about the refused token (#${CARD_TOKEN}) has no owner.`, `- One activity shipped: ${REF_PREFIX}${CARD_TODAY}, the queue of the day.`].join('\n'));
   written.push('2026-06-15-pre-daily.md');
   json(join(root, 'web.json'), { enabled: true, host: '127.0.0.1', port: 4330, basePath: '/cerimonias/', publicUrl: 'http://127.0.0.1:4330/cerimonias/', trustedProxy: '127.0.0.1/32', allowExternalEffects: false });
   written.push('web.json');
-  // The phone's own copy: the app keeps one data folder per kind of run, and the web mode reads its folder's registry. The
-  // session of the paired phone is written with its own token, so the capture opens the companion already paired.
-  json(join(root, PHONE_DATA_DIR, 'workspaces.json'), { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: WORKSPACE_NAME, createdAt: at(0), test: true }] });
-  json(join(root, PHONE_DATA_DIR, 'web.json'), { enabled: true, host: '127.0.0.1', port: 4330, basePath: '/cerimonias/', publicUrl: 'http://127.0.0.1:4330/cerimonias/', trustedProxy: '127.0.0.1/32', allowExternalEffects: false });
-  write(join(root, PHONE_DATA_DIR, 'web-sessions.json'), JSON.stringify({ sessions: [{ id: 'phone-aurora', name: 'Phone of Aurora', createdAt: at(-48), lastSeenAt: at(0), tokenHash: createHash('sha256').update(PHONE_TOKEN).digest('hex'), expiresAt: Number.MAX_SAFE_INTEGER }] }));
-  written.push('phone-data/workspaces.json', 'phone-data/web.json', 'phone-data/web-sessions.json');
+  // The session of the paired phone lives in the data root, shared by every workspace, and its token is written only as a
+  // hash — the same place the app keeps it. The browser mode reads this same root, so the phone capture opens the seeded
+  // workspace itself and never the person's.
+  write(join(root, 'web-sessions.json'), JSON.stringify({ sessions: [{ id: 'phone-docs', name: 'Phone of the docs workspace', createdAt: at(-48), lastSeenAt: at(0), tokenHash: createHash('sha256').update(PHONE_TOKEN).digest('hex'), expiresAt: Number.MAX_SAFE_INTEGER }] }));
+  written.push('web-sessions.json');
   return written;
 }
 
