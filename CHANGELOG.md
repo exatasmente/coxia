@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.11.0-beta.2] - 2026-10-11
+
 ### Fixed
 
 - **The terminal state server's section shows in Settings.** Its switches (read the workspace's state, and act through the persona's tools) and the server entry were never drawn in Settings › Configurations and workspaces, so they could only be turned on by editing the configuration. They are now under the export and import of a configuration, on the computer only.
@@ -448,7 +450,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.1...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.2...HEAD
+[0.11.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.1...v0.11.0-beta.2
 [0.11.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.10.0...v0.11.0-beta.1
 [0.10.0]: https://github.com/exatasmente/coxia/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/exatasmente/coxia/compare/v0.8.0...v0.9.0
