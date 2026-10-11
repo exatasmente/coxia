@@ -120,6 +120,29 @@ export function SystemLine({ m }: { m: ForumMessage }) {
   );
 }
 
+/** Lines the app wrote one after another, as one line that opens: how many there are and the last one, then all of them. */
+export function NoticeGroup({ items }: { items: ForumMessage[] }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const last = items[items.length - 1];
+  return (
+    <li className="chat-row chat-row-system" id={`msg-${items[0].seq}`}>
+      <button type="button" className="chat-notices" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <Chevron open={open} />
+        <span className="chat-notices-count">{t('ui.chat.notices', { count: items.length })}</span>
+        {!open && <span className="chat-notices-last">{messageText(last)}</span>}
+      </button>
+      {open && (
+        <ul className="chat-notices-list">
+          {items.map((m) => (
+            <li key={m.seq} id={m.seq === items[0].seq ? undefined : `msg-${m.seq}`} className="chat-system">{messageText(m)}</li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 /**
  * The line an act of the persona leaves in its conversation, before the answer: what it did, in the viewer's words, whether the handler refused it, the fields of a raise of its
  * own reach, the link to its entry of the audit (the reason and what it had read are there) and the button of the screen the act was about. The links move the device they were

@@ -234,6 +234,9 @@ const REMOVED: Record<string, string> = {
   'today.greeting.night': 'the greeting went with the header of Today; the chat header names the persona',
   'today.greeting.morning': 'the greeting went with the header of Today; the chat header names the persona',
   'today.greeting.afternoon': 'the greeting went with the header of Today; the chat header names the persona',
+  // The home's navigation is a sidebar (a sheet on a phone) whose rows carry their counts apart from their words.
+  'ui.nav.radarCount': 'the radar row of the navigation shows its count as a badge beside the word, not in the label',
+  'ui.nav.healthCount': 'the health row of the navigation shows its count as a badge beside the word, not in the label',
   // The panel of running work is a tree: no activity is folded into one generic "Agent" card, each is an entry named for its agent.
   'activity.generic': 'the dock no longer has a generic card for the runs no job owns: each one is an entry of its own, named for its agent',
 };

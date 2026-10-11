@@ -3,7 +3,7 @@ import type { AgentDef } from '../../../../shared/config/types';
 import { mentionJob } from '../../../../shared/activity';
 import type { PushTarget } from '../../../../shared/push';
 import { buildTree, hasWork } from '../../activityTreeModel';
-import { bubblesOf, composerState, queuedOf, rowKind, workOf } from '../../chatModel';
+import { bubblesOf, composerState, logRows, queuedOf, rowKind, workOf } from '../../chatModel';
 import { useCycle } from '../../cycleApi';
 import { useT } from '../../i18n';
 import { useActivity } from '../../useActivity';
@@ -21,7 +21,7 @@ import { asksOf } from '../cycle/askView';
 import { markThreadSeen, useThread } from '../cycle/forumApi';
 import { screenOfCall } from '../cycle/screens';
 import { useScreens } from '../cycle/useScreens';
-import { ActRow, AgentBubble, AnswerBubble, LiveBubble, PendingBubble, PersonBubble, SystemLine } from './ChatMessage';
+import { ActRow, AgentBubble, AnswerBubble, LiveBubble, NoticeGroup, PendingBubble, PersonBubble, SystemLine } from './ChatMessage';
 import './chat.css';
 
 interface Props {
@@ -101,7 +101,9 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
         }}
       >
-        {messages.map((m) => {
+        {logRows(messages, persona.id).map((row) => {
+          if (row.kind === 'notices') return <NoticeGroup key={`notices-${row.items[0].seq}`} items={row.items} />;
+          const { m } = row;
           const kind = rowKind(m, persona.id);
           if (kind === 'system') return <SystemLine key={m.seq} m={m} />;
           if (kind === 'act') return <ActRow key={m.seq} m={m} ceremony={ceremony} onOpen={compact ? undefined : onOpen} />;
@@ -129,6 +131,7 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
         enterSends={!phone}
         autoFocus={!phone && !compact}
         className="composer"
+        inline
         hint={phone ? t('ui.chat.hint.phone') : t('ui.chat.hint.desktop')}
         placeholder={t('ui.chat.placeholder', { agent: name })}
         onSent={() => {

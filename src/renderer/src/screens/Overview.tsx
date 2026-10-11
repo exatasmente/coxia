@@ -9,6 +9,7 @@ import { needsYou, pendingQuestions } from '../dashboard';
 import { useWatcherAlerts } from '../watchersApi';
 import { BackIcon } from './icons';
 import { ChatHeader } from './persona/ChatHeader';
+import { HomeShell } from './persona/HomeShell';
 import { RunNeeds } from './cycle/RunNeeds';
 import { SquadPicker } from './cycle/SquadPicker';
 import { useRuns } from './cycle/runsApi';
@@ -16,6 +17,7 @@ import { useAgora } from './useAgora';
 import { TempoHoje } from './TempoHoje';
 import { ActivityRow, AgoraCard, NeedsList, Tiles } from './TodayParts';
 import { intlLocale, useT, useTv } from '../i18n';
+import { useIsPhone } from '../useIsPhone';
 
 type Filter = 'all' | 'blocked' | 'ask';
 
@@ -25,6 +27,7 @@ export function Overview({ ceremony: c, go, pendingActions, actions, section, pe
   const t = useT();
   const tv = useTv();
   const cycle = useCycle();
+  const phone = useIsPhone();
   const on = cycle?.ceremonies;
   // The cards come from the card source tool when there is one, else from the host.
   const cardsFrom = cycle?.cardsFrom ?? t('ui.today.row.hostButton');
@@ -67,12 +70,12 @@ export function Overview({ ceremony: c, go, pendingActions, actions, section, pe
     // eslint-disable-next-line react-hooks/exhaustive-deps -- showFilter only sets state and scrolls
   }, [section]);
 
-  // With a persona the Overview is a screen to come back from: a back button, its name and the date (the greeting, the update badge, the voice switch, the bell and the
-  // navigation are the chat's). Without one it is where "Not now" left the person, so it keeps the header with the menu, and offers the wizard again.
+  // With a persona the Overview is a screen beside the chat: its name and the date (the update badge, the voice switch and the bell are the chat's), the sidebar to go back on
+  // the computer and a back button on a phone. Without one it is where "Not now" left the person, so it keeps the chat's header, and offers the wizard again.
   const header = persona ? (
     <header className="dash-top">
       <div className="dash-hello">
-        <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go(HOME)}><BackIcon /></button>
+        {phone && <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go(HOME)}><BackIcon /></button>}
         <div className="dash-hello-text">
           <div className="faint">{today}</div>
           <h1>{t('ui.overview.title')}</h1>
@@ -80,7 +83,7 @@ export function Overview({ ceremony: c, go, pendingActions, actions, section, pe
       </div>
     </header>
   ) : (
-    <ChatHeader persona={null} title={t('ui.overview.title')} go={go} ceremony={c} invite />
+    <ChatHeader persona={null} title={t('ui.overview.title')} go={go} ceremony={c} actions={actions} current="overview" invite />
   );
 
   // A cycle with no daily preparation has no call to start: the card and the filters that lead to it are left out.
@@ -223,23 +226,25 @@ export function Overview({ ceremony: c, go, pendingActions, actions, section, pe
   );
 
   return (
-    <div className="page">
-      <div className="wrap dash">
-        {header}
-        {c.cardsError && <div className="error">{t('ui.today.cardsError', { error: c.cardsError })}</div>}
-        <div className="dash-cols">
-          <div className="dash-col">
-            <div className="d-o1">{agora}</div>
-            <div className="d-o2">{tiles}</div>
-            <div className="d-o3" ref={needsRef}>{needsBlock}</div>
-            <div className="d-o6">{tempo}</div>
-          </div>
-          <div className="dash-col">
-            <div className="d-o4">{activities}</div>
-            <div className="d-o5">{ceremonies}</div>
+    <HomeShell go={go} ceremony={c} actions={actions} current="overview" persona={!!persona}>
+      <div className="page">
+        <div className="wrap dash">
+          {header}
+          {c.cardsError && <div className="error">{t('ui.today.cardsError', { error: c.cardsError })}</div>}
+          <div className="dash-cols">
+            <div className="dash-col">
+              <div className="d-o1">{agora}</div>
+              <div className="d-o2">{tiles}</div>
+              <div className="d-o3" ref={needsRef}>{needsBlock}</div>
+              <div className="d-o6">{tempo}</div>
+            </div>
+            <div className="dash-col">
+              <div className="d-o4">{activities}</div>
+              <div className="d-o5">{ceremonies}</div>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </HomeShell>
   );
 }

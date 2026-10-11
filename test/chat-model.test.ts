@@ -10,7 +10,7 @@ import type { LiveAnswer, LiveEvent } from '../src/shared/persona';
 import { PUSH_SCREENS } from '../src/shared/push';
 import { buildTree, hasWork } from '../src/renderer/src/activityTreeModel';
 import { PERSONA_TOOLS } from '../src/shared/personaTools';
-import { BUTTON_KEY, actLine, actTarget, bubblesOf, buttonLabel, cardOpen, cardParts, composerAria, composerState, liveKey, menuControls, liveOf, queuedOf, reduceLive, reduceRead, refocusAfterSend, rowKind, workItems, workOf, workOpenByDefault, workShown, workSummary } from '../src/renderer/src/chatModel';
+import { BUTTON_KEY, actLine, actTarget, bubblesOf, buttonLabel, composerAria, composerState, liveKey, liveOf, logRows, queuedOf, reduceLive, reduceRead, refocusAfterSend, rowKind, workItems, workOf, workOpenByDefault, workShown, workSummary } from '../src/renderer/src/chatModel';
 
 const THREAD = 'agent-me';
 const event = (to: number, rev: number, offset: number, text: string, over: Partial<LiveEvent> = {}): LiveEvent => ({ thread: THREAD, to, agent: 'me', rev, offset, text, ...over });
@@ -125,6 +125,29 @@ describe('the rows', () => {
     expect(rowKind({ kind: 'post', author: { type: 'agent', id: 'qa' } }, 'me')).toBe('agent');
     expect(rowKind({ kind: 'system', author: { type: 'app' } }, 'me')).toBe('system');
     expect(rowKind({ kind: 'system', author: { type: 'agent', id: 'me' } }, 'me')).toBe('system');
+  });
+
+  it('folds two or more screen notices in a row into one row, and keeps a single one and everything else as it is', () => {
+    const app = (n: number) => stored(n, { kind: 'system', author: { type: 'app' }, code: 'runner.screen.closed' });
+    const rows = logRows([stored(1), app(2), app(3), app(4), stored(5, { author: { type: 'person' } }), app(6), stored(7), app(8), app(9)], 'me');
+    expect(rows.map((r) => (r.kind === 'notices' ? r.items.map((m) => m.seq) : r.m.seq))).toEqual([1, [2, 3, 4], 5, 6, 7, [8, 9]]);
+    expect(logRows([], 'me')).toEqual([]);
+    // the line of an act of the persona is a row of its own and breaks a run of notices
+    const act = stored(10, { kind: 'system', author: { type: 'app' }, code: 'persona.act' });
+    expect(logRows([app(2), act, app(11)], 'me').map((r) => r.kind)).toEqual(['message', 'message', 'message']);
+  });
+
+  it('folds only the screen notices: failures, holds, stops and the count of the rest of the acts stay lines of their own', () => {
+    const line = (n: number, code: string | null) => stored(n, { kind: 'system', author: { type: 'app' }, code });
+    const shape = (rows: ReturnType<typeof logRows>) => rows.map((r) => (r.kind === 'notices' ? r.items.map((m) => m.seq) : r.m.seq));
+    expect(shape(logRows([line(1, 'runner.mentionFailed'), line(2, 'runner.mentionFailed')], 'me'))).toEqual([1, 2]);
+    for (const code of ['runner.model.allBusy', 'runner.mention.budget', 'runner.mention.noShell', 'runner.partial', 'persona.stopped.window', null]) {
+      expect(shape(logRows([line(1, code), line(2, code)], 'me'))).toEqual([1, 2]);
+    }
+    // a failure between two notices splits them; the count of the rest of the acts does not fold with a notice
+    expect(shape(logRows([line(1, 'runner.screen.closed'), line(2, 'runner.mentionFailed'), line(3, 'runner.screen.notKept')], 'me'))).toEqual([1, 2, 3]);
+    expect(shape(logRows([line(1, 'persona.act.more'), line(2, 'runner.screen.closed')], 'me'))).toEqual([1, 2]);
+    expect(shape(logRows([line(1, 'runner.screen.closed'), line(2, 'runner.screen.idleClosed'), line(3, 'runner.screen.notKept')], 'me'))).toEqual([[1, 2, 3]]);
   });
 
   it('draws the line of an act of the persona as its own row, and the line that counts the rest as a line of the app', () => {
@@ -302,17 +325,11 @@ describe('the words of a button', () => {
   });
 });
 
-describe('the accessibility attributes of the box and the menu', () => {
+describe('the accessibility attributes of the box', () => {
   it('makes the box a combobox only where @agent is completed', () => {
     expect(composerAria(false, 'x', 3, 1)).toEqual({});
     expect(composerAria(true, 'x', 0, 0)).toEqual({ role: 'combobox', 'aria-expanded': false, 'aria-controls': 'x', 'aria-autocomplete': 'list', 'aria-activedescendant': undefined });
     expect(composerAria(true, 'x', 2, 1)).toMatchObject({ 'aria-expanded': true, 'aria-activedescendant': 'x-1' });
-  });
-
-  it('points the menu button at the menu only while the desktop menu is in the page', () => {
-    expect(menuControls(false, false)).toBeUndefined();
-    expect(menuControls(true, false)).toBe('chat-menu');
-    expect(menuControls(true, true)).toBeUndefined();
   });
 });
 
@@ -330,22 +347,6 @@ describe('what the Work section shows and when', () => {
     }
     const sub = buildTree([status('w3', 'started', { call: call(6) }), status('s3', 'started', { parent: 'w3', node: { type: 'sub', label: 'explore: map' } }), status('s3', 'finished', { parent: 'w3', node: { type: 'sub', label: 'explore: map' } }), status('w3', 'finished', { call: call(6) })]);
     expect(workShown(workOf(sub, 6, 'me') as never)).toBe(true);
-  });
-});
-
-describe('the ceremony card on a small screen', () => {
-  it('is one line on a phone and in full on the computer until the person chooses, and the choice wins', () => {
-    expect(cardOpen(true, null)).toBe(false);
-    expect(cardOpen(false, null)).toBe(true);
-    expect(cardOpen(true, true)).toBe(true);
-    expect(cardOpen(false, false)).toBe(false);
-  });
-});
-
-describe('the card when the chip is its header', () => {
-  it('is the body only on a phone, where the chip says "Now" and the title, and whole on the computer', () => {
-    expect(cardParts(true).head).toBe(false);
-    expect(cardParts(false).head).toBe(true);
   });
 });
 
