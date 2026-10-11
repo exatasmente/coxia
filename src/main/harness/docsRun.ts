@@ -3,7 +3,7 @@ import type { WorkspaceConfig } from '../../shared/config/types';
 import { applyCycleTemplate } from '../cycle-core';
 import { type Runner, RunnerError } from '../runner/service';
 import { t } from '../../shared/i18n';
-import type { Run } from '../../shared/runs';
+import type { Run, Who } from '../../shared/runs';
 
 // What the button that creates or updates the documentation of a repository does in the main process: start the documentation run, applying the docs flow first
 // when the workspace has none and the person was asked and said yes. The window knows whether it must ask by reading `docsFlowOf(config)`.
@@ -24,7 +24,7 @@ export interface DocsStartDeps {
  * Starts the documentation run of a repository. A workspace with no docs flow gets it only when `applyFlow` is true (the person confirmed what enters: the agent and
  * the flow) and the start passes `checkDocs`; otherwise the start is refused with `no-docs-flow`, which the window answers with that confirmation, or with what `checkDocs` found.
  */
-export async function startDocsRun(d: DocsStartDeps, repo: string, mode: string, applyFlow: boolean): Promise<Run> {
+export async function startDocsRun(d: DocsStartDeps, repo: string, mode: string, applyFlow: boolean, who?: Who): Promise<Run> {
   let added = false;
   if (!docsFlowOf(d.config())?.length) {
     if (!applyFlow) throw new RunnerError('no-docs-flow');
@@ -34,7 +34,7 @@ export async function startDocsRun(d: DocsStartDeps, repo: string, mode: string,
     added = true;
   }
   try {
-    return await d.runner.startDocs(repo, mode as 'create' | 'update');
+    return await d.runner.startDocs(repo, mode as 'create' | 'update', who);
   } catch (e) {
     // What is left to fail after the check (the day's branch or folder already there, a link where `.coxia` should be) is not undone: the template is only an agent and a flow
     // the person said yes to, and the next try does not ask again. The error says so, so the configuration does not change without the person knowing.

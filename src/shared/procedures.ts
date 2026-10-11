@@ -71,6 +71,8 @@ export interface ProcedureOrigin {
   by: string;
   /** Who created the record. */
   createdBy: string;
+  /** The revision was written or kept by the persona for the person, through its door (#248): `by` is `person` all the same, so the review and the lock mean what they did. */
+  persona?: true;
   surface: ProcedureSurface;
   /** The stage kind, when the surface is a stage. */
   stage?: string;

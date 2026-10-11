@@ -90,6 +90,7 @@ export function ActionCard({ a, go, waitsFor = [] }: { a: ReleaseAction; go: (s:
           <div className="row" style={{ gap: 8 }}>
             <h2 style={{ fontSize: 18, fontWeight: 600 }}>{title(a)}</h2>
             {a.release && <span className="badge badge-quiet">{t('ui.actions.badge.release', { release: a.release })}</span>}
+            {a.proposedBy === 'persona' && <span className="badge badge-quiet">{t('ui.actions.badge.proposedByPersona')}</span>}
             <span className={`badge ${a.state === 'done' && a.nothingSent ? 'badge-ask' : a.state === 'done' ? 'badge-now' : a.state === 'failed' ? 'badge-block' : a.state === 'pending' ? 'badge-ask' : 'badge-quiet'}`}>
               {a.kind === 'conflict' && a.state === 'skipped' ? t('ui.actions.badge.handledElsewhere') : a.state === 'done' && a.nothingSent ? t('ui.actions.badge.nothingSent') : t(STATE_LABEL[a.state])}
             </span>

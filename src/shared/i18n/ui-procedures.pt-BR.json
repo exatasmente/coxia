@@ -118,6 +118,7 @@
   "ui.procedures.panel.usage.savedCost": "Cerca de {tokens} tokens poupados, e cerca de {cost} informados pelo provedor.",
   "ui.procedures.panel.usage.savedCostEstimated": "Cerca de {tokens} tokens poupados, e cerca de {cost} estimados.",
   "ui.procedures.panel.usage.uses": "{uses} usos, {share} sem falha informada.",
+  "ui.procedures.panel.viaPersona": "Salvo pela persona, pela pessoa.",
   "ui.procedures.panel.waits": "O que esperar",
   "ui.procedures.panel.withheld": "Falhou duas vezes desde que foi salvo pela última vez, então a lista dos agentes o deixa de fora. Corrija-o ou exclua-o.",
   "ui.procedures.person": "você",

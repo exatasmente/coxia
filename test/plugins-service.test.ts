@@ -821,6 +821,26 @@ describe('answering a request from the paired phone', () => {
   });
 });
 
+describe('answering a request as the persona', () => {
+  it('has the window\'s reach, not a device\'s: a request of the cycle events is answered, and the same call from a paired browser is refused', async () => {
+    const { handle, invoke, invokePersona } = await import('../src/main/rpc');
+    const { newActId, runAct } = await import('../src/main/persona/act');
+    const h = harness([plugin({ write: null })]);
+    await firePluginEvent('stage-finished', ctx(), h.deps);
+    const id = h.actions[0].id;
+    handle('t:answer-ask', ((ask: string) => answerPluginAsk(ask, 'once', h.deps)) as never);
+    await expect(invoke('t:answer-ask', [id], 'device-1')).rejects.toThrow();
+    expect(h.runs).toEqual([]);
+    const act = { open: true, id: newActId(), door: 'paired' as const, said: '', mask: (x: string) => x, wrote: { count: 0, kinds: new Set<never>() } };
+    try {
+      await runAct(act as never, () => invokePersona('t:answer-ask', [id]));
+    } finally {
+      act.open = false;
+    }
+    expect(h.runs).toHaveLength(1);
+  });
+});
+
 describe('the line a delivered answer becomes', () => {
   it('is a message of the app, worded by its code, with the answer between the material markers', async () => {
     const forum = forumStore();

@@ -12,6 +12,7 @@ import { HeaderModuleButtons } from '../moduleSlots';
 import { Sheet } from '../Sheet';
 import { UpdateBadge } from '../UpdateBadge';
 import { VoiceToggle } from '../VoiceToggle';
+import { StopControl } from './StopControl';
 import { agentName } from '../cycle/names';
 import { HomeNav, useHomeCounts } from './HomeNav';
 
@@ -78,6 +79,7 @@ export function ChatHeader({ persona, go, ceremony, actions, current, title, inv
             {t('ui.chat.invite')}
           </button>
         )}
+        {persona && <StopControl />}
         <UpdateBadge go={go} />
         {testWorkspace && <span className="ws-test-chip" title={t('ui.today.testWorkspaceHint')}>{t('ui.today.testWorkspace')}</span>}
         <VoiceToggle />

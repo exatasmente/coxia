@@ -1,10 +1,12 @@
 // The persona's chat as plain functions: what the screen decides above the markup. DOM-free like activity.ts and dashboard.ts, because nothing renders a component in the tests.
 // The live bubble (the text of an answer being written, assembled from events), the rule that the stored answer replaces it, the messages that wait their turn, the Work
 // section found by the message it answers, and the words of a button.
+import { ACT_VERBS } from './actVerbs';
 import { type ActivityEntry } from '../../shared/activity';
 import type { ForumMessage } from '../../shared/forum';
 import { type LiveAnswer, type LiveEvent, applyLive, applyRead } from '../../shared/persona';
-import type { PushTarget } from '../../shared/push';
+import { type PushTarget, parseTarget } from '../../shared/push';
+import type { PersonaToolName } from '../../shared/personaTools';
 import { type TreeItem, type TreeNode, hasWork } from './activityTreeModel';
 
 // ---- the live answers of a device ---------------------------------------------------------------------------------------------------------------
@@ -57,10 +59,11 @@ export function bubblesOf(live: readonly LiveAnswer[], messages: readonly ForumM
 
 // ---- the messages -------------------------------------------------------------------------------------------------------------------------------
 
-export type RowKind = 'person' | 'answer' | 'agent' | 'system';
+export type RowKind = 'person' | 'answer' | 'agent' | 'system' | 'act';
 
-/** How a message of the conversation is drawn: the person's bubble, the persona's answer, another agent's (one the persona called), or a line the app wrote. */
-export function rowKind(m: Pick<ForumMessage, 'kind' | 'author'>, persona: string): RowKind {
+/** How a message of the conversation is drawn: the person's bubble, the persona's answer, another agent's (one the persona called), a line the app wrote, or the line of an act of the persona. */
+export function rowKind(m: Pick<ForumMessage, 'kind' | 'author'> & { code?: string | null }, persona: string): RowKind {
+  if (m.code === 'persona.act') return 'act';
   if (m.kind === 'system' || m.author.type === 'app') return 'system';
   if (m.author.type === 'person') return 'person';
   return m.author.id === persona ? 'answer' : 'agent';
@@ -152,6 +155,70 @@ export function workShown(root: TreeNode): boolean {
 
 /** Whether the Work section is open when the person has not chosen: while the call works, and closed once the answer is complete. */
 export const workOpenByDefault = (root: TreeNode): boolean => hasWork(root);
+
+// ---- the acts of the persona --------------------------------------------------------------------------------------------------------------------
+
+/** The line an act of the persona leaves in its conversation, as the window draws it: the app's words, in the language of whoever reads, and the two places it can lead to. */
+export interface ActLine {
+  text: string;
+  /** The handler refused, or the act failed: the line says so, and the reason. */
+  refused: boolean;
+  /** The configuration fields a raise of reach named, or null. */
+  raised: string | null;
+  /** The id of the act in the audit (the link scrolls to it), or null when the line carries none. */
+  auditId: string | null;
+  /** The screen the act was about, validated as every button is, or null. */
+  target: PushTarget | null;
+}
+
+const text = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/** The catalog key of the name of a tool's area, as the line of an act words it. A record over the names of the tools: a twelfth tool does not compile until it has one. */
+export const ACT_TOOL_KEY: Record<PersonaToolName, string> = {
+  Overview: 'ui.chat.act.tool.Overview',
+  Runs: 'ui.chat.act.tool.Runs',
+  Actions: 'ui.chat.act.tool.Actions',
+  Board: 'ui.chat.act.tool.Board',
+  Conversations: 'ui.chat.act.tool.Conversations',
+  Memory: 'ui.chat.act.tool.Memory',
+  Settings: 'ui.chat.act.tool.Settings',
+  Secrets: 'ui.chat.act.tool.Secrets',
+  Plugins: 'ui.chat.act.tool.Plugins',
+  Asks: 'ui.chat.act.tool.Asks',
+  Ceremonies: 'ui.chat.act.tool.Ceremonies',
+};
+
+/** The target an act line carries (a JSON string in the stored params): parsed with the vocabulary of the notifications, so a line cannot open what a button could not. */
+export function actTarget(raw: unknown): PushTarget | null {
+  if (typeof raw !== 'string' || !raw) return null;
+  try {
+    return parseTarget(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The words of a `persona.act` line. The message stores only the facts (tool, op, a short masked subject, the result, the audit id), so the sentence is made here, in the viewer's
+ * language: a language change translates the lines already in the thread. An unknown tool is shown by its name.
+ */
+export function actLine(m: Pick<ForumMessage, 'params'>, say: Say): ActLine {
+  const p = m.params ?? {};
+  const tool = text(p.tool);
+  const area = Object.hasOwn(ACT_TOOL_KEY, tool) ? say(ACT_TOOL_KEY[tool as PersonaToolName]) : tool;
+  const op = text(p.op);
+  const refused = p.result === 'refused';
+  const subject = text(p.subject);
+  const reason = text(p.reason);
+  const verb = Object.hasOwn(ACT_VERBS, `${tool}.${op}`) ? ACT_VERBS[`${tool}.${op}`] : null;
+  // Said from the tool, the operation and the subject, with no code in it: the area, then what was done. An operation this version has no words for reads as its name.
+  const sentence = refused
+    ? say(subject ? 'ui.chat.act.refused.on' : 'ui.chat.act.refused', { area, subject, reason: reason || '—' })
+    : verb
+      ? say('ui.chat.act.did', { area, did: say(verb, { subject: subject || '—' }) })
+      : say('ui.chat.act.ok', { area, op, subject: subject || '—' });
+  return { text: sentence, refused, raised: text(p.raised) || null, auditId: text(p.id) || null, target: actTarget(p.target) };
+}
 
 // ---- the buttons --------------------------------------------------------------------------------------------------------------------------------
 

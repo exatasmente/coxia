@@ -117,7 +117,7 @@ export function NotePanel({ note, who, onChanged }: { note: NoteItem; /** The ag
     <div className="me-panel">
       <dl className="me-meta small">
         <dt className="muted">{t('ui.memory.meta.by')}</dt>
-        <dd>{current.person && !current.foreign ? t('ui.memory.person') : who(current.by)}{current.person && !current.foreign && current.by !== 'person' ? ` (${t('ui.memory.meta.wroteBy', { who: who(current.by) })})` : ''}</dd>
+        <dd>{current.person && !current.foreign ? t(current.persona ? 'ui.memory.persona' : 'ui.memory.person') : who(current.by)}{current.person && !current.foreign && current.by !== 'person' ? ` (${t('ui.memory.meta.wroteBy', { who: who(current.by) })})` : ''}</dd>
         <dt className="muted">{t('ui.memory.meta.at')}</dt>
         <dd>{stamp(current.at)}</dd>
         <dt className="muted">{t('ui.memory.meta.revision')}</dt>

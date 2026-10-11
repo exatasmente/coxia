@@ -3,7 +3,7 @@ import { t } from '../shared/i18n';
 import type { AppEvent } from '../shared/types';
 import { recordWrite } from './auditoria';
 import type { Module } from './module';
-import { callOrigin } from './rpc';
+import { viaOf } from './rpc';
 import type { Notice } from './scheduler';
 import { TurnAskGone, createTurnAsks } from './turnAsks-core';
 import { getConfig } from './workspaceConfig';
@@ -50,10 +50,10 @@ export const register: Module = (ctx) => {
   emit = ctx.emit;
   notify = ctx.notify;
   ctx.handle('turnAsks:list', () => turnAsks.list());
-  // The one call every answerer goes through. The origin is the door the call came in by; an agent that answers later is a third `through`, with no other change.
+  // The one call every answerer goes through. The origin is the door the call came in by: the window, a paired browser or the persona.
   ctx.handle('turnAsks:answer', (id: unknown, decision: unknown) => {
     if (!isTurnDecision(decision)) return { ok: false as const, reason: 'decision' as const };
-    const through: TurnAnswerer = callOrigin() === 'web' ? 'paired' : 'window';
+    const through: TurnAnswerer = viaOf();
     try {
       return turnAsks.answer(text(id), decision as TurnDecision, through);
     } catch (e) {

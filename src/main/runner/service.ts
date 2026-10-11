@@ -19,6 +19,8 @@ import {
   type StageOutput,
   type Transition,
   acceptStage,
+  PERSON_WHO,
+  type Who,
   askReporter,
   askSquad,
   assertStartable,
@@ -289,43 +291,44 @@ export interface Runner {
   /** The bytes of one piece of evidence; null when the run or the file is not there. */
   evidenceBytes(runId: string, id: string): { bytes: Uint8Array; record: EvidenceRecord } | null;
   /** The person removes one piece of evidence (never an agent): the file goes and the run's record with it. */
-  removeEvidence(runId: string, id: string): boolean;
+  removeEvidence(runId: string, id: string, who?: Who): boolean;
   /**
    * Keeps the recording of the screen of an agent called in the run's thread as a piece of the run's evidence, as a stage's recording is. `not` when the run is gone or the
    * recording could not be kept (the thread then says why).
    */
   keepCallRecording(runId: string, agent: string, outcome: RecordingOutcome | null): 'kept' | 'not';
-  start(ref: string, repoId?: string): Promise<Run>;
+  start(ref: string, repoId?: string, who?: Who): Promise<Run>;
   /**
    * Starts the run of a release: its subject is a version, not an issue. The worktree is the run's own (the cycle documents live there); the release steps run in the
    * repository's checkout, through the door of Actions. The tracking issue is made (or adopted) and the branch opened (or asked to be) by the publisher.
    */
-  startRelease(version: string, from?: string, repoId?: string): Promise<Run>;
+  startRelease(version: string, from?: string, repoId?: string, who?: Who): Promise<Run>;
   /**
    * Starts the run that drafts (`create`) or brings up to date (`update`) the repository's root AGENTS.md: it has no issue and writes only that file
    * worktree, and ends in a push and a pull request that wait for the person's "sim" like every other.
    */
-  startDocs(repoId: string, mode: 'create' | 'update'): Promise<Run>;
+  startDocs(repoId: string, mode: 'create' | 'update', who?: Who): Promise<Run>;
   /**
    * What `startDocs` asks before it changes anything that does not depend on the docs flow: the mode, a run already going for the repository, the repository itself and the
    * identity of the commits. Throws what `startDocs` would; the window calls it before the docs template is applied, so a start that cannot happen leaves the configuration as it was.
    */
   checkDocs(repoId: string, mode: string): Promise<void>;
-  startStage(id: string): Run;
-  accept(id: string, note?: string): Run;
-  returnStage(id: string, note: string): Run;
-  gate(id: string, action: GateAction, reason?: string): Run;
-  answer(id: string, text: string, attachments?: AttachmentRef[]): Run;
-  retry(id: string): Run;
+  /** The moves of the person take `who` last: the person by default, the persona when it made them through its door (#248). */
+  startStage(id: string, who?: Who): Run;
+  accept(id: string, note?: string, who?: Who): Run;
+  returnStage(id: string, note: string, who?: Who): Run;
+  gate(id: string, action: GateAction, reason?: string, who?: Who): Run;
+  answer(id: string, text: string, attachments?: AttachmentRef[], who?: Who): Run;
+  retry(id: string, who?: Who): Run;
   /** The person chose the base and asked for the pull request again (a `pr-retry` question was open): it is opened audited, and the run resumes on it. */
-  retryPr(id: string, base: string): Promise<Run>;
-  cancel(id: string): Run;
+  retryPr(id: string, base: string, who?: Who): Promise<Run>;
+  cancel(id: string, who?: Who): Run;
   /** The person's answer to the command an agent set to `shell: host` waits to run; `commandId` must be the one waiting, so a late click never answers a newer one. */
   command(id: string, commandId: string, decision: CommandDecision, note?: string): Run;
   /** Proposes deleting a comment the runner posted by itself, as an action that waits for a "yes" (and is audited when it runs); the run keeps the record as removed. */
   undoPost(id: string, key: string): Promise<{ proposed: boolean; reason?: 'refused' | 'nothing' | 'no-host' }>;
   /** The person does not wait any longer for the event of a waiting run. A reason is required. */
-  skipWait(id: string, reason: string): Run;
+  skipWait(id: string, reason: string, who?: Who): Run;
   /** A plugin request of the run was answered: `note` goes to its conversation, and a run held by plugin requests goes on when none is left. */
   pluginSettled(id: string, note: { code: string; params: Record<string, string> } | null): void;
   /**
@@ -333,27 +336,27 @@ export interface Runner {
    * or the end (which reopens the run). `stageId` empty: the default of `defaultSendBackTarget`. The note is the person's handoff to that stage's agent, with what
    * the review and QA left open; it may be empty when something is open.
    */
-  sendBack(id: string, stageId: string, note: string): Run;
+  sendBack(id: string, stageId: string, note: string, who?: Who): Run;
   /** The run follows the current flow of the cycle from now on, when its stage still exists there. */
-  migrateFlow(id: string): Run;
+  migrateFlow(id: string, who?: Who): Run;
   /**
    * The person corrected the cycle memory on the run screen. The app writes and commits their version with the workspace's identity; refused while a stage is
    * working in the worktree, so the person never races an agent for the file. Returns the text as it was written (masked), or null when the run has no worktree.
    */
-  editMemory(id: string, text: string): Promise<{ text: string; clipped: boolean } | null>;
+  editMemory(id: string, text: string, who?: Who): Promise<{ text: string; clipped: boolean } | null>;
   /** The record of the activities of the workspace, oldest first: what the runs screen shows and what a call reads, without a model call. */
   activities(): ActivityFront[];
   /** The person corrected one activity's front: masked, capped, marked as theirs and kept for the next projection. Null when that activity is unknown. */
   correctActivity(ref: string, text: string): ActivityFront | null;
   /** The person decides the squad of a run that waits for it (the scope rules could not pick one and the front door does not run by itself); null: go on with no squad. */
-  setSquad(id: string, squad: string | null): Run;
+  setSquad(id: string, squad: string | null, who?: Who): Run;
   /** Removes a squad from the workspace. Its active runs go on with no squad, but only after the person confirms: without `confirm` nothing changes and the runs are listed. */
-  removeSquad(squad: string, confirm: boolean): { removed: boolean; runs: string[] };
+  removeSquad(squad: string, confirm: boolean, who?: Who): { removed: boolean; runs: string[] };
   setAutonomous(agentId: string, on: boolean): WorkspaceConfig;
   /** The switch of a whole squad: off holds every member (each agent's own switch applies when it is on). Takes effect at the next stage start or publication. */
   setSquadAutonomous(squad: string, on: boolean): WorkspaceConfig;
   /** A person's post in a run's thread that answers the run's pending question: the answer is recorded and the stage goes on. Null when the post answers nothing. */
-  answerPost(thread: string, text: string, attachments?: AttachmentRef[]): ForumMessage | null;
+  answerPost(thread: string, text: string, attachments?: AttachmentRef[], who?: Who): ForumMessage | null;
   /** Reacts to a message of the forum: a person's `@agent` in a run's thread has that agent answer, read only. */
   onMessage(message: ForumMessage): void;
   /** Starts runs for the issues that ask for one, up to the configured number at a time. */
@@ -860,18 +863,18 @@ export function createRunner(deps: RunnerDeps): Runner {
   }
 
   // Two starts for one issue at the same moment: the second is refused before it touches the repository.
-  async function start(raw: string, repoId?: string, force?: LinkedStart): Promise<Run> {
+  async function start(raw: string, repoId?: string, who: Who = PERSON_WHO, force?: LinkedStart): Promise<Run> {
     const { ref } = refOf(raw);
     if (starting.has(ref)) throw new RunError('duplicate', { issue: ref });
     starting.add(ref);
     try {
-      return await create(raw, repoId, force);
+      return await create(raw, repoId, force, who);
     } finally {
       starting.delete(ref);
     }
   }
 
-  async function create(raw: string, repoId?: string, force?: LinkedStart): Promise<Run> {
+  async function create(raw: string, repoId?: string, force?: LinkedStart, who: Who = PERSON_WHO): Promise<Run> {
     const config = deps.config();
     if (!isFlowCycle(config.devCycle.stages)) throw new RunnerError('not-agent-flow');
     const env = deps.env();
@@ -936,6 +939,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         { id: deps.newId?.() ?? newRunId(Date.now(), Math.random().toString(36).slice(2, 6).padEnd(4, '0')), issue: { ref, iid, title: issue.title, url: issue.webUrl || null }, repo: repo.id, branch, worktree: dest, cycleFolder: folder, cycleId: config.devCycle.templateId, base: made.baseSha, baseBranch: made.base, squad, origin: force?.origin ?? null, routing: routed?.kind === 'ambiguous' ? { candidates: routed.candidates, why: routed.why } : null },
         startFlow,
         now(),
+        who,
       );
       run = beginRun(d, started);
     } catch (e) {
@@ -952,20 +956,20 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- the run of a release ---------------------------------------------------------------------------------------------------------
 
-  async function startRelease(version: string, from: string | undefined, repoId?: string): Promise<Run> {
+  async function startRelease(version: string, from: string | undefined, repoId?: string, who: Who = PERSON_WHO): Promise<Run> {
     if (!RELEASE_VERSION.test(version)) throw new RunnerError('bad-version', { version: String(version).slice(0, 40) });
     if (from !== undefined && from !== '' && !RELEASE_FROM.test(from)) throw new RunnerError('bad-version', { version: String(from).slice(0, 40) });
     const ref = releaseRef(version);
     if (starting.has(ref)) throw new RunError('duplicate', { issue: ref });
     starting.add(ref);
     try {
-      return await createRelease(version, from || null, repoId);
+      return await createRelease(version, from || null, repoId, who);
     } finally {
       starting.delete(ref);
     }
   }
 
-  async function createRelease(version: string, from: string | null, repoId?: string): Promise<Run> {
+  async function createRelease(version: string, from: string | null, repoId?: string, who: Who = PERSON_WHO): Promise<Run> {
     const config = deps.config();
     const ref = releaseRef(version);
     if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
@@ -1014,6 +1018,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         },
         flow,
         now(),
+        who,
       );
       run = beginRun(d, started);
     } catch (e) {
@@ -1029,13 +1034,13 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- the run of the documentation of a repository ---------------------------------------------------------------------------------
 
-  async function startDocs(repoId: string, mode: 'create' | 'update'): Promise<Run> {
+  async function startDocs(repoId: string, mode: 'create' | 'update', who: Who = PERSON_WHO): Promise<Run> {
     if (mode !== 'create' && mode !== 'update') throw new RunnerError('bad-docs-mode', { mode: String(mode).slice(0, 20) });
     const ref = docsRef(String(repoId));
     if (starting.has(ref)) throw new RunError('duplicate', { issue: ref });
     starting.add(ref);
     try {
-      return await createDocs(String(repoId), mode);
+      return await createDocs(String(repoId), mode, who);
     } finally {
       starting.delete(ref);
     }
@@ -1060,7 +1065,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     return { repo, identity };
   }
 
-  async function createDocs(repoId: string, mode: 'create' | 'update'): Promise<Run> {
+  async function createDocs(repoId: string, mode: 'create' | 'update', who: Who = PERSON_WHO): Promise<Run> {
     const config = deps.config();
     const ref = docsRef(repoId);
     if (deps.runs.activeFor(ref)) throw new RunError('duplicate', { issue: ref });
@@ -1108,6 +1113,7 @@ export function createRunner(deps: RunnerDeps): Runner {
         },
         flow,
         now(),
+        who,
       );
       run = beginRun(d, started);
     } catch (e) {
@@ -1166,7 +1172,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   // ---- what the person does ---------------------------------------------------------------------------------------------------------
 
   /** Decides a gate of a run. `by` says who decided: the person, or the app under the autonomy block (an automatic approval, recorded as such). */
-  function gateBy(id: string, action: GateAction, reason: string, by: 'person' | 'app'): Run {
+  function gateBy(id: string, action: GateAction, reason: string, by: 'person' | 'app', who: Who = PERSON_WHO): Run {
     const before = need(id);
     const flow = flowFor(before);
     const gateStage = flow.find((s) => s.id === before.stage);
@@ -1180,9 +1186,9 @@ export function createRunner(deps: RunnerDeps): Runner {
       return run;
     };
     // Accepting the plan freezes the heads of the pull requests it was written for: inside the transition of the gate itself (`gateApprove`, `gateSkip`).
-    if (action === 'approve') return decided(move(id, (r, f, at) => gateApprove(r, f, at, reason, by)));
-    if (action === 'reject') return decided(move(id, (r, f, at) => gateReject(r, f, reason, at)));
-    if (action === 'skip') return decided(move(id, (r, f, at) => gateSkip(r, f, reason, at)));
+    if (action === 'approve') return decided(move(id, (r, f, at) => gateApprove(r, f, at, reason, by, who)));
+    if (action === 'reject') return decided(move(id, (r, f, at) => gateReject(r, f, reason, at, who)));
+    if (action === 'skip') return decided(move(id, (r, f, at) => gateSkip(r, f, reason, at, who)));
     throw new RunnerError('bad-action', { action: String(action).slice(0, 20) });
   }
 
@@ -1207,26 +1213,26 @@ export function createRunner(deps: RunnerDeps): Runner {
       const run = deps.runs.get(runId);
       return run ? keepScreenRecording(exec, run, { id: run.stage ?? '' }, { id: agent }, outcome) : 'not';
     },
-    removeEvidence: (runId, id) => {
+    removeEvidence: (runId, id, who = PERSON_WHO) => {
       const run = deps.runs.get(runId);
       const record = run?.evidence?.[id];
       if (!run || !record) return false;
       dropEvidence(deps.env().dataDir, run.id, record);
-      moveRun(d, run.id, (r) => deleteEvidence(r, id, now()));
+      moveRun(d, run.id, (r) => deleteEvidence(r, id, now(), who));
       return true;
     },
     start,
     startRelease,
     startDocs,
     checkDocs,
-    startStage: (id) => move(id, (r, f, at) => startMove(r, f, at)),
-    accept: (id, note = '') => move(id, (r, f, at) => acceptStage(r, f, at, note)),
-    returnStage: (id, note) => move(id, (r, f, at) => returnMove(r, f, note, at)),
-    gate(id, action, reason = '') {
-      return gateBy(id, action, reason, 'person');
+    startStage: (id, who = PERSON_WHO) => move(id, (r, f, at) => startMove(r, f, at, who)),
+    accept: (id, note = '', who = PERSON_WHO) => move(id, (r, f, at) => acceptStage(r, f, at, note, who)),
+    returnStage: (id, note, who = PERSON_WHO) => move(id, (r, f, at) => returnMove(r, f, note, at, who)),
+    gate(id, action, reason = '', who = PERSON_WHO) {
+      return gateBy(id, action, reason, 'person', who);
     },
-    retry: (id) => move(id, (r, f, at) => retryMove(r, f, at)),
-    async retryPr(id, base) {
+    retry: (id, who = PERSON_WHO) => move(id, (r, f, at) => retryMove(r, f, at, who)),
+    async retryPr(id, base, who = PERSON_WHO) {
       const before = need(id);
       if (before.status !== 'question' || before.question?.kind !== 'pr-retry') throw new RunError('wrong-state', { status: before.status });
       const branch = String(base ?? '').trim();
@@ -1234,14 +1240,14 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!deps.publisher) throw new RunnerError('no-host');
       // The write goes through the publishing queue like every other of the run, and the run is pumped on only after it came back: nothing of the resumed
       // flow then asks for a pull request while it is not on the host yet, and one or the other is never out of order.
-      publish(id, (p) => p.retryPr(id, branch));
+      publish(id, (p) => p.retryPr(id, branch, who));
       const queued = publishing.get(id);
       if (queued) await queued;
       pump(id);
       return need(id);
     },
-    cancel(id) {
-      const run = move(id, (r, _f, at) => cancelMove(r, 'person', at));
+    cancel(id, who = PERSON_WHO) {
+      const run = move(id, (r, _f, at) => cancelMove(r, 'person', at, who));
       aborts.get(id)?.abort();
       chainAborts.get(id)?.abort();
       return run;
@@ -1263,7 +1269,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     },
     activities: () => sortedFronts(activities.read(deps.runs, deps.config().language)).reverse(),
     correctActivity: (ref, text) => activities.correct(ref, text, deps.runs, deps.config().language),
-    async editMemory(id, text) {
+    async editMemory(id, text, who = PERSON_WHO) {
       const run = need(id);
       // The agent has the worktree: a write now would race it for the file, and the stage's own commit is what carries the memory.
       if (inflight.has(id) || run.status === 'working') throw new RunnerError('memory-busy');
@@ -1275,15 +1281,15 @@ export function createRunner(deps: RunnerDeps): Runner {
       writeMemory(run.worktree, run.cycleFolder, redact(text).slice(0, MEMORY_EDIT_MAX));
       // i18n-ignore-next-line: the subject of a commit in the repository's history: English, like the rest of its commits
       await commitAll(run.worktree, commitMessage(config.runner.commitMessage, 'update the cycle memory', run.issue.iid), identity);
-      move(id, (r, _f, at) => memoryEdited(r, at));
+      move(id, (r, _f, at) => memoryEdited(r, at, who));
       return readArtifact(run.worktree, run.cycleFolder, MEMORY_FILE);
     },
-    skipWait: (id, reason) => {
+    skipWait: (id, reason, who = PERSON_WHO) => {
       // Going on without answering a plugin: its requests stay in Actions, and they no longer hold this run (a new request would). The reason is
       // checked first, so a refused skip never lets the requests go.
       if (!reason.trim()) throw new RunError('empty-reason');
       if (deps.runs.get(id)?.wait?.kind === 'plugin') deps.pluginRelease?.(id);
-      return move(id, (r, f, at) => waitSkip(r, f, reason, at));
+      return move(id, (r, f, at) => waitSkip(r, f, reason, at, who));
     },
     pluginSettled(id, note) {
       const run = deps.runs.get(id);
@@ -1291,7 +1297,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (note) deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: note.code, params: note.params, stage: run.stage, public: false });
       if (run.status === 'waiting' && run.wait?.kind === 'plugin' && !deps.pluginHold?.(id)) move(id, (r, _f, at) => pluginWaitDone(r, at));
     },
-    sendBack(id, stageId, note) {
+    sendBack(id, stageId, note, who = PERSON_WHO) {
       const before = need(id);
       // A reopened run is an active one again: it cannot be while another run of the issue is going.
       if (before.status === 'done' && deps.runs.activeFor(before.issue.ref)) throw new RunError('duplicate', { issue: before.issue.ref });
@@ -1299,12 +1305,12 @@ export function createRunner(deps: RunnerDeps): Runner {
       const writers = new Set(deps.config().agents.team.filter((a) => a.permission === 'worktree').map((a) => a.id));
       const target = stageId.trim() || defaultSendBackTarget(flow, before.stage, (a) => writers.has(a))?.id;
       if (!target) throw new RunError('unknown-stage', { stage: '' });
-      const run = move(id, (r, f, at) => sendBackTo(r, f, { toStage: target, note }, at));
+      const run = move(id, (r, f, at) => sendBackTo(r, f, { toStage: target, note }, at, who));
       // A question that was going from agent to agent is not answered any more.
       chainAborts.get(id)?.abort();
       return run;
     },
-    migrateFlow(id) {
+    migrateFlow(id, who = PERSON_WHO) {
       const config = deps.config();
       // The flow a run moves to is its squad's (the workspace's when it has none), a release run's is the release flow and a documentation run's the docs flow.
       const target = need(id);
@@ -1315,9 +1321,9 @@ export function createRunner(deps: RunnerDeps): Runner {
       const broken = flowErrors({ stages: view.devCycle.stages, team: view.agents.team }, { asFlow: true });
       if (broken.length) throw new RunError('invalid-flow', { detail: broken.slice(0, 3).map((i) => flowIssueText(i)).join(' ') });
       const flow = flowOf(view, view.devCycle.stages);
-      return move(id, (r, _f, at) => migrateFlowMove(r, flow, at));
+      return move(id, (r, _f, at) => migrateFlowMove(r, flow, at, who));
     },
-    setSquad(id, squadId) {
+    setSquad(id, squadId, who = PERSON_WHO) {
       const run = need(id);
       if (!run.routing || run.status !== 'question' || run.question?.kind !== 'squad') throw new RunError('not-routing');
       const config = deps.config();
@@ -1327,16 +1333,16 @@ export function createRunner(deps: RunnerDeps): Runner {
       const flow = flowOf(view, view.devCycle.stages);
       assertStartable(flow);
       const name = q ? cycleText(q.name, config.language) : t('main.runs.squad.none');
-      const moved = move(id, (r, _f, at) => routeSquad(r, { squad: squadId, name, flow, by: 'person', reason: '', how: 'person' }, at));
+      const moved = move(id, (r, _f, at) => routeSquad(r, { squad: squadId, name, flow, by: who.by, reason: '', how: 'person', who }, at));
       if (squadId) labelSquad(moved, squadId);
       return moved;
     },
-    removeSquad(squadId, confirm) {
+    removeSquad(squadId, confirm, who = PERSON_WHO) {
       if (!squadOf(deps.config(), squadId)) throw new RunError('unknown-squad', { squad: squadId.slice(0, 48) });
       const affected = deps.runs.list().filter((r) => r.squad === squadId && !isTerminal(r));
       if (!confirm) return { removed: false, runs: affected.map((r) => r.id) };
       deps.updateConfig((c) => removeSquadConfig(c, squadId));
-      for (const r of affected) move(r.id, (x, _f, at) => leaveSquad(x, at));
+      for (const r of affected) move(r.id, (x, _f, at) => leaveSquad(x, at, who));
       return { removed: true, runs: affected.map((r) => r.id) };
     },
     setSquadAutonomous(squadId, on) {
@@ -1348,20 +1354,20 @@ export function createRunner(deps: RunnerDeps): Runner {
       if (!workingTeam(deps.config().agents.team).some((a) => a.id === agentId)) throw new RunnerError('unknown-agent', { agent: agentId.slice(0, 48) });
       return deps.updateConfig((c) => updateAgent(c, agentId, { autonomous: on }));
     },
-    answer(id, text, attachments) {
+    answer(id, text, attachments, who = PERSON_WHO) {
       // The files ride to the stage that resumes: the move hangs them on the message it records, and this turn keeps them for the attempt that reads them.
       const files = cleanAttachments(attachments);
       const carried = files.length ? { 0: files } : undefined;
       const stage = deps.runs.get(id)?.stage ?? '';
       if (carried) carriedByStage.set(carriedKey(id, stage), files);
       try {
-        return move(id, (r, f, at) => ({ ...answerMove(r, f, text, at, files), ...(carried ? { attachments: carried } : {}) }));
+        return move(id, (r, f, at) => ({ ...answerMove(r, f, text, at, files, who), ...(carried ? { attachments: carried } : {}) }));
       } catch (e) {
         carriedByStage.delete(carriedKey(id, stage));
         throw e;
       }
     },
-    answerPost(thread, text, attachments) {
+    answerPost(thread, text, attachments, who = PERSON_WHO) {
       const id = thread.startsWith('run-') ? thread.slice(4) : '';
       const run = id ? deps.runs.get(id) : null;
       if (!run || run.status !== 'question' || run.question?.kind === 'squad' || run.question?.kind === 'pr-retry' || !text.trim()) return null;
@@ -1370,7 +1376,7 @@ export function createRunner(deps: RunnerDeps): Runner {
       // A message that calls a plugin is read as that and nothing else: it never answers the question that waits.
       if (conversationCommand(text)) return null;
       // The files the message carries ride on the answer the runner writes, so the message shows them and the retention sees them as referenced.
-      api.answer(run.id, text, attachments ?? []);
+      api.answer(run.id, text, attachments ?? [], who);
       const last = deps.forum.read(thread, 0, 2000)?.messages ?? [];
       return [...last].filter((m) => m.kind === 'answer').at(-1) ?? null;
     },
@@ -1791,7 +1797,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     const config = deps.config();
     const to = squadOf(config, link.squad);
     try {
-      const made = await start(String(iid), undefined, { squad: link.squad, origin: { run: id, issue: origin.issue.ref, squad: origin.squad ?? null, kind: link.kind, key, title: link.title } });
+      const made = await start(String(iid), undefined, undefined, { squad: link.squad, origin: { run: id, issue: origin.issue.ref, squad: origin.squad ?? null, kind: link.kind, key, title: link.title } });
       moveRun(d, id, (r) => linkUpdate(r, key, { run: made.id, issue: made.issue.ref, status: 'open' }, now()));
       const params = { issue: made.issue.ref, run: made.id, squad: to ? squadName(config, to) : link.squad, origin: origin.issue.ref };
       deps.forum.append(runThreadId(id), { kind: 'system', author: { type: 'app' }, code: 'runner.request.linked', params, stage: origin.stage });

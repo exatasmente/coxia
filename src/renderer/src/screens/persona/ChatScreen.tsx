@@ -7,6 +7,8 @@ import type { Ceremony } from '../../ceremony';
 import { useCycle } from '../../cycleApi';
 import { OVERVIEW, ceremonyCard } from '../../home';
 import { useT } from '../../i18n';
+import { bannerView } from '../../personaStopModel';
+import { usePersonaState } from '../../personaStopApi';
 import { targetToScreen } from '../../pushTarget';
 import type { AgoraPlan } from '../../dashboard';
 import { AgoraCard } from '../TodayParts';
@@ -57,6 +59,19 @@ function CeremonyBar({ plan, onAction }: { plan: AgoraPlan; onAction: (a: AgoraP
   );
 }
 
+/** The banner over the box while the persona is stopped: what it means for the messages the person writes now. */
+function StoppedBanner() {
+  const t = useT();
+  const view = bannerView(usePersonaState());
+  if (!view.shown) return null;
+  return (
+    <div className="persona-banner" role="status">
+      <span>{t('ui.persona.banner')}</span>
+      {view.waiting > 0 && <span className="persona-banner-waiting">{t('ui.persona.banner.waiting', { count: view.waiting })}</span>}
+    </div>
+  );
+}
+
 export function ChatScreen({ ceremony: c, go, persona, team, actions }: Props) {
   const t = useT();
   const cycle = useCycle();
@@ -80,7 +95,12 @@ export function ChatScreen({ ceremony: c, go, persona, team, actions }: Props) {
             persona={persona}
             team={team}
             onOpen={open}
-            above={card ? <CeremonyBar plan={card} onAction={onAgora} /> : undefined}
+            above={
+              <>
+                {card ? <CeremonyBar plan={card} onAction={onAgora} /> : null}
+                <StoppedBanner />
+              </>
+            }
           />
         ) : (
           <div className="panel chat-none" role="status">

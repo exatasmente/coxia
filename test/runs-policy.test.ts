@@ -53,7 +53,7 @@ describe('web policy for the runs', () => {
     const text = source('module.ts');
     expect(text).toMatch(/op: 'activity-correct'/);
     expect(text).toMatch(/op: 'cycle-memory-edit'/);
-    expect(text).toMatch(/callOrigin\(\) === 'web' \? 'paired' : 'window'/);
+    expect(text).toMatch(/via: viaOf\(\)/);
     for (const channel of ['runs:memory', 'runs:activitySave']) expect(webAccess(channel), channel).toBe('allow');
   });
 

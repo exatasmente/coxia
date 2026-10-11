@@ -271,4 +271,11 @@ describe('the message a plugin call is read from', () => {
     expect(pluginCallOf({ kind: 'answer', author: { type: 'person' }, mentions: [], text: '/web-search how does replay work?' } as never)).toBeNull();
     expect(pluginCallOf({ kind: 'post', author: { type: 'agent', id: 'developer' }, mentions: [], text: 'plain words' } as never)).toBeNull();
   });
+
+  it('is never a post the persona wrote through its door: a persona post calls nobody', () => {
+    const post = { kind: 'post', author: { type: 'agent', id: 'me' }, mentions: [], text: '/web-search how does replay work?' } as never;
+    expect(pluginCallOf(post, 'me')).toBeNull();
+    // Another agent's post with the same shape is still read as the release reads it.
+    expect(pluginCallOf(post, 'someone-else')).toEqual({ command: 'web-search', asked: 'how does replay work?' });
+  });
 });

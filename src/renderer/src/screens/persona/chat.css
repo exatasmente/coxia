@@ -9,6 +9,7 @@
 .chat-row-person { align-items: flex-end; }
 .chat-row-answer, .chat-row-agent { align-items: flex-start; }
 .chat-row-system { align-items: center; }
+.chat-row-act { align-items: center; }
 
 .chat-bubble { display: flex; flex-direction: column; gap: 4px; min-width: 0; max-width: min(78ch, 92%); padding: 10px 14px; border-radius: 16px; border: 1px solid var(--line-3); background: var(--surface-2); color: var(--ink); overflow-wrap: anywhere; }
 .chat-bubble-person { background: var(--blue-soft); border-color: var(--blue-line); color: var(--blue-ink); border-bottom-right-radius: 4px; }
@@ -21,6 +22,10 @@
 .chat-text .rich { gap: 6px; }
 .chat-time { font-size: 12px; color: var(--faint); align-self: flex-end; }
 .chat-waits { font-size: 12px; font-weight: 600; color: var(--amber-ink); }
+.chat-interrupted { display: block; margin-top: 4px; font-weight: 600; color: var(--amber-ink); }
+.chat-act { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 10px; max-width: 92%; padding: 6px 12px; border-radius: 12px; border: 1px solid var(--line-3); background: var(--surface-2); color: var(--ink); font-size: 13px; overflow-wrap: anywhere; }
+.chat-row-act-refused .chat-act { border-color: var(--red-line); background: var(--red-soft); color: var(--red-ink); }
+.chat-act-links { display: inline-flex; flex-wrap: wrap; gap: 6px; }
 .chat-system { font-size: 13px; color: var(--muted); text-align: center; overflow-wrap: anywhere; max-width: 92%; }
 
 /* the answer being written: a caret at its end while it grows */
@@ -146,3 +151,14 @@
 .wz-skip { flex: none; min-height: 44px; padding: 0 4px; display: inline-flex; align-items: center; font-size: 15px; }
 .wz-skip:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .wz-skip:disabled { color: var(--muted); cursor: default; text-decoration: none; }
+
+/* the Stop of the persona: the banner over the box while it is stopped, and the small indicator of the shell on the other screens. Tokens only. */
+.persona-banner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 14px; border-radius: 12px; border: 1px solid var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); font-size: 14px; }
+.persona-banner-waiting { font-weight: 600; }
+.persona-stop { border-color: var(--red-line); color: var(--red-ink); background: var(--red-faint); font-weight: 600; }
+.persona-resume { border-color: var(--warn-solid); font-weight: 600; }
+.persona-indicator { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 6px 14px; border-bottom: 1px solid var(--night-line); background: var(--night); color: var(--on-night); font-size: 13px; }
+.persona-indicator-stopped { border-bottom-color: var(--warn-solid); }
+.persona-indicator-btn { min-height: 36px; }
+/* On a phone it is a pill lifted over the bottom bar; on the computer it is a bar in the flow above the screen, so it lies over nothing. */
+@media (max-width: 600px) { .persona-indicator { position: fixed; left: 12px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 40; display: inline-flex; max-width: calc(100vw - 96px); padding: 6px 8px 6px 14px; border: 1px solid var(--night-line); border-radius: 999px; box-shadow: 0 10px 26px -10px color-mix(in srgb, var(--night) 75%, transparent); } .persona-indicator-stopped { border-color: var(--warn-solid); } }

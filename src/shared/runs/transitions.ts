@@ -30,6 +30,18 @@ const HISTORY_MAX = 1000;
 const person = { type: 'person' } as const;
 const app = { type: 'app' } as const;
 const agent = (id: string) => ({ type: 'agent', id }) as const;
+
+/**
+ * Who a move of the person is worded as: the author of its messages and the `by` of its history entry (a free string, so the run's format is the same). It is a parameter of
+ * the moves, not a state read inside them: they stay pure, and the person is the default every existing caller keeps.
+ */
+export interface Who {
+  by: string;
+  author: ForumDraft['author'];
+}
+export const PERSON_WHO: Who = { by: 'person', author: person };
+/** The persona of the person, acting through its door (#248): an agent of its own by name, never the person and not an agent of the cycle. */
+export const personaWho = (id: string): Who => ({ by: 'persona', author: agent(id) });
 const refsOf = (names: string[]): ArtifactRef[] => names.map((path) => ({ path }));
 const unique = (list: string[]): string[] => [...new Set(list)];
 
@@ -217,7 +229,7 @@ export function assertStartable(flow: FlowStage[]): void {
 }
 
 /** A run is created at the first stage. It does not start when the flow is empty or a stage that must have an agent has none: nothing is created then. */
-export function startRun(input: StartInput, flow: FlowStage[], at: string): Transition {
+export function startRun(input: StartInput, flow: FlowStage[], at: string, who: Who = PERSON_WHO): Transition {
   assertStartable(flow);
   const run: Run = {
     version: runVersionOf({}),
@@ -249,7 +261,7 @@ export function startRun(input: StartInput, flow: FlowStage[], at: string): Tran
     ...(input.subject ? { subject: structuredClone(input.subject) } : {}),
     ...(input.docs ? { docs: { ...input.docs } } : {}),
   };
-  log(run, at, 'started', null, 'person');
+  log(run, at, 'started', null, who.by);
   const messages: ForumDraft[] = [{ kind: 'system', author: app, code: 'run.started', params: { issue: input.issue.ref } }];
   if (input.squad) {
     run.squad = input.squad.id;
@@ -354,41 +366,41 @@ function sendBack(out: Run, flow: FlowStage[], toStage: FlowStage, from: ForumDr
 }
 
 /** The person approves the gate: the run goes on to the next stage. `note` is optional and goes in the decision. */
-export function gateApprove(run: Run, flow: FlowStage[], at: string, note = '', by: 'person' | 'app' = 'person'): Transition {
+export function gateApprove(run: Run, flow: FlowStage[], at: string, note = '', by: 'person' | 'app' = 'person', who: Who = PERSON_WHO): Transition {
   need(run, 'gate');
   const out = clone(run, at);
   freezeAtPlanGate(out, flow);
   finishStage(out, at, 'done');
-  log(out, at, 'gate-approved', run.stage, by, note.trim() || null);
-  const messages: ForumDraft[] = [{ kind: 'decision', author: by === 'app' ? app : person, code: 'gate.approved', params: { stage: labelOf(flow, run.stage) }, text: note.trim(), stage: run.stage, public: true }];
+  log(out, at, 'gate-approved', run.stage, by === 'app' ? 'app' : who.by, note.trim() || null);
+  const messages: ForumDraft[] = [{ kind: 'decision', author: by === 'app' ? app : who.author, code: 'gate.approved', params: { stage: labelOf(flow, run.stage) }, text: note.trim(), stage: run.stage, public: true }];
   advance(out, flow, stageOf(flow, run.stage), at, messages);
   return { run: out, messages };
 }
 
 /** The person rejects the gate with a reason: the run goes back to the stage that produced the artifact, and the reason is the handoff. */
-export function gateReject(run: Run, flow: FlowStage[], reason: string, at: string): Transition {
+export function gateReject(run: Run, flow: FlowStage[], reason: string, at: string, who: Who = PERSON_WHO): Transition {
   need(run, 'gate');
   const why = reason.trim();
   if (!why) throw new RunError('empty-reason');
   const producer = flow.find((s) => s.id === stageOf(flow, run.stage).returnsTo);
   if (!producer || producer.type !== 'work') throw new RunError('unknown-stage', { stage: run.stage });
   const out = clone(run, at);
-  log(out, at, 'gate-rejected', run.stage, 'person', why);
-  const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'gate.rejected', params: { stage: labelOf(flow, run.stage) }, text: why, stage: run.stage, public: true }];
-  sendBack(out, flow, producer, person, why, at, messages, true);
+  log(out, at, 'gate-rejected', run.stage, who.by, why);
+  const messages: ForumDraft[] = [{ kind: 'decision', author: who.author, code: 'gate.rejected', params: { stage: labelOf(flow, run.stage) }, text: why, stage: run.stage, public: true }];
+  sendBack(out, flow, producer, who.author, why, at, messages, true);
   return { run: out, messages };
 }
 
 /** The person skips the gate with a reason: recorded as a decision, and the run goes on. */
-export function gateSkip(run: Run, flow: FlowStage[], reason: string, at: string): Transition {
+export function gateSkip(run: Run, flow: FlowStage[], reason: string, at: string, who: Who = PERSON_WHO): Transition {
   need(run, 'gate');
   const why = reason.trim();
   if (!why) throw new RunError('empty-reason');
   const out = clone(run, at);
   freezeAtPlanGate(out, flow);
   finishStage(out, at, 'skipped');
-  log(out, at, 'gate-skipped', run.stage, 'person', why);
-  const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'gate.skipped', params: { stage: labelOf(flow, run.stage) }, text: why, stage: run.stage, public: true }];
+  log(out, at, 'gate-skipped', run.stage, who.by, why);
+  const messages: ForumDraft[] = [{ kind: 'decision', author: who.author, code: 'gate.skipped', params: { stage: labelOf(flow, run.stage) }, text: why, stage: run.stage, public: true }];
   advance(out, flow, stageOf(flow, run.stage), at, messages);
   return { run: out, messages };
 }
@@ -433,7 +445,7 @@ export function prOpenBlocked(run: Run, input: PrOpenFailure, at: string): Trans
 }
 
 /** The person chose a base on the run screen: the question is cleared, the run's base branch is corrected, and the flow resumes where it was held. */
-export function prRetryAnswered(run: Run, base: string, at: string): Transition {
+export function prRetryAnswered(run: Run, base: string, at: string, who: Who = PERSON_WHO): Transition {
   need(run, 'question');
   const q = run.question;
   if (!q || q.kind !== 'pr-retry') throw new RunError('wrong-state', { status: run.status });
@@ -444,8 +456,8 @@ export function prRetryAnswered(run: Run, base: string, at: string): Transition 
   out.baseBranch = branch;
   out.status = 'working';
   (record(out, out.stage) as StageRecord).status = 'running';
-  log(out, at, 'answer', out.stage, 'person', branch);
-  return { run: out, messages: [{ kind: 'answer', author: person, text: t('main.runs.stage.prRetry', { branch }), stage: out.stage, public: true }] };
+  log(out, at, 'answer', out.stage, who.by, branch);
+  return { run: out, messages: [{ kind: 'answer', author: who.author, text: t('main.runs.stage.prRetry', { branch }), stage: out.stage, public: true }] };
 }
 
 /**
@@ -486,7 +498,7 @@ export function answerByAgent(run: Run, input: { by: string; text: string }, at:
  * The person answers. A question from an agent resumes the same attempt of the stage. The review limit sends the run back to the stage
  * that produced the work, with the answer as the handoff and a fresh budget of review rounds.
  */
-export function answer(run: Run, flow: FlowStage[], text: string, at: string, attachments: AttachmentRef[] = []): Transition {
+export function answer(run: Run, flow: FlowStage[], text: string, at: string, attachments: AttachmentRef[] = [], who: Who = PERSON_WHO): Transition {
   need(run, 'question');
   const said = text.trim();
   if (!said) throw new RunError('empty-text');
@@ -495,9 +507,9 @@ export function answer(run: Run, flow: FlowStage[], text: string, at: string, at
   if (q?.kind === 'squad' || q?.kind === 'pr-retry') throw new RunError('wrong-state', { status: run.status });
   const out = clone(run, at);
   out.question = null;
-  log(out, at, 'answer', run.stage, 'person', said);
+  log(out, at, 'answer', run.stage, who.by, said);
   // The files the person attached to the message answer with it: they stay on the answer message, so it shows them and the retention sees a live message.
-  const messages: ForumDraft[] = [{ kind: 'answer', author: person, text: said, attachments, stage: run.stage, public: true }];
+  const messages: ForumDraft[] = [{ kind: 'answer', author: who.author, text: said, attachments, stage: run.stage, public: true }];
   // The move hands the same files to the turn that runs the stage: the answer message is what shows them, and the agent of the stage reads them through its tool.
   const carried = attachments.length ? { attachments: { 0: attachments } } : {};
   if (q?.kind === 'review-limit') {
@@ -505,7 +517,7 @@ export function answer(run: Run, flow: FlowStage[], text: string, at: string, at
     if (!producer) throw new RunError('unknown-stage', { stage: run.stage });
     // The budget of the stage that stopped starts again; the other returning stage's is its own.
     out.returns[run.stage] = 0;
-    sendBack(out, flow, producer, person, said, at, messages, true);
+    sendBack(out, flow, producer, who.author, said, at, messages, true);
   } else {
     out.status = 'working';
     (record(out, run.stage) as StageRecord).status = 'running';
@@ -584,7 +596,7 @@ export function reviewReturn(run: Run, flow: FlowStage[], input: ReviewReturnInp
 }
 
 /** The person starts a stage whose agent is not autonomous. The flag counts as it is now: a change takes effect at a stage start. */
-export function startStage(run: Run, flow: FlowStage[], at: string): Transition {
+export function startStage(run: Run, flow: FlowStage[], at: string, who: Who = PERSON_WHO): Transition {
   need(run, 'to-start');
   const stage = flow.find((s) => s.id === run.stage);
   if (!stage?.agent) throw new RunError('no-agent', { stage: stage?.label ?? run.stage });
@@ -596,18 +608,18 @@ export function startStage(run: Run, flow: FlowStage[], at: string): Transition 
   rec.startedAt = at;
   rec.endedAt = null;
   out.status = 'working';
-  log(out, at, 'stage-started', run.stage, 'person', stage.agent);
+  log(out, at, 'stage-started', run.stage, who.by, stage.agent);
   return { run: out, messages: [{ kind: 'system', author: app, code: 'run.stage.started', params: { stage: stage.label, agent: stage.agent }, stage: run.stage }] };
 }
 
 /** The person accepts the result of a non-autonomous agent: its handoff goes out and the run moves on (or the work goes back, for a return). */
-export function acceptStage(run: Run, flow: FlowStage[], at: string, note = ''): Transition {
+export function acceptStage(run: Run, flow: FlowStage[], at: string, note = '', who: Who = PERSON_WHO): Transition {
   need(run, 'to-accept');
   const p = run.pending as PendingResult;
   const out = clone(run, at);
   out.pending = null;
-  log(out, at, 'stage-accepted', run.stage, 'person', note.trim() || null);
-  const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'stage.accepted', params: { stage: labelOf(flow, run.stage) }, text: note.trim(), stage: run.stage, public: true }];
+  log(out, at, 'stage-accepted', run.stage, who.by, note.trim() || null);
+  const messages: ForumDraft[] = [{ kind: 'decision', author: who.author, code: 'stage.accepted', params: { stage: labelOf(flow, run.stage) }, text: note.trim(), stage: run.stage, public: true }];
   if (p.kind === 'return') {
     applyReturn(out, flow, p, at, messages);
   } else {
@@ -620,17 +632,17 @@ export function acceptStage(run: Run, flow: FlowStage[], at: string, note = ''):
 }
 
 /** The person does not accept the result: the same stage does it again, with the note as the handoff. A note is required. */
-export function returnStage(run: Run, flow: FlowStage[], note: string, at: string): Transition {
+export function returnStage(run: Run, flow: FlowStage[], note: string, at: string, who: Who = PERSON_WHO): Transition {
   need(run, 'to-accept');
   const why = note.trim();
   if (!why) throw new RunError('empty-reason');
   const p = run.pending as PendingResult;
   const out = clone(run, at);
   out.pending = null;
-  log(out, at, 'stage-returned', run.stage, 'person', why);
+  log(out, at, 'stage-returned', run.stage, who.by, why);
   const messages: ForumDraft[] = [
-    { kind: 'decision', author: person, code: 'stage.returned', params: { stage: labelOf(flow, run.stage) }, text: why, stage: run.stage, public: true },
-    { kind: 'handoff', author: person, text: why, to: p.by, stage: run.stage },
+    { kind: 'decision', author: who.author, code: 'stage.returned', params: { stage: labelOf(flow, run.stage) }, text: why, stage: run.stage, public: true },
+    { kind: 'handoff', author: who.author, text: why, to: p.by, stage: run.stage },
   ];
   finishStage(out, at, 'rejected');
   enter(out, flow, run.stage, at, messages, true);
@@ -649,7 +661,7 @@ export interface SendBackInput {
  * (which reopens the run). The note, with what the review and QA left open, is a handoff from the person to that stage's agent; the stage starts again at once
  * as a new attempt, and the stages after it run again in order. Nothing is counted against the review limit: this is the person's decision, not a round.
  */
-export function sendBackTo(run: Run, flow: FlowStage[], input: SendBackInput, at: string): Transition {
+export function sendBackTo(run: Run, flow: FlowStage[], input: SendBackInput, at: string, who: Who = PERSON_WHO): Transition {
   if (run.status === 'cancelled') throw new RunError('not-active', { status: run.status });
   need(run, ...SEND_BACK_STATUSES);
   if (!canSendBack(run)) throw new RunError('wrong-state', { status: run.status });
@@ -666,12 +678,12 @@ export function sendBackTo(run: Run, flow: FlowStage[], input: SendBackInput, at
   if (rec && !reopened && rec.status !== 'failed') finishStage(out, at, from.type === 'wait' ? 'skipped' : 'rejected');
   out.question = null;
   out.pending = null;
-  if (reopened) log(out, at, 'reopened', run.stage, 'person', note || null);
+  if (reopened) log(out, at, 'reopened', run.stage, who.by, note || null);
   clearPlanBefore(out, flow, target.id);
-  log(out, at, 'sent-back', run.stage, 'person', `${target.id}${note ? `: ${note}` : ''}`);
+  log(out, at, 'sent-back', run.stage, who.by, `${target.id}${note ? `: ${note}` : ''}`);
   const messages: ForumDraft[] = [
-    { kind: 'decision', author: person, code: reopened ? 'run.reopened' : 'run.sentBack', params: { stage: target.label }, text: note, stage: run.stage, public: true },
-    { kind: 'handoff', author: person, text, to: target.agent, stage: run.stage },
+    { kind: 'decision', author: who.author, code: reopened ? 'run.reopened' : 'run.sentBack', params: { stage: target.label }, text: note, stage: run.stage, public: true },
+    { kind: 'handoff', author: who.author, text, to: target.agent, stage: run.stage },
   ];
   enter(out, flow, target.id, at, messages, true);
   return { run: out, messages };
@@ -689,17 +701,17 @@ export function stageFailed(run: Run, detail: string, at: string): Transition {
 }
 
 /** Another attempt at the stage that failed (or had no agent: the team may have changed since). */
-export function retry(run: Run, flow: FlowStage[], at: string): Transition {
+export function retry(run: Run, flow: FlowStage[], at: string, who: Who = PERSON_WHO): Transition {
   need(run, 'failed');
   const out = clone(run, at);
-  log(out, at, 'retried', run.stage, 'person');
+  log(out, at, 'retried', run.stage, who.by);
   const messages: ForumDraft[] = [{ kind: 'system', author: app, code: 'run.stage.retried', params: { stage: labelOf(flow, run.stage) }, stage: run.stage }];
   enter(out, flow, run.stage, at, messages, true);
   return { run: out, messages };
 }
 
 /** Nothing is deleted: the worktree, the branch and the thread stay. */
-export function cancel(run: Run, by: 'person' | 'app', at: string): Transition {
+export function cancel(run: Run, by: 'person' | 'app', at: string, who: Who = PERSON_WHO): Transition {
   if (isTerminal(run)) throw new RunError('not-active', { status: run.status });
   const out = clone(run, at);
   const rec = record(out, run.stage);
@@ -711,8 +723,8 @@ export function cancel(run: Run, by: 'person' | 'app', at: string): Transition {
   out.question = null;
   out.pending = null;
   out.wait = null;
-  log(out, at, 'cancelled', run.stage, by);
-  return { run: out, messages: [{ kind: 'system', author: by === 'person' ? person : app, code: 'run.cancelled', stage: run.stage }] };
+  log(out, at, 'cancelled', run.stage, by === 'app' ? 'app' : who.by);
+  return { run: out, messages: [{ kind: 'system', author: by === 'person' ? who.author : app, code: 'run.cancelled', stage: run.stage }] };
 }
 
 /**
@@ -767,6 +779,8 @@ export interface RouteSquadInput {
   by: string;
   reason: string;
   how: Extract<RoutedBy, 'agent' | 'person'>;
+  /** Who chose it when it was the person's choice and the persona made it for them: the answer in the thread is theirs. Absent: the person. */
+  who?: Who;
   /** The front door's result, when the stage just ended and the agent decided by itself; absent when the run was waiting for the person (it is in `routing.result`). */
   result?: FrontDoorResult;
 }
@@ -790,7 +804,7 @@ export function routeSquad(run: Run, input: RouteSquadInput, at: string): Transi
   out.flow = snapshotOf(input.flow);
   log(out, at, 'squad-routed', run.stage, input.by, input.squad ? `${input.how}:${input.squad}` : `${input.how}:none`);
   const messages: ForumDraft[] = [];
-  if (asked) messages.push({ kind: 'answer', author: person, code: 'run.squad.chosen', params: { squad: input.name }, text: input.reason.trim(), stage: run.stage, public: true });
+  if (asked) messages.push({ kind: 'answer', author: input.who?.author ?? person, code: 'run.squad.chosen', params: { squad: input.name }, text: input.reason.trim(), stage: run.stage, public: true });
   else messages.push({ kind: 'system', author: app, code: 'run.squad.proposed', params: { squad: input.name, agent: input.by, reason: input.reason }, stage: run.stage });
   const at0 = input.flow.findIndex((s) => s.id === run.stage);
   if (result) {
@@ -810,13 +824,13 @@ export function routeSquad(run: Run, input: RouteSquadInput, at: string): Transi
 }
 
 /** The squad of the run was removed (after the person confirmed): the run goes on with no squad, following the flow it has. */
-export function leaveSquad(run: Run, at: string): Transition {
+export function leaveSquad(run: Run, at: string, who: Who = PERSON_WHO): Transition {
   if (isTerminal(run)) throw new RunError('not-active', { status: run.status });
   const out = clone(run, at);
   const was = run.squad ?? '';
   out.squad = null;
   out.routedBy = null;
-  log(out, at, 'squad-routed', run.stage, 'person', `none:${was}`);
+  log(out, at, 'squad-routed', run.stage, who.by, `none:${was}`);
   return { run: out, messages: [{ kind: 'system', author: app, code: 'run.squad.removed', params: { squad: was }, stage: run.stage }] };
 }
 
@@ -911,15 +925,15 @@ export function waitDone(run: Run, flow: FlowStage[], input: { reply?: string; f
 }
 
 /** The person does not wait any longer: recorded as a decision with its reason, and the run goes on. */
-export function waitSkip(run: Run, flow: FlowStage[], reason: string, at: string): Transition {
+export function waitSkip(run: Run, flow: FlowStage[], reason: string, at: string, who: Who = PERSON_WHO): Transition {
   need(run, 'waiting');
   const why = reason.trim();
   if (!why) throw new RunError('empty-reason');
   const stage = stageOf(flow, run.stage);
   const out = clone(run, at);
-  log(out, at, 'wait-skipped', run.stage, 'person', why);
-  const messages: ForumDraft[] = [{ kind: 'decision', author: person, code: 'wait.skipped', params: { stage: stage.label }, text: why, stage: run.stage, public: true }];
-  resume(out, flow, at, 'person', stage.type === 'work' ? { kind: 'answer', author: person, text: why, stage: run.stage, to: run.wait?.by ?? null, public: false } : null, messages);
+  log(out, at, 'wait-skipped', run.stage, who.by, why);
+  const messages: ForumDraft[] = [{ kind: 'decision', author: who.author, code: 'wait.skipped', params: { stage: stage.label }, text: why, stage: run.stage, public: true }];
+  resume(out, flow, at, 'person', stage.type === 'work' ? { kind: 'answer', author: who.author, text: why, stage: run.stage, to: run.wait?.by ?? null, public: false } : null, messages);
   return { run: out, messages };
 }
 
@@ -969,7 +983,7 @@ export function linkUpdate(run: Run, key: string, patch: Partial<Pick<RunLink, '
  * The run follows `flow` from now on (the current flow of the cycle, which the person edited after the run started). Only while the run's stage still
  * exists there, and is the same kind of stage: a run that waits at a gate cannot land on a stage an agent works.
  */
-export function migrateFlow(run: Run, flow: FlowStage[], at: string): Transition {
+export function migrateFlow(run: Run, flow: FlowStage[], at: string, who: Who = PERSON_WHO): Transition {
   if (isTerminal(run)) throw new RunError('not-active', { status: run.status });
   const stage = flow.find((s) => s.id === run.stage);
   if (!stage) throw new RunError('unknown-stage', { stage: run.stage });
@@ -977,7 +991,7 @@ export function migrateFlow(run: Run, flow: FlowStage[], at: string): Transition
   if (was && was.type !== stage.type) throw new RunError('flow-mismatch', { stage: stage.label });
   const out = clone(run, at);
   out.flow = snapshotOf(flow);
-  log(out, at, 'flow-migrated', run.stage, 'person', out.flow.hash);
+  log(out, at, 'flow-migrated', run.stage, who.by, out.flow.hash);
   return { run: out, messages: [{ kind: 'system', author: app, code: 'run.flow.migrated', params: { hash: out.flow.hash }, stage: run.stage }] };
 }
 
@@ -985,11 +999,11 @@ export function migrateFlow(run: Run, flow: FlowStage[], at: string): Transition
  * The person corrected the cycle memory on the run screen. The app writes and commits their version with the workspace's identity; the run's history and the
  * thread record it as the person's, so the next stage reads it and the authorship of the edit is not the commit's.
  */
-export function memoryEdited(run: Run, at: string): Transition {
+export function memoryEdited(run: Run, at: string, who: Who = PERSON_WHO): Transition {
   if (isTerminal(run)) throw new RunError('not-active', { status: run.status });
   const out = clone(run, at);
-  log(out, at, 'memory-edited', out.stage, 'person');
-  return { run: out, messages: [{ kind: 'system', author: person, code: 'runner.memory.edited', stage: out.stage }] };
+  log(out, at, 'memory-edited', out.stage, who.by);
+  return { run: out, messages: [{ kind: 'system', author: who.author, code: 'runner.memory.edited', stage: out.stage }] };
 }
 
 // ---- the subject of a release run ----------------------------------------------------------------------------------------------------------
@@ -1119,11 +1133,11 @@ export function recordEvidence(run: Run, record: EvidenceRecord, at: string): Tr
 }
 
 /** The person removed a piece of evidence: the run drops the record; what already went to the code host is not touched. */
-export function deleteEvidence(run: Run, id: string, at: string): Transition {
+export function deleteEvidence(run: Run, id: string, at: string, who: Who = PERSON_WHO): Transition {
   const out = clone(run, at);
   if (!out.evidence?.[id]) throw new RunError('unknown-evidence', { id });
   delete out.evidence[id];
-  log(out, at, 'evidence-removed', run.stage, 'person', id);
+  log(out, at, 'evidence-removed', run.stage, who.by, id);
   return { run: out, messages: [] };
 }
 

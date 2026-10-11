@@ -8,7 +8,7 @@ process.env.CERIMONIAS_DATA_DIR = mkdtempSync(join(tmpdir(), 'cerimonias-errors-
 const { bindIpc, callOrigin, handle, handleDevice, invoke } = await import('../src/main/rpc');
 const { errorsView, errorlog } = await import('../src/main/errorlog');
 const { DATA_ROOT } = await import('../src/main/env');
-const { readEntries } = await import('../src/main/errorlog-core');
+const { readEntries, rpcContext } = await import('../src/main/errorlog-core');
 
 const logs = () => readEntries(join(DATA_ROOT, 'logs'));
 
@@ -60,6 +60,10 @@ describe('the door a call came through', () => {
     expect(seen).toEqual(['ipc', 'ipc', 'web', 'web']);
     // Outside a call it is the window's.
     expect(callOrigin()).toBe('ipc');
+  });
+
+  it('names the persona in the context of a failure, and still no arguments', () => {
+    expect(rpcContext('conflict:t-async', ['103-a', 'free text'], 'persona')).toEqual({ channel: 'conflict:t-async', via: 'persona', id: '103-a' });
   });
 });
 

@@ -44,7 +44,7 @@ import { answerCeremonyMentions } from './mentions/ceremony';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
 import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
-import { CALL_AGENT_TOOL, runnerMcpServer, runnerMcpToolName } from './runner/tools';
+import { CALL_AGENT_TOOL, principalOnlyGuard, principalOnlyMatcher, runnerMcpServer, runnerMcpToolName } from './runner/tools';
 import type { MemberParams, Tuning } from './engine/open/pool';
 import type { ToolImpl } from './engine/open/tools/types';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
@@ -858,6 +858,9 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   }
   // Only the agent whose folder it is writes into it: a call from inside a sub-agent is refused (the SDK's `agent_id` on the hook input).
   if (memory && req.memoryTools?.save) options.hooks = { ...options.hooks, PreToolUse: [...(options.hooks?.PreToolUse ?? []), { matcher: MEMORY_WRITE_TOOLS.map(memoryMcpToolName).join('|'), hooks: [memorySubagentGuard] }] };
+  // The same for every app tool only the principal calls (the persona's, `OpenScreen`): the SDK has no `principalOnly`, so a sub-agent's call is refused here.
+  const principal = runner && req.runnerTools ? principalOnlyMatcher(req.runnerTools) : null;
+  if (principal) options.hooks = { ...options.hooks, PreToolUse: [...(options.hooks?.PreToolUse ?? []), { matcher: principal, hooks: [principalOnlyGuard] }] };
   const q = query({ prompt: stream ?? req.prompt, options });
   const counted = new Set<string>();
   // What the assistant said, kept for the failure a call with no structured output throws: the provider's refusal reaches the person, never only the subtype.

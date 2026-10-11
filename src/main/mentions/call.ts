@@ -37,9 +37,9 @@ export interface MentionInput {
   proposals?: boolean;
   /**
    * The persona answering in its chat: the answer is plain Markdown (no schema, no `proposals`), told in the persona's own words instead of a thread's. `buttons`: the call
-   * has `OpenScreen`, so it is told how to use it (a persona being tested has none).
+   * has `OpenScreen`, so it is told how to use it (a persona being tested has none). `tools`: it also has the eleven tools of its acts (#248), and is told how to use them.
    */
-  persona?: { buttons: boolean };
+  persona?: { buttons: boolean; tools?: boolean };
   /** The agent is autonomous: a comment and a label change it proposes go out as soon as it answers, and it is told so. */
   autonomous?: boolean;
   /** The conversation the agent was called in and the files the message carries: the call gets the read-only attachment tool, scoped to it. */
@@ -185,6 +185,8 @@ export function mentionCall(i: MentionInput): AgentCall {
   const system = [
     i.persona ? cp('runner.mention.persona.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job) }) : cp('runner.mention.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.ref ?? '—', title: i.title ?? '—' }),
     i.persona?.buttons ? cp('runner.mention.persona.buttons') : '',
+    // What it can do beyond the button: the eleven tools of its acts, or, where it has none (its test copy), that it changes nothing.
+    i.persona ? (i.persona.tools ? cp('runner.mention.persona.tools') : cp('runner.mention.persona.cannot')) : '',
     // The persona talks in its own chat, not in a thread of an activity.
     i.persona ? '' : placeLine(i),
     i.shell ? shellRules(i.shell, i.screen) : '',

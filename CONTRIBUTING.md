@@ -57,6 +57,7 @@ uv pip install --python sidecar/.venv/bin/python -r sidecar/requirements.txt
 | `npm run i18n:lint` | Checks that the `pt-BR` and `en` catalogs define the same keys |
 | `node scripts/i18n-lint.mjs` | Lists user-facing literal strings that do not go through `t()` |
 | `node scripts/third-party-notices.mjs` | Regenerates `THIRD_PARTY_NOTICES.md` (run after changing dependencies; `--check` verifies it) |
+| `node scripts/evidence-sheet.mjs <out.png> <image>...` | Puts screenshots on one captioned contact sheet (a PNG) for a pull request: `--cols N`, `--width PX`, `--title TEXT`, `--caption "<file>=<text>"`, `--theme light\|dark`; 1 to 48 `.png`/`.jpg`/`.jpeg`/`.webp` files, cut at 12000 px tall; renders with the Chromium of `playwright-core` (`npx playwright install chromium`), offline |
 | `npm run dist` | Your own package, with the Claude Agent SDK inside (do not redistribute it) |
 | `npm run dist:public` | The public package, without the SDK: what the releases contain ([`RELEASING.md`](RELEASING.md)) |
 

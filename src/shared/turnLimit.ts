@@ -1,6 +1,8 @@
 // The question an agent or a sub-agent leaves when it uses its last turn: what it looks like on the wire. The work waits in memory for the person's answer, so the record
 // is never written to the run's file or to disk; only the list of the waiting ones travels, whole, on a module event. Pure: shared by the main process, the screens and the tests.
 
+import type { Through } from './auditoria';
+
 /** The module event carrying the questions that wait for the person, the whole list each time. */
 export const TURN_ASKS_EVENT = 'turn-asks';
 
@@ -10,8 +12,8 @@ export type TurnDecision = (typeof TURN_DECISIONS)[number];
 
 export const isTurnDecision = (v: unknown): v is TurnDecision => typeof v === 'string' && (TURN_DECISIONS as readonly string[]).includes(v);
 
-/** Who gave the answer. A third value is the persona of a later issue; nothing here produces it. */
-export type TurnAnswerer = 'window' | 'paired';
+/** Who gave the answer: the window, a paired browser, or the persona acting on the person's behalf. */
+export type TurnAnswerer = Through;
 
 export interface PendingTurnAsk {
   id: string;

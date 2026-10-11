@@ -1,3 +1,4 @@
+import type { HookCallback } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentDef } from '../../shared/config/types';
 import { t } from '../../shared/i18n';
 import { loadClaudeSdkModule } from '../claudeSdk';
@@ -170,9 +171,12 @@ export async function runnerMcpServer(tools: ToolImpl[]): Promise<Record<string,
       sdk.tool(
         tool.name,
         tool.description,
-        // The declared parameters are the JSON Schema the open engine uses; the SDK wants the shape, so the model sends the same fields.
+        // The declared parameters are the JSON Schema the open engine uses; the SDK wants the shape, so the model sends the same fields. Each field carries its description
+        // (the model reads it), and stays loose: the app checks an input and answers in its own words, instead of the SDK's schema error.
         (tool.parameters as { properties?: Record<string, unknown> }).properties
-          ? Object.fromEntries(Object.keys((tool.parameters as { properties: Record<string, unknown> }).properties).map((k) => [k, z.unknown()]))
+          ? Object.fromEntries(
+              Object.entries((tool.parameters as { properties: Record<string, { description?: string }> }).properties).map(([k, p]) => [k, p?.description ? z.unknown().describe(p.description) : z.unknown()]),
+            )
           : { text: z.unknown() },
         async (args: Record<string, unknown>) => {
           try {
@@ -193,6 +197,29 @@ export async function runnerMcpServer(tools: ToolImpl[]): Promise<Record<string,
 
 /** The tool names as the SDK knows them (their MCP server prefixes the plain name). */
 export const runnerMcpToolName = (name: string): string => `mcp__${RUNNER_MCP_SERVER}__${name}`;
+
+/** The matcher of the guard for the tools only the principal agent calls, or null when the call has none. */
+export function principalOnlyMatcher(tools: readonly ToolImpl[]): string | null {
+  const names = tools.filter((x) => x.principalOnly).map((x) => runnerMcpToolName(x.name));
+  return names.length ? names.join('|') : null;
+}
+
+/**
+ * The Claude SDK's PreToolUse hook for the tools only the principal calls (`principalOnly`): the SDK has no such flag, so a call made from inside a sub-agent (the hook input
+ * carries `agent_id`) is refused here. Checked against the real SDK: the hook fires for a sub-agent's call to an in-process tool with `agent_id` set, and its denial keeps the
+ * handler from running.
+ */
+export const principalOnlyGuard: HookCallback = async (input) => {
+  if (input.hook_event_name !== 'PreToolUse' || !input.agent_id) return {};
+  return {
+    hookSpecificOutput: {
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      // i18n-ignore: a refusal the model reads: English by design
+      permissionDecisionReason: 'This tool is the principal agent\'s alone; a sub-agent cannot use it. Give what you found to the agent that called you.',
+    },
+  };
+};
 
 const RUNNER_MCP_SERVER = 'runner';
 

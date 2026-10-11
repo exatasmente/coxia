@@ -6,6 +6,7 @@ import { runAgent } from '../agents';
 import { openCeremonyMemory } from '../memory/ceremony';
 import { text as cycleWord } from '../cyclePrompts';
 import { getConfig } from '../workspaceConfig';
+import { byPersona, personaIdNow } from '../persona/who';
 import { mentionCall } from './call';
 
 // The agents a person names inside a ceremony: the daily call, the deep dive, the re-entry, the QA handoff, the retro and the free answer of a gate take a typed
@@ -31,10 +32,10 @@ export interface CeremonyContext {
 /** The name an agent is shown by: the catalog key or literal of `AgentDef.name`, in the workspace language. */
 const nameOf = (agent: AgentDef): string => cycleWord(agent.name);
 
-/** The ceremony's messages as a thread a mention call can read: the person's own, and the agents'. */
-function asThread(msgs: { who: string; text: string }[]): ForumMessage[] {
+/** The ceremony's messages as a thread a mention call can read: the person's own, and the agents'. A turn the persona wrote for the person (`persona`: its id) is its own. */
+function asThread(msgs: { who: string; text: string }[], persona: string | null = null): ForumMessage[] {
   return msgs.map((m, i) => {
-    const author: Author = m.who === 'me' ? { type: 'person' } : m.who === 'app' ? { type: 'app' } : { type: 'agent', id: m.who };
+    const author: Author = m.who === 'me' ? (persona ? { type: 'agent', id: persona } : { type: 'person' }) : m.who === 'app' ? { type: 'app' } : { type: 'agent', id: m.who };
     return { v: 1, type: 'message', seq: i + 1, thread: '', at: '', kind: 'post', author, text: m.text, code: null, params: {}, mentions: [], refs: [], attachments: [], anchor: null, stage: null, to: null, replyTo: null, public: false, waitsForAnswer: false, published: null };
   });
 }
@@ -47,7 +48,7 @@ export async function answerCeremonyMentions(text: string, ctx: CeremonyContext)
   const config = getConfig();
   const ids = parseMentions(text, mentionableIds(config.agents.team)).slice(0, MAX_MENTIONS);
   if (!ids.length) return [];
-  const thread = asThread(ctx.msgs);
+  const thread = asThread(ctx.msgs, byPersona() ? personaIdNow() : null);
   const message: ForumMessage = { ...asThread([{ who: 'me', text }])[0], thread: ctx.thread };
   const out: CeremonyMention[] = [];
   for (const id of ids) {
