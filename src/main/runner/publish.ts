@@ -41,6 +41,8 @@ import {
   prRecorded,
   prOpenBlocked,
   prRetryAnswered,
+  PERSON_WHO,
+  type Who,
   renderComment,
   scenarioBlocks,
   scenarioNotes,
@@ -209,7 +211,7 @@ export interface Publisher {
    * The person chose the base on the run screen (a `pr-retry` question was open): the run leaves its question and the pull request is opened now, audited,
    * against the corrected base. Nothing is re-run by it: a failure stops the run blocked again, a success goes on through `flushReviews`.
    */
-  retryPr(runId: string, base: string): Promise<void>;
+  retryPr(runId: string, base: string, who?: Who): Promise<void>;
   /** Whether the event a waiting run waits for has happened, as the code host says (a reply is what the person wrote). Never throws: an unreadable host is "not yet". */
   waitOver(runId: string): Promise<{ over: boolean; reply?: string }>;
   /** Proposes deleting what an automatic post of the run put on the tracker (always a "yes"). `proposed` is false when there was nothing to propose and `reason` says why. */
@@ -1042,14 +1044,14 @@ export function createPublisher(deps: PublisherDeps): Publisher {
   }
 
   /** The person chose the base on the run screen: the run is stopped out of its question, the base is corrected, and the pull request is opened now. */
-  async function retryPr(runId: string, base: string): Promise<void> {
+  async function retryPr(runId: string, base: string, who: Who = PERSON_WHO): Promise<void> {
     const run = need(runId);
     if (run.status !== 'question' || run.question?.kind !== 'pr-retry') throw new Error(`run ${runId} is not waiting for a pull request retry`);
     const refused = door.refusal();
     if (refused) return say(run, 'runner.pr.refused', { reason: refused });
     const provider = door.provider();
     if (!provider) return say(run, 'runner.comment.noHost', { title: run.issue.title });
-    moveRun(d, runId, (r) => prRetryAnswered(r, base, now()));
+    moveRun(d, runId, (r) => prRetryAnswered(r, base, now(), who));
     try {
       await openPrNow(runId, need(runId), provider);
     } catch (e) {
@@ -1851,7 +1853,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     actionRefused: (a, reason) => guarded(String(a.unit?.runId ?? ''), () => releaseStepRefused(a, reason)),
     flushReviews: (runId) => guarded(runId, () => flush(runId)),
     ensurePr: (runId) => ensurePr(runId).catch(() => false),
-    retryPr: (runId, base) => guarded(runId, () => retryPr(runId, base)),
+    retryPr: (runId, base, who) => guarded(runId, () => retryPr(runId, base, who)),
     waitOver,
     undo: (runId, key) => undo(runId, key),
     stageEntered: (runId, e) => guarded(runId, () => stageEntered(runId, e)),

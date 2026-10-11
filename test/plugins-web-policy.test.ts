@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { webAccess } from '../src/main/webPolicy';
 
-// Only the computer widens or narrows what a plugin reaches (spec rule 10): every plugin channel but the list is denied to a paired browser, and
+// Only the computer widens or narrows what a plugin reaches (spec rule 10): every plugin channel but the list is denied to a paired browser, except
+// answering the request of a call from a conversation (the service refuses the requests of a run's own events, whatever the channel says), and
 // the list of channels is read from the module, so a new one cannot be left out. Blocking an announced write is actions:skip, open to the browser.
 
 const channels = [...readFileSync(new URL('../src/main/plugins/module.ts', import.meta.url), 'utf8').matchAll(/ctx\.handle\('(plugins:[a-z-]+)'/g)].map((m) => m[1]);
@@ -12,8 +13,8 @@ describe('the plugin channels and a paired browser', () => {
     expect(channels).toEqual(expect.arrayContaining(['plugins:list', 'plugins:set-enabled', 'plugins:settings', 'plugins:answer', 'plugins:revoke', 'plugins:revoke-write']));
   });
 
-  it('denies every decision about a plugin, and only lets the list be read', () => {
-    for (const channel of channels) expect(webAccess(channel), channel).toBe(channel === 'plugins:list' ? 'allow' : 'deny');
+  it('denies every decision about a plugin, and lets the list be read and a request of a conversation call be answered', () => {
+    for (const channel of channels) expect(webAccess(channel), channel).toBe(channel === 'plugins:list' || channel === 'plugins:answer' ? 'allow' : 'deny');
   });
 
   it('lets a paired browser block an announced write, and keeps approving a write behind the external-effects switch', () => {

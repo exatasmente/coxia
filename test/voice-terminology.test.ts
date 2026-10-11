@@ -11,6 +11,7 @@ import { entryOf } from '../src/main/sessions-core';
 
 const ROOT = join(import.meta.dirname, '..');
 const CALL_WORD = /\bcalls?\b/i;
+const NAMES_THE_CEREMONY = new Set(['notify.preDaily.body.novoice']);
 const ASSIST_ROUND = CATALOGS['pt-BR']['prompt.sdd.assist.round'].split('\n')[0];
 const ASSIST_REVIEW = CATALOGS['pt-BR']['prompt.sdd.assist.review'].split('\n')[0];
 
@@ -42,7 +43,7 @@ describe('the catalogs', () => {
     for (const lang of ['pt-BR', 'en'] as const) {
       for (const key of variants) expect(CATALOGS[lang][key], `${lang} ${key}`).not.toMatch(CALL_WORD);
     }
-    for (const base of ['nav.call', 'call.enter', 'call.back', 'call.controls', 'call.inProgress', 'call.after', 'notify.preDaily.body', 'outbox.reply']) {
+    for (const base of ['call.enter', 'call.back', 'call.controls', 'call.inProgress', 'call.after', 'outbox.reply']) {
       for (const lang of ['pt-BR', 'en'] as const) expect(CATALOGS[lang][base], `${lang} ${base}`).toMatch(CALL_WORD);
     }
   });
@@ -50,6 +51,8 @@ describe('the catalogs', () => {
   it('turn every "call" into "conversa" in pt-BR and "chat" in English, consistently', () => {
     for (const key of variants) {
       const base = key.slice(0, -NOVOICE_SUFFIX.length);
+      // The pre-daily notice opens the persona's chat, so its text-mode wording names the ceremony and never "the chat" or "the conversation", which now mean that chat.
+      if (NAMES_THE_CEREMONY.has(key)) continue;
       if (CALL_WORD.test(CATALOGS['pt-BR'][base])) expect(CATALOGS['pt-BR'][key].toLowerCase(), key).toMatch(/conversa/);
       if (CALL_WORD.test(CATALOGS.en[base])) expect(CATALOGS.en[key].toLowerCase(), key).toMatch(/\bchat\b/);
       expect(CATALOGS.en[key].toLowerCase(), key).not.toMatch(/conversation/);
@@ -71,16 +74,16 @@ describe('tv', () => {
 
   it('gives the main labels in every language and voice state', () => {
     const table: Record<string, Record<string, string>> = {
-      'pt-BR/voice': { 'nav.call': 'Call', 'call.back': 'Voltar à call', 'call.controls': 'Controles da call', 'call.inProgress': 'Call em andamento', 'notify.preDaily.body': 'Os agentes estão prontos para a call. Clique para entrar.' },
-      'pt-BR/text': { 'nav.call': 'Conversa', 'call.back': 'Voltar à conversa', 'call.controls': 'Controles da conversa', 'call.inProgress': 'Conversa em andamento', 'notify.preDaily.body': 'Os agentes estão prontos para a conversa. Clique para entrar.' },
-      'en/voice': { 'nav.call': 'Call', 'call.back': 'Back to the call', 'call.controls': 'Call controls', 'call.inProgress': 'Call in progress', 'notify.preDaily.body': 'The agents are ready for the call. Click to join.' },
-      'en/text': { 'nav.call': 'Chat', 'call.back': 'Back to the chat', 'call.controls': 'Chat controls', 'call.inProgress': 'Chat in progress', 'notify.preDaily.body': 'The agents are ready for the chat. Click to join.' },
+      'pt-BR/voice': { 'call.back': 'Voltar à call', 'call.controls': 'Controles da call', 'call.inProgress': 'Call em andamento', 'notify.preDaily.body': 'Os agentes estão prontos para a call da X. Clique para abrir.' },
+      'pt-BR/text': { 'call.back': 'Voltar à conversa', 'call.controls': 'Controles da conversa', 'call.inProgress': 'Conversa em andamento', 'notify.preDaily.body': 'Os agentes estão prontos para a X. Clique para abrir.' },
+      'en/voice': { 'call.back': 'Back to the call', 'call.controls': 'Call controls', 'call.inProgress': 'Call in progress', 'notify.preDaily.body': 'The agents are ready for the X call. Click to open it.' },
+      'en/text': { 'call.back': 'Back to the chat', 'call.controls': 'Chat controls', 'call.inProgress': 'Chat in progress', 'notify.preDaily.body': 'The agents are ready for the X. Click to open it.' },
     };
     for (const [state, labels] of Object.entries(table)) {
       const [language, mode] = state.split('/');
       setLanguage(language as 'pt-BR' | 'en');
       setVoiceEnabled(mode === 'voice');
-      for (const [key, text] of Object.entries(labels)) expect(tv(key), `${state} ${key}`).toBe(text);
+      for (const [key, text] of Object.entries(labels)) expect(tv(key, { ceremony: 'X' }), `${state} ${key}`).toBe(text);
     }
   });
 

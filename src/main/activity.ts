@@ -37,7 +37,11 @@ export interface RunActivity {
   /** An excerpt of the reply of a called agent, posted by the code that delivers the reply: masked, cut at ACTIVITY_ANSWER_MAX. */
   answer(text: string): void;
   blocked(label: string): void;
-  status(state: Exclude<ActivityState, 'blocked'>, detail?: string): void;
+  status(state: Exclude<ActivityState, 'blocked' | 'waiting'>, detail?: string): void;
+  /** The work used its last turn and waits for the person to let it go on or finish it now: a status line of its own state, with the number of turns it took. */
+  waiting(turns: number): void;
+  /** The person let the work go on for another round: it is working again. */
+  continued(): void;
   /** A node under this one: same job, same call. The caller says `started` or `queued` on it. */
   child(node: ActivityNode, role?: string): RunActivity;
   /** A view whose `finished` and `failed` are ignored: one engine run that is a round of a longer exchange, closed by whoever owns the exchange. */
@@ -160,11 +164,13 @@ export function createActivityLog(options: ActivityLogOptions = {}) {
 
   function begin(
     role: string,
-    o: { jobId?: string | null; callId?: string | null; call?: ActivityCall | null; parent?: string | null; node?: ActivityNode | null; isSecretPath?: (token: string) => boolean } = {},
+    o: { jobId?: string | null; callId?: string | null; call?: ActivityCall | null; parent?: string | null; node?: ActivityNode | null; isSecretPath?: (token: string) => boolean; mask?: (text: string) => string } = {},
   ): RunActivity {
+    // A value the answer must never show (a secret the persona read) is masked before the line is made, in every line of this node and of the ones under it.
+    const safe = (text: string, max: number): string => safeText(o.mask ? o.mask(text) : text, max, o.isSecretPath);
     // A node belongs to the job and the call of the run it hangs under, so a tree is always one job and one call.
     const above = o.parent ? runs.get(o.parent) : undefined;
-    const node = o.node ? { type: o.node.type, label: safeText(o.node.label, ACTIVITY_NODE_MAX, o.isSecretPath) } : null;
+    const node = o.node ? { type: o.node.type, label: safe(o.node.label, ACTIVITY_NODE_MAX) } : null;
     const run: Run = {
       id: randomUUID(),
       jobId: above ? above.jobId : (o.jobId ?? null),
@@ -226,25 +232,33 @@ export function createActivityLog(options: ActivityLogOptions = {}) {
       id: run.id,
       tool: safely((label) => {
         flush();
-        emit('tool', safeText(label, ACTIVITY_LABEL_MAX, o.isSecretPath));
+        emit('tool', safe(label, ACTIVITY_LABEL_MAX));
       }),
       // The model's narration only counts as a step when a tool call follows it: a closing text is the answer, not a step.
       text: safely((text) => {
-        pending = safeText(text, ACTIVITY_TEXT_MAX, o.isSecretPath);
+        pending = safe(text, ACTIVITY_TEXT_MAX);
       }),
       // Masked before the cut, so a credential straddling the cut is never half shown; the first characters only bound what the masking scans.
       thought: safely((text) => {
         if (!thoughtsOn()) return;
-        emit('thought', safeText(text.trim().slice(0, THOUGHT_SCAN_MAX), ACTIVITY_THOUGHT_MAX, o.isSecretPath));
+        emit('thought', safe(text.trim().slice(0, THOUGHT_SCAN_MAX), ACTIVITY_THOUGHT_MAX));
       }),
-      answer: safely((text) => emit('answer', safeText(text, ACTIVITY_ANSWER_MAX, o.isSecretPath))),
-      blocked: safely((label) => emit('status', t('activity.blocked', { what: safeText(label, ACTIVITY_LABEL_MAX, o.isSecretPath) }), 'blocked')),
+      answer: safely((text) => emit('answer', safe(text, ACTIVITY_ANSWER_MAX))),
+      blocked: safely((label) => emit('status', t('activity.blocked', { what: safe(label, ACTIVITY_LABEL_MAX) }), 'blocked')),
       status: safely((state, detail) => {
         pending = '';
-        const reason = detail ? safeText(detail, 160, o.isSecretPath) : '';
+        const reason = detail ? safe(detail, 160) : '';
         emit('status', state === 'failed' && reason ? t('activity.failedWith', { reason }) : t(`activity.${state}`), state);
       }),
-      child: (childNode, childRole) => begin(childRole ?? role, { parent: run.id, node: childNode, isSecretPath: o.isSecretPath }),
+      waiting: safely((turns) => {
+        pending = '';
+        emit('status', t('activity.turnLimit', { turns }), 'waiting');
+      }),
+      continued: safely(() => {
+        pending = '';
+        emit('status', t('activity.continued'), 'started');
+      }),
+      child: (childNode, childRole) => begin(childRole ?? role, { parent: run.id, node: childNode, isSecretPath: o.isSecretPath, mask: o.mask }),
       lend: () => lent,
     };
     const lent: RunActivity = {
@@ -354,6 +368,6 @@ export function beginActivity(role: string, isSecretPath?: (token: string) => bo
  * The run of an `@` call, made as soon as the message is accepted: it belongs to the run's own activity context and carries the call's identity, so
  * the line exists while the call still waits its turn, before the engine starts it.
  */
-export function beginCallActivity(role: string, o: { jobId: string; call: ActivityCall; node?: ActivityNode; isSecretPath?: (token: string) => boolean }): RunActivity {
-  return activityLog.begin(role, { jobId: o.jobId, call: o.call, node: o.node ?? null, isSecretPath: o.isSecretPath });
+export function beginCallActivity(role: string, o: { jobId: string; call: ActivityCall; node?: ActivityNode; isSecretPath?: (token: string) => boolean; mask?: (text: string) => string }): RunActivity {
+  return activityLog.begin(role, { jobId: o.jobId, call: o.call, node: o.node ?? null, isSecretPath: o.isSecretPath, mask: o.mask });
 }

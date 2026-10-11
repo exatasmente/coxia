@@ -7,7 +7,9 @@ export const feedbackApi = {
   prepareReentry: (card: Card) => api.invoke<Reentry>('feedback:reentry:prepare', card),
   askReentry: (iid: string, question: string) => api.invoke<Reentry>('feedback:reentry:ask', iid, question),
   listDiscussions: (mr: MrPath) => api.invoke<DiscussionsResult>('feedback:discussions:list', mr),
-  explainDiscussion: (card: Card, mr: MrPath, id: string) => api.invoke<DiscussionView>('feedback:discussions:explain', card, mr, id),
+  openDiscussions: (project: string, number: number) => api.invoke<DiscussionsResult>('feedback:discussions:open', project, number),
+  discussionsOpened: (thread: string, project: string, number: number) => api.invoke<boolean>('feedback:discussions:opened', thread, project, number),
+  explainDiscussion: (card: Card | null, mr: MrPath, id: string) => api.invoke<DiscussionView>('feedback:discussions:explain', card, mr, id),
   replyDiscussion: (card: Card, mr: MrPath, id: string, body: string) => api.invoke<ProposalView>('feedback:discussions:reply', card, mr, id, body),
   resolveDiscussion: (card: Card, mr: MrPath, id: string) => api.invoke<ProposalView>('feedback:discussions:resolve', card, mr, id),
 };

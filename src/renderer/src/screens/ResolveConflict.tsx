@@ -27,7 +27,7 @@ export function ResolveConflict({ card, go, place, only, className = 'btn btn-am
 
   const start = (ref: string) => {
     setError(null);
-    jobs.launch(`${prefix}${ref}`, { label: t('ui.resolver.job.label', { ref }), busy: t('ui.resolver.job.busy'), screen: { name: 'deep', ref: card.ref, back: 'today', card } }, () => api.conflictFromMr(card, ref));
+    jobs.launch(`${prefix}${ref}`, { label: t('ui.resolver.job.label', { ref }), busy: t('ui.resolver.job.busy'), screen: { name: 'deep', ref: card.ref, back: 'chat', card } }, () => api.conflictFromMr(card, ref));
   };
 
   return (

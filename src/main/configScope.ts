@@ -38,7 +38,7 @@ export const WEB_EDITABLE = [
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-function same(a: unknown, b: unknown): boolean {
+export function same(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((x, i) => same(x, b[i]));
   if (isObject(a) && isObject(b)) {
@@ -47,6 +47,18 @@ function same(a: unknown, b: unknown): boolean {
     return true;
   }
   return false;
+}
+
+/**
+ * A save from a client that predates a key of `runner.turns` (an older bundle in a paired browser sends only `read` and `write`) must not reset that key: validation fills
+ * whatever is missing from the neutral defaults, which would overwrite what the person set. The missing keys are taken from the stored configuration first. Anything
+ * that is not an object is left as it is for the validation to refuse.
+ */
+export function keepStoredTurns(next: unknown, stored: WorkspaceConfig): unknown {
+  if (!isObject(next) || !isObject(next.runner)) return next;
+  const sent = isObject(next.runner.turns) ? next.runner.turns : {};
+  const kept = Object.fromEntries(Object.entries(sent).filter(([, v]) => v !== undefined));
+  return { ...next, runner: { ...next.runner, turns: { ...stored.runner.turns, ...kept } } };
 }
 
 /** The dotted paths that differ between two configurations. Objects are walked key by key; an array or a scalar is one path. */

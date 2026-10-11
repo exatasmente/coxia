@@ -9,7 +9,7 @@ import { Notice } from '../wizard/ui';
 import { RestartOverlay, WorkspacesSection } from './WorkspacesSection';
 import { McpStateSection } from './McpStateSection';
 
-/** Settings → "Configurações e workspaces": the setup wizard, export and import of a configuration, and the list of workspaces. */
+/** Settings → "Configurações e workspaces": the setup wizard, export and import of a configuration, the terminal state server, and the list of workspaces. */
 export function ConfigWorkspacesSection({ go }: { go: (s: Screen) => void }) {
   const t = useT();
   const view = useWorkspaces();
@@ -75,6 +75,8 @@ export function ConfigWorkspacesSection({ go }: { go: (s: Screen) => void }) {
             </div>
             <ConfigImport runningId={view?.running ?? ''} workspaces={view?.list ?? []} allowNew onRestart={setRestarting} />
           </div>
+
+          <McpStateSection />
         </>
       )}
       <WorkspacesSection />

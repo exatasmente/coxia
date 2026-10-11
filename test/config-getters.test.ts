@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 const cfg = await import('../src/main/workspaceConfig');
 const { getSettings, saveSettings } = await import('../src/main/config');
 const { ATAS, HOME } = await import('../src/main/env');
-const { specInfo } = await import('../src/main/cards');
+const { specInfo, phasePluginDocuments } = await import('../src/main/cards');
 const { stageWeight } = await import('../src/main/radar');
 const { installLegacyConfig } = await import('./helpers/config');
 const { CONFIG_SCHEMA_VERSION } = await import('../src/shared/config/types');
@@ -81,6 +81,45 @@ describe('after the previous app profile is applied', () => {
     expect(info?.phase).toBe('Plan escrito');
     expect(info?.planFile).toBe(join(specs, '#101-filtro/bug/2_PLAN.md'));
     expect(specInfo('99999')).toBeNull();
+  });
+
+  it('counts a document of the flow in the phase, at its anchor, and keeps the cycle documents above it', () => {
+    const specs = cfg.rc().specsDir as string;
+    const before = phasePluginDocuments.files;
+    try {
+      phasePluginDocuments.files = () => [
+        { name: 'REQUIREMENTS.md', label: 'Requisitos escritos', flow: { gate: 1, phase: { label: 'Requisitos escritos', before: '1_INVESTIGATION.md' } } },
+        { name: 'PROTOTYPE.md', label: 'Protótipo escrito', flow: { gate: 2, phase: { label: 'Protótipo escrito', before: '2_PLAN.md' } } },
+      ];
+      mkdirSync(join(specs, '#202-requisitos'), { recursive: true });
+      writeFileSync(join(specs, '#202-requisitos/REQUIREMENTS.md'), '#');
+      expect(specInfo('202')?.phase).toBe('Requisitos escritos');
+      // The plan is above the requirements: a folder holding both shows the phase of the most advanced document.
+      writeFileSync(join(specs, '#202-requisitos/2_PLAN.md'), '#');
+      expect(specInfo('202')?.phase).toBe('Plan escrito');
+      // The prototype sits above the plan (more advanced than it): a folder holding both shows the prototype's phase.
+      mkdirSync(join(specs, '#203-prototipo'), { recursive: true });
+      writeFileSync(join(specs, '#203-prototipo/PROTOTYPE.md'), '#');
+      writeFileSync(join(specs, '#203-prototipo/2_PLAN.md'), '#');
+      expect(specInfo('203')?.phase).toBe('Protótipo escrito');
+    } finally {
+      phasePluginDocuments.files = before;
+    }
+  });
+
+  it('reads the phase exactly as today when a document anchors to a file the layout does not have', () => {
+    const specs = cfg.rc().specsDir as string;
+    const before = phasePluginDocuments.files;
+    try {
+      phasePluginDocuments.files = () => [{ name: 'REQUIREMENTS.md', label: 'Requisitos escritos', flow: { gate: 1, phase: { label: 'Requisitos escritos', before: 'GONE.md' } } }];
+      mkdirSync(join(specs, '#204-ancora'), { recursive: true });
+      writeFileSync(join(specs, '#204-ancora/REQUIREMENTS.md'), '#');
+      mkdirSync(join(specs, '#205-vazio'), { recursive: true });
+      writeFileSync(join(specs, '#205-vazio/9_OTHER.md'), '#');
+      expect(specInfo('204')?.phase).toBe(specInfo('205')?.phase);
+    } finally {
+      phasePluginDocuments.files = before;
+    }
   });
 
   it('the config file of the workspace is at the current schema on disk', async () => {

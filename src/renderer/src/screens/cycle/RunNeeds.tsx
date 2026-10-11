@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { Run } from '../../../../shared/runs';
-import { isActive, needsPerson, stageLabelOf } from '../../../../shared/runs/view';
+import { stageLabelOf, waitingRuns } from '../../../../shared/runs/view';
 import type { Screen } from '../../App';
 import { useT } from '../../i18n';
 import { useStatusText } from './RunBadge';
@@ -9,11 +8,7 @@ import './cycle.css';
 
 const SHOWN = 4;
 
-/** What a run waits for the person to do, most urgent first: stuck runs before those waiting for a decision. */
-export function waitingRuns(runs: readonly Run[]): Run[] {
-  const stuck = (r: Run) => (r.status === 'failed' || r.status === 'question' ? 0 : 1);
-  return runs.filter((r) => isActive(r) && needsPerson(r)).sort((a, b) => stuck(a) - stuck(b) || b.updatedAt.localeCompare(a.updatedAt));
-}
+export { waitingRuns };
 
 /** Today's list of the runs that wait for the person, with the way to all of them. Nothing for a workspace that has no run. */
 export function RunNeeds({ go }: { go: (s: Screen) => void }) {

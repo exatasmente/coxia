@@ -14,6 +14,7 @@ import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 import { intlLocale, useT, useVoiceEnabled } from '../i18n';
 import { voiceEnabled } from '../../../shared/i18n';
+import { type DeepBack, deepBack } from '../home';
 
 const HEADER_STYLE: CSSProperties = { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }; // i18n-ignore: CSS value
 const MAIN_STYLE: CSSProperties = { flex: '3 1 480px', minWidth: 0, padding: '18px 20px', gap: 14 }; // i18n-ignore: CSS value
@@ -35,7 +36,7 @@ export function Deep({
   player: ReturnType<typeof usePlayer>;
   go: (s: Screen) => void;
   refName: string;
-  back: 'today' | 'call';
+  back: DeepBack;
   passedCard?: Card;
 }) {
   const t = useT();
@@ -153,7 +154,7 @@ export function Deep({
       <div className="page">
         <div className="wrap">
           <div className="error">{t('ui.deep.notFound', { ref: refName })}</div>
-          <div><button type="button" className="btn" onClick={() => go({ name: back })}>{t('ui.deep.back')}</button></div>
+          <div><button type="button" className="btn" onClick={() => go(deepBack(back))}>{t('ui.deep.back')}</button></div>
         </div>
       </div>
     );
@@ -174,7 +175,7 @@ export function Deep({
     <div className="page">
       <div className="wrap" style={{ gap: 18 }}>
         <header className="panel-dark hero" style={HEADER_STYLE}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.deep.back')} onClick={() => go({ name: back })}>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.deep.back')} onClick={() => go(deepBack(back))}>
             <BackIcon />
           </button>
           <div className="chip" style={{ width: 48, height: 48, borderRadius: 14, fontSize: 18, background: c.colorOf(card.ref) }}>{shortRef(card.ref)}</div>
@@ -189,7 +190,7 @@ export function Deep({
             </button>
           )}
           <ContinueInClaude sessionId={sessionId} dark />
-          <button type="button" className="btn btn-red" onClick={() => go({ name: back })}>{t('ui.deep.end')}</button>
+          <button type="button" className="btn btn-red" onClick={() => go(deepBack(back))}>{t('ui.deep.end')}</button>
         </header>
 
         <div className="cols deep-layout">

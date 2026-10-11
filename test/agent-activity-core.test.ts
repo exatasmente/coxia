@@ -579,3 +579,23 @@ describe('runActive', () => {
     expect(runActive(log.get(run.id), run.id)).toBe(false);
   });
 });
+
+describe('a mask on a run (a secret the persona read)', () => {
+  it('hides the value in every line of the run and of the nodes under it, before the cut, and leaves a run with no mask as it was', () => {
+    const log = createActivityLog();
+    const mask = (text: string): string => text.split('hunter2-secret').join('[secret]');
+    const run = log.begin('me', { jobId: 'j', node: { type: 'call', label: 'what is hunter2-secret' }, mask });
+    run.tool('Secrets read hunter2-secret');
+    run.text('I will quote hunter2-secret');
+    run.tool('Read next');
+    run.status('failed', 'it was hunter2-secret');
+    const child = run.child({ type: 'sub', label: 'sub of hunter2-secret' });
+    child.answer('answer hunter2-secret');
+    const lines = [...log.get(run.id), ...log.get(child.id)];
+    expect(JSON.stringify(lines)).not.toContain('hunter2');
+    expect(lines.some((e) => e.label.includes('[secret]'))).toBe(true);
+    const plain = log.begin('me', { jobId: 'j' });
+    plain.tool('Secrets read hunter2-secret');
+    expect(log.get(plain.id)[0].label).toContain('hunter2-secret');
+  });
+});

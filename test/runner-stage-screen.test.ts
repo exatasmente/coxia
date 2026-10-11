@@ -20,8 +20,8 @@ function easy(b: Boot, seen: Record<string, AgentCall> = {}, during: Record<stri
     seen[id] = call;
     during[id]?.();
   };
-  b.engine.script('refiner', (c) => (note('refiner', c), work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' })));
-  b.engine.script('planner', (c) => (note('planner', c), work('Plan.', { artifacts: [doc('2_PLAN.md')] })));
+  b.engine.script('refiner', (c) => (note('refiner', c), work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' })));
+  b.engine.script('planner', (c) => (note('planner', c), work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] })));
   b.engine.script('developer', async (c, tools) => {
     note('developer', c);
     await tools.write('src/feature.ts', 'export const feature = 1;\n');
@@ -253,6 +253,56 @@ describe('what a stage is offered of the screen', () => {
     expect(sandbox.opened.some((o) => o.options.display === true)).toBe(row.display);
     expect(screens.starts.length).toBe(row.browser ? 1 : 0);
     if (row.browser) expect(screens.starts[0].display === null).toBe(!row.asksDisplay);
+  });
+
+  // The stage of the flow carries the field: it opens the display on its own, without the workspace's switch and without the agent's own switch.
+  it('gives a stage that asks for the display of the flow the same display a QA stage gets', async () => {
+    screens = fakeScreens();
+    const sandbox = displayOnRequest(fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/stage/x11/X99', kind: 'sandbox' } }));
+    const seen: Record<string, AgentCall> = {};
+    const b = await boot({
+      sandbox,
+      screens: hubFake().hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      handoff: fakeHandoff().service,
+      configure: (c) => {
+        c.runner.sandbox.display = false;
+        c.runner.sandbox.network = 'off';
+        c.devCycle.stages.find((s) => s.id === 'refine')!.display = true;
+        Object.assign(agentOf(c, 'refiner'), { shell: 'sandbox' });
+      },
+    });
+    easy(b, seen);
+    const run = await b.runner.start('app#101');
+    await reach(b, run, 'refine');
+    expect(sandbox.opened.some((o) => o.options.display === true), 'the sandbox is asked for a display').toBe(true);
+    expect(!!seen.refiner?.screen?.browser, 'no browser without the agent\'s switch').toBe(false);
+  });
+
+  // The second reading of the same decision: the stage with a display is offered the hand-off, exactly as a QA stage is.
+  it('offers the hand-off to a stage that asks for the display of the flow, without the agent\'s switch', async () => {
+    screens = fakeScreens();
+    const handoff = fakeHandoff();
+    const seen: Record<string, AgentCall> = {};
+    const b = await boot({
+      sandbox: displayOnRequest(fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/stage/x11/X99', kind: 'sandbox' } })),
+      screens: hubFake(true).hub,
+      sessions: screens.sessions,
+      asks: screens.asks,
+      handoff: handoff.service,
+      configure: (c) => {
+        c.runner.sandbox.display = false;
+        c.runner.sandbox.network = 'off';
+        c.devCycle.stages.find((s) => s.id === 'refine')!.display = true;
+        Object.assign(agentOf(c, 'refiner'), { shell: 'sandbox' });
+      },
+    });
+    easy(b, seen);
+    const run = await b.runner.start('app#101');
+    await reach(b, run, 'refine');
+    expect(handoff.begun.some((x) => x.agent === 'refiner'), 'the stage with a display is offered the screen').toBe(true);
+    expect(seen.refiner?.screen?.handoff, 'the agent is offered the hand-off tool').toBeTruthy();
   });
 });
 
@@ -493,7 +543,7 @@ describe('the hand-off of a stage', () => {
       waiting = call.screen!.handoff!.request({ what: 'Log in to the site' });
       during = handoff.paused;
       card = handoff.asks.list().filter((a) => a.kind === 'handoff').length;
-      return work('Plan.', { artifacts: [doc('2_PLAN.md')] });
+      return work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] });
     });
     let run = await b.runner.start('app#101');
     run = await reach(b, run, 'ready');

@@ -138,8 +138,8 @@ const withWait = (c: WorkspaceConfig): void => {
 };
 
 function script(b: Boot, seen: { developer: boolean[]; denied: (string | null)[] } = { developer: [], denied: [] }): void {
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   b.engine.script('developer', async (call, tools, n) => {
     seen.developer.push(isLink(join(call.cwd, 'node_modules')));
     if (n === 1) seen.denied.push(await tools.write('node_modules/pkg/evil.js', 'x'));

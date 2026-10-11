@@ -21,8 +21,8 @@ const refs = [
 
 /** The flow driven to a question the person answers with a file attached: refine asks, the person answers with `refs`. */
 async function answerWithFiles(b: Boot): Promise<string> {
-  b.engine.script('refiner', () => work('I need to know.', { artifacts: [doc('1_SPEC.md')], question: 'Which users does this cover?' }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('I need to know.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], question: 'Which users does this cover?' }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   b.engine.script('developer', () => work('Done.', { artifacts: [doc('3_IMPLEMENTATION.md')] }));
   b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved' }));
   b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')] }));

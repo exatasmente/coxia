@@ -6,7 +6,7 @@ import { stepText } from './activity';
 
 export { stepText };
 
-export type NodeState = 'queued' | 'working' | 'finished' | 'failed';
+export type NodeState = 'queued' | 'waiting' | 'working' | 'finished' | 'failed';
 export type TreeItem = { type: 'line'; entry: ActivityEntry } | { type: 'node'; node: TreeNode };
 
 /** An activity run: an agent's own, a sub-agent it started (`sub`) or an agent it called (`call`). */
@@ -39,6 +39,8 @@ export interface TopEntry {
   since: number;
   /** The newest line anywhere in its nodes. */
   latest: ActivityEntry | null;
+  /** Whether a node anywhere in it waits for the person: a closed entry says so on its own line. */
+  waits: boolean;
 }
 
 const bySeq = (a: ActivityEntry, b: ActivityEntry): number => a.seq - b.seq;
@@ -48,6 +50,8 @@ function stateOf(lines: readonly ActivityEntry[]): NodeState {
   const last = lines.findLast((e) => e.kind === 'status' && e.state !== 'blocked');
   if (!last) return 'finished';
   if (last.state === 'queued') return 'queued';
+  // Its turn limit was reached and the person is asked: alive, and not the same as waiting its turn behind another sub-agent.
+  if (last.state === 'waiting') return 'waiting';
   if (last.state === 'finished' || last.state === 'failed') return last.state;
   return 'working';
 }
@@ -113,9 +117,35 @@ export function buildTreeOnce(entries: readonly ActivityEntry[]): TreeNode[] {
   return tree;
 }
 
-/** Whether the node or anything under it still has work: it is working, or it waits its turn. */
+/** Whether the node or anything under it still has work: it is working, it waits its turn, or it waits for the person. */
 export function hasWork(node: TreeNode): boolean {
-  return node.state === 'working' || node.state === 'queued' || node.children.some(hasWork);
+  return node.state === 'working' || node.state === 'queued' || node.state === 'waiting' || node.children.some(hasWork);
+}
+
+/** Whether something under the node waits for the person, and the node itself does not: what its collapsed line says so that closing it hides nothing. */
+export function waitsBelow(node: TreeNode): boolean {
+  return node.state !== 'waiting' && node.children.some(anyWaitingNode);
+}
+
+const anyWaitingNode = (node: TreeNode): boolean => node.state === 'waiting' || node.children.some(anyWaitingNode);
+
+/** Whether any of these nodes, or anything under them, waits for the person. */
+export function anyWaiting(nodes: readonly TreeNode[]): boolean {
+  return nodes.some(anyWaitingNode);
+}
+
+/** The newest line of a node that waits for the person, anywhere in these nodes: the reason, in the words the main process wrote it. */
+export function waitingLine(nodes: readonly TreeNode[]): ActivityEntry | null {
+  let best: ActivityEntry | null = null;
+  const visit = (node: TreeNode): void => {
+    if (node.state === 'waiting') {
+      const own = node.items.findLast((item) => item.type === 'line' && item.entry.state === 'waiting');
+      if (own?.type === 'line' && (!best || own.entry.seq > best.seq)) best = own.entry;
+    }
+    node.children.forEach(visit);
+  };
+  nodes.forEach(visit);
+  return best;
 }
 
 /** The newest line of a node and everything under it. */
@@ -136,7 +166,7 @@ export function newestLine(nodes: readonly TreeNode[]): ActivityEntry | null {
  */
 export function topEntries(all: ReadonlyMap<string, readonly ActivityEntry[]>, owned: ReadonlySet<string>): TopEntry[] {
   const out: TopEntry[] = [];
-  const make = (key: string, kind: TopEntry['kind'], id: string, nodes: TreeNode[]): TopEntry => ({ key, kind, id, nodes, since: Math.min(...nodes.map((n) => n.since)), latest: newestLine(nodes) });
+  const make = (key: string, kind: TopEntry['kind'], id: string, nodes: TreeNode[]): TopEntry => ({ key, kind, id, nodes, since: Math.min(...nodes.map((n) => n.since)), latest: newestLine(nodes), waits: anyWaiting(nodes) });
   for (const [bucket, entries] of all) {
     if (owned.has(bucket)) continue;
     const roots = buildTreeOnce(entries).filter(hasWork);

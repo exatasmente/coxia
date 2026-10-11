@@ -7,6 +7,7 @@ import { intlLocale, useT } from '../i18n';
 import { jobs, useJobs } from '../useJobs';
 import { FalasEconomia } from './FalasCusto';
 import { BackIcon } from './icons';
+import { HOME } from '../home';
 
 const usd = (n: number) => `US$ ${n.toLocaleString(intlLocale(), { minimumFractionDigits: 2, maximumFractionDigits: n < 1 ? 3 : 2 })}`;
 const pct = (n: number | null) => (n === null ? '–' : `${Math.round(n)}%`);
@@ -181,7 +182,7 @@ export function Custo({ go }: { go: (s: Screen) => void }) {
       <div className="wrap" style={{ gap: 20 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.nav.cost')}</h1>
             <span className="faint">
               {data?.refreshedAt ? t('ui.cost.updatedAt', { time: new Date(data.refreshedAt).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' }) }) : ''}

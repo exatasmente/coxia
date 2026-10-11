@@ -333,6 +333,8 @@ export interface BootOptions {
   /** The screens of the agents that have one (the app's browser) and the questions they ask; none by default. */
   sessions?: RunnerDeps['sessions'];
   asks?: RunnerDeps['asks'];
+  /** The questions at a turn limit: a stage that uses its last turn waits here for the person; none by default, and then the stage stops at its limit. */
+  turnAsks?: RunnerDeps['turnAsks'];
   /** The hand-off of a stage's screen to the person; none by default. */
   handoff?: RunnerDeps['handoff'];
   timeoutMs?: number;
@@ -401,6 +403,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     screens: options.screens,
     sessions: options.sessions,
     asks: options.asks,
+    turnAsks: options.turnAsks,
     handoff: options.handoff,
     timeoutMs: options.timeoutMs,
     limits: options.limits,

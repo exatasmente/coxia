@@ -45,8 +45,8 @@ export function describeBranch(b: BranchHealth): string {
   return `${b.repo} · ${b.branch}: ${parts.join('; ')}`;
 }
 
-export function RadarButton({ go }: { go: (s: Screen) => void }) {
-  const t = useT();
+/** The radar's last scan as counts: every finding, and the urgent ones (the same fix made twice). `ran` is false until a scan exists. */
+export function useRadarCount(): { ran: boolean; total: number; urgent: number } {
   const [result, setResult] = useState<RadarResult | null>(null);
   useEffect(() => {
     void api.invoke<RadarResult | null>('radar:latest').then(setResult);
@@ -54,19 +54,7 @@ export function RadarButton({ go }: { go: (s: Screen) => void }) {
     moduleEvents.addEventListener('radar', on);
     return () => moduleEvents.removeEventListener('radar', on);
   }, []);
-  const urgent = result?.findings.filter((f) => f.kind === 'same-fix').length ?? 0;
-  const total = result?.findings.length ?? 0;
-  return (
-    <button
-      type="button"
-      className={`btn ${urgent ? 'btn-amber' : ''}`}
-      style={{ minHeight: 34 }}
-      title={result ? t('ui.radar.button.title', { total, urgent }) : t('ui.radar.notRunYet')}
-      onClick={() => go({ name: 'radar' })}
-    >
-      {total > 0 ? t('ui.nav.radarCount', { count: total }) : t('ui.nav.radar')}
-    </button>
-  );
+  return { ran: !!result, total: result?.findings.length ?? 0, urgent: result?.findings.filter((f) => f.kind === 'same-fix').length ?? 0 };
 }
 
 export function WorktreeBadge({ iid, go }: { iid: string; go: (s: Screen) => void }) {

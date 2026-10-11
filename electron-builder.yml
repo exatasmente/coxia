@@ -29,6 +29,8 @@ extraResources:
       - voice_sidecar.py
       - voice_fetch.py
       - requirements.txt
+  - from: plugins
+    to: plugins
 linux:
   icon: resources/icon.png
   category: Office

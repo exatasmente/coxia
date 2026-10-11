@@ -18,6 +18,7 @@ const { writeRegistry } = await import('../src/main/workspaces-core');
 const actions = await import('../src/main/actions');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
 const { listAudit } = await import('../src/main/auditoria');
+const { runAct } = await import('../src/main/persona/act');
 
 const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 const note = (body: string): VcsCommand => ({ via: 'glab', method: 'POST', endpoint: 'projects/acme%2Fweb/issues/101/notes', fields: { body } });
@@ -168,6 +169,13 @@ describe('the person\'s decision on a held step', () => {
     expect(listAudit()).toEqual([expect.objectContaining({ kind: 'decision', by: 'person', fields: { decision: 'refused', step: 'gitlab' }, origin: expect.objectContaining({ actionId: a.id }) })]);
     await actions.skipAction(a.id);
     expect(listAudit()).toHaveLength(1);
+  });
+
+  it('words a refusal the persona made as the persona\'s, never as the person\'s', async () => {
+    const a = actions.proposeVcsAction({ ...input('persona-refuses'), command: note('never') }) as { id: string };
+    const act = { open: true, id: 'a-1', door: 'window', said: '', mask: (s: string) => s, wrote: { count: 0, kinds: new Set<never>() } };
+    await runAct(act, () => actions.skipAction(a.id));
+    expect(listAudit()).toEqual([expect.objectContaining({ kind: 'decision', by: 'persona', actor: 'persona', fields: { decision: 'refused', step: 'gitlab' } })]);
   });
 
   it('records nothing when the approval is refused before anything runs', async () => {

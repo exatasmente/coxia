@@ -41,8 +41,8 @@ interface Seen {
 
 function script(b: Boot, develop?: (tools: { write(path: string, content: string): Promise<string | null> }) => Promise<void>): Seen {
   const seen: Seen = { developer: [], reviewer: [], qa: [] };
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md', '# Spec\n\nChange src/app.ts.\n')] }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md', '# Plan\n\nRun tests.\n')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md', '# Spec\n\nChange src/app.ts.\n'), doc('REQUIREMENTS.md')] }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md', '# Plan\n\nRun tests.\n'), doc('PROTOTYPE.md')] }));
   b.engine.script('developer', async (call, tools) => {
     const section = call.docs ? await harnessSection(call.docs, call.agent, { cwd: call.cwd }) : '';
     seen.developer.push({ system: call.system, section, docs: call.docs });

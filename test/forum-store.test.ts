@@ -238,6 +238,17 @@ describe('what a person writes', () => {
     expect(() => personPost(store, [], 'ghost', 'x')).toThrow(expect.objectContaining({ code: 'unknown-thread' }));
     expect(() => personPost(store, [], 'g', 'x'.repeat(MAX_TEXT + 1))).toThrow(expect.objectContaining({ code: 'too-long' }));
   });
+
+  it('is read as a plugin call and nothing else when it is one: it names no agent, and no unknown name is said of it', () => {
+    store.ensureThread({ id: 'call', kind: 'general', title: 'call' });
+    const m = personPost(store, ['developer'], 'call', '/web-search what is @ghost doing?');
+    expect(m).toMatchObject({ kind: 'post', author: { type: 'person' }, text: '/web-search what is @ghost doing?', mentions: [] });
+    expect(store.read('call')!.messages.map((x) => x.code)).not.toContain('main.forum.mentions.unknown');
+    // A message that is not a command still names its agent and says of a name that is none.
+    expect(personPost(store, ['developer'], 'call', '@developer please look').mentions).toEqual(['developer']);
+    personPost(store, ['developer'], 'call', 'hello @ghost');
+    expect(store.read('call')!.messages.map((x) => x.code)).toContain('main.forum.mentions.unknown');
+  });
 });
 
 describe('the channels of the squads and the requests between them', () => {
@@ -296,6 +307,74 @@ describe('the files a message carries', () => {
     expect(first.attachments).toEqual([]);
     expect(old).toMatchObject({ text: 'old', attachments: [] });
     expect(old.evidence).toBeUndefined();
+  });
+});
+
+describe('what a persona\'s answer carries', () => {
+  const thread = 'agent-me';
+  beforeEach(() => {
+    store.ensureThread({ id: thread, kind: 'agent', squad: 'me', title: 'Chat with Me' });
+  });
+
+  it('stores the message it answers and the buttons it offers, and reads them back after a restart', () => {
+    const [m] = store.append(thread, { kind: 'post', author: agent('me'), text: 'Here you go.', answersTo: 1, buttons: [{ to: 'call' }, { to: 'deep', ref: 'app#2' }] });
+    expect(m).toMatchObject({ answersTo: 1, buttons: [{ to: 'call' }, { to: 'deep', ref: 'app#2' }] });
+    const again = make().read(thread, 0, 10)?.messages[0];
+    expect(again).toMatchObject({ answersTo: 1, buttons: [{ to: 'call' }, { to: 'deep', ref: 'app#2' }] });
+    // the line on disk is valid for the schema: the store did not skip it
+    expect(make().summary(thread)?.count).toBe(1);
+  });
+
+  it('writes neither field on a message that has none, and reads a line written without them as before', () => {
+    const [m] = store.append(thread, { kind: 'post', author: agent('me'), text: 'No buttons.' });
+    expect('answersTo' in m).toBe(false);
+    expect('buttons' in m).toBe(false);
+    expect(JSON.parse(lines(thread)[1])).not.toHaveProperty('buttons');
+  });
+
+  it('keeps them for an agent\'s post only', () => {
+    const [person] = store.append(thread, { kind: 'post', author: { type: 'person' }, text: 'hi', answersTo: 1, buttons: [{ to: 'call' }] });
+    const [app] = store.append(thread, { kind: 'system', author: { type: 'app' }, code: 'x', answersTo: 1, buttons: [{ to: 'call' }] });
+    expect(person.answersTo).toBeUndefined();
+    expect(person.buttons).toBeUndefined();
+    expect(app.answersTo).toBeUndefined();
+    expect(app.buttons).toBeUndefined();
+  });
+
+  it('drops a button the vocabulary cannot parse when it is written, at most four are kept, and a bad answersTo is not stored', () => {
+    const [m] = store.append(thread, {
+      kind: 'post',
+      author: agent('me'),
+      text: 'Many.',
+      answersTo: 0,
+      buttons: [{ to: 'nowhere' }, { to: 'deep' }, { to: 'call' }, { to: 'board' }, { to: 'run', id: 'r1' }, { to: 'memory' }, { to: 'procedures' }] as never,
+    });
+    expect(m.answersTo).toBeUndefined();
+    expect(m.buttons).toEqual([{ to: 'call' }, { to: 'board' }, { to: 'run', id: 'r1' }, { to: 'memory' }]);
+  });
+
+  it('drops a stored button that no longer parses when it reads, and keeps the message', () => {
+    store.append(thread, { kind: 'post', author: agent('me'), text: 'Old.', answersTo: 1, buttons: [{ to: 'call' }] });
+    const raw = JSON.parse(lines(thread)[1]);
+    raw.buttons = [{ to: 'a-screen-that-went-away' }, { to: 'board' }];
+    raw.seq = 2;
+    appendFileSync(join(dir, `${thread}.jsonl`), `${JSON.stringify(raw)}\n`);
+    const [first, second] = make().read(thread, 0, 10)?.messages ?? [];
+    expect(first.buttons).toEqual([{ to: 'call' }]);
+    expect(second.buttons).toEqual([{ to: 'board' }]);
+    raw.buttons = [{ to: 'a-screen-that-went-away' }];
+    raw.seq = 3;
+    appendFileSync(join(dir, `${thread}.jsonl`), `${JSON.stringify(raw)}\n`);
+    expect(make().read(thread, 0, 10)?.messages[2].buttons).toBeUndefined();
+  });
+
+  it('skips a line whose buttons are not a list of objects', () => {
+    store.append(thread, { kind: 'post', author: agent('me'), text: 'Ok.' });
+    const raw = JSON.parse(lines(thread)[1]);
+    raw.seq = 2;
+    raw.buttons = 'call';
+    appendFileSync(join(dir, `${thread}.jsonl`), `${JSON.stringify(raw)}\n`);
+    expect(make().read(thread, 0, 10)?.messages).toHaveLength(1);
   });
 });
 

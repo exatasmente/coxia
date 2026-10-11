@@ -367,6 +367,29 @@ describe('discarding', () => {
   });
 });
 
+describe('the persona is not the creator\'s to touch', () => {
+  // The persona and its test copy are handled by the persona\'s own channels: the creator\'s doors refuse both, and leave the conversation they hold alone.
+  const withPersona = (): void =>
+    useConfig((c) => {
+      c.agents.team.push(newAgent({ id: 'me', name: 'Me', kind: 'persona', instructions: 'about the person' }), newAgent({ id: 'me-test', name: 'Me (test)', kind: 'persona', draft: true }));
+    });
+
+  it('refuses to overwrite, conclude, discard or copy it, and changes nothing', async () => {
+    withPersona();
+    forumStore().ensureThread({ id: agentThreadId('me-test'), kind: 'agent', squad: 'me-test', title: 'Chat with Me' });
+    forumStore().append(agentThreadId('me-test'), { kind: 'post', author: { type: 'person' }, text: 'a test message' });
+    const before = JSON.stringify(getConfig());
+    for (const id of ['me', 'me-test']) {
+      await expect(assist.saveAssistDraft(body({ id })), id).rejects.toThrow(/is not a draft/);
+      expect(() => assist.concludeAssistDraft(id), id).toThrow(/is not a draft/);
+      expect(() => assist.discardAssistDraft(id), id).toThrow(/is not a draft/);
+      await expect(assist.saveAssistDraft(body({ from: id })), id).rejects.toThrow(/agent to adjust was not found/);
+    }
+    expect(JSON.stringify(getConfig())).toBe(before);
+    expect(messages('me-test').map((m) => m.text)).toEqual(['a test message']);
+  });
+});
+
 describe('with an old problem in the flow', () => {
   it('still saves, updates, concludes and discards a draft, which is no change to the flow', async () => {
     const { writeConfigFile } = await import('../src/main/config-bootstrap');

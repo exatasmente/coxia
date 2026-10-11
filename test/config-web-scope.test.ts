@@ -79,7 +79,15 @@ describe('what a browser may change', () => {
   it('accepts the runner switches, the label, the cap, the turns, the timeouts and the two message templates', () => {
     expect(refused((c) => { c.runner.enabled = true; c.runner.triggerLabel = 'go'; c.runner.maxConcurrentRuns = 3; c.runner.stageIdleMs = 1; c.runner.stageMaxMs = 2; c.runner.commitMessage = 'fix: {summary}'; c.runner.prTitle = '#{iid} {title}'; })).toEqual([]);
     expect(refused((c) => { c.runner.turns.write = 120; })).toEqual([]);
+    expect(refused((c) => { c.runner.turns.explore = 40; c.runner.turns.edit = 2; c.runner.turns.shell = 3; c.runner.turns.screen = 4; c.runner.turns.plain = 500; })).toEqual([]);
     expect(refused((c) => { c.runner.linkDependencies = false; })).toEqual([]);
+  });
+
+  it('lets a paired browser change the turns of the sub-agents, and nothing but the numbers comes through with them', () => {
+    const before = edit((c) => { delete (c.runner.turns as Partial<typeof c.runner.turns>).plain; });
+    expect(refusedPaths(before, edit((c) => { c.runner.turns.plain = 7; }))).toEqual([]);
+    expect(WEB_EDITABLE).toContain('runner.turns');
+    expect(refused((c) => { c.runner.turns.plain = 7; c.runner.unconfined = true; })).toEqual(['runner.unconfined']);
   });
 
   it('refuses what names a program or a folder: the runner commands, the worktrees folder and the identity', () => {
@@ -286,6 +294,38 @@ describe('config:cycle-save, end to end', () => {
     expect(() => call({ runner: { commands: ['x'] } })).toThrow();
     expect(() => call('nope')).toThrow();
     expect(getConfig().runner.commands).toBeNull();
+  });
+
+  it('keeps the stored limits of the sub-agents when an older client saves the runner with only read and write', async () => {
+    const { call, getConfig, saveConfig } = await handlers();
+    const set = structuredClone(getConfig());
+    set.runner.turns = { read: 30, write: 80, explore: 25, edit: 40, shell: 15, screen: 33, plain: 9 };
+    saveConfig(set);
+    const old = structuredClone(getConfig()) as unknown as { runner: { turns: Record<string, number>; enabled: boolean } };
+    old.runner.turns = { read: 31, write: 81 };
+    old.runner.enabled = true;
+    call(old);
+    expect(getConfig().runner.enabled).toBe(true);
+    expect(getConfig().runner.turns).toEqual({ read: 31, write: 81, explore: 25, edit: 40, shell: 15, screen: 33, plain: 9 });
+    // a client that sends no turns at all keeps all of them
+    const bare = structuredClone(getConfig()) as unknown as { runner: Record<string, unknown> };
+    delete bare.runner.turns;
+    call(bare);
+    expect(getConfig().runner.turns).toMatchObject({ explore: 25, plain: 9 });
+  });
+
+  it('keeps them for the window\'s save too, and a key the client does send wins', async () => {
+    const { getConfig, saveConfig } = await handlers();
+    const { configModule } = await import('../src/main/configModule');
+    const map = new Map<string, (...a: never[]) => unknown>();
+    configModule({ handle: (ch, fn) => map.set(ch, fn), notify: () => {}, emit: () => {}, job: () => {} });
+    const set = structuredClone(getConfig());
+    set.runner.turns = { ...set.runner.turns, explore: 25, plain: 9 };
+    saveConfig(set);
+    const old = structuredClone(getConfig()) as unknown as { runner: { turns: Record<string, number> } };
+    old.runner.turns = { read: 30, write: 80, plain: 14 };
+    (map.get('config:save') as (...x: unknown[]) => unknown)(old);
+    expect(getConfig().runner.turns).toMatchObject({ explore: 25, plain: 14 });
   });
 
   it('refuses a stale full config that would put back an old value of something the computer changed', async () => {

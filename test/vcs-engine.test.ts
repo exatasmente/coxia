@@ -86,8 +86,8 @@ describe('VcsRead in the open engine', () => {
     const r = await runOpen<{ fala: string }>(params(fake, rt));
     expect(r.data.fala).toBe('ok');
     const texts = toolTexts(fake);
-    expect(texts[0]).toMatch(/Não encontrado|erro da ferramenta/);
-    expect(texts[1]).toMatch(/Requisição inválida|erro da ferramenta/);
+    expect(texts[0]).toMatch(/Não encontrado|tool error/);
+    expect(texts[1]).toMatch(/Requisição inválida|tool error/);
     expect(host?.hits.every((h) => h.method === 'GET')).toBe(true);
   });
 });

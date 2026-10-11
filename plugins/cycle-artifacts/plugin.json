@@ -1,0 +1,24 @@
+{
+  "id": "cycle-artifacts",
+  "name": "Cycle documents",
+  "contract": 1,
+  "offers": {
+    "documents": [
+      {
+        "name": "REQUIREMENTS.md",
+        "label": "cycle.agentFlow.gate.requirements",
+        "flow": { "gate": 1, "phase": { "label": "cycle.agentFlow.phase.requirements", "before": "1_SPEC.md" } }
+      },
+      {
+        "name": "PROTOTYPE.md",
+        "label": "cycle.agentFlow.gate.prototype",
+        "flow": { "gate": 2, "phase": { "label": "cycle.agentFlow.phase.prototype", "before": "2_PLAN.md" } }
+      },
+      {
+        "name": "USER_MANUAL.md",
+        "label": "cycle.agentFlow.gate.userManual",
+        "flow": { "phase": { "label": "cycle.agentFlow.phase.userManual", "before": "6_RELEASE_NOTE.md" } }
+      }
+    ]
+  }
+}

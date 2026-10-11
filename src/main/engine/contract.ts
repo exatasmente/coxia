@@ -181,11 +181,59 @@ export interface CommandAsk {
   request(command: string): Promise<{ ok: boolean; note?: string }>;
 }
 
+/** The two answers to a question at a turn limit; the same words as `shared/turnLimit.ts` (the engine does not import from the app's shared code of the screens). */
+export type TurnDecision = 'continue' | 'finish';
+
+/** What the engine tells the asker when an agent or a sub-agent uses its last turn: enough to word the question, nothing of what it read. */
+export interface TurnStop {
+  /** `stage`: the agent of the call. `sub`: a sub-agent it started. */
+  of: 'stage' | 'sub';
+  /** The role the usage is recorded under. */
+  role: string;
+  /** `explore`, `edit`, `shell` or `screen` for a sub-agent of a kind; null otherwise. */
+  kind: string | null;
+  /** The `subagent_type` the model gave a sub-agent, when it gave one. */
+  name: string | null;
+  /** What a sub-agent was asked to do: its description, else the first words of its prompt. Raw: the asker masks and clips it. Empty for a stage. */
+  task: string;
+  /** Turns used so far. */
+  used: number;
+  /** Turns "continue" adds. */
+  round: number;
+  /** Rounds already granted. */
+  granted: number;
+  /** False where the engine cannot go on past its limit. */
+  canContinue: boolean;
+}
+
+/** The question at a turn limit: where the engine asks, and whether the agent of the call asks too. */
+export interface TurnLimit {
+  /** The agent of the call asks too (a stage). Off: only the sub-agents it starts do (a called agent, an answer in a conversation). */
+  own: boolean;
+  /** Resolves when the person decided. An aborted signal ends the wait as `finish`; the engine then stops with the abort and does not treat it as the person's choice. */
+  ask(stop: TurnStop, signal?: AbortSignal): Promise<TurnDecision>;
+}
+
+/**
+ * Where the text of an answer being written goes, as it is written (the persona's chat shows it growing). Both engines feed it for the agent of the call only: what a
+ * sub-agent writes is a tool result for its parent and never reaches it.
+ */
+export interface TextSink {
+  /** The next piece of the turn being written. */
+  piece(text: string): void;
+  /** What was written is not the answer: the turn ended in tool calls (it moves to the activity as narration), the call moved to another model, or an attempt failed. */
+  restart(): void;
+  /** The whole final text, when the engine has it: a sink that got no piece shows it now. */
+  settle(text: string): void;
+}
+
 export interface EngineRequest {
   role: LlmRole;
   prompt: string;
-  /** JSON Schema of the answer. */
-  schema: Schema;
+  /** JSON Schema of the answer. Absent: the answer is plain text and the engine returns it as a string. */
+  schema?: Schema;
+  /** Where the text of the answer goes while it is written. Absent: nothing is streamed and the call asks the SDK for no partial message. */
+  text?: TextSink;
   /** The resolved provider and model serving this role (llm.roles + agents.roles). */
   target: ResolvedRole;
   /** Final system prompt: role preamble, the agent rules from the config and the VCS hints. */
@@ -283,6 +331,11 @@ export interface EngineRequest {
    * its line). Absent: the call is the one of today, a single pass.
    */
   incoming?: (delivered: (text: string) => void) => Promise<string | null>;
+  /**
+   * Reaching the turn limit asks the person instead of failing (#246): the open engine pauses the loop at the point where it would stop, and goes on or ends with what it has
+   * by the answer. Absent: the call stops at its limit as it always did.
+   */
+  turnLimit?: TurnLimit;
   /**
    * The app tools of a stage that talks while it works (`SendMessage`, `CallAgent`), or of a called agent (`AskConversation`), already built as engine-neutral
    * tools (runner/tools.ts). The engine offers each one when its name is in `allowedTools`; absent: the call gets none of them.

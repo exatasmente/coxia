@@ -83,14 +83,17 @@ const who = (m: ForumMessage): string => (m.author.type === 'agent' ? m.author.i
 
 /**
  * What the thread must leave in the memory: each answer the person gave, and each handoff left for a next stage, in message order. The markers come from
- * the message's own number, so the same answer never enters twice, however many times the memory is rewritten.
+ * the message's own number, so the same answer never enters twice, however many times the memory is rewritten. An answer the persona gave for the person
+ * (`personaIds`: its entry in the team, the author of a message it wrote through its door) enters too, worded as the persona's: it decided, the person did not.
  */
-export function factsOfThread(messages: ForumMessage[]): MemoryFact[] {
+export function factsOfThread(messages: ForumMessage[], personaIds: readonly string[] = []): MemoryFact[] {
   const facts: MemoryFact[] = [];
   // The memory ships in the cycle folder the agent commits, so message text is masked the way logs are before it lands.
   for (const m of messages) {
     if (m.kind === 'answer' && m.author.type === 'person' && m.text.trim()) {
       facts.push({ marker: `answer:${m.seq}`, section: 'decisions', line: `${t('main.runner.memory.answer')}: ${oneLine(redact(m.text))}` });
+    } else if (m.kind === 'answer' && m.author.type === 'agent' && personaIds.includes(m.author.id) && m.text.trim()) {
+      facts.push({ marker: `answer:${m.seq}`, section: 'decisions', line: `${t('main.runner.memory.answerPersona')}: ${oneLine(redact(m.text))}` });
     } else if (m.kind === 'handoff' && m.text.trim()) {
       const to = m.to === 'person' ? t('main.runner.author.person') : (m.to ?? t('main.runner.author.app'));
       facts.push({ marker: `handoff:${m.seq}`, section: 'where', line: `${t('main.runner.memory.handoff')} ${who(m)} → ${to}: ${oneLine(redact(m.text))}` });

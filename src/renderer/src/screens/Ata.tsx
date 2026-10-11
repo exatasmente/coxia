@@ -11,6 +11,7 @@ import { EfeitoStatus } from './EfeitoStatus';
 import { ChangeSummary, DayPanel, DeleteSheet, type MinutesView, VersionPanel, VersionSwitcher, versionTitle } from './MinutesParts';
 import { intlLocale, t, tNodes, tv, useT, useTv } from '../i18n';
 import { type Which, useDay } from '../minutesApi';
+import { HOME } from '../home';
 
 function effectsPrompt(effects: Ceremony['effects']): string {
   return [t('ui.ata.prompt.effects'), ...effects.map((e, i) => `${i + 1}. ${e.ref} (${e.repo}): ${e.text}`)].join('\n');
@@ -103,7 +104,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
         <header className="row spread" style={{ alignItems: 'flex-end' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <div className="row" style={{ gap: 14 }}>
-              <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => go({ name: 'today' })}>{t('ui.ata.backToday')}</button>
+              <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => go(HOME)}>{t('ui.ata.backToday')}</button>
               {!c.callEnded && c.startedAt && <button type="button" className="btn" style={{ minHeight: 36 }} onClick={() => go({ name: 'call' })}>{tv('call.back')}</button>}
             </div>
             <h1 style={{ fontSize: 30, fontWeight: 700 }}>{t('ui.ata.title')}</h1>
@@ -160,7 +161,7 @@ export function Ata({ ceremony: c, go }: { ceremony: Ceremony; go: (s: Screen) =
               setSel('current');
               void reload();
               // The ceremony itself starts over through the event the deletion broadcasts.
-              if (entry.ceremonyIds.includes(c.snapshot.id)) go({ name: 'today' });
+              if (entry.ceremonyIds.includes(c.snapshot.id)) go(HOME);
             }}
           />
         )}

@@ -123,6 +123,7 @@ describe('a question about another squad\'s area', () => {
     await ask(s, receiving({ verdict: 'answer', text: 'Cents.' }));
     const leadB = s.b.engine.calls.find((c) => c.agent.id === 'lead-b');
     expect(leadB).toMatchObject({ maxTurns: 11, wrapUp: true });
+    expect(leadB?.turnLimit).toBeUndefined();
   });
 
   it('uses the answer of a liaison that ran out of turns and answered from the wrap-up, and says so in the run thread', async () => {

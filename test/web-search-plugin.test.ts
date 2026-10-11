@@ -48,8 +48,9 @@ describe('the web search plugin', () => {
   it('has a declaration the platform reads', () => {
     const r = readPluginDeclaration(readFileSync(url('plugin.json'), 'utf8'), '/p');
     expect(r.refused).toBeNull();
-    expect(r.declaration?.offers).toMatchObject({ runtime: 'js', events: ['stage-finished'], documents: [{ name: 'WEB_SEARCH.md' }], requests: [{ id: 'search', method: 'GET', write: false }] });
+    expect(r.declaration?.offers).toMatchObject({ runtime: 'js', events: ['stage-finished', 'conversation-called'], documents: [{ name: 'WEB_SEARCH.md' }], requests: [{ id: 'search', method: 'GET', write: false }] });
     expect(r.declaration?.offers.agents).toContain('SEARCH_REQUESTS.md');
+    expect(r.declaration?.offers.agents).toContain('/web-search');
   });
 
   it('searches every new question together and writes the results with their sources', async () => {
@@ -84,6 +85,30 @@ describe('the web search plugin', () => {
     const c = context({ 'SEARCH_REQUESTS.md': many }, () => ok(results(1)));
     await plugin.default(c.ctx);
     expect(c.asked).toHaveLength(5);
+  });
+
+  it('answers the question of a call from a conversation, with its sources, over the document the run kept', async () => {
+    const before = '# Web search\n\n## what is a plugin\n\n- [Old](https://example.com/old)\n';
+    const c = context({ 'WEB_SEARCH.md': before }, () => ok(results(1)));
+    const out = await plugin.default({ ...c.ctx, event: 'conversation-called', asked: 'how does replay work?' });
+    expect(c.asked).toEqual([{ id: 'search', query: { q: 'how does replay work?', format: 'json' } }]);
+    expect(out.document).toContain('https://example.com/old');
+    expect(out.document).toContain('## how does replay work?');
+    expect(out.document).toContain('- [Result 1](https://example.com/1)');
+  });
+
+  it('answers a call from a conversation with no run over nothing: there is no document behind it', async () => {
+    const c = context({}, () => ok(results(2)));
+    const out = await plugin.default({ ...c.ctx, event: 'conversation-called', asked: 'how does replay work?' });
+    expect(out.document).toContain('Results of a SearXNG instance');
+    expect(out.document).toContain('## how does replay work?');
+    expect(out.document?.match(/https:\/\/example\.com\/\d/g)).toHaveLength(2);
+  });
+
+  it('searches nothing when a call from a conversation brought no question', async () => {
+    const c = context({}, () => ok(results(1)));
+    expect(await plugin.default({ ...c.ctx, event: 'conversation-called', asked: '   ' })).toEqual({});
+    expect(c.asked).toEqual([]);
   });
 
   it('says why a question has no results: refused, an error status, or an answer that is not JSON', async () => {

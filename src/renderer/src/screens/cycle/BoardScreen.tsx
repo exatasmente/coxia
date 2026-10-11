@@ -9,6 +9,7 @@ import { useT } from '../../i18n';
 import { BackIcon } from '../icons';
 import { boardApi, reloadBoard, useBoard, watchBoard, type BoardCardView, type BoardItemView, type BoardView } from './boardApi';
 import './cycle.css';
+import { HOME } from '../../home';
 
 // The board of the workspace: its columns are the cycle's stages, and one card can be opened, moved, prioritised, commented, given to a squad, closed and
 // reopened. With no code host the card never leaves the machine and nothing here points at one. With a host, a card is the host's issue: the board says where
@@ -388,7 +389,7 @@ export function BoardScreen({ go }: { go: (s: Screen) => void }) {
       <div className="wrap cy-wrap">
         <header className="row spread cy-top">
           <div className="row cy-top-main">
-            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 className="cy-title">{t('ui.board.title')}</h1>
           </div>
         </header>
