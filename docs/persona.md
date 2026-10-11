@@ -101,7 +101,7 @@ Configurações › Registro de auditoria diz **quem** fez cada coisa.
 
 ### O Parar
 
-- O botão **Parar** fica no cabeçalho do chat (computador e celular), em Configurações › Persona e num pequeno indicador em todas as outras telas enquanto a persona trabalha ou está parada; vira **Retomar** enquanto ela está parada.
+- O botão **Parar** fica no cabeçalho do chat (computador e celular), em Configurações › Persona e numa faixa no alto de todas as outras telas enquanto a persona trabalha ou está parada (no celular, uma pílula sobre a barra de baixo); vira **Retomar** enquanto ela está parada.
 - Ao apertar, antes de a chamada voltar: o estado "parada" é gravado (no arquivo `persona-latch.json`, na pasta do workspace, **fora da configuração**: a persona não o alcança, nem por uma ferramenta nem por mudar configuração); a resposta dela e os agentes que ela chamou são interrompidos; uma chamada de ferramenta que já estava a caminho é recusada sem rodar; e uma linha na conversa diz que parou, por qual porta, e quais atos estavam **em andamento**.
 - **O que já está acontecendo não é desfeito.** Uma aprovação ou um push que já tinha começado termina e é auditado, como se a pessoa tivesse clicado e depois apertado Parar; a linha diz quais eram, e o resto está na Auditoria.
 - Mensagens escritas com a persona parada ficam **esperando Retomar** (uma faixa sobre a caixa diz isso) e são respondidas em ordem quando ela é retomada. Um pedido que espera a pessoa (uma retenção do navegador, um pedido de plugin, uma pergunta de limite, um comando de cerimônia) **continua pendente para a pessoa**: parar não responde nada por ela.
@@ -231,7 +231,7 @@ Settings › Audit log says **who** did each thing.
 
 ### The Stop
 
-- The **Stop** button is in the chat's header (computer and phone), in Settings › Persona and in a small indicator on every other screen while the persona works or is stopped; it becomes **Resume** while it is stopped.
+- The **Stop** button is in the chat's header (computer and phone), in Settings › Persona and in a bar at the top of every other screen while the persona works or is stopped (a pill over the bottom bar on a phone); it becomes **Resume** while it is stopped.
 - Pressing it, before the call returns: the "stopped" state is written (in the file `persona-latch.json`, in the workspace's folder, **outside the configuration**: the persona cannot reach it, by a tool or by changing configuration); its answer and the agents it called are ended; a tool call that was already on its way is refused without running; and a line in the conversation says it stopped, by which door, and which acts were **in flight**.
 - **What is already happening is not undone.** An approval or a push that had begun finishes and is audited, as if the person had clicked and then pressed Stop; the line says which they were, and the rest is in the Audit.
 - Messages written while the persona is stopped **wait for Resume** (a banner over the box says so) and are answered in order when it is resumed. An ask that waits for the person (a browser hold, a plugin request, a turn-limit question, a ceremony command) **stays pending for the person**: stopping answers nothing on their behalf.
