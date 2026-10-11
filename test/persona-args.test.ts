@@ -26,17 +26,17 @@ describe('checking the arguments of a call', () => {
   it('refuses, naming the problem, a missing or empty required argument, a wrong type, a value outside the enum and an argument nobody declared', () => {
     const problem = (input: Record<string, unknown>) => {
       const r = checkArgs(specs, { why: 'ok', ...input }, true);
-      return r.ok ? null : r.problem.key;
+      return r.ok ? null : r.problem.code;
     };
-    expect(problem({})).toBe('main.persona.door.arg.required');
-    expect(problem({ id: '   ' })).toBe('main.persona.door.arg.required');
-    expect(problem({ id: 5 })).toBe('main.persona.door.arg.type');
-    expect(problem({ id: 'a', n: '3' })).toBe('main.persona.door.arg.type');
-    expect(problem({ id: 'a', n: 2.5 })).toBe('main.persona.door.arg.type');
-    expect(problem({ id: 'a', ratio: Number.NaN })).toBe('main.persona.door.arg.type');
-    expect(problem({ id: 'a', on: 'true' })).toBe('main.persona.door.arg.type');
-    expect(problem({ id: 'a', mode: 'c' })).toBe('main.persona.door.arg.enum');
-    expect(problem({ id: 'a', unknown: 1 })).toBe('main.persona.door.arg.unknown');
+    expect(problem({})).toBe('required');
+    expect(problem({ id: '   ' })).toBe('required');
+    expect(problem({ id: 5 })).toBe('type');
+    expect(problem({ id: 'a', n: '3' })).toBe('type');
+    expect(problem({ id: 'a', n: 2.5 })).toBe('type');
+    expect(problem({ id: 'a', ratio: Number.NaN })).toBe('type');
+    expect(problem({ id: 'a', on: 'true' })).toBe('type');
+    expect(problem({ id: 'a', mode: 'c' })).toBe('enum');
+    expect(problem({ id: 'a', unknown: 1 })).toBe('unknown');
   });
 
   it('cuts the size of a string, a text and a json value, and takes null and undefined as absent', () => {
