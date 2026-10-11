@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.10.0-beta.1] - 2026-10-11
+
 ### Added
 
 - **A persona, made and tried in Settings.** Settings › Persona makes the persona of the workspace with the help of an AI, the way an agent is made: it asks who you are and what you do, then at most four rounds of three to six questions (open, single or multiple choice, always with an **Other**) that cover who you are, how you decide, what matters to you and what you never want done, then shows a draft of three texts (name, one sentence, instructions with a heading per theme) that you edit and try in a chat before **Save and open the chat**. The persona starts with the access of a reading agent (it reads the tracker, runs no command and has no stage, screen or host) and the AI proposes no setting of it. The section edits the name, the sentence, the instructions and the model, adjusts the persona with the AI (a copy is tested, and the original does not change until saved), clears its conversation or deletes it, each of the last two after asking. The chat shows the answer **as it is written** (on both engines; the Claude engine sends the text all at once after a pause to think), with a **Work** section above it that is open while the persona works and closed once it is done, and buttons under an answer that open a ceremony or a screen on the device that taps them. A paired phone makes, adjusts, tests, clears and deletes the persona exactly as the computer does, and every change is recorded in the audit log with the door it came by. The persona is not a member of the team: it works no stage, is not offered as someone to turn to, is left out of templates and of the configuration export, and a second one is refused. Schema 30: an earlier version refuses a file saved by this one. **Open the chat** in Settings opens the chat as a screen of its own: a header with the persona's name, the date, the update and voice buttons and the jobs bell; a strip that counts what is blocked, what asks, what waits in Actions and what needs you, each opening the Overview at its section (or Actions); the pre-daily card pinned above the box when there is something to say; and a menu with the Overview, the four ceremonies and every screen the Today header listed (on the phone, the rows of the More sheet and Actions and History as well). The chat is the home (see **Changed**).
@@ -413,7 +415,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.10.0-beta.1...HEAD
+[0.10.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.9.0...v0.10.0-beta.1
 [0.9.0]: https://github.com/exatasmente/coxia/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/exatasmente/coxia/compare/v0.7.0...v0.8.0
 [0.8.0-beta.8]: https://github.com/exatasmente/coxia/compare/v0.8.0-beta.7...v0.8.0-beta.8
