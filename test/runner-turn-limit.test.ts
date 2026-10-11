@@ -17,8 +17,8 @@ vi.setConfig({ testTimeout: 30_000 });
 const stageStop = (over: Partial<TurnStop> = {}): TurnStop => ({ of: 'stage', role: 'refiner', kind: null, name: null, task: '', used: 2, round: 2, granted: 0, canContinue: true, ...over });
 
 function easy(b: Boot): void {
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
   b.engine.script('qa', () => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 's', result: 'pass', detail: '' }] }));
 }
@@ -31,7 +31,7 @@ const atLimit = (stop: TurnStop = stageStop()) => async (c: AgentCall) => {
   await new Promise((r) => setTimeout(r, 40));
   const decision: TurnDecision = await c.turnLimit!.ask(stop, c.abort?.signal);
   if (decision === 'finish') throw new MaxTurnsError('s', []);
-  return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+  return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' });
 };
 
 async function until(check: () => boolean, ms = 4000): Promise<void> {
@@ -48,7 +48,7 @@ describe('a stage that uses its last turn', () => {
   it('stops at its limit as before when nobody wired the question', async () => {
     const b = await boot();
     easy(b);
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     await b.runner.start('app#101');
     await b.settle();
     expect(b.engine.calls[0].turnLimit).toBeUndefined();
@@ -78,7 +78,7 @@ describe('a stage that uses its last turn', () => {
     const turnAsks = store();
     const b = await boot({ turnAsks });
     easy(b);
-    b.engine.script('refiner', atLimit(), () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    b.engine.script('refiner', atLimit(), () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     const run = await b.runner.start('app#101');
     await until(() => turnAsks.list().length === 1);
     turnAsks.answer(turnAsks.list()[0].id, 'finish', 'paired');
@@ -200,7 +200,7 @@ describe('a stage that uses its last turn', () => {
       async (c) => {
         seen = c.turnLimit;
         decision = await c.turnLimit!.ask(stageStop({ of: 'sub', role: 'refiner:explore', kind: 'explore', task: 'find the file', used: 12, round: 12 }), c.abort?.signal);
-        return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+        return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' });
       },
     );
     const run = await b.runner.start('app#101');

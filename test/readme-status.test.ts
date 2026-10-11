@@ -10,11 +10,12 @@ const version = (): string => (JSON.parse(read('package.json')) as { version: st
 
 describe('the status line of the readme', () => {
   it('names the version of the manifest, in both languages, and no longer the first public one', () => {
-    const current = version();
+    // The release the betas lead to, so cutting a beta does not have to rewrite the readme; `0.1` alone, not the `0.1` inside `0.10.0`.
+    const current = version().replace(/-.*$/, '');
     for (const file of ['README.md', 'README.pt-BR.md']) {
       const line = read(file).split('\n').find((l) => l.startsWith('> **Status:')) ?? '';
       expect(line, file).toContain(current);
-      expect(line, file).not.toContain('0.1');
+      expect(line, file).not.toMatch(/(^|[^\d.])0\.1(?![\d.])/);
       expect(line, file).not.toMatch(/first public version|primeira versão pública/i);
     }
   });

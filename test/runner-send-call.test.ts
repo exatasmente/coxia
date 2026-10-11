@@ -145,7 +145,7 @@ describe('a conversation started by a stage', () => {
         await open.run({ to: 'refiner', topic: 'myself', place: 'new' }, {} as never);
       });
       node.status('finished');
-      return work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' });
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' });
     });
     b.engine.script('qa', () => ({ texto: 'Run the test with an empty folder.' }));
     await b.runner.start('app#101');
