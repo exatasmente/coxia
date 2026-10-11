@@ -185,7 +185,7 @@ export function createDoor(deps: DoorDeps = {}): Door {
     let subject = '';
     try {
       args = op.channel ? await (h.build ? h.build(values, ctx) : positional(op, values, ctx)) : [];
-      if (op.write) subject = oneLine((await h.subject?.(values, ctx)) ?? `${op.tool}.${op.op} ${targetText(op, values)}`);
+      if (op.write) subject = oneLine((await h.subject?.(values, ctx)) ?? targetText(op, values));
     } catch (e) {
       if (e instanceof ToolError) throw e;
       throw new ToolError(`${op.tool}.${op.op}: ${reasonOf(e, mask)}`);

@@ -247,7 +247,7 @@ describe('the four acts of the issue', () => {
     expect(out).toMatch(/^Done\./);
     expect(getConfig().agents.team.find((a) => a.id === 'me')?.shell).toBe('sandbox');
     const line = newest('config');
-    expect(line).toMatchObject({ actor: 'persona', door: 'window', said: 'The person wants me to run the tests.', basis: { subject: 'agents.team[me].shell (set)' }, fields: { raised: 'agents.team[me].shell', 'agents.team[me].shell': 'none → sandbox' } });
+    expect(line).toMatchObject({ actor: 'persona', door: 'window', said: 'The person wants me to run the tests.', basis: { subject: 'agents.team[me].shell' }, fields: { raised: 'agents.team[me].shell', 'agents.team[me].shell': 'none → sandbox' } });
     expect(listAudit().filter((e) => e.id === line.id)).toHaveLength(1);
     const said = acts().slice(before);
     expect(said[0].params).toMatchObject({ tool: 'Settings', op: 'set', result: 'ok', raised: 'agents.team[me].shell' });
@@ -309,7 +309,9 @@ describe('the four acts of the issue', () => {
     const s = session();
     const out = await personaDoor.run(s, 'Board', { op: 'update', id: created.id, column: second, why: 'The person said this goes first.' });
     expect(out).toMatch(/^Done\./);
-    expect(newest('act')).toMatchObject({ target: 'Board.update', actor: 'persona', ok: true });
+    expect(newest('act')).toMatchObject({ target: 'Board.update', actor: 'persona', ok: true, basis: { subject: 'Plan the beta' } });
+    // the line in the chat carries the card's title, not a code
+    expect(acts().at(-1)?.params).toMatchObject({ tool: 'Board', op: 'update', subject: 'Plan the beta' });
     expect((await asPerson('board:list')) as { cards?: { id: string; column: string }[] }).toMatchObject({ cards: expect.arrayContaining([expect.objectContaining({ id: created.id, column: second })]) });
   });
 });

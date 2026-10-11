@@ -14,6 +14,7 @@ import { screenAsks } from '../runner/module';
 import { runStore } from '../runs';
 import { secrets } from '../secrets';
 import { proposePriority } from '../store';
+import { boardStore } from '../boardSource';
 import { turnAsks } from '../turnAsks';
 import { assertExternalWrite } from '../workspace';
 import { getConfig } from '../workspaceConfig';
@@ -77,6 +78,9 @@ function targetOf(v: Values): string | { project: string; iid: number } {
   throw new ToolError(t('main.persona.door.board.noTarget'));
 }
 
+/** A setting's path, with how it was changed when it was not simply set. */
+const pathSubject = (v: Values): string => (v.mode && v.mode !== 'set' ? `${str(v.path)} (${str(v.mode)})` : str(v.path));
+
 const cut = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
 /** Walks the schema of the configuration to the fragment a path names; `name[id]` goes into `items`. */
@@ -103,6 +107,13 @@ const needsValue = (v: Values): void => {
 };
 
 /** The pieces of a run, an action or a conversation the person is shown to decide: the app reads them, so the record cannot be wrong because the model misread something. */
+/** The card a board write is about, as the person reads it: the title of the board's card, or the project and number of a listed issue. */
+function cardTitle(v: Values): string | null {
+  const id = str(v.id);
+  if (id) return boardStore().get(id)?.title ?? id;
+  return str(v.project) && typeof v.iid === 'number' ? `${str(v.project)}#${v.iid}` : null;
+}
+
 const runLine = (id: unknown): string | null => {
   const run = typeof id === 'string' ? runStore().get(id) : null;
   return run ? `${run.issue.ref} ${run.issue.title} (${run.stage}, ${run.status})` : null;
@@ -131,6 +142,13 @@ export const HOOKS: Record<string, Hooks> = {
     },
   },
 
+  'Runs.migrateFlow': { subject: (v) => runLine(v.run) },
+  'Runs.undoPost': { subject: (v) => runLine(v.run) },
+  'Runs.setSquad': { subject: (v) => runLine(v.run) },
+  'Runs.skipWait': { subject: (v) => runLine(v.run) },
+  'Runs.memory': { subject: (v) => runLine(v.run) },
+  'Runs.evidenceDelete': { subject: (v) => runLine(v.run) },
+
   // ---- Actions
   'Actions.approve': { subject: (v) => actionSubject(str(v.id)) },
   'Actions.skip': { subject: (v) => actionSubject(str(v.id)) },
@@ -138,11 +156,12 @@ export const HOOKS: Record<string, Hooks> = {
   'Actions.conflictApply': { build: (v) => [v.id, { skipTests: v.skipTests === true }] },
 
   // ---- Board
-  'Board.create': { build: (v) => [only({ title: v.title, body: v.body, column: v.column, squad: v.squad, priority: v.priority, repo: v.repo, labels: v.labels })] },
-  'Board.update': { build: (v) => [targetOf(v), only({ title: v.title, body: v.body, column: v.column, squad: v.squad, priority: v.priority, labels: v.labels })] },
-  'Board.comment': { build: (v) => [targetOf(v), v.body] },
-  'Board.close': { build: (v) => [targetOf(v)] },
-  'Board.reopen': { build: (v) => [targetOf(v)] },
+  'Board.send': { subject: (v) => cardTitle(v) },
+  'Board.create': { subject: (v) => str(v.title), build: (v) => [only({ title: v.title, body: v.body, column: v.column, squad: v.squad, priority: v.priority, repo: v.repo, labels: v.labels })] },
+  'Board.update': { subject: (v) => cardTitle(v), build: (v) => [targetOf(v), only({ title: v.title, body: v.body, column: v.column, squad: v.squad, priority: v.priority, labels: v.labels })] },
+  'Board.comment': { subject: (v) => cardTitle(v), build: (v) => [targetOf(v), v.body] },
+  'Board.close': { subject: (v) => cardTitle(v), build: (v) => [targetOf(v)] },
+  'Board.reopen': { subject: (v) => cardTitle(v), build: (v) => [targetOf(v)] },
   'Board.proposePriority': {
     subject: (v) => `${str(v.ref)} → ${str(v.to)}`,
     // A label change on the tracker: a proposal that waits in Actions, exactly as a priority saved from a ceremony makes it. A test workspace refuses it like any write that leaves the machine.
@@ -165,6 +184,8 @@ export const HOOKS: Record<string, Hooks> = {
     },
   },
   'Conversations.post': { subject: (v) => forumStore().summary(str(v.thread))?.title ?? str(v.thread) },
+  'Conversations.create': { subject: (v) => str(v.title) },
+  'Conversations.attachmentDelete': { subject: (v) => forumStore().summary(str(v.thread))?.title ?? str(v.thread) },
 
   // ---- Memory
   'Memory.save': { build: (v) => [v.conversation, v.agent, v.id, v.revision, only({ title: v.title, text: v.text, kind: v.kind })] },
@@ -184,7 +205,7 @@ export const HOOKS: Record<string, Hooks> = {
         throw pathProblem(e, str(v.path));
       }
     },
-    subject: (v) => `${str(v.path)} (${str(v.mode) || 'set'})`,
+    subject: (v) => pathSubject(v),
     guard: (args, _v, c) => personaSettingsRefusal(c.config(), args[0] as WorkspaceConfig),
   },
   'Settings.setApp': {
@@ -196,7 +217,7 @@ export const HOOKS: Record<string, Hooks> = {
         throw pathProblem(e, str(v.path));
       }
     },
-    subject: (v) => `${str(v.path)} (${str(v.mode) || 'set'})`,
+    subject: (v) => pathSubject(v),
   },
   'Settings.promptSet': { build: (v) => [v.id, v.language, typeof v.text === 'string' ? v.text : null], subject: (v) => `${str(v.id)} (${str(v.language)})` },
 

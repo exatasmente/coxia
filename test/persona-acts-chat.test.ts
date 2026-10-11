@@ -44,7 +44,7 @@ describe('the line of an act', () => {
     const [line] = lines().slice(-1);
     expect(line).toMatchObject({ kind: 'system', author: { type: 'app' }, code: 'persona.act' });
     const audit = listAudit().find((e) => e.kind === 'act');
-    expect(line.params).toEqual({ tool: 'Overview', op: 'markErrorsSeen', subject: expect.stringContaining('Overview.markErrorsSeen'), result: 'ok', id: audit?.id });
+    expect(line.params).toEqual({ tool: 'Overview', op: 'markErrorsSeen', subject: '', result: 'ok', id: audit?.id });
     // Stored with the thread: a store opened on the same folder, as after a restart, reads it back.
     const reopened = createForumStore(join(ATAS, 'forum'));
     expect(reopened.read(THREAD, 0, 2000)?.messages.find((m) => m.seq === line.seq)?.code).toBe('persona.act');

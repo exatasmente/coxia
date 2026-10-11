@@ -1,6 +1,7 @@
 // The persona's chat as plain functions: what the screen decides above the markup. DOM-free like activity.ts and dashboard.ts, because nothing renders a component in the tests.
 // The live bubble (the text of an answer being written, assembled from events), the rule that the stored answer replaces it, the messages that wait their turn, the Work
 // section found by the message it answers, and the words of a button.
+import { ACT_VERBS } from './actVerbs';
 import { type ActivityEntry } from '../../shared/activity';
 import type { ForumMessage } from '../../shared/forum';
 import { type LiveAnswer, type LiveEvent, applyLive, applyRead } from '../../shared/persona';
@@ -182,7 +183,13 @@ export function actLine(m: Pick<ForumMessage, 'params'>, say: Say): ActLine {
   const refused = p.result === 'refused';
   const subject = text(p.subject);
   const reason = text(p.reason);
-  const sentence = refused ? say('ui.chat.act.refused', { area, op, reason: reason || '—' }) : say('ui.chat.act.ok', { area, op, subject: subject || '—' });
+  const verb = Object.hasOwn(ACT_VERBS, `${tool}.${op}`) ? ACT_VERBS[`${tool}.${op}`] : null;
+  // Said from the tool, the operation and the subject, with no code in it: the area, then what was done. An operation this version has no words for reads as its name.
+  const sentence = refused
+    ? say(subject ? 'ui.chat.act.refused.on' : 'ui.chat.act.refused', { area, subject, reason: reason || '—' })
+    : verb
+      ? say('ui.chat.act.did', { area, did: say(verb, { subject: subject || '—' }) })
+      : say('ui.chat.act.ok', { area, op, subject: subject || '—' });
   return { text: sentence, refused, raised: text(p.raised) || null, auditId: text(p.id) || null, target: actTarget(p.target) };
 }
 

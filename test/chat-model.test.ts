@@ -140,15 +140,43 @@ describe('the line an act of the persona leaves in the chat', () => {
 
   it('is worded by the viewer\'s catalog from the facts the message stores, so a language change translates the lines already there', () => {
     const m = act({ tool: 'Actions', op: 'approve', subject: 'Comment on #12', result: 'ok', id: 'a-1x-1' });
-    expect(actLine(m, say.en)).toMatchObject({ text: 'Actions · approve: Comment on #12', refused: false, raised: null, auditId: 'a-1x-1', target: null });
-    expect(actLine(m, say['pt-BR']).text).toBe('Ações · approve: Comment on #12');
+    expect(actLine(m, say.en)).toMatchObject({ text: 'Actions · approved Comment on #12', refused: false, raised: null, auditId: 'a-1x-1', target: null });
+    expect(actLine(m, say['pt-BR']).text).toBe('Ações · aprovou Comment on #12');
   });
 
   it('says a refusal as one, with the reason, and a raise of reach with the fields', () => {
     const refused = actLine(act({ tool: 'Board', op: 'update', result: 'refused', reason: 'The test workspace writes nothing.', id: 'a-2' }), say.en);
-    expect(refused).toMatchObject({ refused: true, text: 'Board · update was refused: The test workspace writes nothing.' });
-    const raised = actLine(act({ tool: 'Settings', op: 'set', subject: 'agents.team[me].shell (set)', result: 'ok', raised: 'agents.team[me].shell' }), say.en);
+    expect(refused).toMatchObject({ refused: true, text: 'Board · refused: The test workspace writes nothing.' });
+    const onSubject = actLine(act({ tool: 'Board', op: 'update', subject: 'Plan the launch', result: 'refused', reason: 'faltou column', id: 'a-3' }), say.en);
+    expect(onSubject.text).toBe('Board · refused on Plan the launch: faltou column');
+    expect(actLine(act({ tool: 'Board', op: 'update', subject: 'Plan the launch', result: 'refused', reason: 'faltou column' }), say['pt-BR']).text).toBe('Quadro · recusado em Plan the launch: faltou column');
+    const raised = actLine(act({ tool: 'Settings', op: 'set', subject: 'agents.team[me].shell', result: 'ok', raised: 'agents.team[me].shell' }), say.en);
     expect(raised).toMatchObject({ raised: 'agents.team[me].shell', auditId: null });
+  });
+
+  it('words an act from the tool, the operation and the subject in the viewer\'s language, with no code and no repeated word', () => {
+    const create = act({ tool: 'Board', op: 'create', subject: 'Plan the launch', result: 'ok' });
+    expect(actLine(create, say.en).text).toBe('Board · created the card “Plan the launch”');
+    expect(actLine(create, say['pt-BR']).text).toBe('Quadro · criou o cartão “Plan the launch”');
+    expect(actLine(act({ tool: 'Settings', op: 'set', subject: 'runner.triggerLabel', result: 'ok' }), say.en).text).toBe('Settings · changed runner.triggerLabel');
+    expect(actLine(act({ tool: 'Settings', op: 'set', subject: 'runner.triggerLabel', result: 'ok' }), say['pt-BR']).text).toBe('Configurações · mudou runner.triggerLabel');
+    expect(actLine(act({ tool: 'Settings', op: 'applyCycle', subject: 'github-flow', result: 'ok' }), say.en).text).toBe('Settings · applied the cycle template github-flow');
+    // an operation with nothing to name needs no subject
+    expect(actLine(act({ tool: 'Overview', op: 'clearErrors', subject: '', result: 'ok' }), say['pt-BR']).text).toBe('Visão geral · limpou o registro de erros');
+  });
+
+  it.each(['en', 'pt-BR'] as const)('has words in %s for every operation that writes, and none of them is the raw code', async (language) => {
+    const { OPS } = await import('../src/main/persona/doorTable');
+    const { ACT_VERBS } = await import('../src/renderer/src/actVerbs');
+    const writes = OPS.filter((o) => o.write);
+    expect(Object.keys(ACT_VERBS).sort()).toEqual(writes.map((o) => `${o.tool}.${o.op}`).sort());
+    for (const o of writes) {
+      const text = actLine(act({ tool: o.tool, op: o.op, subject: 'the subject', result: 'ok' }), say[language]).text;
+      expect(text, `${o.tool}.${o.op}`).not.toContain('ui.chat.act');
+      expect(text, `${o.tool}.${o.op}`).not.toMatch(/\{\w+\}/);
+      expect(text, `${o.tool}.${o.op}`).not.toContain(`${o.tool}.${o.op}`);
+      expect(text, `${o.tool}.${o.op}`).not.toMatch(new RegExp(` · ${o.op}: `));
+    }
   });
 
   it('offers the button of the screen it was about, only when the target is in the vocabulary of the notifications', () => {
