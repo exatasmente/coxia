@@ -2,6 +2,8 @@ import { conversationCommand, type ConversationCommand } from '../../shared/plug
 import type { ForumMessage } from '../../shared/forum';
 import type { Module } from '../module';
 import { forumStore } from '../forum';
+import { personaOf } from '../../shared/config/team';
+import { getConfig } from '../workspaceConfig';
 import { runStore } from '../runs';
 import { callPluginFromConversation } from './module';
 
@@ -14,9 +16,13 @@ let queue: Map<string, Promise<void>> | null = null;
 /** The chains of the running workspace: one promise per conversation, so a call never overtakes another in the same conversation. */
 const inFlight = (): Map<string, Promise<void>> => (queue ??= new Map());
 
-/** The plugin call a message of the forum is, or null: a post that names no agent, written by anyone but the app, with a command and a question in it. */
-export function pluginCallOf(message: ForumMessage): ConversationCommand | null {
+/**
+ * The plugin call a message of the forum is, or null: a post that names no agent, written by anyone but the app and the persona (`personaId`), with a command
+ * and a question in it. A post made through the persona's door is the persona's and calls nobody, a plugin included.
+ */
+export function pluginCallOf(message: ForumMessage, personaId?: string): ConversationCommand | null {
   if (message.kind !== 'post' || message.author.type === 'app') return null;
+  if (personaId && message.author.type === 'agent' && message.author.id === personaId) return null;
   if (message.mentions.length) return null;
   return conversationCommand(message.text ?? '');
 }
@@ -24,7 +30,7 @@ export function pluginCallOf(message: ForumMessage): ConversationCommand | null 
 export const pluginsConversationModule: Module = () => {
   const forum = forumStore();
   forum.subscribe((message) => {
-    const call = pluginCallOf(message);
+    const call = pluginCallOf(message, personaOf(getConfig().agents.team)?.id);
     if (!call) return;
     const thread = message.thread;
     // A conversation of a run carries that run to the plugin (and its document goes into the cycle folder); any other one carries none.

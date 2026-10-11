@@ -1,4 +1,4 @@
-import type { AuditEntry } from '../../shared/auditoria';
+import type { AuditEntry, Through } from '../../shared/auditoria';
 import type { WorkspaceConfig } from '../../shared/config/types';
 import { THREAD_ID } from '../../shared/forum';
 import { AGENT_ID, NOTE_ID, isNoteKind, memoryOn, type NoteSummary } from '../../shared/memory';
@@ -16,7 +16,7 @@ export interface ChannelDeps {
   config(): WorkspaceConfig;
   audit?(entry: Omit<AuditEntry, 'at'>): void;
   /** Which door the call came through. */
-  via(): 'window' | 'paired';
+  via(): Through;
   /** The title of a conversation, when the app knows the thread. */
   titleOf?(conversation: string): string | null;
   now?(): number;
@@ -54,6 +54,8 @@ export function createMemoryChannels(deps: ChannelDeps): MemoryChannels {
     }
   };
 
+  // The persona's edit and review lock the note like the person's, and the state says whose they were.
+  const byOf = (): 'person' | 'persona' => (deps.via() === 'persona' ? 'persona' : 'person');
   const item = (n: NoteSummary, members: ReadonlySet<string>): NoteItem => ({ ...n, old: isOldNote(n.at, now()), left: !members.has(n.agent) });
   const titleOf = (conversation: string): string => {
     try {
@@ -99,7 +101,7 @@ export function createMemoryChannels(deps: ChannelDeps): MemoryChannels {
       const p = (patch && typeof patch === 'object' ? patch : {}) as NotePatch;
       if (typeof p.title !== 'string' && typeof p.text !== 'string' && p.kind === undefined) return { ok: false, code: 'invalid', text: 'there is nothing to change' };
       if ((p.title !== undefined && typeof p.title !== 'string') || (p.text !== undefined && typeof p.text !== 'string') || (p.kind !== undefined && !isNoteKind(p.kind))) return { ok: false, code: 'invalid', text: 'the title, the text or the kind has the wrong type' };
-      return noteWrite('edit', scope, store.edit({ scope, id: want, title: p.title, text: p.text, kind: p.kind, revision }));
+      return noteWrite('edit', scope, store.edit({ scope, id: want, title: p.title, text: p.text, kind: p.kind, revision, by: byOf() }));
     },
 
     // The person looked at a note that waited for review, or at a foreign one: it can now be read by the agents.
@@ -107,7 +109,7 @@ export function createMemoryChannels(deps: ChannelDeps): MemoryChannels {
       const scope = scopeOf(conversation, agent);
       const want = noteId(id);
       if (!scope || !want) return BAD;
-      return noteWrite('review', scope, store.review(scope, want));
+      return noteWrite('review', scope, store.review(scope, want, byOf()));
     },
 
     remove(conversation, agent, id) {

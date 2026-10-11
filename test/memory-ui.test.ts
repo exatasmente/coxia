@@ -105,6 +105,7 @@ describe('the badges', () => {
   it('say what the person should know before opening a note, in a fixed order', () => {
     expect(badgesOf(note())).toEqual([]);
     expect(badgesOf(note({ person: true }))).toEqual(['edited']);
+    expect(badgesOf(note({ person: true, persona: true }))).toEqual(['editedPersona']);
     expect(badgesOf(note({ reviewed: false }))).toEqual(['awaits']);
     expect(badgesOf(note({ foreign: true, reviewed: false }))).toEqual(['foreign']);
     expect(badgesOf(note({ unsafe: true, person: true, old: true, left: true }))).toEqual(['unsafe', 'edited', 'old', 'left']);

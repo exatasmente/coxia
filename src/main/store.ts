@@ -65,7 +65,7 @@ function planPath(dest: string): string | null {
   return path.endsWith('.md') && existsSync(path) ? path : null;
 }
 
-interface Written {
+export interface Written {
   ok: boolean;
   detail: string;
   // The document already had this decision: nothing was written.
@@ -120,7 +120,7 @@ async function writeDailyNote(d: Decision): Promise<Written & { note?: string }>
 }
 
 // A priority decision that can be written becomes the label change on the issue, as a proposal that waits in Actions for its own "yes".
-async function proposePriority(d: Decision): Promise<Written> {
+export async function proposePriority(d: Decision): Promise<Written> {
   const c = d.priority;
   if (!c || c.project === null || c.iid === null) return { ok: false, detail: t('main.priority.saved.failed', { reason: t('main.priority.dest.unidentified') }) };
   try {

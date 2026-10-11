@@ -39,6 +39,7 @@ import { ChatScreen } from './screens/persona/ChatScreen';
 import { PersonaWizard } from './screens/persona/PersonaWizard';
 import { useConfigView } from './screens/team/teamApi';
 import { JobsDock } from './JobsDock';
+import { PersonaIndicator } from './screens/persona/PersonaIndicator';
 import { UpdatePrompt } from './UpdatePrompt';
 import { UpdateToast } from './UpdateToast';
 import { useReportUpdateBusy } from './updateApi';
@@ -69,7 +70,7 @@ export type Screen =
   | { name: 'discussions'; ref: string; mr?: string; card?: Card }
   | { name: 'radar' }
   | { name: 'saude' }
-  | { name: 'auditoria' }
+  | { name: 'auditoria'; id?: string }
   | { name: 'help' }
   | { name: 'glossario' }
   | { name: 'wizard' }
@@ -276,7 +277,7 @@ export function App() {
     case 'run':
       return <RunScreen id={screen.id} go={go} ceremony={ceremony} actions={actions} tab={screen.tab} back={screen.from === 'runs' ? { name: 'runs' } : undefined} />;
     case 'auditoria':
-      return <Auditoria go={go} />;
+      return <Auditoria go={go} act={screen.id} />;
     case 'radar':
       return <Radar go={go} />;
     case 'saude':
@@ -295,6 +296,7 @@ export function App() {
   return (
     <>
       {away && origin && player.speaking && <NowPlaying who={player.speaking} origin={origin} go={go} stop={player.stop} />}
+      <PersonaIndicator screen={screen.name} />
       {view}
       <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} callLive={callLive} />
       <JobsDock screen={screen} go={go} />

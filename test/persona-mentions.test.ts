@@ -9,7 +9,7 @@ import { type ActivityEntry, mentionJob } from '../src/shared/activity';
 import { neutralConfig } from '../src/shared/config';
 import { newAgent } from '../src/shared/config/team';
 import type { AgentDef, WorkspaceConfig } from '../src/shared/config/types';
-import { type ForumMessage, agentThreadId } from '../src/shared/forum';
+import { type ForumMessage, agentThreadId, isInterrupted } from '../src/shared/forum';
 import { type LiveAnswer, type LiveEvent, applyLive } from '../src/shared/persona';
 import { createForumStore, type ForumStore } from '../src/main/forum-core';
 import { ensureAgentThread } from '../src/main/forum-channels';
@@ -265,7 +265,8 @@ describe('stop and failure', () => {
     const r = await ask(config(), 'me', 'write it', { persona: { live: store, screens: FACTS }, engine: engine as never, stops });
     const messages = r.all();
     const post = messages.find((m) => m.author.type === 'agent') as ForumMessage;
-    expect(post).toMatchObject({ text: 'Part one is done and part two is half', answersTo: r.message.seq });
+    expect(post).toMatchObject({ text: 'Part one is done and part two is half', answersTo: r.message.seq, params: { interrupted: 'stop' } });
+    expect(isInterrupted(post)).toBe(true);
     expect(code(messages, 'runner.mention.stoppedPartial')).toBeTruthy();
     expect(code(messages, 'runner.mention.stopped')).toBeUndefined();
     expect(events.at(-1)?.end).toBe(true);

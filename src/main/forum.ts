@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { ATTACHMENT_LIMITS, type AttachmentRef } from '../shared/attachments';
 import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, agentThreadId, isPersonaThread, mentionableIds, parseMentions, unknownMentions } from '../shared/forum';
 import { outOfCycle, personaOf, workingTeam } from '../shared/config/team';
+import { PERSON_WHO, type Who } from '../shared/runs';
 import { conversationCommand } from '../shared/plugins/calls';
 import { t } from '../shared/i18n';
 import { attachmentStore } from './attachments';
@@ -10,6 +11,7 @@ import { redact } from './errorlog-core';
 import { ForumError, type ForumStore, createForumStore } from './forum-core';
 import { ensureAgentThread, ensureSquadChannels } from './forum-channels';
 import { runStore } from './runs';
+import { whoNow } from './persona/who';
 import type { Module } from './module';
 import { getConfig } from './workspaceConfig';
 
@@ -24,7 +26,7 @@ let store: ForumStore | null = null;
 // them as answers in the thread. The post is checked before it is shown to anyone; a post that carries attachments is decided here as well (the type
 // of the message is decided after the bytes were stored, in `forum:attachment-post`). The files travel with the answer: the runner records them on the
 // message it writes, so the answer shows them and a live message keeps them from the retention sweep.
-type PostInterceptor = (thread: string, text: string, attachments: AttachmentRef[]) => ForumMessage | null;
+type PostInterceptor = (thread: string, text: string, attachments: AttachmentRef[], who?: Who) => ForumMessage | null;
 let interceptor: PostInterceptor | null = null;
 
 export function interceptPosts(fn: PostInterceptor | null): void {
@@ -41,16 +43,19 @@ export function threadAnchor(thread: string): string {
   return thread.startsWith('run-') ? `run:${thread.slice(4)}` : `thread:${thread}`;
 }
 
-/** A person's post in a thread: `@agent` mentions are resolved against the team, and the message is internal (never mirrored by itself). A `@name` that is no agent of the team is said to be unknown. */
-export function personPost(forum: ForumStore, agentIds: readonly string[], thread: unknown, text: unknown, quiet = false) {
+/**
+ * A person's post in a thread: `@agent` mentions are resolved against the team, and the message is internal (never mirrored by itself). A `@name` that is no agent of the team is said
+ * to be unknown. Made under the persona's door (`who`), the message is the persona's, never the person's, and it calls nobody: an agent's text never calls another agent.
+ */
+export function personPost(forum: ForumStore, agentIds: readonly string[], thread: unknown, text: unknown, quiet = false, who: Who = PERSON_WHO) {
   if (typeof thread !== 'string') throw new ForumError('bad-thread', { id: '' });
   if (typeof text !== 'string') throw new ForumError('empty');
   if (text.length > MAX_TEXT) throw new ForumError('too-long', { max: MAX_TEXT });
   // `quiet` (the persona's chat): the other agents are not addressed from there, so a `@name` stays plain text, with no mention and no note.
   // A message that calls a plugin is read as that and nothing else: it names no agent, so neither the mentions nor the runner wake on it (see calls.ts).
-  const plain = quiet || conversationCommand(text) !== null;
-  const [message] = forum.append(thread, { kind: 'post', author: { type: 'person' }, text: text.trim(), mentions: plain ? [] : parseMentions(text, agentIds), anchor: threadAnchor(thread) });
-  const unknown = plain ? [] : unknownMentions(text, agentIds);
+  const mute = quiet || who.author.type !== 'person' || conversationCommand(text) !== null;
+  const [message] = forum.append(thread, { kind: 'post', author: who.author, text: text.trim(), mentions: mute ? [] : parseMentions(text, agentIds), anchor: threadAnchor(thread) });
+  const unknown = mute ? [] : unknownMentions(text, agentIds);
   if (unknown.length) forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'main.forum.mentions.unknown', params: { names: unknown.map((n) => `@${n}`).join(', ') } });
   return message;
 }
@@ -119,9 +124,10 @@ export const forumModule: Module = (ctx) => {
     return forum.read(thread, typeof afterSeq === 'number' ? afterSeq : 0, typeof limit === 'number' ? limit : undefined);
   });
   ctx.handle('forum:post', (thread: unknown, text: unknown) => {
-    const answered = interceptor && typeof thread === 'string' && typeof text === 'string' && text.trim() && text.length <= MAX_TEXT ? interceptor(thread, text, []) : null;
+    const who = whoNow();
+    const answered = interceptor && typeof thread === 'string' && typeof text === 'string' && text.trim() && text.length <= MAX_TEXT ? interceptor(thread, text, [], who) : null;
     const team = getConfig().agents.team;
-    return answered ?? personPost(forum, mentionableIds(team, typeof thread === 'string' ? thread : undefined), thread, text, isPersonaThread(team, thread));
+    return answered ?? personPost(forum, mentionableIds(team, typeof thread === 'string' ? thread : undefined), thread, text, isPersonaThread(team, thread), who);
   });
   ctx.handle('forum:create', (title: unknown): ThreadSummary => {
     if (typeof title !== 'string') throw new ForumError('bad-title');

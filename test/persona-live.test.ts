@@ -285,4 +285,21 @@ describe('the client assembly', () => {
     expect(state?.text).toBe('alpha beta gamma delta epsilon.');
     expect(events.at(-1)?.end).toBe(true);
   });
+
+  it('hides a value the answer must never show (a secret the persona read), before the redaction, in the text it publishes and in the snapshot a Stop posts', () => {
+    const live = make();
+    live.begin(T, 9, 'me', (text) => text.split('hunter2-secret').join('[secret]'));
+    const sink = live.sink(T, 9);
+    sink.piece('The key is hunter2-secret and ');
+    sink.piece('that is all.');
+    advance(LIVE_THROTTLE_MS + 1);
+    expect(live.snapshot(T, 9)).toBe('The key is [secret] and that is all.');
+    sink.settle('The key is hunter2-secret and that is all.');
+    expect(assembled()).toBe('The key is [secret] and that is all.');
+    expect(JSON.stringify(events)).not.toContain('hunter2');
+    // an answer begun without a mask is published as before
+    live.begin(T, 10, 'me');
+    live.sink(T, 10).settle('hunter2-secret');
+    expect(live.snapshot(T, 10)).toBe('hunter2-secret');
+  });
 });

@@ -25,6 +25,7 @@ export interface PersonaLiveDeps {
 
 interface Entry {
   agent: string;
+  mask?: (text: string) => string;
   /** Everything the call wrote for the turn in progress, raw. */
   raw: string;
   /** What the devices hold now. */
@@ -35,8 +36,8 @@ interface Entry {
 }
 
 export interface PersonaLive {
-  /** An answer starts: before the engine is called. */
-  begin(thread: string, to: number, agent: string): void;
+  /** An answer starts: before the engine is called. `mask` hides a value this answer must never show (a secret it read), on top of the redaction. */
+  begin(thread: string, to: number, agent: string, mask?: (text: string) => string): void;
   /** The sink the engines feed for this answer. */
   sink(thread: string, to: number): TextSink;
   /** The whole text written so far, masked: what a Stop posts. Empty when nothing was written. */
@@ -58,7 +59,7 @@ export function createPersonaLive(deps: PersonaLiveDeps): PersonaLive {
 
   // The text the devices should hold: masked, without leading blanks, and, while the call writes, without the word it is in the middle of.
   const shown = (e: Entry, final: boolean): string => {
-    const text = deps.redact(e.raw.trimStart());
+    const text = deps.redact(e.mask ? e.mask(e.raw.trimStart()) : e.raw.trimStart());
     if (final) return text.trimEnd();
     const cut = /\s\S*$/.exec(text);
     return cut ? text.slice(0, cut.index) : '';
@@ -93,11 +94,11 @@ export function createPersonaLive(deps: PersonaLiveDeps): PersonaLive {
   };
 
   return {
-    begin(thread, to, agent) {
+    begin(thread, to, agent, mask) {
       const key = keyOf(thread, to);
       const old = entries.get(key);
       if (old?.timer) timers.clear(old.timer);
-      entries.set(key, { thread, to, agent, raw: '', published: '', rev: 0, lastEmit: Number.NEGATIVE_INFINITY, timer: null });
+      entries.set(key, { thread, to, agent, ...(mask ? { mask } : {}), raw: '', published: '', rev: 0, lastEmit: Number.NEGATIVE_INFINITY, timer: null });
     },
     sink(thread, to) {
       const at = () => entries.get(keyOf(thread, to));
@@ -126,7 +127,7 @@ export function createPersonaLive(deps: PersonaLiveDeps): PersonaLive {
     },
     snapshot(thread, to) {
       const e = entries.get(keyOf(thread, to));
-      return e ? deps.redact(e.raw.trimStart()).trim() : '';
+      return e ? deps.redact(e.mask ? e.mask(e.raw.trimStart()) : e.raw.trimStart()).trim() : '';
     },
     end(thread, to, how = 'done') {
       const key = keyOf(thread, to);

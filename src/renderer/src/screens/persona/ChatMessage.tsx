@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
-import { type ForumMessage, messageText } from '../../../../shared/forum';
+import { type ForumMessage, isInterrupted, messageText } from '../../../../shared/forum';
 import type { PushTarget } from '../../../../shared/push';
 import type { OpenScreenInfo } from '../../../../shared/browser';
 import { ActivityItems, Chevron, useTreeOpen } from '../../ActivityTree';
 import type { TreeNode } from '../../activityTreeModel';
-import { buttonLabel, workItems, workOpenByDefault, workShown, workSummary } from '../../chatModel';
+import { actLine, buttonLabel, workItems, workOpenByDefault, workShown, workSummary } from '../../chatModel';
 import { intlLocale, useT } from '../../i18n';
+import { queuedKey } from '../../personaStopModel';
 import { formatElapsed } from '../../jobs';
 import { RichText } from '../Diagram';
 import { MessageAttachments } from '../cycle/Attachments';
@@ -43,7 +44,7 @@ export function Work({ root }: { root: TreeNode }) {
 }
 
 /** The person's message, with the files it carried; a message that waits its turn behind an answer says so. */
-export function PersonBubble({ m, waiting }: { m: ForumMessage; waiting: boolean }) {
+export function PersonBubble({ m, waiting, stopped = false }: { m: ForumMessage; waiting: boolean; stopped?: boolean }) {
   const t = useT();
   return (
     <li className="chat-row chat-row-person" id={`msg-${m.seq}`}>
@@ -52,7 +53,7 @@ export function PersonBubble({ m, waiting }: { m: ForumMessage; waiting: boolean
           <RichText text={messageText(m)} />
         </div>
         <MessageAttachments thread={m.thread} message={m.seq} refs={m.attachments} />
-        {waiting && <span className="chat-waits" role="status">{t('ui.chat.queued')}</span>}
+        {waiting && <span className="chat-waits" role="status">{t(queuedKey(stopped))}</span>}
         <time className="chat-time" dateTime={m.at}>{stamp(m.at)}</time>
       </div>
     </li>
@@ -76,6 +77,7 @@ function Buttons({ targets, ceremony, onOpen }: { targets: readonly PushTarget[]
 
 /** The persona's stored answer: its Work above (when this session still has the lines), the text, the files, the buttons. */
 export function AnswerBubble({ m, team, work, ceremony, onOpen }: { m: ForumMessage; team: readonly AgentDef[] | undefined; work: TreeNode | null; ceremony: string; onOpen?: (target: PushTarget) => void }) {
+  const t = useT();
   return (
     <li className="chat-row chat-row-answer" id={`msg-${m.seq}`}>
       {work && workShown(work) && <Work root={work} />}
@@ -84,6 +86,7 @@ export function AnswerBubble({ m, team, work, ceremony, onOpen }: { m: ForumMess
         <div className="chat-text">
           <RichText text={messageText(m)} />
         </div>
+        {isInterrupted(m) && <span className="chat-interrupted small" role="note">{t('ui.chat.interrupted')}</span>}
         <MessageAttachments thread={m.thread} message={m.seq} refs={m.attachments} />
         <time className="chat-time" dateTime={m.at}>{stamp(m.at)}</time>
       </div>
@@ -113,6 +116,38 @@ export function SystemLine({ m }: { m: ForumMessage }) {
   return (
     <li className="chat-row chat-row-system" id={`msg-${m.seq}`}>
       <span className="chat-system">{messageText(m)}</span>
+    </li>
+  );
+}
+
+/**
+ * The line an act of the persona leaves in its conversation, before the answer: what it did, in the viewer's words, whether the handler refused it, the fields of a raise of its
+ * own reach, the link to its entry of the audit (the reason and what it had read are there) and the button of the screen the act was about. The links move the device they were
+ * tapped on; with no `onOpen` (the wizard's test) the line is only text.
+ */
+export function ActRow({ m, ceremony, onOpen }: { m: ForumMessage; ceremony: string; onOpen?: (target: PushTarget) => void }) {
+  const t = useT();
+  const line = actLine(m, t);
+  return (
+    <li className={`chat-row chat-row-act ${line.refused ? 'chat-row-act-refused' : ''}`} id={`msg-${m.seq}`}>
+      <div className="chat-act" role="group" aria-label={t('ui.chat.act.label')}>
+        <span className="chat-act-text">{line.text}</span>
+        {line.raised && <span className="badge badge-ask chat-act-raised">{t('ui.chat.act.raised', { fields: line.raised })}</span>}
+        {onOpen && (
+          <span className="chat-act-links">
+            {line.auditId && (
+              <button type="button" className="btn cy-mini" onClick={() => onOpen({ to: 'auditoria', id: line.auditId as string })}>
+                {t('ui.chat.act.audit')}
+              </button>
+            )}
+            {line.target && (
+              <button type="button" className="btn cy-mini" onClick={() => onOpen(line.target as PushTarget)}>
+                {buttonLabel(line.target, t, ceremony)}
+              </button>
+            )}
+          </span>
+        )}
+      </div>
     </li>
   );
 }
