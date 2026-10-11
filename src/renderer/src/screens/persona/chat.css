@@ -131,6 +131,8 @@
 .cy-composer-inline:focus-within { border-color: var(--focus); box-shadow: 0 0 0 1px var(--focus); }
 .cy-compose.cy-compose-inline { flex: 1 1 auto; min-height: 40px; max-height: 200px; padding: 9px 8px; border: 0; background: transparent; resize: none; box-shadow: none; overflow-y: auto; }
 .cy-compose.cy-compose-inline:focus { outline: none; box-shadow: none; }
+.cy-inline-hint { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.cy-composer:focus-within .cy-inline-hint { position: static; width: auto; height: auto; margin: 2px 8px 0; overflow: visible; clip: auto; white-space: normal; font-size: 12px; color: var(--faint); }
 .cy-inline-btn { flex: none; width: 40px; min-height: 40px; border-radius: 10px; }
 .cy-inline-btn:not(.btn-dark) { border-color: transparent; background: transparent; color: var(--muted); }
 .cy-inline-btn:not(.btn-dark):hover { background: var(--surface-2); color: var(--ink); }

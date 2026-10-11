@@ -34,3 +34,16 @@ describe('the sidebar of the computer', () => {
     expect(shell).toMatch(/const next = !folded;\s+setFolded\(next\);\s+writeFolded\(next\);/);
   });
 });
+
+describe('the hint of the inline box', () => {
+  it('is in the box\'s tooltip and shown to sighted people while the box has the focus, still read by a screen reader', () => {
+    const composer = read('screens/cycle/Composer.tsx');
+    expect(composer).toMatch(/title=\{inline \? \(hint \?\? t\('ui\.forum\.sendHint'\)\) : undefined\}/);
+    expect(composer).toMatch(/<span id=\{hintId\} className="cy-inline-hint">/);
+    expect(composer).not.toMatch(/id=\{hintId\} className="sr-only"/);
+    const css = read('screens/persona/chat.css');
+    expect(css).toMatch(/\.cy-composer:focus-within \.cy-inline-hint \{[^}]*position: static/);
+    // the persona's chat gives the line that names Enter and Shift+Enter, in both catalogs
+    expect(read('screens/persona/ChatThread.tsx')).toMatch(/ui\.chat\.hint\.desktop/);
+  });
+});

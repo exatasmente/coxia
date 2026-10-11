@@ -72,7 +72,7 @@ export interface ComposerProps {
   placeholder?: string;
   /** Focus the box when it appears (the computer's chat). Default off: a phone would raise its keyboard over the conversation. */
   autoFocus?: boolean;
-  /** One line that grows as the text does, with the attach and send buttons as icons inside it and the hint read only by a screen reader (the persona's chat). Default off. */
+  /** One line that grows as the text does, with the attach and send buttons as icons inside it and the hint in the box's tooltip and shown, faint, under it while the box has the focus (the persona's chat). Default off. */
   inline?: boolean;
 }
 
@@ -225,6 +225,7 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
           aria-busy={busy || undefined}
           aria-label={t('ui.forum.compose')}
           aria-describedby={inline ? hintId : undefined}
+          title={inline ? (hint ?? t('ui.forum.sendHint')) : undefined}
           placeholder={placeholder ?? t('ui.forum.composePlaceholder')}
           {...composerAria(mentions, listId, options.length, active)}
           onChange={(e) => {
@@ -309,7 +310,7 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
         }}
       />
       {inline ? (
-        <span id={hintId} className="sr-only">{hint ?? t('ui.forum.sendHint')}</span>
+        <span id={hintId} className="cy-inline-hint">{hint ?? t('ui.forum.sendHint')}</span>
       ) : (
         <div className="row spread">
           <span className="faint small">{hint ?? t('ui.forum.sendHint')}</span>
