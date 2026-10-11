@@ -19,7 +19,10 @@ await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
 const actions = await import('../src/main/actions');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
-const { listAudit } = await import('../src/main/auditoria');
+const { listAudit: allAudit } = await import('../src/main/auditoria');
+// The writes themselves: the lines the autonomy policy adds beside them are read through allAudit.
+const listAudit = () => writesOf(allAudit());
+const { writesOf } = await import('./helpers/audit');
 const { onRunnerActionDone, onRunnerActionRefused } = await import('../src/main/runner/door');
 const { remoteReleaseOf } = await import('../src/main/runner/release');
 

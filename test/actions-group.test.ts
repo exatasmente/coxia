@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import type { VcsCommand } from '../src/shared/types';
+import { autonomyLines, writesOf } from './helpers/audit';
 import { fakeGitlabRuntime } from './helpers/vcs';
 
 const DATA = mkdtempSync(join(tmpdir(), 'cerimonias-actions-group-'));
@@ -93,7 +94,7 @@ describe('a group of writes', () => {
     stop();
     expect(done).toMatchObject({ state: 'done', done: 3 });
     expect(ran).toEqual(['one', 'two', 'three']);
-    const audit = listAudit().reverse();
+    const audit = writesOf(listAudit()).reverse();
     expect(audit.map((l) => l.fields.body)).toEqual(['one', 'two', 'three']);
     expect(audit.every((l) => l.origin.actionId === a.id && l.ok && l.code === 201)).toBe(true);
     expect(told).toEqual([{ id: a.id, responses: [{ id: 1, body: 'one' }, { id: 2, body: 'two' }, { id: 3, body: 'three' }] }]);
@@ -106,7 +107,7 @@ describe('a group of writes', () => {
     expect(failed).toMatchObject({ state: 'failed', done: 1 });
     expect(failed.output).toContain('boom');
     expect(ran).toEqual(['one']);
-    expect(listAudit().map((l) => [l.fields.body, l.ok])).toEqual([['two', false], ['one', true]]);
+    expect(writesOf(listAudit()).map((l) => [l.fields.body, l.ok])).toEqual([['two', false], ['one', true]]);
     failAt = null;
     const again = await actions.approveAction(a.id);
     expect(again).toMatchObject({ state: 'done', done: 3 });
@@ -147,6 +148,36 @@ describe('a group of writes', () => {
   });
 });
 
+describe('the person\'s decision on a held step', () => {
+  it('records an approval by the person, tied to the write it let out by the action id, before the write runs', async () => {
+    const a = actions.proposeVcsAction({ ...input('approve-me'), command: note('x') }) as { id: string };
+    await actions.approveAction(a.id);
+    const rows = listAudit();
+    const [decision] = autonomyLines(rows, 'decision');
+    expect(decision).toMatchObject({ kind: 'decision', by: 'person', ok: true, issue: 101, fields: { decision: 'approved' }, origin: { actionId: a.id } });
+    expect(decision.at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(decision.policy).toBeUndefined();
+    // Newest first: the write follows the decision.
+    expect(rows.map((r) => r.kind)).toEqual(['gitlab', 'decision']);
+  });
+
+  it('records a refusal and runs nothing; setting aside again decides nothing more', async () => {
+    const a = actions.proposeVcsAction({ ...input('refuse-me'), command: note('never') }) as { id: string };
+    await actions.skipAction(a.id);
+    expect(ran).toEqual([]);
+    expect(listAudit()).toEqual([expect.objectContaining({ kind: 'decision', by: 'person', fields: { decision: 'refused', step: 'gitlab' }, origin: expect.objectContaining({ actionId: a.id }) })]);
+    await actions.skipAction(a.id);
+    expect(listAudit()).toHaveLength(1);
+  });
+
+  it('records nothing when the approval is refused before anything runs', async () => {
+    const a = actions.proposeVcsAction({ ...input('test-ws'), command: note('x') }) as { id: string };
+    asReal(true);
+    await expect(actions.approveAction(a.id)).rejects.toThrow();
+    expect(listAudit()).toEqual([]);
+  });
+});
+
 describe('an image that cannot go up', () => {
   it('does not stop the comment that cites it: the group goes on, the failure is audited and the answer holds the reason', async () => {
     failUpload = 'the host refused the file';
@@ -162,7 +193,7 @@ describe('an image that cannot go up', () => {
     expect(ran).toEqual(['What I saw']);
     expect(told[0][0]).toEqual({ uploadError: 'the host refused the file' });
     expect(listAudit().map((l) => [l.ok, l.result])).toEqual(expect.arrayContaining([[false, 'the host refused the file'], [true, 'ok']]));
-    expect(listAudit()).toHaveLength(2);
+    expect(writesOf(listAudit())).toHaveLength(2);
   });
 
   it('still stops the group when a command that is not an image fails', async () => {

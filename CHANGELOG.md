@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The audit log says what the autonomy policy did on the person's behalf.** Every step the policy lets go out with no "yes" leaves a line with the step, the time, the agent and the policy in effect (the choices that were on and whether they came from the workspace or from a flow): a stage that starts by itself, a command on the host, a gate the app approves, a push, a pull request and a write of the board. A held step the person approves or refuses leaves a "Decision on a held step" line, and every change of an autonomy choice, in the workspace or in a flow, leaves a line with the value before and after. Each line is sealed to the one before it, so a line edited or removed afterwards is marked "Changed after it was written". Lines written before this version are read as they are.
+
 ### Fixed
 
 - **A plugin that fails is no longer silent.** Every call of a plugin leaves a line in the workspace's audit log ("Plugin call": the plugin, the event, the stage, and whether it ran, failed with the reason, or waits for an answer in Actions). A call that fails also leaves a line in the run's conversation with the plugin's name, the event, the stage and the reason (no run to write into, a required setting empty, the sandbox did not open, the script ended with an error or without a result). Settings › Plugins shows each plugin's last call since the app opened.

@@ -13,7 +13,10 @@ process.env.CERIMONIAS_DATA_DIR = DATA;
 const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
 const { setTestFlag } = await import('../src/main/workspaces-core');
 const actions = await import('../src/main/actions');
-const { listAudit } = await import('../src/main/auditoria');
+const { listAudit: allAudit } = await import('../src/main/auditoria');
+// The writes themselves: the lines the autonomy policy adds beside them are read through allAudit.
+const listAudit = () => writesOf(allAudit());
+const { writesOf } = await import('./helpers/audit');
 const { boardStore } = await import('../src/main/boardSource');
 const { boardView, register, setBoardHost } = await import('../src/main/board');
 const { realBoardHost } = await import('../src/main/boardHost');
@@ -106,6 +109,14 @@ describe('with the board\'s autonomy on', () => {
     expect(audit[0]).toMatchObject({ ok: true, by: 'board', target: `POST ${ENDPOINT}` });
     expect(audit[0].origin.summary).toContain('A card');
     expect(events.length).toBeGreaterThan(0);
+  });
+
+  it('keeps on the write the workspace\'s policy that let it out, with the board\'s choice and the workspace as the level', async () => {
+    configure(true, (c) => {
+      c.runner.autonomy.push = true;
+    });
+    await open();
+    expect(listAudit()[0].policy).toEqual({ cycle: base.runner.autonomy.cycle, hostCommands: base.runner.autonomy.hostCommands, gates: base.runner.autonomy.gates, push: true, pullRequest: base.runner.autonomy.pullRequest, board: true, level: 'workspace', flow: '' });
   });
 
   it('puts the comments written before it reached the host in the description under "Notes so far"', async () => {

@@ -21,7 +21,10 @@ await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
 const actions = await import('../src/main/actions');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
-const { listAudit } = await import('../src/main/auditoria');
+const { listAudit: allAudit } = await import('../src/main/auditoria');
+// The writes themselves: the lines the autonomy policy adds beside them are read through allAudit.
+const listAudit = () => writesOf(allAudit());
+const { writesOf } = await import('./helpers/audit');
 const { onRunnerActionDone } = await import('../src/main/runner/door');
 
 const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
@@ -550,6 +553,31 @@ describe('the push and the pull request', () => {
     expect(audit.some((a) => a.target === 'POST repos/group/project/pulls' && a.origin.kind === 'auto')).toBe(true);
     expect(b.thread(end).some((m) => m.code === 'runner.push.pushed')).toBe(true);
     expect(b.thread(end).some((m) => m.code === 'runner.pr.created')).toBe(true);
+    // each one keeps the policy that let it out, from the workspace's block
+    const policy = { cycle: true, push: true, pullRequest: true, level: 'workspace', flow: '' };
+    expect(audit.find((a) => a.kind === 'push')?.policy).toMatchObject(policy);
+    expect(audit.find((a) => a.target === 'POST repos/group/project/pulls')?.policy).toMatchObject(policy);
+    // a stage the cycle's autonomy started by itself is a step of the policy too, with its agent
+    const started = allAudit().filter((a) => a.kind === 'auto-step' && a.fields.step === 'stage-start' && a.fields.run === end.id);
+    expect(started.length).toBeGreaterThan(0);
+    expect(started.every((a) => a.by && a.by === a.fields.agent && a.policy?.level === 'workspace')).toBe(true);
+  });
+
+  it('says the flow as the level when the flow\'s own block let the push and the pull request out', async () => {
+    forge = makeForge({ pr: null, linked: false });
+    setVcsRuntimeForTests(forge.runtime());
+    const b = await boot({ dir: ATAS, publish: true, configure: (c) => {
+      c.language = 'en';
+      c.runner.autonomy = { ...c.runner.autonomy, cycle: false, push: false, pullRequest: false };
+      c.devCycle.autonomy = { '': { useWorkspace: false, cycle: true, hostCommands: false, gates: false, push: true, pullRequest: true } };
+    } });
+    script(b);
+    const end = await through(b, await start(b));
+    expect(end.status).toBe('done');
+    const audit = listAudit();
+    const policy = { cycle: true, push: true, pullRequest: true, level: 'flow', flow: '' };
+    expect(audit.find((a) => a.kind === 'push')?.policy).toMatchObject(policy);
+    expect(audit.find((a) => a.target === 'POST repos/group/project/pulls')?.policy).toMatchObject(policy);
   });
 
   it('still proposes the push when only the pull request choice is on, and the pull request waits for its own yes', async () => {
