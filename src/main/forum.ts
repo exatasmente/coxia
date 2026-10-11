@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { ATTACHMENT_LIMITS, type AttachmentRef } from '../shared/attachments';
 import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, agentThreadId, isPersonaThread, mentionableIds, parseMentions, unknownMentions } from '../shared/forum';
 import { outOfCycle, personaOf, workingTeam } from '../shared/config/team';
+import { conversationCommand } from '../shared/plugins/calls';
 import { t } from '../shared/i18n';
 import { attachmentStore } from './attachments';
 import { ATAS } from './env';
@@ -46,8 +47,10 @@ export function personPost(forum: ForumStore, agentIds: readonly string[], threa
   if (typeof text !== 'string') throw new ForumError('empty');
   if (text.length > MAX_TEXT) throw new ForumError('too-long', { max: MAX_TEXT });
   // `quiet` (the persona's chat): the other agents are not addressed from there, so a `@name` stays plain text, with no mention and no note.
-  const [message] = forum.append(thread, { kind: 'post', author: { type: 'person' }, text: text.trim(), mentions: quiet ? [] : parseMentions(text, agentIds), anchor: threadAnchor(thread) });
-  const unknown = quiet ? [] : unknownMentions(text, agentIds);
+  // A message that calls a plugin is read as that and nothing else: it names no agent, so neither the mentions nor the runner wake on it (see calls.ts).
+  const plain = quiet || conversationCommand(text) !== null;
+  const [message] = forum.append(thread, { kind: 'post', author: { type: 'person' }, text: text.trim(), mentions: plain ? [] : parseMentions(text, agentIds), anchor: threadAnchor(thread) });
+  const unknown = plain ? [] : unknownMentions(text, agentIds);
   if (unknown.length) forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'main.forum.mentions.unknown', params: { names: unknown.map((n) => `@${n}`).join(', ') } });
   return message;
 }
@@ -66,14 +69,15 @@ export function attachmentPost(forum: ForumStore, agentIds: readonly string[], t
   if (refs.some((r) => r.kind === 'video')) throw new Error(t('main.attachment.gone'));
   // Every ref must hold a file of this conversation, and be the size it says: a ref that points nowhere is refused, nothing is written.
   for (const r of refs) if (!storeApi.holds(thread, r.id, r.bytes)) throw new Error(t('main.attachment.gone'));
-  const draft = { kind: 'post' as const, author: { type: 'person' as const }, text: body, mentions: quiet ? [] : parseMentions(body, agentIds), attachments: refs, anchor: threadAnchor(thread) };
+  const plain = quiet || conversationCommand(body) !== null;
+  const draft = { kind: 'post' as const, author: { type: 'person' as const }, text: body, mentions: plain ? [] : parseMentions(body, agentIds), attachments: refs, anchor: threadAnchor(thread) };
   // A message that answers a run's open question is recorded by the runner: the handler hands it the refs and the runner writes the answer message with them, so
   // the answer carries the files (it shows them, and the retention sees a live message referencing them) and nothing is posted twice. When nothing answers, the
   // message is written here as it stands.
   const answered = interceptor ? interceptor(thread, body, refs) : null;
   if (answered) return answered;
   const [message] = forum.append(thread, draft);
-  const unknown = quiet ? [] : unknownMentions(body, agentIds);
+  const unknown = plain ? [] : unknownMentions(body, agentIds);
   if (unknown.length) forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'main.forum.mentions.unknown', params: { names: unknown.map((n) => `@${n}`).join(', ') } });
   return message;
 }

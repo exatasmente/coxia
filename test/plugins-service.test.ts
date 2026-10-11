@@ -5,9 +5,11 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vites
 import type { PluginConfig, PluginsConfig, RunnerSandbox } from '../src/shared/config/types';
 import { neutralPlugins, neutralSandbox } from '../src/shared/config/defaults';
 import type { ReleaseAction } from '../src/shared/types';
+import { messageText } from '../src/shared/forum';
+import { t } from '../src/shared/i18n';
 import type { PluginRecord } from '../src/main/plugins/types';
 import type { PluginDoor, PluginNote, PluginsDeps } from '../src/main/plugins/module';
-import type { JsAnswer, JsCall } from '../src/main/plugins/runtime';
+import type { JsAnswer, JsCall, PluginCall, PluginTarget } from '../src/main/plugins/runtime';
 
 const guard = vi.hoisted(() => ({ test: false }));
 vi.mock('../src/main/workspace', async (orig) => ({
@@ -15,11 +17,18 @@ vi.mock('../src/main/workspace', async (orig) => ({
   externalRefusal: (what: string) => (guard.test ? `test workspace: ${what}` : null),
 }));
 
+// The data of a throwaway workspace, decided before the app's modules are imported: the line a delivered answer becomes is read from its own forum,
+// never from the person's workspace.
+const data = mkdtempSync(join(tmpdir(), 'coxia-plugins-data-'));
+process.env.CERIMONIAS_DATA_DIR = data;
+afterAll(() => rmSync(data, { recursive: true, force: true }));
+
 // The plugins service under the permission contract: a plugin that needs what it was not allowed opens a request instead of running; the person answers
 // once, for the session, always or refuses; "always" is kept in the workspace's list, "session" in the running app; an allowed write goes out through the
 // door (or is announced first when it cannot be undone). The deps are injected, so nothing here touches a workspace, a sandbox or the actions file.
 
-const { answerPluginAsk, clearPluginSession, firePluginEvent, listPlugins, pluginHold, pluginNotes, revokePluginAllow, revokePluginWrite, setPluginEnabled, setPluginSecret, setPluginSetting, setPluginSettings } = await import('../src/main/plugins/module');
+const { answerPluginAsk, callPluginFromConversation, clearPluginSession, firePluginEvent, listPlugins, pluginHold, pluginNotes, pluginsDeps, revokePluginAllow, revokePluginWrite, setPluginEnabled, setPluginSecret, setPluginSetting, setPluginSettings } = await import('../src/main/plugins/module');
+const { forumStore } = await import('../src/main/forum');
 
 // The script of a plugin is read from its folder: each record points at a throwaway folder that holds one.
 const root = mkdtempSync(join(tmpdir(), 'coxia-plugins-service-'));
@@ -111,8 +120,9 @@ function memoryDoor(refuse: boolean, armed: boolean) {
 /** Deps over an in-memory configuration: saving changes what the next read sees, as the real read of the folder would. */
 function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; refuse?: boolean; output?: string; armed?: boolean; js?: (read: (call: JsCall) => Promise<JsAnswer>) => Promise<{ document?: string; writes?: JsCall[] }>; status?: number } = {}) {
   let config: PluginsConfig = { ...neutralPlugins(), dir: '/plugins', list: initial.map((r) => ({ id: r.id, folder: r.dir, enabled: r.enabled, allow: r.allow, allowedFor: r.reach, settings: r.values })) };
-  const runs: { plugin: string; event: string; sandbox: RunnerSandbox }[] = [];
+  const runs: { plugin: string; event: string; sandbox: RunnerSandbox; target: PluginTarget; call: PluginCall }[] = [];
   const settled: { runId: string; note: PluginNote | null }[] = [];
+  const said: { thread: string; code: string; params: Record<string, string> }[] = [];
   const memory = memoryDoor(opts.refuse === true, opts.armed === true);
   const fetched: { url: string; method: string }[] = [];
   const secretsStore = new Map<string, string>();
@@ -132,13 +142,14 @@ function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; ref
       config = { ...config, ...values };
     },
     target: (runId) => (runId === 'gone' ? null : { worktree: '/wt', cycleFolder: 'docs/cycles/123-x' }),
+    chatTarget: () => ({ worktree: '/chat', cycleFolder: '', documents: false }),
     sandbox: () => opts.workspace ?? neutralSandbox(),
-    run: async (p, event, _target, sandbox) => {
-      runs.push({ plugin: p.id, event, sandbox });
+    run: async (p, event, target, sandbox, _onProxy, call = {}) => {
+      runs.push({ plugin: p.id, event, sandbox, target, call });
       return { plugin: p.id, ok: true, text: opts.output ?? 'result from the sandbox', refused: null, document: null };
     },
-    runJs: async (p, event, _context, _target, sandbox, read) => {
-      runs.push({ plugin: p.id, event, sandbox });
+    runJs: async (p, event, context, target, sandbox, read) => {
+      runs.push({ plugin: p.id, event, sandbox, target, call: { asked: context.asked, thread: context.thread } });
       const out = opts.js ? await opts.js(read) : {};
       return { plugin: p.id, ok: true, text: out.document ?? '', refused: null, document: null, writes: out.writes ?? [] };
     },
@@ -149,9 +160,10 @@ function harness(initial: PluginRecord[], opts: { workspace?: RunnerSandbox; ref
     secretFilled: (p, key) => secretsStore.has(`${p}.${key}`),
     setSecret: (p, key, value) => void (value ? secretsStore.set(`${p}.${key}`, value) : secretsStore.delete(`${p}.${key}`)),
     door: memory.door,
+    say: (thread, code, params) => void said.push({ thread, code, params }),
     settled: (runId, note) => void settled.push({ runId, note }),
   };
-  return { deps, runs, settled, fetched, secretsStore, ...memory, list: (): PluginConfig[] => config.list, config: () => config };
+  return { deps, runs, said, settled, fetched, secretsStore, ...memory, list: (): PluginConfig[] => config.list, config: () => config };
 }
 
 const ctx = (runId = 'r1') => ({ issue: 123, issueTitle: 'Plugin platform', stage: 'implement', runId });
@@ -205,7 +217,8 @@ describe('calling the plugins', () => {
     const out = await firePluginEvent('stage-finished', ctx(), h.deps);
     expect(h.runs).toEqual([]);
     expect(out[0].ok).toBe(false);
-    expect(out[0].refused).toContain('Web search');
+    // With no reason to refuse, a request in Actions was opened in place of the run.
+    expect(out[0].refused).toBeNull();
     expect(h.actions).toHaveLength(1);
     expect(h.actions[0].unit).toMatchObject({ plugin: 'web-search', need: 'network', hosts: ['search.example.com'], runId: 'r1', event: 'stage-finished' });
     expect(pluginHold('r1', h.deps)).toEqual({ plugin: 'Web search', need: 'network' });
@@ -639,6 +652,183 @@ describe('the notes the agents get', () => {
     expect(notes.some((n) => n.name === 'B')).toBe(false);
     expect(notes[1].name).toHaveLength(60);
     expect(notes.reduce((n, x) => n + x.name.length + x.note.length + 3, 0)).toBeLessThanOrEqual(4000);
+  });
+});
+
+const call = (over: Partial<import('../src/main/plugins/module').ConversationCall> = {}) => ({
+  command: 'web-search',
+  asked: 'how does replay work?',
+  thread: 'general',
+  issue: 0,
+  ...over,
+});
+
+/** A plugin that answers calls from a conversation, with everything it needs for that. */
+const called = (over: Partial<PluginRecord> = {}) => plugin({ events: ['conversation-called'], allow: { network: true, write: true }, ...over });
+
+describe('a call made from a conversation', () => {
+  it('delivers the answer to the same conversation as material, from the plugin the command named, and nothing from the others', async () => {
+    const h = harness([called(), called({ id: 'other', name: 'Other' })], { output: 'the answer, with - [a source](https://example.com/1)' });
+    await callPluginFromConversation(call(), h.deps);
+    expect(h.runs.map((r) => [r.plugin, r.event, r.call])).toEqual([['web-search', 'conversation-called', { asked: 'how does replay work?', thread: 'general' }]]);
+    expect(h.said).toEqual([{ thread: 'general', code: 'plugin.answered', params: { plugin: 'Web search', text: 'the answer, with - [a source](https://example.com/1)' } }]);
+  });
+
+  it('says one line and nothing more for a command no plugin answers', async () => {
+    const h = harness([called()]);
+    await callPluginFromConversation(call({ command: 'ghost', asked: 'anything at all' }), h.deps);
+    expect(h.runs).toEqual([]);
+    expect(h.said).toEqual([{ thread: 'general', code: 'plugin.unknownCommand', params: { command: 'ghost' } }]);
+  });
+
+  it('runs nothing and says why for a plugin that is off, refused or not offering the event', async () => {
+    const h = harness([
+      called({ id: 'off', name: 'Off', enabled: false }),
+      called({ id: 'bad', name: 'Bad', refused: 'the declaration is empty' }),
+      called({ id: 'quiet', name: 'Quiet', events: ['stage-finished'] }),
+    ]);
+    for (const command of ['off', 'bad', 'quiet']) await callPluginFromConversation(call({ command }), h.deps);
+    expect(h.runs).toEqual([]);
+    expect(h.said.map((s) => [s.code, s.params.plugin, s.params.reason])).toEqual([
+      ['plugin.notCalled', 'Off', t('main.plugins.call.off')],
+      ['plugin.notCalled', 'Bad', t('main.plugins.call.refused', { reason: 'the declaration is empty' })],
+      ['plugin.notCalled', 'Quiet', t('main.plugins.call.notOffered')],
+    ]);
+  });
+
+  it('runs nothing and says which setting is missing, without asking for anything', async () => {
+    const settings = [{ key: 'url', label: 'Instance URL', kind: 'url' as const, required: true }];
+    const h = harness([called({ entry: 'index.mjs', runtime: 'js', network: [], write: null, settings, values: {} })], { js: async () => ({}) });
+    await callPluginFromConversation(call(), h.deps);
+    expect(h.runs).toEqual([]);
+    expect(h.actions).toEqual([]);
+    expect(h.said[0]).toMatchObject({ code: 'plugin.notCalled', params: { plugin: 'Web search', reason: expect.stringContaining('Instance URL') } });
+  });
+
+  it('of a run conversation carries the run to the plugin and takes its target, so the document goes into the cycle folder', async () => {
+    const h = harness([called({ write: null })]);
+    await callPluginFromConversation(call({ thread: 'run-r1', issue: 123, issueTitle: 'Plugin platform', stage: 'implement', runId: 'r1' }), h.deps);
+    expect(h.runs[0].call).toEqual({ asked: 'how does replay work?', thread: 'run-r1' });
+    expect(h.runs[0].target).toEqual({ worktree: '/wt', cycleFolder: 'docs/cycles/123-x' });
+  });
+
+  it('outside a run takes an empty folder of its own, where nothing is written', async () => {
+    const h = harness([called({ write: null })]);
+    await callPluginFromConversation(call(), h.deps);
+    expect(h.runs[0].target).toEqual({ worktree: '/chat', cycleFolder: '', documents: false });
+  });
+
+  it('without the network opens one request per conversation, carrying the call, and says it waits', async () => {
+    const h = harness([plugin({ events: ['conversation-called'], write: null })]);
+    await callPluginFromConversation(call(), h.deps);
+    await callPluginFromConversation(call(), h.deps);
+    expect(h.runs).toEqual([]);
+    expect(h.actions).toHaveLength(1);
+    expect(h.actions[0].unit).toMatchObject({ plugin: 'web-search', need: 'network', thread: 'general', asked: 'how does replay work?', holdsRun: false });
+    // Outside a run the request carries no issue and no title.
+    expect(h.actions[0]).toMatchObject({ issue: 0, issueTitle: '' });
+    // Another conversation waits with a request of its own; the same one is asked once.
+    await callPluginFromConversation(call({ thread: 'other' }), h.deps);
+    expect(h.actions).toHaveLength(2);
+    expect(h.said.map((s) => [s.thread, s.code])).toEqual([
+      ['general', 'plugin.waiting'],
+      ['general', 'plugin.waiting'],
+      ['other', 'plugin.waiting'],
+    ]);
+  });
+
+  it('never holds a run, though the call was made in the conversation of one', async () => {
+    const h = harness([plugin({ events: ['conversation-called'], write: null })]);
+    await callPluginFromConversation(call({ thread: 'run-r1', issue: 123, issueTitle: 'Plugin platform', runId: 'r1' }), h.deps);
+    expect(h.actions[0].unit).toMatchObject({ runId: 'r1', thread: 'run-r1', holdsRun: false });
+    expect(h.actions[0]).toMatchObject({ issue: 123, issueTitle: 'Plugin platform' });
+    expect(pluginHold('r1', h.deps)).toBeNull();
+    expect(h.deps.door.pending()).toHaveLength(1);
+  });
+
+  it('delivers the answer to the conversation once the person allows the request', async () => {
+    const h = harness([plugin({ events: ['conversation-called'], write: null })], { output: 'the answer' });
+    await callPluginFromConversation(call(), h.deps);
+    await answerPluginAsk(h.actions[0].id, 'once', h.deps);
+    expect(h.actions[0].state).toBe('done');
+    expect(h.runs).toHaveLength(1);
+    expect(h.said.map((s) => s.code)).toEqual(['plugin.waiting', 'plugin.answered']);
+  });
+
+  it('says the refusal and runs nothing when the request is refused — from the computer or from the phone', async () => {
+    const fromComputer = harness([plugin({ events: ['conversation-called'], write: null })]);
+    await callPluginFromConversation(call(), fromComputer.deps);
+    await answerPluginAsk(fromComputer.actions[0].id, 'refuse', fromComputer.deps);
+    expect(fromComputer.runs).toEqual([]);
+    expect(fromComputer.said.map((s) => s.code)).toEqual(['plugin.waiting', 'run.plugin.refused.network']);
+
+    const fromPhone = harness([plugin({ events: ['conversation-called'], write: null })]);
+    await callPluginFromConversation(call(), fromPhone.deps);
+    await answerPluginAsk(fromPhone.actions[0].id, 'refuse', fromPhone.deps, 'web');
+    expect(fromPhone.runs).toEqual([]);
+    expect(fromPhone.said.map((s) => s.code)).toEqual(['plugin.waiting', 'run.plugin.refused.network']);
+  });
+
+  it('in a test workspace the request is refused before anything is asked, and the conversation says it', async () => {
+    const h = harness([plugin({ events: ['conversation-called'], write: null })], { refuse: true });
+    await callPluginFromConversation(call(), h.deps);
+    expect(h.runs).toEqual([]);
+    expect(h.actions).toEqual([]);
+    expect(h.said[0]).toMatchObject({ code: 'plugin.notCalled', params: { reason: expect.stringContaining('test workspace') } });
+  });
+
+  it('makes the write of a call follow the same contract: it is asked in Actions with the call it came from', async () => {
+    const h = harness([called({ allow: { network: true, write: false } })], { output: 'the result' });
+    await callPluginFromConversation(call(), h.deps);
+    expect(h.written).toEqual([]);
+    expect(h.actions[0].unit).toMatchObject({ need: 'write', thread: 'general', asked: 'how does replay work?', to: 'results', text: 'the result', holdsRun: false });
+    // The answer already reached the conversation; allowing the write sends it out through the same door.
+    expect(h.said.map((s) => s.code)).toEqual(['plugin.answered']);
+    await answerPluginAsk(h.actions[0].id, 'once', h.deps);
+    expect(h.written).toEqual([{ to: 'results', text: 'the result' }]);
+  });
+
+  it('writes nothing outside the cycle folder: the target of a conversation with no run writes no document', async () => {
+    const h = harness([called({ allow: { network: true, write: false } })]);
+    await callPluginFromConversation(call(), h.deps);
+    await answerPluginAsk(h.actions[0].id, 'always', h.deps);
+    expect(h.list()[0].allow).toEqual({ network: true, write: true });
+    // With the write allowed and reversible it goes out through the door of Actions, never into a folder by itself.
+    expect(h.written).toEqual([{ to: 'results', text: 'result from the sandbox' }]);
+    expect(h.said.map((s) => s.code)).toEqual(['plugin.answered']);
+  });
+});
+
+describe('answering a request from the paired phone', () => {
+  it('refuses the requests of the cycle events and answers those a call from a conversation opened', async () => {
+    const cycle = harness([plugin({ write: null })]);
+    await firePluginEvent('stage-finished', ctx(), cycle.deps);
+    await expect(answerPluginAsk(cycle.actions[0].id, 'once', cycle.deps, 'web')).rejects.toThrow();
+    expect(cycle.runs).toEqual([]);
+    // The same answer is the computer's to give.
+    await answerPluginAsk(cycle.actions[0].id, 'once', cycle.deps, 'ipc');
+    expect(cycle.runs).toHaveLength(1);
+
+    const chat = harness([plugin({ events: ['conversation-called'], write: null })]);
+    await callPluginFromConversation(call(), chat.deps);
+    await answerPluginAsk(chat.actions[0].id, 'always', chat.deps, 'web');
+    expect(chat.runs).toHaveLength(1);
+    expect(chat.list()[0].allow.network).toBe(true);
+  });
+});
+
+describe('the line a delivered answer becomes', () => {
+  it('is a message of the app, worded by its code, with the answer between the material markers', async () => {
+    const forum = forumStore();
+    forum.ensureThread({ id: 'general', kind: 'general', title: 'General' });
+    pluginsDeps.say('general', 'plugin.answered', { plugin: 'Web search', text: 'the answer, with its sources' });
+    const message = forum.read('general', 0, 200)?.messages.at(-1);
+    expect(message).toMatchObject({ kind: 'system', author: { type: 'app' }, code: 'plugin.answered', mentions: [] });
+    const said = messageText(message as never);
+    expect(said).toBe(t('main.forum.code.plugin.answered', { plugin: 'Web search', text: 'the answer, with its sources' }));
+    // The answer travels between the material markers, and the warning says it is not an instruction.
+    expect(said).toContain('<data>');
+    expect(said).toContain('the answer, with its sources');
   });
 });
 
