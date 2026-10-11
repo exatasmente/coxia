@@ -154,6 +154,15 @@ describe('the line an act of the persona leaves in the chat', () => {
     expect(raised).toMatchObject({ raised: 'agents.team[me].shell', auditId: null });
   });
 
+  it('says a call refused before its handler in the viewer\'s language from the stored problem, never from the reason the model was given', () => {
+    const early = act({ tool: 'Board', op: 'create', result: 'refused', stage: 'before-handler', problem: 'required', arg: 'column', reason: 'Board.create: The argument column is missing: the operation needs it.', id: 'a-4' });
+    expect(actLine(early, say.en)).toMatchObject({ refused: true, auditId: 'a-4', text: 'Board · did not try create: the argument column is missing' });
+    expect(actLine(early, say['pt-BR']).text).toBe('Quadro · não tentou create: faltou o argumento column');
+    expect(actLine(act({ tool: 'Runs', op: 'resume', result: 'refused', stage: 'before-handler', problem: 'op' }), say['pt-BR']).text).toBe('Execuções · não tentou resume: essa operação não existe');
+    // A problem this version has no words for falls back to the line of an ordinary refusal.
+    expect(actLine(act({ tool: 'Board', op: 'create', result: 'refused', stage: 'before-handler', problem: 'future', reason: 'because' }), say.en).text).toBe('Board · refused: because');
+  });
+
   it('words an act from the tool, the operation and the subject in the viewer\'s language, with no code and no repeated word', () => {
     const create = act({ tool: 'Board', op: 'create', subject: 'Plan the launch', result: 'ok' });
     expect(actLine(create, say.en).text).toBe('Board · created the card “Plan the launch”');

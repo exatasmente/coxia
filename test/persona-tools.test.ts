@@ -223,7 +223,7 @@ describe('who is given the tools', () => {
 });
 
 describe('a call that is not well formed', () => {
-  it('is read by the model as an error, with no handler run and no audit line, and the model recovers', async () => {
+  it('is read by the model as an error, with no handler run, the write told as refused before the handler, and the model recovers', async () => {
     const before = listAudit().length;
     steps(
       toolStep([{ name: 'Runs', args: { op: 'cancel', run: 'r-nothing' } }]),
@@ -242,8 +242,10 @@ describe('a call that is not well formed', () => {
     expect(tool(2)).toMatch(/\$\.op: must be one of/);
     expect(tool(2)).not.toContain('resume');
     expect(tool(3)).toMatch(/\$\.action: must be one of/);
-    expect(listAudit()).toHaveLength(before);
-    expect(r.after().filter((m) => m.code === 'persona.act')).toHaveLength(0);
+    // The cancel with no reason is a write refused before its handler: one audit line and one line in the conversation. The engine's own check of the other two never reached the door.
+    expect(listAudit()).toHaveLength(before + 1);
+    expect(listAudit().find((e) => e.target === 'Runs.cancel')).toMatchObject({ actor: 'persona', ok: false, fields: { refused: 'before-handler', problem: 'why' } });
+    expect(r.after().filter((m) => m.code === 'persona.act').map((m) => m.params)).toEqual([expect.objectContaining({ tool: 'Runs', op: 'cancel', result: 'refused', stage: 'before-handler', problem: 'why' })]);
   });
 
   it('is told what the handler said when the handler refuses, and the refusal is recorded as the persona\'s', async () => {

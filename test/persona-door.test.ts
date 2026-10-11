@@ -91,7 +91,29 @@ describe('what the door refuses before it runs anything', () => {
     }
   });
 
-  it('is a tool error, with no handler run and no audit line, for a missing, mistyped, unknown or oversized argument and a missing reason', async () => {
+  it('tells the person an operation that does not exist was tried, in the audit and in the chat, so a call to resume is not silent', async () => {
+    const audit = listAudit().length;
+    const said = acts().length;
+    await expect(personaDoor.run(session(), 'Runs', { op: 'resume', why })).rejects.toThrow(/has no operation/);
+    expect(listAudit()).toHaveLength(audit + 1);
+    expect(newest('act')).toMatchObject({ ok: false, actor: 'persona', target: 'Runs.resume', said: why, fields: { refused: 'before-handler', problem: 'op' } });
+    expect(acts()).toHaveLength(said + 1);
+    expect(acts().at(-1)?.params).toMatchObject({ tool: 'Runs', op: 'resume', result: 'refused', stage: 'before-handler', problem: 'op' });
+    // A tool that does not exist is no operation of the app: no line.
+    await expect(personaDoor.run(session(), 'Persona', { op: 'resume' })).rejects.toThrow(/no tool Persona/);
+    expect(listAudit()).toHaveLength(audit + 1);
+  });
+
+  it('writes no line for a call refused because the persona is stopped: the Stop has its own', async () => {
+    const audit = listAudit().filter((e) => e.kind === 'act').length;
+    const said = acts().length;
+    personaStop().stop('window');
+    await expect(personaDoor.run(session(), 'Board', { op: 'create', title: 'x', why })).rejects.toThrow(/is stopped/);
+    expect(listAudit().filter((e) => e.kind === 'act')).toHaveLength(audit);
+    expect(acts()).toHaveLength(said);
+  });
+
+  it('is a tool error, with no handler run, for a missing, mistyped, unknown or oversized argument and a missing reason; the write is told to the person, in the audit and in the chat', async () => {
     let ran = 0;
     handle('t:count', (() => (ran += 1)) as never);
     const table = [{ tool: 'Runs' as const, op: 'probe', channel: 't:count', write: true, args: [{ name: 'run', type: 'string' as const, required: true }, { name: 'n', type: 'integer' as const }, { name: 'mode', type: 'enum' as const, values: ['a', 'b'] }, { name: 'note', type: 'text' as const, max: 5 }] }];
@@ -109,10 +131,24 @@ describe('what the door refuses before it runs anything', () => {
       [{ op: 'probe', run: 'r', why: '   ' }, /takes a reason/],
       [{ op: 'probe', run: 'r', why: 'x'.repeat(301) }, /takes a reason/],
     ];
-    for (const [input, message] of bad) await expect(door.run(session(), 'Runs', input), JSON.stringify(input)).rejects.toThrow(message);
+    const problems = ['required', 'type', 'type', 'enum', 'long', 'unknown', 'why', 'why', 'why'];
+    for (const [i, [input, message]] of bad.entries()) {
+      await expect(door.run(session(), 'Runs', input), JSON.stringify(input)).rejects.toThrow(message);
+      // One `act` line in the audit, marked as refused before the handler and stamped as the persona's, and one refused line in the conversation that links to it.
+      const line = newest('act');
+      expect(line, JSON.stringify(input)).toMatchObject({ ok: false, actor: 'persona', door: 'window', target: 'Runs.probe', fields: { tool: 'Runs', op: 'probe', refused: 'before-handler', problem: problems[i] } });
+      expect(acts().at(-1)?.params, JSON.stringify(input)).toMatchObject({ tool: 'Runs', op: 'probe', result: 'refused', stage: 'before-handler', problem: problems[i], id: line.id });
+    }
     expect(ran).toBe(0);
-    expect(listAudit()).toHaveLength(audit);
-    expect(acts()).toHaveLength(said);
+    expect(listAudit()).toHaveLength(audit + bad.length);
+    expect(acts()).toHaveLength(said + bad.length);
+    // The argument named in the line is the one that was wrong; the reason the model was given is kept too.
+    expect(acts().at(-9)?.params).toMatchObject({ arg: 'run' });
+    // A read that is badly formed leaves neither: reads are never lines.
+    const readTable = [{ tool: 'Runs' as const, op: 'peek', channel: 't:count', write: false, args: [{ name: 'run', type: 'string' as const, required: true }] }];
+    await expect(createDoor({ table: readTable, hooks: () => ({}), stopped: () => false }).run(session(), 'Runs', { op: 'peek' })).rejects.toThrow(/run is missing/);
+    expect(listAudit()).toHaveLength(audit + bad.length);
+    expect(acts()).toHaveLength(said + bad.length);
     // The same operation, well formed, runs.
     await door.run(session(), 'Runs', { op: 'probe', run: 'r', n: 2, mode: 'a', why });
     expect(ran).toBe(1);
@@ -317,7 +353,7 @@ describe('the four acts of the issue', () => {
 });
 
 describe('a card the persona creates', () => {
-  it('needs its column said, and a missing or empty one is refused in the door, naming the argument, before any handler runs and with no audit line', async () => {
+  it('needs its column said, and a missing or empty one is refused in the door, naming the argument, before any handler runs, and is told as a refusal before the handler', async () => {
     const audit = listAudit().length;
     const said = acts().length;
     for (const input of [{ op: 'create', title: 'No column', why }, { op: 'create', title: 'Empty column', column: '', why }, { op: 'create', title: 'Blank column', column: '  ', why }]) {
@@ -325,8 +361,9 @@ describe('a card the persona creates', () => {
       expect(e, JSON.stringify(input)).toBeInstanceOf(ToolError);
       expect((e as Error).message).toBe('Board.create: The argument column is missing: the operation needs it.');
     }
-    expect(listAudit()).toHaveLength(audit);
-    expect(acts()).toHaveLength(said);
+    expect(listAudit()).toHaveLength(audit + 3);
+    expect(acts()).toHaveLength(said + 3);
+    expect(acts().at(-1)?.params).toMatchObject({ tool: 'Board', op: 'create', result: 'refused', problem: 'required', arg: 'column' });
   });
 
   it('is said by its title in the chat and in the record', async () => {
