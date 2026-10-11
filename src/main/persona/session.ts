@@ -22,7 +22,7 @@ export interface AnswerSession {
   thread: string;
   /** The `seq` of the person's message the answer began from. */
   seq: number;
-  /** How that message came in: `window` or `paired`; open to more (a schedule). */
+  /** How that message came in: `window`, `paired`, `terminal`, or `schedule` for a turn a schedule started (#275). */
   door: string;
   mask: MaskSet;
   /** A value the answer must never write back, by its exact text: everything stored or shown from it holds the masked form from now on. */

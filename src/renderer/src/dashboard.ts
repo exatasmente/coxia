@@ -273,6 +273,7 @@ const NAV_ACTIVE: Record<string, NavKey> = {
   custo: 'more',
   radar: 'more',
   saude: 'more',
+  schedules: 'more',
   auditoria: 'more',
   help: 'more',
   glossario: 'more',

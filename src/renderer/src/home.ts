@@ -101,6 +101,7 @@ export type NavId =
   | 'custo'
   | 'radar'
   | 'saude'
+  | 'schedules'
   | 'auditoria'
   | 'help';
 
@@ -153,7 +154,7 @@ export function navGroups(on: Partial<CycleView['ceremonies']> | undefined, pers
     {
       id: 'app',
       label: 'ui.chat.nav.app',
-      rows: [row('radar', 'ui.nav.radar'), row('saude', 'ui.nav.health'), row('custo', 'ui.nav.cost'), row('auditoria', 'ui.nav.audit'), row('settings', 'ui.nav.settings'), row('help', 'ui.nav.help')],
+      rows: [row('radar', 'ui.nav.radar'), row('saude', 'ui.nav.health'), row('schedules', 'ui.schedules.nav'), row('custo', 'ui.nav.cost'), row('auditoria', 'ui.nav.audit'), row('settings', 'ui.nav.settings'), row('help', 'ui.nav.help')],
     },
   ].filter((g) => g.rows.length > 0) as NavGroup[];
 }

@@ -3,6 +3,7 @@ import { rulesAllow } from '../../shared/ceremonyCommands';
 import { cycleText } from '../../shared/cycles/text';
 import type { ForumMessage, ThreadSummary } from '../../shared/forum';
 import { MAX_MENTIONS } from '../../shared/forum';
+import { t } from '../../shared/i18n';
 import { type RunActivity, beginCallActivity } from '../activity';
 import { runAgent, secretPath } from '../agents';
 import { ceremonyCommands } from '../ceremonyCommands';
@@ -152,6 +153,21 @@ export const mentionsModule: Module = () => {
     if (!calls.length) return;
     const place = placeOfThread(forum.summary(message.thread), (id) => runStore().get(id), getConfig(), HOME);
     if (!place || place.kind === 'run') return;
+    // How the message came in, read here: this is inside the call that carried it (the window's or a paired browser's), which the chain that answers it no longer is.
+    accept(message, place, calls, viaOf() === 'paired' ? 'paired' : 'window');
+  });
+
+  // A schedule's line (#275) is the app's, so it calls nobody by itself: the schedule names the persona, and the answer goes through the same lines, chain and latch.
+  wake = (message, persona, door) => {
+    const place = placeOfThread(forum.summary(message.thread), (id) => runStore().get(id), getConfig(), HOME);
+    if (!place || place.kind === 'run') return Promise.reject(new Error(t('main.schedules.error.thread')));
+    if (!getConfig().agents.team.some((a) => a.id === persona)) return Promise.reject(new Error(t('main.schedules.error.persona')));
+    accept(message, place, [persona], door);
+    return inFlight().get(message.thread) ?? Promise.resolve();
+  };
+
+  /** Opens the lines of the calls of a message and starts its answer behind the ones going in its thread. */
+  function accept(message: ForumMessage, place: MentionPlace, calls: string[], door: string): void {
     const prior = inFlight().get(message.thread);
     const stopped = held(message.thread);
     // Every agent called gets its line as soon as the message is accepted, as in a run's thread: working, or waiting its turn behind an answer still going in
@@ -159,8 +175,6 @@ export const mentionsModule: Module = () => {
     const team = getConfig().agents.team;
     const root = rc().projectsRoot ?? ATAS;
     let ahead = !!prior || stopped;
-    // How the message came in, read here: this is inside the call that carried it (the window's or a paired browser's), which the chain that answers it no longer is.
-    const door = viaOf() === 'paired' ? 'paired' : 'window';
     // The persona's answer keeps a session (what it read, the values it must never write back): made now, so the line of its call shares the mask.
     const persona = personaOf(team);
     const session = persona && message.thread === agentThreadId(persona.id) && calls.includes(persona.id) ? createSession({ persona: persona.id, thread: message.thread, seq: message.seq, door }) : null;
@@ -177,8 +191,19 @@ export const mentionsModule: Module = () => {
       return;
     }
     chain(message, place, calls, door, session);
-  });
+  }
 };
+
+let wake: ((message: ForumMessage, persona: string, door: string) => Promise<void>) | null = null;
+
+/**
+ * Starts the persona's answer to a line the app posted (a schedule's, #275), by the door given, and settles when the answers going in that conversation are over. Before the
+ * module registered there is nothing to answer with, and it fails.
+ */
+export function wakePersona(message: ForumMessage, persona: string, door: string): Promise<void> {
+  // i18n-ignore: developer error: the schedules fire only once the modules are registered
+  return wake ? wake(message, persona, door) : Promise.reject(new Error('the mentions module is not registered'));
+}
 
 /** Whether an answer is going, or waiting its turn, in this thread: what stops a conversation from being emptied or its agent deleted under it. */
 export const answerPending = (thread: string): boolean => inFlight().has(thread) || personaStop().holds(thread);
