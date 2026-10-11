@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Run } from '../src/shared/runs';
 import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
 import { needsYou, pendingQuestions } from '../src/renderer/src/dashboard';
-import { type HomeCountsInput, HOME, OVERVIEW, blockedCards, ceremonyCard, deepBack, homeCounts, homeView, menuRows, resumeWizard, snoozeWizard, stripLabelKey, stripTarget, wizardSnoozed } from '../src/renderer/src/home';
+import { type HomeCountsInput, HOME, OVERVIEW, anyCount, blockedCards, ceremonyCard, countTarget, deepBack, homeCounts, homeView, navGroups, resumeWizard, snoozeWizard, wizardSnoozed } from '../src/renderer/src/home';
 import { agoraPlan, type AgoraInput } from '../src/renderer/src/dashboard';
 import { waitingRuns } from '../src/shared/runs/view';
 import type { WatcherAlert } from '../src/shared/watchers';
@@ -109,14 +109,19 @@ describe('the counts of the strip', () => {
   });
 
   it('opens the Overview at the section a count names, and Actions for the third', () => {
-    expect(stripTarget('blocked')).toEqual({ name: 'overview', section: 'blocked' });
-    expect(stripTarget('asking')).toEqual({ name: 'overview', section: 'asking' });
-    expect(stripTarget('needs')).toEqual({ name: 'overview', section: 'needs' });
-    expect(stripTarget('actions')).toEqual({ name: 'actions' });
+    expect(countTarget('blocked')).toEqual({ name: 'overview', section: 'blocked' });
+    expect(countTarget('asking')).toEqual({ name: 'overview', section: 'asking' });
+    expect(countTarget('needs')).toEqual({ name: 'overview', section: 'needs' });
+    expect(countTarget('actions')).toEqual({ name: 'actions' });
   });
 
-  it('is read by the chat and the Overview from this module', () => {
-    const chat = sources.find((s) => s.file.endsWith('screens/persona/ChatScreen.tsx'));
+  it('says whether anything is counted, for the dot of the phone\'s menu button', () => {
+    expect(anyCount({ blocked: 0, asking: 0, actions: 0, needs: 0 })).toBe(false);
+    expect(anyCount({ blocked: 0, asking: 0, actions: 1, needs: 0 })).toBe(true);
+  });
+
+  it('is read by the navigation and the Overview from this module', () => {
+    const chat = sources.find((s) => s.file.endsWith('screens/persona/HomeNav.tsx'));
     const overview = sources.find((s) => s.file.endsWith('screens/Overview.tsx'));
     expect(chat?.text).toMatch(/homeCounts\(/);
     expect(overview?.text).toMatch(/blockedCards\(/);
@@ -149,34 +154,57 @@ describe('ceremonyCard', () => {
   });
 });
 
-describe('the menu', () => {
-  const screens = (phone: boolean, on?: Parameters<typeof menuRows>[1]) => menuRows(phone, on).filter((r) => r.group === 'screens' && r.screen).map((r) => r.screen?.name);
+describe('the navigation', () => {
+  const ids = (on?: Parameters<typeof navGroups>[0], persona = true) => navGroups(on, persona).flatMap((g) => g.rows.map((r) => r.id));
+  const group = (id: string, on?: Parameters<typeof navGroups>[0]) => navGroups(on, true).find((g) => g.id === id)?.rows.map((r) => r.id);
 
-  it('lists on the computer the buttons the Today header had, in its order, after the Overview', () => {
-    expect(screens(false)).toEqual(['overview', 'history', 'runs', 'board', 'forum', 'procedures', 'memory', 'settings', 'custo', 'radar', 'saude', 'auditoria', 'help']);
+  it('reaches every screen the menu and the More sheet reached, each once', () => {
+    const all = ids();
+    for (const name of ['chat', 'overview', 'actions', 'history', 'settings', 'runs', 'board', 'forum', 'procedures', 'memory', 'custo', 'radar', 'saude', 'auditoria', 'help']) expect(all).toContain(name);
+    expect(new Set(all).size).toBe(all.length);
   });
 
-  it('lists on the phone the rows of the More sheet and Actions and History besides, since the chat has no bottom bar', () => {
-    const phone = screens(true);
-    for (const name of ['settings', 'runs', 'board', 'forum', 'procedures', 'memory', 'custo', 'radar', 'saude', 'auditoria', 'help', 'actions', 'history']) expect(phone).toContain(name);
-    expect(phone[0]).toBe('overview');
-    expect(new Set(phone).size).toBe(phone.length);
+  it('starts with the chat and the Overview, then what needs the person with its counts', () => {
+    expect(navGroups(undefined, true).map((g) => g.id)).toEqual(['home', 'attention', 'ceremonies', 'cycle', 'app']);
+    expect(group('home')).toEqual(['chat', 'overview']);
+    expect(group('attention')).toEqual(['blocked', 'asking', 'actions', 'needs']);
+    expect(navGroups(undefined, true)[0].label).toBeNull();
   });
 
-  it('carries the four ceremonies on both, and leaves out the one the cycle turned off', () => {
-    for (const phone of [false, true]) {
-      expect(menuRows(phone).filter((r) => r.group === 'ceremonies').map((r) => r.id)).toEqual(['call', 'deep', 'qa', 'retro']);
-      expect(menuRows(phone, { retro: false, qaHandoff: false }).filter((r) => r.group === 'ceremonies').map((r) => r.id)).toEqual(['call', 'deep']);
-      expect(menuRows(phone, { preDaily: false }).some((r) => r.id === 'call')).toBe(false);
-    }
+  it('leaves the chat out while there is no persona to talk to', () => {
+    expect(ids(undefined, false)).not.toContain('chat');
+    expect(ids(undefined, false)[0]).toBe('overview');
+  });
+
+  it('opens from a count what the count opened', () => {
+    const rows = navGroups(undefined, true).flatMap((g) => g.rows);
+    for (const count of ['blocked', 'asking', 'actions', 'needs'] as const) expect(rows.find((r) => r.id === count)?.screen).toEqual(countTarget(count));
+  });
+
+  it('carries the four ceremonies, and leaves out the one the cycle turned off', () => {
+    expect(group('ceremonies')).toEqual(['call', 'deep', 'qa', 'retro']);
+    expect(group('ceremonies', { retro: false, qaHandoff: false })).toEqual(['call', 'deep']);
+    expect(ids({ preDaily: false })).not.toContain('call');
+    expect(navGroups({ preDaily: false, unblock: false, qaHandoff: false, retro: false }, true).some((g) => g.id === 'ceremonies')).toBe(false);
   });
 
   it('leaves to the cards the two ceremonies that work on one', () => {
-    const rows = menuRows(false);
+    const rows = navGroups(undefined, true).flatMap((g) => g.rows);
     expect(rows.find((r) => r.id === 'deep')?.screen).toBeNull();
     expect(rows.find((r) => r.id === 'qa')?.screen).toBeNull();
     expect(rows.find((r) => r.id === 'call')?.screen).toEqual({ name: 'call' });
     expect(rows.find((r) => r.id === 'retro')?.screen).toEqual({ name: 'retro' });
+  });
+
+  it('names every group and row in both languages', () => {
+    for (const language of ['en', 'pt-BR'] as const) {
+      setLanguage(language);
+      for (const g of navGroups(undefined, true)) {
+        if (g.label) expect(t(g.label)).not.toBe(g.label);
+        for (const r of g.rows) expect(t(r.label)).not.toBe(r.label);
+      }
+    }
+    setLanguage('en');
   });
 });
 
@@ -209,23 +237,6 @@ describe('the page\'s save', () => {
     expect(t('ui.settings.saveAll')).toBe('Salvar configurações');
     // The persona keeps its own, with its own words.
     expect(t('ui.persona.section.save')).not.toBe(t('ui.settings.saveAll'));
-    setLanguage('en');
-  });
-});
-
-describe('the strip on a phone', () => {
-  it('words only the long count shorter there, in both languages and never as the same text', () => {
-    expect(stripLabelKey('needs', false)).toBe('ui.chat.strip.needs');
-    expect(stripLabelKey('needs', true)).toBe('ui.chat.strip.needsShort');
-    for (const count of ['blocked', 'asking', 'actions'] as const) expect(stripLabelKey(count, true)).toBe(stripLabelKey(count, false));
-    for (const language of ['en', 'pt-BR'] as const) {
-      setLanguage(language);
-      const short = t('ui.chat.strip.needsShort');
-      expect(short).not.toBe('ui.chat.strip.needsShort');
-      expect(short.length).toBeLessThan(t('ui.chat.strip.needs').length);
-      // A quarter of 360 px at 12 px holds about 11 characters.
-      for (const count of ['blocked', 'asking', 'actions', 'needs'] as const) expect(t(stripLabelKey(count, true)).length).toBeLessThanOrEqual(11);
-    }
     setLanguage('en');
   });
 });

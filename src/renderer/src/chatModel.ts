@@ -66,6 +66,33 @@ export function rowKind(m: Pick<ForumMessage, 'kind' | 'author'>, persona: strin
   return m.author.id === persona ? 'answer' : 'agent';
 }
 
+/** A row of the conversation: one message, or a run of lines the app wrote one after another, drawn as one line that opens. */
+export type LogRow = { kind: 'message'; m: ForumMessage } | { kind: 'notices'; items: ForumMessage[] };
+
+/**
+ * The messages as rows: two or more lines of the app in a row (a screen closed, a recording not kept) become one row, so they do not push the conversation out of sight.
+ * A single line stays a line.
+ */
+export function logRows(messages: readonly ForumMessage[], persona: string): LogRow[] {
+  const rows: LogRow[] = [];
+  let run: ForumMessage[] = [];
+  const flush = () => {
+    if (run.length > 1) rows.push({ kind: 'notices', items: run });
+    else if (run.length === 1) rows.push({ kind: 'message', m: run[0] });
+    run = [];
+  };
+  for (const m of messages) {
+    if (rowKind(m, persona) === 'system') {
+      run.push(m);
+      continue;
+    }
+    flush();
+    rows.push({ kind: 'message', m });
+  }
+  flush();
+  return rows;
+}
+
 /** The messages of the person that wait their turn behind an answer going on: their call line is still `queued`. */
 export function queuedOf(entries: readonly ActivityEntry[], thread: string, persona: string): Set<number> {
   const lines = new Map<string, ActivityEntry[]>();
@@ -180,24 +207,6 @@ export function composerAria(mentions: boolean, listId: string, options: number,
     'aria-autocomplete': 'list',
     'aria-activedescendant': options ? `${listId}-${active}` : undefined,
   };
-}
-
-/** What the menu button points at: the desktop's menu exists in the page only while it is open; the phone's is a dialog and names nothing. */
-export function menuControls(open: boolean, phone: boolean): string | undefined {
-  return open && !phone ? 'chat-menu' : undefined;
-}
-
-// ---- the ceremony card on a small screen --------------------------------------------------------------------------------------------------------
-
-/** Whether the pinned ceremony card shows in full: on a phone it is one line until the person opens it, on the computer it is open until they close it; their choice wins. */
-export const cardOpen = (phone: boolean, chosen: boolean | null): boolean => (chosen === null ? !phone : chosen);
-
-/**
- * What the pinned card draws of itself. On a phone the chip above it already says "Now", the ceremony's name and its progress, so an open card is only its body (the hint and the
- * buttons) and does not repeat them; on the computer there is no chip and the card is whole.
- */
-export function cardParts(phone: boolean): { head: boolean } {
-  return { head: !phone };
 }
 
 // ---- the focus of the box ---------------------------------------------------------------------------------------------------------------------

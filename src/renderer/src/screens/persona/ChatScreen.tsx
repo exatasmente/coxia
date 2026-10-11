@@ -1,29 +1,24 @@
-import { useId, useMemo, useState } from 'react';
 import type { ReleaseAction } from '../../../../shared/types';
 import type { AgentDef } from '../../../../shared/config/types';
 import { agentThreadId } from '../../../../shared/forum';
 import type { PushTarget } from '../../../../shared/push';
 import type { Screen } from '../../App';
 import type { Ceremony } from '../../ceremony';
-import { Chevron } from '../../ActivityTree';
-import { cardOpen, cardParts } from '../../chatModel';
 import { useCycle } from '../../cycleApi';
-import { OVERVIEW, ceremonyCard, homeCounts } from '../../home';
+import { OVERVIEW, ceremonyCard } from '../../home';
 import { useT } from '../../i18n';
 import { targetToScreen } from '../../pushTarget';
-import { useIsPhone } from '../../useIsPhone';
-import { useWatcherAlerts } from '../../watchersApi';
 import type { AgoraPlan } from '../../dashboard';
 import { AgoraCard } from '../TodayParts';
-import { useRuns } from '../cycle/runsApi';
 import { useAgora } from '../useAgora';
 import { ChatHeader } from './ChatHeader';
 import { ChatThread } from './ChatThread';
-import { StatusStrip } from './StatusStrip';
+import { HomeShell } from './HomeShell';
+import { NavIcon } from './navIcons';
 import './chat.css';
 
-// The chat that is the home: the header, the strip of counts, the conversation with the persona, the ceremony card when there is something to say, and the box. The ceremony
-// state belongs to the app (useCeremony) and is only read here; a ceremony started from this screen is held in its own screens, as before.
+// The chat that is the home: the navigation beside it (a sheet on the phone), the header, the conversation with the persona taking the height, the ceremony bar when there is
+// something to say, and the box. The ceremony state belongs to the app (useCeremony) and is only read here; a ceremony started from this screen is held in its own screens.
 
 interface Props {
   ceremony: Ceremony;
@@ -34,42 +29,38 @@ interface Props {
 }
 
 /**
- * The ceremony card pinned above the box. On the computer it is the Agora card in full; on a phone it is one line (what it is, in a word) that opens the card when tapped,
- * so the conversation keeps most of the height of a small screen.
+ * The ceremony as one line above the box: what it is, where it stands, and its buttons. The accent is kept for a ceremony that waits to start or is being held; an ended one
+ * is told quietly, since the conversation is what the person came for.
  */
-function CeremonyCard({ plan, onAction }: { plan: AgoraPlan; onAction: (a: AgoraPlan['primary']['action']) => void }) {
+function CeremonyBar({ plan, onAction }: { plan: AgoraPlan; onAction: (a: AgoraPlan['primary']['action']) => void }) {
   const t = useT();
-  const phone = useIsPhone();
-  const [chosen, setChosen] = useState<boolean | null>(null);
-  const body = useId();
-  const open = cardOpen(phone, chosen);
+  const loud = plan.phase === 'ready' || plan.phase === 'live';
+  const detail = [plan.progress, plan.hint].filter(Boolean).join(' · ');
   return (
-    <div className="chat-card">
-      {phone && (
-        <button type="button" className="chat-card-chip" aria-expanded={open} aria-controls={body} onClick={() => setChosen(!open)}>
-          <Chevron open={open} />
-          <span className="chat-card-chip-label">{t('ui.today.now')}</span>
-          <span className="chat-card-chip-title">{plan.title}</span>
-          {plan.progress && <span className="chat-card-chip-progress small">{plan.progress}</span>}
+    <section className={`chat-cer ${loud ? 'chat-cer-loud' : ''}`} aria-label={t('ui.today.now')}>
+      <span className="chat-cer-icon"><NavIcon id="call" /></span>
+      <div className="chat-cer-text">
+        <span className="chat-cer-title">{plan.title}</span>
+        {detail && <span className="chat-cer-detail">{detail}</span>}
+      </div>
+      <div className="chat-cer-actions">
+        <button type="button" className={`btn ${loud ? 'btn-accent' : ''}`} disabled={plan.primary.disabled} onClick={() => onAction(plan.primary.action)}>
+          {plan.primary.label}
         </button>
-      )}
-      {open && (
-        <div id={body}>
-          <AgoraCard plan={plan} onAction={onAction} bare={!cardParts(phone).head} />
-        </div>
-      )}
-    </div>
+        {plan.secondary.map((b) => (
+          <button key={b.action} type="button" className="btn" disabled={b.disabled} onClick={() => onAction(b.action)}>
+            {b.label}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
 export function ChatScreen({ ceremony: c, go, persona, team, actions }: Props) {
   const t = useT();
   const cycle = useCycle();
-  const runs = useRuns();
-  const { alerts } = useWatcherAlerts();
   const { plan, onAgora } = useAgora(c, go);
-  const cards = useMemo(() => c.cards?.cards ?? [], [c.cards]);
-  const counts = useMemo(() => homeCounts({ cards, turns: c.turns, answered: c.answered, runs, actions, alerts }), [cards, c.turns, c.answered, runs, actions, alerts]);
   const card = ceremonyCard(plan, cycle?.ceremonies);
 
   // A tap on a button of an answer opens that screen on this device only.
@@ -79,28 +70,29 @@ export function ChatScreen({ ceremony: c, go, persona, team, actions }: Props) {
   };
 
   return (
-    <div className="chat-page">
-      <ChatHeader persona={persona} go={go} ceremony={c} />
-      <StatusStrip counts={counts} go={go} />
-      {c.cardsError && <div className="error">{t('ui.today.cardsError', { error: c.cardsError })}</div>}
-      {persona ? (
-        <ChatThread
-          thread={agentThreadId(persona.id)}
-          persona={persona}
-          team={team}
-          onOpen={open}
-          above={card ? <CeremonyCard plan={card} onAction={onAgora} /> : undefined}
-        />
-      ) : (
-        <div className="panel chat-none" role="status">
-          <p>{t('ui.chat.noPersona.body')}</p>
-          <div className="wz-actions">
-            <button type="button" className="btn btn-dark" onClick={() => go({ name: 'settings' })}>{t('ui.chat.noPersona.settings')}</button>
-            <button type="button" className="btn" onClick={() => go(OVERVIEW)}>{t('ui.chat.menu.overview')}</button>
+    <HomeShell go={go} ceremony={c} actions={actions} current="chat" persona={!!persona}>
+      <div className="chat-page">
+        <ChatHeader persona={persona} go={go} ceremony={c} actions={actions} current="chat" />
+        {c.cardsError && <div className="error">{t('ui.today.cardsError', { error: c.cardsError })}</div>}
+        {persona ? (
+          <ChatThread
+            thread={agentThreadId(persona.id)}
+            persona={persona}
+            team={team}
+            onOpen={open}
+            above={card ? <CeremonyBar plan={card} onAction={onAgora} /> : undefined}
+          />
+        ) : (
+          <div className="panel chat-none" role="status">
+            <p>{t('ui.chat.noPersona.body')}</p>
+            <div className="wz-actions">
+              <button type="button" className="btn btn-dark" onClick={() => go({ name: 'settings' })}>{t('ui.chat.noPersona.settings')}</button>
+              <button type="button" className="btn" onClick={() => go(OVERVIEW)}>{t('ui.chat.menu.overview')}</button>
+            </div>
+            {card && <AgoraCard plan={card} onAction={onAgora} />}
           </div>
-          {card && <AgoraCard plan={card} onAction={onAgora} />}
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </HomeShell>
   );
 }

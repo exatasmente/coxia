@@ -117,6 +117,29 @@ export function SystemLine({ m }: { m: ForumMessage }) {
   );
 }
 
+/** Lines the app wrote one after another, as one line that opens: how many there are and the last one, then all of them. */
+export function NoticeGroup({ items }: { items: ForumMessage[] }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const last = items[items.length - 1];
+  return (
+    <li className="chat-row chat-row-system" id={`msg-${items[0].seq}`}>
+      <button type="button" className="chat-notices" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        <Chevron open={open} />
+        <span className="chat-notices-count">{t('ui.chat.notices', { count: items.length })}</span>
+        {!open && <span className="chat-notices-last">{messageText(last)}</span>}
+      </button>
+      {open && (
+        <ul className="chat-notices-list">
+          {items.map((m) => (
+            <li key={m.seq} id={`msg-${m.seq}`} className="chat-system">{messageText(m)}</li>
+          ))}
+        </ul>
+      )}
+    </li>
+  );
+}
+
 /** Stop (and watch, where the call has a screen open): the controls the call line has in every conversation, nothing new. */
 function AnswerActions({ thread, agent, team, screen, onWatch }: { thread: string; agent: string; team: readonly AgentDef[] | undefined; screen?: OpenScreenInfo; onWatch: (key: string) => void }) {
   const t = useT();

@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
 import { type AttachmentRef, ATTACHMENT_LIMITS, formatBytes } from '../../../../shared/attachments';
 import { type ForumMessage, parseMentions } from '../../../../shared/forum';
@@ -7,6 +7,7 @@ import { errorText } from '../../api';
 import { composerAria, refocusAfterSend } from '../../chatModel';
 import { useT } from '../../i18n';
 import { useIsPhone } from '../../useIsPhone';
+import { AttachIcon, SendIcon } from '../persona/navIcons';
 import { agentName } from './names';
 import { forumApi } from './forumApi';
 import './cycle.css';
@@ -71,10 +72,12 @@ export interface ComposerProps {
   placeholder?: string;
   /** Focus the box when it appears (the computer's chat). Default off: a phone would raise its keyboard over the conversation. */
   autoFocus?: boolean;
+  /** One line that grows as the text does, with the attach and send buttons as icons inside it and the hint read only by a screen reader (the persona's chat). Default off. */
+  inline?: boolean;
 }
 
 /** The box a person writes in, with `@agent` completed from the team as they type and files attached by button, drag and drop or paste. */
-export function Composer({ thread, team, note, onSent, onSendBack, mentions = true, enterSends = false, className = '', hint, placeholder, autoFocus = false }: ComposerProps) {
+export function Composer({ thread, team, note, onSent, onSendBack, mentions = true, enterSends = false, className = '', hint, placeholder, autoFocus = false, inline = false }: ComposerProps) {
   const t = useT();
   const phone = useIsPhone();
   const [text, setText] = useState('');
@@ -90,11 +93,19 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
   // Whether the box had the focus when the button was pressed: pressing it moves the focus to the button, and the box must know it was there to take it back on a phone.
   const hadFocus = useRef(false);
   const listId = useId();
+  const hintId = useId();
   // A draft agent is not offered, except in its own conversation: there the person is talking to it.
   const named = useMemo(() => (mentions ? mentionChoices(team ?? [], thread).map((a) => ({ id: a.id, name: agentName(team, a.id) })) : []), [team, thread, mentions]);
   useEffect(() => {
     if (autoFocus) box.current?.focus();
   }, [autoFocus]);
+  // The inline box grows with its text up to a few lines, then scrolls.
+  useLayoutEffect(() => {
+    const el = box.current;
+    if (!inline || !el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [inline, text]);
   const at = dismissed || !mentions ? null : mentionAt(text, caret);
   const options = at ? mentionOptions(named, at.query) : [];
 
@@ -192,7 +203,7 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
       {files.length > 0 && <AttachmentNotice />}
       <PendingFiles files={files} onRemove={removeFile} />
       <div
-        className="cy-composer-box"
+        className={`cy-composer-box ${inline ? 'cy-composer-inline' : ''}`}
         onDragOver={(e) => {
           e.preventDefault();
           setDrag(true);
@@ -206,13 +217,14 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
       >
         <textarea
           ref={box}
-          className="text-input cy-textarea cy-compose"
-          rows={2}
+          className={`text-input cy-textarea cy-compose ${inline ? 'cy-compose-inline' : ''}`}
+          rows={inline ? 1 : 2}
           value={text}
           // Read-only while a message leaves, not disabled: a disabled box drops the focus and the person has to click back into it.
           readOnly={busy}
           aria-busy={busy || undefined}
           aria-label={t('ui.forum.compose')}
+          aria-describedby={inline ? hintId : undefined}
           placeholder={placeholder ?? t('ui.forum.composePlaceholder')}
           {...composerAria(mentions, listId, options.length, active)}
           onChange={(e) => {
@@ -264,37 +276,61 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
             ))}
           </ul>
         )}
+        {inline && (
+          <>
+            <button type="button" className="btn icon-btn cy-inline-btn" disabled={busy} aria-label={t('ui.forum.file.attach')} title={t('ui.forum.file.attach')} onClick={() => picker.current?.click()}>
+              <AttachIcon />
+            </button>
+            <button
+              type="button"
+              className="btn btn-dark icon-btn cy-inline-btn"
+              disabled={busy || (!text.trim() && !files.length)}
+              aria-label={t('ui.forum.send')}
+              title={hint ?? t('ui.forum.send')}
+              onPointerDown={() => {
+                hadFocus.current = document.activeElement === box.current;
+              }}
+              onClick={send}
+            >
+              {busy ? <span className="spinner" aria-hidden="true" /> : <SendIcon />}
+            </button>
+          </>
+        )}
       </div>
-      <div className="row spread">
-        <span className="faint small">{hint ?? t('ui.forum.sendHint')}</span>
-        <span className="row">
-          <input
-            ref={picker}
-            type="file"
-            multiple
-            hidden
-            aria-hidden="true"
-            onChange={(e) => {
-              addFiles(e.target.files);
-              e.target.value = '';
-            }}
-          />
-          <button type="button" className="btn cy-attach-btn" disabled={busy} aria-label={t('ui.forum.file.attach')} onClick={() => picker.current?.click()}>
-            {t('ui.forum.file.attach')}
-          </button>
-          <button
-            type="button"
-            className="btn btn-dark"
-            disabled={busy || (!text.trim() && !files.length)}
-            onPointerDown={() => {
-              hadFocus.current = document.activeElement === box.current;
-            }}
-            onClick={send}
-          >
-            {busy ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.forum.send')}
-          </button>
-        </span>
-      </div>
+      <input
+        ref={picker}
+        type="file"
+        multiple
+        hidden
+        aria-hidden="true"
+        onChange={(e) => {
+          addFiles(e.target.files);
+          e.target.value = '';
+        }}
+      />
+      {inline ? (
+        <span id={hintId} className="sr-only">{hint ?? t('ui.forum.sendHint')}</span>
+      ) : (
+        <div className="row spread">
+          <span className="faint small">{hint ?? t('ui.forum.sendHint')}</span>
+          <span className="row">
+            <button type="button" className="btn cy-attach-btn" disabled={busy} aria-label={t('ui.forum.file.attach')} onClick={() => picker.current?.click()}>
+              {t('ui.forum.file.attach')}
+            </button>
+            <button
+              type="button"
+              className="btn btn-dark"
+              disabled={busy || (!text.trim() && !files.length)}
+              onPointerDown={() => {
+                hadFocus.current = document.activeElement === box.current;
+              }}
+              onClick={send}
+            >
+              {busy ? <span className="spinner" aria-hidden="true" /> : null} {t('ui.forum.send')}
+            </button>
+          </span>
+        </div>
+      )}
       {error && <div className="error" role="alert">{error}</div>}
     </div>
   );

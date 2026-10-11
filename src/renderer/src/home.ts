@@ -11,7 +11,7 @@ import { type AgoraPlan, isPendingAction, needsYou, pendingQuestions } from './d
 
 // Where the app opens, where every "back" returns, and what the chat that is the home decides above its markup. A screen asks for the home here and never names it, so which
 // screen is the home is decided in one place. It is the chat with the persona, or the invitation to make one (`homeView`); the Overview holds what Today held. Plain functions,
-// because nothing renders a component in the tests: the counts of the strip, the card of the ceremony, the rows of the menu.
+// because nothing renders a component in the tests: the counts, the ceremony bar, the rows of the navigation.
 
 /** The Overview: what Today held, a screen of its own. */
 export const OVERVIEW: Screen = { name: 'overview' };
@@ -24,7 +24,7 @@ export type DeepBack = 'chat' | 'call';
 
 export const deepBack = (back: DeepBack): Screen => (back === 'call' ? { name: 'call' } : HOME);
 
-// ---- the strip ----------------------------------------------------------------------------------------------------------------------------------
+// ---- the counts ----------------------------------------------------------------------------------------------------------------------------------
 
 /** The part of the Overview a count opens at. */
 export type OverviewSection = 'blocked' | 'asking' | 'needs';
@@ -52,7 +52,7 @@ export interface HomeCounts {
   needs: number;
 }
 
-/** The four counts of the strip. The Overview lists what these count (`blockedCards`, `pendingQuestions`, `needsYou`), so the strip and the Overview cannot disagree. */
+/** The four counts of the navigation. The Overview lists what these count (`blockedCards`, `pendingQuestions`, `needsYou`), so the navigation and the Overview cannot disagree. */
 export function homeCounts(i: HomeCountsInput): HomeCounts {
   return {
     blocked: blockedCards(i.cards, i.runs).length,
@@ -62,37 +62,35 @@ export function homeCounts(i: HomeCountsInput): HomeCounts {
   };
 }
 
-/** Where each count of the strip leads: the Overview at its section, or Actions. */
-export function stripTarget(count: keyof HomeCounts): Screen {
+/** Where each count leads: the Overview at its section, or Actions. */
+export function countTarget(count: keyof HomeCounts): Screen {
   return count === 'actions' ? { name: 'actions' } : { name: 'overview', section: count };
 }
 
-/**
- * The catalog key of a count's label. A phone has a quarter of the width for each, and "Precisa de você" does not fit it at a size that reads, so that one has a shorter
- * wording there; the others are short enough as they are.
- */
-export function stripLabelKey(count: keyof HomeCounts, phone: boolean): string {
-  if (count === 'needs') return phone ? 'ui.chat.strip.needsShort' : 'ui.chat.strip.needs';
-  return { blocked: 'ui.today.tiles.blockers', asking: 'ui.today.tiles.questions', actions: 'ui.today.tiles.actions' }[count];
-}
+/** Whether anything is counted: the phone's menu button carries a dot then, since the counts live in the menu. */
+export const anyCount = (c: HomeCounts): boolean => c.blocked + c.asking + c.actions + c.needs > 0;
 
 // ---- the ceremony card --------------------------------------------------------------------------------------------------------------------------
 
-/** The card pinned above the box: the plan of the Agora card of the Overview when it has something to say, and nothing for a cycle with no pre-daily or while the cards load. */
+/** The bar above the box: the plan of the Agora card of the Overview when it has something to say, and nothing for a cycle with no pre-daily or while the cards load. */
 export function ceremonyCard(plan: AgoraPlan, ceremonies: Pick<CycleView['ceremonies'], 'preDaily'> | undefined): AgoraPlan | null {
   if (ceremonies?.preDaily === false) return null;
   return plan.phase === 'loading' ? null : plan;
 }
 
-// ---- the menu -----------------------------------------------------------------------------------------------------------------------------------
+// ---- the navigation -----------------------------------------------------------------------------------------------------------------------------
 
-export type MenuId =
+export type NavId =
+  | 'chat'
   | 'overview'
+  | 'blocked'
+  | 'asking'
+  | 'actions'
+  | 'needs'
   | 'call'
   | 'deep'
   | 'qa'
   | 'retro'
-  | 'actions'
   | 'history'
   | 'runs'
   | 'board'
@@ -106,43 +104,58 @@ export type MenuId =
   | 'auditoria'
   | 'help';
 
-export interface MenuRow {
-  id: MenuId;
+export interface NavRow {
+  id: NavId;
   /** The catalog key of the words of the row. */
   label: string;
   /** The screen it opens; the two ceremonies that work on a card (`deep`, `qa`) take it from the cards, so they have none here. */
   screen: Screen | null;
-  group: 'screens' | 'ceremonies';
 }
 
-const screenRow = (id: MenuId, label: string, group: MenuRow['group'] = 'screens'): MenuRow => ({ id, label, screen: { name: id } as Screen, group });
+export interface NavGroup {
+  id: 'home' | 'attention' | 'ceremonies' | 'cycle' | 'app';
+  /** The catalog key of the group's heading; the first group has none. */
+  label: string | null;
+  rows: NavRow[];
+}
 
-/** The ceremonies the menu offers, the way the Overview offers them: a ceremony the cycle turned off is not listed. */
-function ceremonyRows(on: Partial<CycleView['ceremonies']> | undefined): MenuRow[] {
+const row = (id: NavId & Screen['name'], label: string): NavRow => ({ id, label, screen: { name: id } as Screen });
+const countRow = (id: keyof HomeCounts, label: string): NavRow => ({ id, label, screen: countTarget(id) });
+
+/** The ceremonies the navigation offers, the way the Overview offers them: a ceremony the cycle turned off is not listed. */
+function ceremonyRows(on: Partial<CycleView['ceremonies']> | undefined): NavRow[] {
   return [
-    ...(on?.preDaily !== false ? [screenRow('call', 'ui.today.preDaily', 'ceremonies')] : []),
-    ...(on?.unblock !== false ? [{ id: 'deep' as const, label: 'ui.today.deepen', screen: null, group: 'ceremonies' as const }] : []),
-    ...(on?.qaHandoff !== false ? [{ id: 'qa' as const, label: 'ui.today.qaHandoff', screen: null, group: 'ceremonies' as const }] : []),
-    ...(on?.retro !== false ? [screenRow('retro', 'ui.today.retro', 'ceremonies')] : []),
+    ...(on?.preDaily !== false ? [row('call', 'ui.today.preDaily')] : []),
+    ...(on?.unblock !== false ? [{ id: 'deep' as const, label: 'ui.today.deepen', screen: null }] : []),
+    ...(on?.qaHandoff !== false ? [{ id: 'qa' as const, label: 'ui.today.qaHandoff', screen: null }] : []),
+    ...(on?.retro !== false ? [row('retro', 'ui.today.retro')] : []),
   ];
 }
 
 /**
- * What the menu of the chat lists. On the computer, the buttons of the header Today had; on the phone, the rows of the More sheet and Actions and History besides, because the chat
- * has no bottom bar to carry them. Both start with the Overview and carry the ceremonies, so none depends on the model understanding a request.
+ * The navigation of the home, in groups: the sidebar on the computer and the menu sheet on the phone list the same rows. What needs the person comes first, with its counts;
+ * then the ceremonies, the cycle's screens and the app's. Every screen is one tap away, so none depends on the model understanding a request.
  */
-export function menuRows(phone: boolean, on?: Partial<CycleView['ceremonies']>): MenuRow[] {
-  const overview = screenRow('overview', 'ui.chat.menu.overview');
-  const common = [
-    screenRow('runs', 'ui.runs.nav'),
-    screenRow('board', 'ui.board.nav'),
-    screenRow('forum', 'ui.forum.nav'),
-    screenRow('procedures', 'ui.procedures.nav'),
-    screenRow('memory', 'ui.memory.nav'),
-  ];
-  const rest = [screenRow('custo', 'ui.nav.cost'), screenRow('radar', 'ui.nav.radar'), screenRow('saude', 'ui.nav.health'), screenRow('auditoria', 'ui.nav.audit'), screenRow('help', 'ui.nav.help')];
-  if (phone) return [overview, ...ceremonyRows(on), screenRow('actions', 'ui.nav.actions'), screenRow('history', 'ui.nav.history'), screenRow('settings', 'ui.nav.settings'), ...common, ...rest];
-  return [overview, ...ceremonyRows(on), screenRow('history', 'ui.nav.history'), ...common, screenRow('settings', 'ui.nav.settings'), ...rest];
+export function navGroups(on: Partial<CycleView['ceremonies']> | undefined, persona: boolean): NavGroup[] {
+  return [
+    { id: 'home', label: null, rows: [...(persona ? [row('chat', 'ui.nav.chat')] : []), row('overview', 'ui.chat.menu.overview')] },
+    {
+      id: 'attention',
+      label: 'ui.chat.nav.attention',
+      rows: [countRow('blocked', 'ui.today.tiles.blockers'), countRow('asking', 'ui.today.tiles.questions'), countRow('actions', 'ui.today.tiles.actions'), countRow('needs', 'ui.chat.strip.needs')],
+    },
+    { id: 'ceremonies', label: 'ui.chat.nav.ceremonies', rows: ceremonyRows(on) },
+    {
+      id: 'cycle',
+      label: 'ui.chat.nav.cycle',
+      rows: [row('runs', 'ui.runs.nav'), row('board', 'ui.board.nav'), row('forum', 'ui.forum.nav'), row('procedures', 'ui.procedures.nav'), row('memory', 'ui.memory.nav'), row('history', 'ui.nav.history')],
+    },
+    {
+      id: 'app',
+      label: 'ui.chat.nav.app',
+      rows: [row('radar', 'ui.nav.radar'), row('saude', 'ui.nav.health'), row('custo', 'ui.nav.cost'), row('auditoria', 'ui.nav.audit'), row('settings', 'ui.nav.settings'), row('help', 'ui.nav.help')],
+    },
+  ].filter((g) => g.rows.length > 0) as NavGroup[];
 }
 
 /** The cards the QA hand-off may take, the ones ready for QA first (the Overview's list, and the first of it is what the menu opens). */
