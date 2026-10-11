@@ -5,7 +5,7 @@ import { api, errorText } from '../api';
 import { intlLocale, useT } from '../i18n';
 import { BackIcon } from './icons';
 import { HOME } from '../home';
-import { approvedOwn, basisLines, doorWords, filterEntries, indexOfAct, isWhoFilter, whoOf, WHO_FILTERS, type WhoFilter } from '../auditModel';
+import { approvedOwn, basisLines, basisSummary, doorWords, filterEntries, indexOfAct, isWhoFilter, whoOf, WHO_FILTERS, type WhoFilter } from '../auditModel';
 
 // A plain string is a product name; { key } is a catalog key translated when the row renders.
 const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
@@ -49,6 +49,7 @@ function Row({ e, focused }: { e: AuditEntry; focused: boolean }) {
   const fields = Object.entries(e.fields);
   const door = doorWords(e.door);
   const basis = basisLines(e);
+  const foldKey = basisSummary(basis);
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     if (focused) ref.current?.scrollIntoView({ block: 'center' });
@@ -75,11 +76,11 @@ function Row({ e, focused }: { e: AuditEntry; focused: boolean }) {
           {door && <span className="faint">{t('ui.audit.door', { door: 'key' in door ? t(door.key) : door.raw })}</span>}
           {e.said && <span>{t('ui.audit.said', { said: e.said })}</span>}
           {approvedOwn(e) && <span>{t('ui.audit.ownProposal')}</span>}
-          {basis && (
+          {basis && foldKey && (
             <details>
-              <summary>{t('ui.audit.basis')}</summary>
+              <summary>{t(foldKey)}</summary>
               <div className="mono small muted" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                {[t('ui.audit.basis.subject', { subject: basis.subject }), ...basis.reads, ...(basis.message !== null ? [t('ui.audit.basis.message', { n: basis.message })] : [])].join('\n')}
+                {[...(basis.subject ? [t('ui.audit.basis.subject', { subject: basis.subject })] : []), ...basis.reads, ...(basis.message !== null ? [t('ui.audit.basis.message', { n: basis.message })] : [])].join('\n')}
               </div>
             </details>
           )}

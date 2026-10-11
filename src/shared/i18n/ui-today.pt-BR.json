@@ -2,6 +2,7 @@
   "ui.audit.actOlder": "Esse ato é mais antigo que as 2.000 entradas mais novas que esta tela lê.",
   "ui.audit.badge.persona": "Pela persona",
   "ui.audit.basis": "O que havia sido lido",
+  "ui.audit.basis.decided": "Sobre o que decidiu",
   "ui.audit.basis.message": "Respondendo à mensagem {n}",
   "ui.audit.basis.subject": "Decidiu sobre: {subject}",
   "ui.audit.door": "Pedido feito pela {door}",

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { AuditEntry } from '../src/shared/auditoria';
-import { approvedOwn, basisLines, doorWords, filterEntries, indexOfAct, isWhoFilter, whoOf, WHO_FILTERS } from '../src/renderer/src/auditModel';
+import { approvedOwn, basisLines, basisSummary, doorWords, filterEntries, indexOfAct, isWhoFilter, whoOf, WHO_FILTERS } from '../src/renderer/src/auditModel';
 import en from '../src/shared/i18n/ui-today.en.json';
 import ptBR from '../src/shared/i18n/ui-today.pt-BR.json';
 
@@ -72,8 +72,20 @@ describe('what a persona line shows', () => {
   });
 });
 
+describe('the fold of an entry', () => {
+  const read = { tool: 'Runs', op: 'get', target: 'run-1', excerpt: 'green' };
+
+  it('is "what it had read" only when it read something, "what it decided on" when only the subject exists, and no fold when neither does', () => {
+    expect(basisSummary(basisLines(entry({ basis: { subject: 'Approve the push', reads: [read], message: 12 } })))).toBe('ui.audit.basis');
+    expect(basisSummary(basisLines(entry({ basis: { subject: '', reads: [read], message: 12 } })))).toBe('ui.audit.basis');
+    expect(basisSummary(basisLines(entry({ basis: { subject: 'Approve the push', reads: [], message: 12 } })))).toBe('ui.audit.basis.decided');
+    expect(basisSummary(basisLines(entry({ basis: { subject: '', reads: [], message: 12 } })))).toBeNull();
+    expect(basisSummary(basisLines(entry()))).toBeNull();
+  });
+});
+
 describe('the words of the screen', () => {
-  const keys = ['ui.audit.kind.config', 'ui.audit.kind.secret', 'ui.audit.kind.pluginDecision', 'ui.audit.kind.act', 'ui.audit.who.label', 'ui.audit.who.all', 'ui.audit.who.person', 'ui.audit.who.persona', 'ui.audit.who.agent', 'ui.audit.badge.persona', 'ui.audit.door', 'ui.audit.door.window', 'ui.audit.door.paired', 'ui.audit.said', 'ui.audit.ownProposal', 'ui.audit.basis', 'ui.audit.basis.subject', 'ui.audit.basis.message', 'ui.audit.actOlder'];
+  const keys = ['ui.audit.kind.config', 'ui.audit.kind.secret', 'ui.audit.kind.pluginDecision', 'ui.audit.kind.act', 'ui.audit.who.label', 'ui.audit.who.all', 'ui.audit.who.person', 'ui.audit.who.persona', 'ui.audit.who.agent', 'ui.audit.badge.persona', 'ui.audit.door', 'ui.audit.door.window', 'ui.audit.door.paired', 'ui.audit.said', 'ui.audit.ownProposal', 'ui.audit.basis', 'ui.audit.basis.decided', 'ui.audit.basis.subject', 'ui.audit.basis.message', 'ui.audit.actOlder'];
 
   it('has the four new kinds, the filter, the badge and the fold in both catalogs, worded differently', () => {
     for (const key of keys) {

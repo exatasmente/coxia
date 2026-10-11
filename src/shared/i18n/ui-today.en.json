@@ -2,6 +2,7 @@
   "ui.audit.actOlder": "That act is older than the newest 2,000 entries this screen reads.",
   "ui.audit.badge.persona": "By the persona",
   "ui.audit.basis": "What it had read",
+  "ui.audit.basis.decided": "What it decided on",
   "ui.audit.basis.message": "Answering message {n}",
   "ui.audit.basis.subject": "Decided on: {subject}",
   "ui.audit.door": "Asked from {door}",

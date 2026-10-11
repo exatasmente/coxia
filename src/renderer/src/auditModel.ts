@@ -37,9 +37,19 @@ export function doorWords(door: string | undefined): { key: string } | { raw: st
   return { raw: door };
 }
 
-/** The folded part of an entry: what it decided on and each thing it had read, as lines of text with no markup. Empty when there is no basis. */
+/** The folded part of an entry: what it decided on and each thing it had read, as lines of text with no markup. Null when there is no basis. */
 export function basisLines(e: Pick<AuditEntry, 'basis'>): { subject: string; reads: string[]; message: number | null } | null {
   const b = e.basis;
   if (!b) return null;
   return { subject: b.subject, reads: b.reads.map((r) => `${r.tool}.${r.op} ${r.target}${r.excerpt ? `: ${r.excerpt}` : ''}`), message: b.message };
+}
+
+/**
+ * How the fold of an entry reads, or null when there is nothing to unfold: "what it had read" only when it read something, "what it decided on" when only the subject exists, and
+ * no fold at all when neither does (a message number alone is not worth a click).
+ */
+export function basisSummary(b: { subject: string; reads: readonly unknown[] } | null): 'ui.audit.basis' | 'ui.audit.basis.decided' | null {
+  if (!b) return null;
+  if (b.reads.length > 0) return 'ui.audit.basis';
+  return b.subject ? 'ui.audit.basis.decided' : null;
 }
