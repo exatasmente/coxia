@@ -41,10 +41,10 @@ import { getConfig, updateConfig } from './workspaceConfig';
 // screen's; here nothing is kept between two calls but the draft agent itself, which is an ordinary entry of the team marked as a draft, inert by construction.
 
 /** A refusal or a failure already worded for the person: the screen shows its text as it is. */
-class AssistError extends Error {}
+export class AssistError extends Error {}
 
 /** Whatever went wrong, as text a person can act on: the budget of a provider, a model that ran out of steps, or the reason redacted and cut. */
-function explain(e: unknown): Error {
+export function explain(e: unknown): Error {
   if (e instanceof AssistError) return e;
   // The open engine's detail is its own worded message (it says the app retries by itself, which the assistant does not): only the SDK's is the provider's own text.
   if (e instanceof ProviderBudgetError) return new AssistError(t('main.assist.error.budget', { provider: e.provider, detail: e.engine === 'claude-sdk' ? e.detail.slice(0, 300) : '' }).trim());
@@ -199,7 +199,7 @@ export async function saveAssistDraft(raw: unknown): Promise<{ id: string }> {
 }
 
 /** A conversation is being emptied: the screens its agent has open on it end first. */
-const endScreensOn = (thread: string): void => void screenSessions()?.closeThread(thread, 'thread').catch(() => undefined);
+export const endScreensOn = (thread: string): void => void screenSessions()?.closeThread(thread, 'thread').catch(() => undefined);
 
 /** Concludes the assistant: the conversation of the test is emptied and begun again, and the draft stays in the team until the editor saves it. Only a draft. */
 export function concludeAssistDraft(raw: unknown): { id: string } {

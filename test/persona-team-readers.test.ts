@@ -133,6 +133,7 @@ const READERS: Record<string, 'through' | 'direct' | 'both'> = {
   'src/main/agentAssist.ts': 'direct',
   'src/main/forum.ts': 'both',
   'src/main/mentions/answer.ts': 'both',
+  'src/main/persona/assist.ts': 'direct',
   'src/main/runner/executor.ts': 'through',
   'src/main/runner/service.ts': 'through',
   'src/main/workspaceConfig.ts': 'through',

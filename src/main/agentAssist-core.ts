@@ -94,7 +94,7 @@ function answerText(answer: AssistAnswer | undefined): string {
   return [answer.picked.join('; '), answer.other.trim() ? cp('assist.section.other', { text: answer.other.trim() }) : '', answer.text.trim()].filter(Boolean).join('; ');
 }
 
-function roundsText(rounds: AssistRound[]): string {
+export function roundsText(rounds: AssistRound[]): string {
   return rounds
     .map((round, i) =>
       [
@@ -105,7 +105,7 @@ function roundsText(rounds: AssistRound[]): string {
     .join('\n');
 }
 
-const draftParts = (d: AssistDraft) => ({ name: fence(d.name), job: fence(d.job), instructions: fence(d.instructions) });
+export const draftParts = (d: AssistDraft) => ({ name: fence(d.name), job: fence(d.job), instructions: fence(d.instructions) });
 
 const list = (items: string[]): string => (items.length ? items.join('\n') : cp('assist.section.none'));
 

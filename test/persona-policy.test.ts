@@ -1,19 +1,22 @@
-// What a paired browser may do with the persona's chat (#247): everything the window does, on purpose (the maintainer's decision at gate 1). The text of an answer being
-// written is read through `persona:live-read`; the conversation itself goes through `forum:*` and the Stop through `runs:callStop`, both open. The channels of the persona's own
+// What a paired browser may do with the persona and its chat (#247): everything the window does, on purpose (the maintainer's decision at gate 1), the wizard included. The text of an
+// answer being written is read through `persona:live-read`; the conversation itself goes through `forum:*` and the Stop through `runs:callStop`, both open. The channels of the persona's own
 // are named as open, and any other `persona:` channel is denied by a pattern built from the same set, so the tools of the later issues of the epic start closed.
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { PERSONA_LIVE_EVENT, PERSONA_LIVE_READ } from '../src/shared/persona';
+import { neutralConfig } from '../src/shared/config';
+import { addAgent, newAgent, updateAgent } from '../src/shared/config/team';
+import { PERSONA_LIVE_EVENT, PERSONA_LIVE_READ, personaAccess } from '../src/shared/persona';
 import { DESKTOP_ONLY, EXTERNAL_EFFECT, PERSONA_CHANNELS, webAccess, webRefusal } from '../src/main/webPolicy';
 
 // The module list pulls in every feature module, and the app's build info reads Electron at load.
 vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0', whenReady: () => Promise.resolve() }, BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] } }));
 const { moduleList } = await import('../src/main/modules');
 const { personaModule } = await import('../src/main/persona/module');
+const { refusedPaths } = await import('../src/main/configScope');
 
 const SRC = join(import.meta.dirname, '../src/main');
-const CHANNELS = ['persona:live-read'];
+const CHANNELS = ['persona:live-read', 'persona:round', 'persona:review', 'persona:saveDraft', 'persona:conclude', 'persona:discard', 'persona:finish', 'persona:save', 'persona:clear', 'persona:delete'];
 
 describe('web policy for the persona\'s channels', () => {
   it.each(CHANNELS)('lets a paired browser use %s, with or without the external-effects switch', (channel) => {
@@ -31,7 +34,7 @@ describe('web policy for the persona\'s channels', () => {
     }
   });
 
-  it.each(['persona:made-up', 'persona:', 'persona:live-read2', 'persona:live-read:x', 'persona:LIVE-READ', 'persona:live', 'persona:round2', 'persona:save-all', 'persona:approve'])('denies %s, with or without the external-effects switch', (channel) => {
+  it.each(['persona:made-up', 'persona:', 'persona:live-read2', 'persona:live-read:x', 'persona:LIVE-READ', 'persona:live', 'persona:round2', 'persona:save-all', 'persona:approve', 'persona:Finish', 'persona:finish2', 'persona:delete-all'])('denies %s, with or without the external-effects switch', (channel) => {
     expect(webAccess(channel)).toBe('deny');
     expect(webRefusal(channel, false)).not.toBeNull();
     expect(webRefusal(channel, true)).not.toBeNull();
@@ -66,6 +69,25 @@ describe('web policy for the persona\'s channels', () => {
   });
 });
 
+describe('the configuration route, which the wizard does not use', () => {
+  // A new agent counts as having no tracker and no shell, so a persona made through `config:cycle-save` with the starting access is a raise: the wizard builds it in the main
+  // process and a paired browser reaches it through the persona's channels. The route still lets the browser edit what it may.
+  const withPersona = () => addAgent(neutralConfig(), { id: 'me', name: 'Me', kind: 'persona', ...personaAccess() });
+  const blank = () => addAgent(neutralConfig(), { id: 'me', name: 'Me', kind: 'persona', tracker: 'none' });
+
+  it('accepts a changed instruction text of the persona from a paired browser', () => {
+    const before = blank();
+    expect(refusedPaths(before, updateAgent(before, 'me', { instructions: 'Newer.', name: 'Me 2', job: 'x' }))).toEqual([]);
+  });
+
+  it('refuses a raise of its tracker, and a persona made there with the starting access', () => {
+    const before = blank();
+    expect(refusedPaths(before, updateAgent(before, 'me', { tracker: 'read' }))).toEqual(['agents.team[me].tracker']);
+    expect(refusedPaths(neutralConfig(), withPersona())).toContain('agents.team[me].tracker');
+    expect(refusedPaths(neutralConfig(), addAgent(neutralConfig(), newAgent({ id: 'me', kind: 'persona' })))).toEqual([]);
+  });
+});
+
 describe('the persona module', () => {
   it('is in the list the app registers: a module written but missing there never runs', () => {
     expect(moduleList()).toContain(personaModule);
@@ -75,7 +97,7 @@ describe('the persona module', () => {
     const handlers = new Map<string, (...args: never[]) => unknown>();
     const emitted: unknown[] = [];
     personaModule({ handle: (channel, fn) => void handlers.set(channel, fn), notify: () => undefined, emit: (e) => void emitted.push(e), job: () => undefined });
-    expect([...handlers.keys()]).toEqual([PERSONA_LIVE_READ]);
+    expect([...handlers.keys()].sort()).toEqual([...CHANNELS].sort());
     expect(PERSONA_LIVE_EVENT).toBe('persona:live');
 
     const { personaLive } = await import('../src/main/persona/runtime');

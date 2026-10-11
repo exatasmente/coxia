@@ -145,6 +145,9 @@ export const mentionsModule: Module = () => {
   });
 };
 
+/** Whether an answer is going, or waiting its turn, in this thread: what stops a conversation from being emptied or its agent deleted under it. */
+export const answerPending = (thread: string): boolean => inFlight().has(thread);
+
 /** Waits for the answers the module started (a test, or a caller that wants the threads settled). */
 export async function mentionsIdle(): Promise<void> {
   for (let i = 0; i < 50; i++) {

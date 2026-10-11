@@ -31,6 +31,7 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   'test-env': { key: 'ui.audit.kind.testEnv' },
   memory: { key: 'ui.audit.kind.memory' },
   'turn-limit': { key: 'ui.audit.kind.turnLimit' },
+  persona: { key: 'ui.audit.kind.persona' },
 };
 
 function Row({ e }: { e: AuditEntry }) {
