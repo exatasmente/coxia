@@ -133,9 +133,10 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
         </header>
         {error && <div className="error">{error}</div>}
 
+        {/* The persona comes first: the team editor below is long, and the chat's menu leads here. */}
+        <PersonaSection go={go} />
         <ConfigWorkspacesSection go={go} />
         <TeamSettings />
-        <PersonaSection go={go} />
         <DocsSection go={go} />
 
         <section className="panel" style={{ padding: 20, gap: 14 }}>

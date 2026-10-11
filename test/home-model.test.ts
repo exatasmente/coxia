@@ -187,6 +187,16 @@ describe('Settings › Persona', () => {
   });
 });
 
+describe('Settings, in order', () => {
+  it('draws the Persona section before the long team editor, where the chat\'s menu leads', () => {
+    const text = sources.find((s) => s.file.endsWith('screens/Settings.tsx'))?.text ?? '';
+    const at = (tag: string) => text.indexOf(tag);
+    expect(at('<PersonaSection')).toBeGreaterThan(-1);
+    expect(at('<PersonaSection')).toBeLessThan(at('<ConfigWorkspacesSection'));
+    expect(at('<PersonaSection')).toBeLessThan(at('<TeamSettings'));
+  });
+});
+
 describe('"Not now" on the wizard', () => {
   it('is kept for the session in a variable and never stored: the next opening starts without it', () => {
     expect(wizardSnoozed()).toBe(false);
