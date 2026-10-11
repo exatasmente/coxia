@@ -117,11 +117,40 @@ describe('schema 29 to 30 and the repair of a persona', () => {
     expect(r.changed).toBe(true);
     expect(r.notes.join(' ')).toContain(`dropped agents.team[${i}].kind`);
     const kept = r.config.agents.team.find((a) => a.id === 'me');
-    expect(kept).toMatchObject({ instructions: 'about me', stages: [TEST_STAGES[0].id] });
+    expect(kept).toMatchObject({ instructions: 'about me', stages: [], autonomous: false, turnsTo: null });
     expect(kept).not.toHaveProperty('kind');
     expect(r.config.agents.team.find((a) => a.id === 'writer')?.job).toBe('writes');
     expect(r.config.agents.team.length).toBe(c.agents.team.length);
     expect(r.config.devCycle.stages).toEqual(TEST_STAGES);
+  });
+
+  it('loads a persona with system: true as an inert ordinary agent, with the team and the other agents untouched', () => {
+    const c = withTeam([persona({ system: true, instructions: 'about me' }), newAgent({ id: 'writer', name: 'Writer', job: 'writes' })]);
+    const r = migrateConfig({ ...JSON.parse(JSON.stringify(c)), schemaVersion: CONFIG_SCHEMA_VERSION }, { legacyInstall: false });
+    const kept = r.config.agents.team.find((a) => a.id === 'me');
+    expect(kept).toMatchObject({ instructions: 'about me', stages: [], autonomous: false, turnsTo: null });
+    expect(kept).not.toHaveProperty('kind');
+    expect(kept?.system ?? false).toBe(false);
+    expect(r.config.agents.team.find((a) => a.id === 'writer')?.job).toBe('writes');
+    expect(r.config.agents.team.length).toBe(c.agents.team.length);
+    expect(r.config.devCycle.stages).toEqual(TEST_STAGES);
+  });
+
+  it('keeps the team when a persona lists a stage the cycle does not have, and leaves the agent with no stage, squad or autonomy', () => {
+    const c = withTeam([persona({ stages: ['no-such-stage'], squad: 'core', turnsTo: 'writer', autonomous: true, instructions: 'about me' }), newAgent({ id: 'writer', name: 'Writer', job: 'writes' })]);
+    const r = migrateConfig({ ...JSON.parse(JSON.stringify(c)), schemaVersion: CONFIG_SCHEMA_VERSION }, { legacyInstall: false });
+    const kept = r.config.agents.team.find((a) => a.id === 'me');
+    expect(kept).toMatchObject({ instructions: 'about me', stages: [], autonomous: false, turnsTo: null });
+    expect(kept?.squad ?? null).toBeNull();
+    expect(kept).not.toHaveProperty('kind');
+    expect(r.config.agents.team.find((a) => a.id === 'writer')?.job).toBe('writes');
+    expect(r.config.agents.team.length).toBe(c.agents.team.length);
+  });
+
+  it('does not touch the stages of an agent whose kind is unknown (it was never the persona)', () => {
+    const c = withTeam([{ ...newAgent({ id: 'odd', name: 'Odd', stages: [TEST_STAGES[0].id] }), kind: 'boss' as never }]);
+    const r = migrateConfig({ ...JSON.parse(JSON.stringify(c)), schemaVersion: CONFIG_SCHEMA_VERSION }, { legacyInstall: false });
+    expect(r.config.agents.team.find((a) => a.id === 'odd')?.stages).toEqual([TEST_STAGES[0].id]);
   });
 
   it('drops a persona kind that is not a known one and leaves the rest of the entry', () => {

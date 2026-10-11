@@ -489,8 +489,20 @@ function dropPoolField(out: Doc, path: (string | number)[], drops: { list: unkno
     return true;
   }
   const parent = get(out, path.slice(0, at));
-  if (parent !== null && typeof parent === 'object') delete (parent as Record<string, unknown>)[path[at] as string];
+  if (parent !== null && typeof parent === 'object') {
+    const demoted = path[0] === 'agents' && path[3] === 'kind' && (parent as Record<string, unknown>).kind === 'persona';
+    delete (parent as Record<string, unknown>)[path[at] as string];
+    if (demoted) makeInert(parent as Record<string, unknown>);
+  }
   return true;
+}
+
+// An agent that lost its persona kind keeps its text but takes no part in the cycle: its personal instructions must never work a stage.
+function makeInert(agent: Record<string, unknown>): void {
+  for (const k of ['system', 'squad']) delete agent[k];
+  agent.stages = [];
+  agent.turnsTo = null;
+  agent.autonomous = false;
 }
 
 function repair(doc: Doc, base: WorkspaceConfig, issues: ConfigIssue[], notes: string[]): Doc {

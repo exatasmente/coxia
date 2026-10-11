@@ -109,9 +109,12 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
     if (isSystemId(a.id) && !a.system) errors.push({ path: at('system'), message: `the id "${a.id}" belongs to a built-in agent` });
     // A persona with the mark is reported at its kind above, where the repair drops one field instead of resetting the team.
     if (a.system && !isSystemId(a.id) && !isPersona(a)) errors.push({ path: at('system'), message: 'only the built-in agents are system agents' });
-    a.stages.forEach((s, j) => {
-      if (!stageIds.has(s)) errors.push({ path: at(`stages[${j}]`), message: `unknown stage "${s}"` });
-    });
+    // A persona that lists stages is reported once, at its kind; an unknown id there would add an error the repair answers by resetting the team.
+    if (!isPersona(a)) {
+      a.stages.forEach((s, j) => {
+        if (!stageIds.has(s)) errors.push({ path: at(`stages[${j}]`), message: `unknown stage "${s}"` });
+      });
+    }
     // Commands run in the real worktree could leave files that the app then commits for an agent that promised only to read; a reader runs them in a sandbox.
     (a.allowedCommands ?? []).forEach((r, j) => {
       if (!validRule(r)) errors.push({ path: at(`allowedCommands[${j}]`), message: 'a rule is one line of at most 200 characters ("prefix:*" or an exact command)' });
