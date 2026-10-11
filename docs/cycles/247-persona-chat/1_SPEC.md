@@ -1,5 +1,7 @@
 # Persona: the agent type, its wizard and a chat home in place of Today and the ceremony screen
 
+> **Note (#261):** the strip of counts, the ceremony card and the chat's menu described below were replaced by the sidebar of the home, the count badges on its rows and a one-line ceremony bar. This spec is kept as written for what #247 asked; `docs/persona.md` says how the home is today.
+
 ## What is asked
 
 Issue #247, the first of the five that make up #245 (a persona of the person that acts in the app on their behalf). This one is the foundation; the others build on it:

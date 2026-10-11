@@ -135,7 +135,7 @@ export function NoticeGroup({ items }: { items: ForumMessage[] }) {
       {open && (
         <ul className="chat-notices-list">
           {items.map((m) => (
-            <li key={m.seq} id={`msg-${m.seq}`} className="chat-system">{messageText(m)}</li>
+            <li key={m.seq} id={m.seq === items[0].seq ? undefined : `msg-${m.seq}`} className="chat-system">{messageText(m)}</li>
           ))}
         </ul>
       )}

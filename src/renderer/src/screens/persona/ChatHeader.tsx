@@ -26,6 +26,46 @@ const MenuIcon = () => (
   </svg>
 );
 
+interface MenuProps {
+  go: (s: Screen) => void;
+  ceremony: Ceremony;
+  actions: ReleaseAction[];
+  current: Screen['name'];
+  persona: boolean;
+}
+
+/** The phone's menu button and the sheet it opens. The counts are read here, so the computer, whose sidebar reads them, does not read them twice. */
+function PhoneMenu({ go, ceremony, actions, current, persona }: MenuProps) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const counted = anyCount(useHomeCounts(ceremony, actions));
+  return (
+    <>
+      <button
+        type="button"
+        className="btn icon-btn chat-menu-btn"
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={counted ? t('ui.chat.menu.buttonCounted') : t('ui.chat.menu.button')}
+        onClick={() => setOpen(true)}
+      >
+        <MenuIcon />
+        {counted && <span className="chat-menu-dot" aria-hidden="true" />}
+      </button>
+      {open && (
+        <Sheet label={t('ui.chat.menu.button')} onClose={() => setOpen(false)}>
+          <div className="sheet-list" onClick={(e) => (e.target as HTMLElement).closest('.sheet-slot button, .sheet-slot a') && setOpen(false)} /* i18n-ignore */>
+            <HomeNav go={go} ceremony={ceremony} actions={actions} current={current} persona={persona} onPick={() => setOpen(false)} />
+            <div className="sheet-slot">
+              <HeaderModuleButtons />
+            </div>
+          </div>
+        </Sheet>
+      )}
+    </>
+  );
+}
+
 interface HeaderProps {
   persona: AgentDef | null;
   go: (s: Screen) => void;
@@ -43,29 +83,14 @@ export function ChatHeader({ persona, go, ceremony, actions, current, title, inv
   const t = useT();
   const phone = useIsPhone();
   const testWorkspace = runningWorkspace(useWorkspaces())?.test === true;
-  const counts = useHomeCounts(ceremony, actions);
-  const [menu, setMenu] = useState(false);
   const now = new Date();
   const date = now.toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
   const today = date.charAt(0).toUpperCase() + date.slice(1);
   const name = title ?? (persona ? agentName([persona], persona.id) : t('ui.chat.noPersona.title'));
-  const counted = anyCount(counts);
 
   return (
     <header className="chat-head">
-      {phone && (
-        <button
-          type="button"
-          className="btn icon-btn chat-menu-btn"
-          aria-haspopup="dialog"
-          aria-expanded={menu}
-          aria-label={counted ? t('ui.chat.menu.buttonCounted') : t('ui.chat.menu.button')}
-          onClick={() => setMenu(true)}
-        >
-          <MenuIcon />
-          {counted && <span className="chat-menu-dot" aria-hidden="true" />}
-        </button>
-      )}
+      {phone && <PhoneMenu go={go} ceremony={ceremony} actions={actions} current={current} persona={!!persona} />}
       <div className="chat-head-text">
         <h1 className="chat-name">{name}</h1>
         <div className="faint small">{today}</div>
@@ -87,16 +112,6 @@ export function ChatHeader({ persona, go, ceremony, actions, current, title, inv
           <BellIcon />
         </button>
       </div>
-      {menu && phone && (
-        <Sheet label={t('ui.chat.menu.button')} onClose={() => setMenu(false)}>
-          <div className="sheet-list" onClick={(e) => (e.target as HTMLElement).closest('.sheet-slot button, .sheet-slot a') && setMenu(false)} /* i18n-ignore */>
-            <HomeNav go={go} ceremony={ceremony} actions={actions} current={current} persona={!!persona} onPick={() => setMenu(false)} />
-            <div className="sheet-slot">
-              <HeaderModuleButtons />
-            </div>
-          </div>
-        </Sheet>
-      )}
     </header>
   );
 }

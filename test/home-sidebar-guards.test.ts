@@ -58,4 +58,11 @@ describe('where the navigation is mounted', () => {
     expect(read('screens/persona/ChatHeader.tsx')).toContain('<HomeNav ');
     expect(read('screens/persona/HomeShell.tsx')).toContain('<HomeNav ');
   });
+
+  it('counts for the header only where the header needs it: on the phone, never on the computer', () => {
+    const header = read('screens/persona/ChatHeader.tsx');
+    const at = header.indexOf('export function ChatHeader');
+    expect(header.slice(at)).not.toContain('useHomeCounts(');
+    expect(header).toContain('<PhoneMenu ');
+  });
 });
