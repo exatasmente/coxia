@@ -12,14 +12,13 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { _electron as electron } from 'playwright-core';
-import { FIXED_DAY, seedDocsWorkspace } from '../seed-docs-workspace.mjs';
-import { settle } from './shared.mjs';
+import { FIXED_DAY, PHONE_DATA_DIR, seedDocsWorkspace } from '../seed-docs-workspace.mjs';
+import { settle, waitForText } from './shared.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '..', '..');
 const IMAGES = join(ROOT, 'docs', 'images');
 const WINDOW = { width: 1280, height: 800 };
-const PHONE = { width: 390, height: 844 };
 
 /** The entry the built app starts from; the capture refuses to guess when it is not there. */
 const mainEntry = () => {
@@ -41,6 +40,11 @@ const fixWindow = async (page) => {
     window.Date = shifted;
   }, FIXED_DAY);
   await page.emulateMedia({ colorScheme: 'light', reducedMotion: 'reduce' });
+  // The running clock of a ceremony and the activity line of a turn nobody prepared are drawn by JavaScript on a timer: the
+  // app reaches into the page to move them, which freezes the window the moment the capture is over. Both are hidden with a
+  // stylesheet, which changes nothing that is drawn. The line also names where the model would come from, which a public
+  // picture must not carry (a capture runs no model and the app has no provider configured).
+  await page.addStyleTag({ content: '.timer, .act { visibility: hidden; }' }).catch(() => undefined);
 };
 
 /** Seeds a throwaway workspace for one language, or an empty folder for the features that show a first run. */
@@ -58,27 +62,59 @@ export async function workspaceFor(lang, empty = false) {
 /**
  * Captures one feature in one language and writes its image. Returns the file written. `dataDir` may be given when the
  * caller has already seeded a workspace (the release stage does that); otherwise one is made for this capture.
+ *
+ * `phone` is the companion the app serves in its web mode: the built app is started on the throwaway copy named by the
+ * seed's `web.json` (whose folder carries the paired session) and the companion is driven in a browser at 390 px. Changing
+ * the page size of the desktop window would draw the day, not the phone. Its turn clock is frozen by a stylesheet and the
+ * pauses of the window come from the person's own settings: nothing of the capture reaches into the page to take a clock.
  */
 export async function captureFeature(feature, lang, { dataDir, only } = {}) {
   if (only && feature.id !== only) return null;
   const entry = mainEntry();
   if (!existsSync(entry)) throw new Error(`the app is not built (${entry} is missing): run \`npx electron-vite build\` first`);
   const seeded = dataDir ?? (await workspaceFor(lang, feature.id === 'wizard'));
+  const mod = await import(new URL(feature.script, import.meta.url).href);
+  mkdirSync(IMAGES, { recursive: true });
+  if (feature.id === 'phone') return await capturePhone(mod, { dataDir, lang, seeded });
   const app = await electron.launch({
-    args: [entry, '--no-sandbox', ...(feature.id === 'phone' ? [] : [`--window-size=${WINDOW.width},${WINDOW.height}`])],
+    args: [entry, '--no-sandbox', `--window-size=${WINDOW.width},${WINDOW.height}`],
     env: { ...process.env, CERIMONIAS_DATA_DIR: seeded, CERIMONIAS_SPECS_DIR: seeded },
   });
   try {
     const page = await app.firstWindow();
-    await page.setViewportSize(feature.id === 'phone' ? PHONE : WINDOW);
+    await page.setViewportSize(WINDOW);
     await fixWindow(page);
-    const mod = await import(new URL(feature.script, import.meta.url).href);
-    await mod.capture({ app, page, lang, out: IMAGES });
+    await mod.capture({ app, page, lang, out: IMAGES, dataDir: seeded, root: ROOT });
     await settle(page);
     const name = lang === 'en' ? `${feature.id}-en.png` : `${feature.id}.png`;
-    mkdirSync(IMAGES, { recursive: true });
     await page.screenshot({ path: join(IMAGES, name) });
     return join(IMAGES, name);
+  } finally {
+    await app.close().catch(() => undefined);
+    if (!dataDir) rmSync(seeded, { recursive: true, force: true });
+  }
+}
+
+/** The phone companion: the app up in its web mode over the throwaway copy of the seed, driven by a browser at 390 px. */
+async function capturePhone(mod, { dataDir, lang, seeded }) {
+  const app = await electron.launch({
+    args: [mainEntry(), '--no-sandbox'],
+    env: { ...process.env, CERIMONIAS_DATA_DIR: dataDir ?? join(seeded, PHONE_DATA_DIR), CERIMONIAS_SPECS_DIR: dataDir ?? join(seeded, PHONE_DATA_DIR) },
+  });
+  try {
+    const page = await app.firstWindow();
+    await waitForText(page, ['Hoje', 'Today']);
+    // The web mode listens a moment after the window opens; asking for it too early answers nothing and the capture waits.
+    const housed = page.getByText(/Acesso pelo navegador|Browser access/i).first();
+    if (await housed.isVisible().catch(() => false)) await housed.click().catch(() => undefined);
+    let up = false;
+    for (let i = 0; i < 40 && !up; i++) {
+      up = await page.request.get('http://127.0.0.1:4330/cerimonias/').then((r) => r.ok()).catch(() => false);
+      if (!up) await page.waitForTimeout(500);
+    }
+    if (!up) throw new Error('the app\'s web mode is not listening on 127.0.0.1:4330: the phone capture needs it up');
+    const written = await mod.capture({ app, page, lang, out: IMAGES, dataDir: dataDir ?? join(seeded, PHONE_DATA_DIR), root: ROOT });
+    return join(IMAGES, written.name);
   } finally {
     await app.close().catch(() => undefined);
     if (!dataDir) rmSync(seeded, { recursive: true, force: true });

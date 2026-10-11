@@ -450,8 +450,8 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
     // when the person set one, comes with every sandbox and every host session.
     const display = outputKindOf(stage.kind) === 'qa' || (own && agent.screen === true && grants.browser && !!d.sessions) || wantsDisplay || stageDisplay;
     const session = host
-      ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), approve: hostApproval(d, run, stage, agent, signal, clock), signal, display, ...gate })
-      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), onProxy, onNote, signal, display, agent: { allowedHosts: grants.allowedHosts }, ...gate });
+      ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), approve: hostApproval(d, run, stage, agent, signal, clock), signal, display, stageDisplay, ...gate })
+      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), onProxy, onNote, signal, display, stageDisplay, agent: { allowedHosts: grants.allowedHosts }, ...gate });
     const gui = session.gui;
     // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });

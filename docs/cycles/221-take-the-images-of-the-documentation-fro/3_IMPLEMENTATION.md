@@ -1,40 +1,45 @@
-# O workspace fictício, as capturas, a conferência de referências, o campo de tela por etapa e a etapa do release
+# O campo de tela por etapa fecha, a semente perde os nomes reais e as capturas ganham rotas próprias
 
-Resumo do que existe nesta árvore depois da implementação, e do que foi conferido rodando. Os passos 1 a 5 do plano já estavam feitos quando esta tentativa começou; ela fechou as lacunas que faltavam (o caso "lista sem referência" na conferência, o teste da oferta de passagem, o título de um teste e a quebra de um code span no README das imagens) e correu os gates.
+Esta tentativa responde aos achados bloqueantes da revisão. O que ela mudou está abaixo, com o resultado de cada comando que correu. Os passos 1 a 7 do plano continuam nesta árvore como estavam.
 
-## O que foi entregue
+## O que mudou
 
-- **Workspace fictício** — `scripts/seed-docs-workspace.mjs` escreve um workspace completo (configuração na versão de esquema corrente, time com os cinco agentes de sistema e um time de produto, duas execuções, quadro, conversa, procedimentos, ata e celular pareado) numa pasta indicada na linha de comando, e se recusa a escrever numa pasta que já guarda um workspace. Fica fora do repositório; só o script é versionado.
-- **Scripts de captura** — `scripts/captures/` tem `run.mjs`, `shared.mjs`, `index.json` e um script por funcionalidade (`today`, `call`, `actions`, `wizard`, `phone`). Abrem o aplicativo **construído** sobre o workspace semeado, com janela, tema, idioma e relógio fixos e animações desligadas, e escrevem `docs/images/<id>[-en].png`. O `wizard` sai de uma pasta de dados vazia.
-- **Conferência de referências** — `scripts/docs-images-check.mjs` compara o que é usado com o que existe, dentro do job `check` da CI (`.github/workflows/ci.yml:36-38`).
-- **Campo de tela por etapa** — uma etapa de fluxo pode declarar `display: true` (ausente vale `false`). Nesta árvore o campo é resolvido por `stageDisplayOf` (`src/main/runner/executor.ts:191`), que lê a lista viva do fluxo como o `poolMode` ao lado; o executor usa esse valor na abertura da sandbox (`:451`), na oferta de passagem (`:622`) e no `hasDisplay` da tela (`:664`), e o `FlowStage` não carrega o campo.
-- **Etapa do release** — `releaseFlow.ts` ganha a etapa `release-images` (rank 4, `display: true`) entre `release-assemble` e a espera `release-approved`, com o agente `release-images` (sandbox, `permission: 'worktree'`), os textos e os comentários nos dois catálogos. O corte do release não foi tocado.
-- **Imagens e textos** — as dez imagens de `docs/images/` existem e os dois READMEs, `docs/README.md` e `docs/images/README.md` as referenciam; a tabela de pendências saiu. O `CHANGELOG.md` tem a entrada na seção `[Unreleased]`.
+### O campo de tela por etapa passa a valer sozinho (aceitação 4)
 
-## O que esta tentativa mudou
+Antes, a sandbox só abria a tela virtual com `opts.display === true && opts.config.display === true`: o campo da etapa não bastava, o interruptor do espaço de trabalho `runner.sandbox.display` também tinha de estar ligado.
 
-- `scripts/docs-images-check.mjs` — acrescentado o caso que faltava: uma entrada da lista que a documentação nunca referencia agora é divergência (antes, uma imagem listada e não usada passava calada). O comentário do topo foi alinhado.
-- `test/docs-images-check.test.ts` — caso novo `refuses an entry of the list the documentation never references`.
-- `test/runner-stage-screen.test.ts` — caso novo `offers the hand-off to a stage that asks for the display of the flow, without the agent's switch` (a segunda leitura do veredito de tela, que o plano nomeia como risco).
-- `test/captures-index.test.ts` — o título do primeiro caso dizia mais do que ele afirma; o título foi corrigido.
-- `docs/images/README.md` — a linha do comando de auditoria tinha um code span aberto atravessando a quebra de linha; corrigido.
+- `src/main/sandbox/index.ts` — `OpenOptions` ganha `stageDisplay?: boolean`, `HostOpenOptions` inclui-o, e as duas conjunções (a da sandbox e a do computador) passam a
+  `const askedDisplay = opts.display === true && (opts.stageDisplay === true || opts.config.display === true);`.
+  O caminho da etapa de QA não muda: continua a pedir a tela pelo `opts.display` e a exigi-la pelo interruptor do espaço de trabalho.
+- `src/main/runner/executor.ts` — as duas aberturas (sandbox e computador) passam `stageDisplay`, que já era resolvido para o veredito da tela.
+- `test/runner-stage-screen.test.ts` — os dois casos do campo passam a desligar `runner.sandbox.display` e afirmam que a etapa sozinha pede a tela ao sandbox (e continua sem o navegador, que é do interruptor do agente).
 
-## O que foi verificado
+### A semente deixa de escrever nomes reais
 
-Rodado nesta árvore, com o resultado de cada um:
+- `scripts/seed-docs-workspace.mjs` — o workspace semeado tem `vcs: []` e `projects.issues.vcsId: null`, então o app resolve os seus próprios textos de host pelo vocabulário neutro ("provedor de código" / "the code host") em vez do nome de uma empresa; o repositório semeado passa a `docs` e o prefixo das referências a `docs#`; os cartões do quadro (que são o `iid` que as telas escrevem como `#<id>`) usam o placeholder neutro `docs#123`, `#124` e `#125`; a chave de um procedimento aprendido passa de um host real para `example.com`.
+- O mesmo script passa a escrever a cerimónia do dia em `historico/`, o `falas.json` vazio, e a pasta `phone-data/` (registry, `web.json` no formato do app e a sessão de um celular pareado com um token escrito só no hash).
+- `test/seed-docs-workspace.test.ts` — os números das atividades passam a `123/124/125` e um caso novo afirma que a configuração não traz integração nenhuma e que os cartões apontam para um host de tipo fictício.
+
+### As capturas
+
+- `scripts/captures/actions.mjs` — chega à fila pelo endereço da própria tela (`#acoes`) e espera pelo cabeçalho dela; o rótulo da navegação, que nomeia várias entradas, levava a captura à tela de conflito de release.
+- `scripts/captures/run.mjs` — a janela da captura esconde com uma folha de estilo o relógio da cerimónia e a linha de atividade de um turno que ninguém preparou; essa linha diz onde o modelo viria, e um repositório público não pode levar esse nome dentro de um PNG. A captura do celular passa a subir o app no modo web e a conduzir o companheiro num navegador a 390 px.
+- `scripts/captures/phone.mjs` — escrito de novo: abre `http://127.0.0.1:4330/cerimonias/` com a sessão pareada que a semente escreveu, em vez de reduzir a janela do app de secretária.
+
+## O que foi verificado, com o comando
 
 - `npx tsc --noEmit` — sai 0.
-- `npx vitest run` — 435 arquivos passam; 2 testes falham em `browser-contract`, `browser-quit`, `browser-sites` e `browser-runtime`, todos por faltar `@playwright/mcp` ou navegador real neste computador; não tocam o que esta mudança mexeu (`ls node_modules/@playwright` → inexistente).
-- `node scripts/theme-audit.mjs` — sai 0.
-- `npm run i18n:lint` — sai 0, 5634 chaves nos dois idiomas.
-- `node scripts/public-audit.mjs` — sai 0, 1667 arquivos.
-- `node scripts/docs-images-check.mjs` — sai 0 (a lista, os scripts e as imagens se correspondem).
-- `node scripts/seed-docs-workspace.mjs <pasta vazia>` — sai 0, escreve 12 arquivos; segunda execução sobre a mesma pasta é recusada com mensagem (sai 1); `node scripts/public-audit.mjs --root <pasta semeada>` sai 0.
-- `npx electron-vite build` — sai 0; e a captura de `today` nos dois idiomas sobre o workspace semeado escreveu `docs/images/today.png` e `today-en.png`. Duas execuções separadas produziram os mesmos hashes sha256, ou seja, os mesmos arquivos byte a byte.
+- `npx vitest run test/runner-stage-screen.test.ts` — 29 testes passam.
+- `npx vitest run test/seed-docs-workspace.test.ts` — 9 testes passam.
+- `npx vitest run test/captures-index.test.ts test/docs-images-check.test.ts` — 17 testes passam.
+- `node scripts/seed-docs-workspace.mjs <pasta vazia>` — sai 0, escreve 17 ficheiros; a segunda execução sobre a mesma pasta continua recusada.
+- `node scripts/public-audit.mjs --root <pasta semeada>` — sai 0, "16 files, nothing that belongs to a company or a person".
+- `npx electron-vite build` — sai 0.
+- `node scripts/captures/run.mjs --only actions --lang pt-BR` — sai 0 e escreve `docs/images/actions.png`; a imagem foi aberta e mostra a fila de ações ("Ações de release", "1 ação de release aguardando o seu 'seguir'", o botão "Atualizar do provedor de código" e a execução `docs#124`).
 
 ## O que não foi verificado
 
-- A captura das outras quatro funcionalidades e o `run.mjs` inteiro não foram rodados; só `today` foi exercitada de ponta a ponta.
-- Não foi aberta a interface para ver o workspace semeado sem aviso de migração, nem uma etapa com `display` guardando imagem como comprovação e sendo vista.
-- Não foi rodado um release para ver a etapa `release-images` refazendo as imagens e o pull request mostrando só o que mudou.
-- Não foi tocado nem verificado o site de documentação (a #220), que o plano deixa fora de escopo.
+- A captura de `call`: as corridas de `node scripts/captures/run.mjs --only call` terminam sem escrever `docs/images/call.png`, que continua a ser a imagem antiga — a cerimónia falhada, com o nome do provedor do modelo e as referências antigas. A tela da cerimónia abre no workspace semeado (conferido abrindo a janela à mão), mas a escrita da imagem não foi obtida nesta tentativa.
+- A captura de `today`, `wizard` e `phone` com a semente nova: as imagens dessas telas continuam as antigas, e por isso continuam com os nomes reais que a revisão achou.
+- Os gates `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs` (sobre a árvore) e `node scripts/docs-images-check.mjs` não foram corridos nesta tentativa.
+- As aceitações 1 (a app abrir o workspace semeado sem aviso de migração) e 6 (um release refazer as imagens e o pull request mostrar só o que mudou) seguem sem verificação.

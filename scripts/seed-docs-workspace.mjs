@@ -15,6 +15,7 @@
 // esbuild (a dependency of the app) so a schema bump cannot leave the seed behind. The two run files follow the run format the
 // store validates (`parseRun`), so the app opens them without a repair.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildSync } from 'esbuild';
@@ -26,8 +27,17 @@ const ROOT = resolve(HERE, '..');
 export const FIXED_DAY = '2026-06-15T09:40:00.000Z';
 export const WORKSPACE_ID = 'principal';
 export const WORKSPACE_NAME = 'Aurora';
-export const REPO_ID = 'app';
+export const REPO_ID = 'docs';
 export const ISSUE_PROJECT = 'group/project';
+
+// The card ids double as the screen's references (`#<id>`), so they read as the neutral placeholder `#123`; the host's own
+// iids are the same numbers, and the references the screens build from the cycle prefix stay neutral too.
+const CARD_TODAY = 123;
+const CARD_SEARCH = 124;
+const CARD_TOKEN = 125;
+const REF_PREFIX = 'docs#';
+/** The id of the ceremony of the fixed day, in the shape the app validates (`YYYY-MM-DDTHHMMSS`). */
+const CEREMONY_ID = '2026-06-15T094000';
 
 /** Reads a source file of the repository as text (it has to read TypeScript, which Node cannot import). */
 const source = (rel) => readFileSync(join(ROOT, rel), 'utf8');
@@ -82,12 +92,17 @@ function config(root) {
   // The setup assistant is behind us: the seeded workspace opens on the day and not on the first-run wizard.
   c.setupComplete = true;
   // Every default the seed does not care about is written as it is; the repository path is the seed's own, never the machine's.
-  c.projects.repos = [{ id: REPO_ID, path: join(root, 'repos', REPO_ID), remoteUrl: 'https://example.com/group/project.git', vcsId: 'host', projectPath: ISSUE_PROJECT }];
-  c.projects.issues = { vcsId: 'host', project: ISSUE_PROJECT, projectId: null, refPrefix: 'app#', cardScope: 'assigned', cardLabels: [] };
-  c.vcs = [{ id: 'host', kind: 'github', host: 'example.com', apiUrl: '', user: 'ana', secretRef: 'host.token', cliPreference: 'api', cliCommand: null }];
+  c.projects.repos = [{ id: REPO_ID, path: join(root, 'repos', REPO_ID), remoteUrl: `https://example.com/${ISSUE_PROJECT}.git`, vcsId: null, projectPath: ISSUE_PROJECT }];
+  c.projects.issues = { vcsId: null, project: ISSUE_PROJECT, projectId: null, refPrefix: REF_PREFIX, cardScope: 'assigned', cardLabels: [] };
+  // The host kind is only ever a vocabulary the app draws labels from, and the real ones carry their company's name into the
+  // picture: a fake host keeps the screens neutral. The workspace has no integration, so no command is ever sent anywhere.
+  c.vcs = [];
   c.agents.team = TEAM.map((a) => ({ ...a, model: { role: 'deep' } }));
   // The workspace's own flow: the same stages the two runs carry, so the team's stages and the flow agree.
   c.devCycle = { ...c.devCycle, stages: FLOW_STAGES, templateId: 'agent-flow', flows: {} };
+  // How the team names its daily preparation. The label is a text of the app's catalogs, and its translation for "preparation"
+  // is the first meaning a Portuguese reader reads: the seeded workspace says it in words of its own, in its own language.
+  c.devCycle.ceremonyParams = { ...c.devCycle.ceremonyParams, preDaily: { ...c.devCycle.ceremonyParams.preDaily, label: 'Abertura do dia' } };
   c.runner = { ...c.runner, procedures: true, worktreesDir: null, identity: { name: 'Aurora Docs', email: 'docs@example.com' } };
   return c;
 }
@@ -107,6 +122,14 @@ const FLOW_STAGES = [
   { id: 'ready', label: 'Ready', match: ['^Ready$'], kind: 'reviewApproved', rank: 8, type: 'wait', waitsFor: { kind: 'pr-merged' } },
 ];
 
+/** The steps the board's columns are keyed by; the app reads them back with `s.stage ?? s.id`. */
+const COLUMN_STAGES = [
+  { stage: 'triage', agent: 'support', status: 'done', artifacts: ['0_TRIAGE.md'], startedAt: at(0), endedAt: at(0, 4), attempts: 1, autonomous: false },
+  { stage: 'refine', agent: 'product-owner', status: 'done', artifacts: ['1_SPEC.md'], startedAt: at(0, 5), endedAt: at(0, 18), attempts: 1, autonomous: false },
+  { stage: 'plan', agent: 'tech-lead', status: 'done', artifacts: ['2_PLAN.md'], startedAt: at(1), endedAt: at(1, 12), attempts: 1, autonomous: false },
+  { stage: 'gate2', agent: null, status: 'waiting', artifacts: [], startedAt: at(1, 13), endedAt: null, attempts: 1, autonomous: false },
+];
+
 /** The two runs: one that went through the cycle with its documents and its evidence, one held at the second gate. */
 function runs(id) {
   const flowStages = [
@@ -121,17 +144,17 @@ function runs(id) {
   ];
   const flow = { hash: 'a1b2c3d4', stages: flowStages };
   const folder = (iid, title) => `docs/cycles/${iid}-${title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
-  const issue = (iid, title) => ({ ref: `app#${iid}`, iid, title, url: `https://example.com/group/project/issues/${iid}` });
+  const issue = (iid, title) => ({ ref: `${REF_PREFIX}${iid}`, iid, title, url: `https://example.com/${ISSUE_PROJECT}/issues/${iid}` });
 
   const first = {
     version: 3,
     rev: 12,
     id: RUN_ONE,
-    issue: issue(101, 'Show the queue of activities of the day'),
+    issue: issue(CARD_TODAY, 'Show the queue of activities of the day'),
     repo: REPO_ID,
-    branch: 'cycle/101-show-the-queue-of-activities',
-    worktree: join(id, 'worktrees', REPO_ID, '101'),
-    cycleFolder: folder(101, 'Show the queue of activities of the day'),
+    branch: `cycle/${CARD_TODAY}-show-the-queue-of-activities`,
+    worktree: join(id, 'worktrees', REPO_ID, String(CARD_TODAY)),
+    cycleFolder: folder(CARD_TODAY, 'Show the queue of activities of the day'),
     cycleId: 'agent-flow',
     status: 'done',
     stage: 'ready',
@@ -176,20 +199,15 @@ function runs(id) {
     version: 3,
     rev: 4,
     id: RUN_TWO,
-    issue: issue(102, 'Search the actions the person already answered'),
+    issue: issue(CARD_SEARCH, 'Search the actions the person already answered'),
     repo: REPO_ID,
-    branch: 'cycle/102-search-the-actions',
-    worktree: join(id, 'worktrees', REPO_ID, '102'),
-    cycleFolder: folder(102, 'Search the actions the person already answered'),
+    branch: `cycle/${CARD_SEARCH}-search-the-actions`,
+    worktree: join(id, 'worktrees', REPO_ID, String(CARD_SEARCH)),
+    cycleFolder: folder(CARD_SEARCH, 'Search the actions the person already answered'),
     cycleId: 'agent-flow',
     status: 'gate',
     stage: 'gate2',
-    stages: [
-      { stage: 'triage', agent: 'support', status: 'done', artifacts: ['0_TRIAGE.md'], startedAt: at(26), endedAt: at(26, 6), attempts: 1, autonomous: false },
-      { stage: 'refine', agent: 'product-owner', status: 'done', artifacts: ['1_SPEC.md'], startedAt: at(27), endedAt: at(27, 20), attempts: 1, autonomous: false },
-      { stage: 'plan', agent: 'tech-lead', status: 'done', artifacts: ['2_PLAN.md'], startedAt: at(28), endedAt: at(28, 15), attempts: 1, autonomous: false },
-      { stage: 'gate2', agent: null, status: 'waiting', artifacts: [], startedAt: at(28, 16), endedAt: null, attempts: 1, autonomous: false },
-    ],
+    stages: COLUMN_STAGES,
     question: null,
     pending: null,
     returns: {},
@@ -220,7 +238,7 @@ const board = () => ({
   version: 1,
   cards: [
     {
-      id: 'a101today',
+      id: String(CARD_TODAY),
       title: 'Show the queue of activities of the day',
       body: 'The day lists the activities in the order of the morning.',
       column: 'ready',
@@ -232,10 +250,10 @@ const board = () => ({
       createdAt: at(0),
       updatedAt: at(5),
       history: [{ at: at(5), what: 'ready' }],
-      host: { vcs: 'github', project: ISSUE_PROJECT, iid: 101, url: 'https://example.com/group/project/issues/101' },
+      host: { vcs: 'host', project: ISSUE_PROJECT, iid: CARD_TODAY, url: `https://example.com/${ISSUE_PROJECT}/issues/${CARD_TODAY}` },
     },
     {
-      id: 'b102search',
+      id: String(CARD_SEARCH),
       title: 'Search the actions the person already answered',
       body: 'A filter over the actions queue, by the answer the person gave.',
       column: 'gate2',
@@ -247,10 +265,10 @@ const board = () => ({
       createdAt: at(26),
       updatedAt: at(28, 16),
       history: [{ at: at(28, 16), what: 'gate2' }],
-      host: { vcs: 'github', project: ISSUE_PROJECT, iid: 102, url: 'https://example.com/group/project/issues/102' },
+      host: { vcs: 'host', project: ISSUE_PROJECT, iid: CARD_SEARCH, url: `https://example.com/${ISSUE_PROJECT}/issues/${CARD_SEARCH}` },
     },
     {
-      id: 'c103token',
+      id: String(CARD_TOKEN),
       title: 'Say which token the host refused',
       body: 'The reporter cannot read the log, so the app should say which token it refused.',
       column: 'refine',
@@ -262,7 +280,7 @@ const board = () => ({
       createdAt: at(30),
       updatedAt: at(30),
       history: [{ at: at(30), what: 'refine' }],
-      host: { vcs: 'github', project: ISSUE_PROJECT, iid: 103, url: 'https://example.com/group/project/issues/103' },
+      host: { vcs: 'host', project: ISSUE_PROJECT, iid: CARD_TOKEN, url: `https://example.com/${ISSUE_PROJECT}/issues/${CARD_TOKEN}` },
     },
   ],
 });
@@ -273,9 +291,9 @@ const actions = () => ({
   actions: [
     {
       id: 'a1b2c3d4',
-      key: 'comment:102',
+      key: `comment:${CARD_SEARCH}`,
       kind: 'comment',
-      issue: 102,
+      issue: CARD_SEARCH,
       issueTitle: 'Search the actions the person already answered',
       stage: 'refine',
       release: null,
@@ -292,8 +310,8 @@ const actions = () => ({
       sessionId: null,
       msgs: [],
       unit: null,
-      summary: 'Comment on app#102',
-      command: { kind: 'comment', iid: 102, body: 'The spec is ready and the plan is waiting for your yes.' },
+      summary: `Comment on ${REF_PREFIX}${CARD_SEARCH}`,
+      command: { kind: 'comment', iid: CARD_SEARCH, body: 'The spec is ready and the plan is waiting for your yes.' },
     },
   ],
 });
@@ -305,10 +323,91 @@ function conversation() {
     header: { v: 1, type: 'header', id: thread, kind: 'call', title: 'Pre-daily of 2026-06-15', at: at(0), ref: null, stage: null, closed: false },
     messages: [
       { v: 1, type: 'message', seq: 1, thread, at: at(0), kind: 'system', author: { type: 'app' }, text: '', code: 'call.started', params: {}, mentions: [], refs: [], attachments: [], anchor: null, stage: null, to: null },
-      { v: 1, type: 'message', seq: 2, thread, at: at(0, 1), kind: 'post', author: { type: 'agent', id: 'support' }, text: 'Two activities are open: the search of the answered actions is at its second gate, and the report about the refused token has no owner.', code: null, params: {}, mentions: [], refs: [], attachments: [], anchor: null, stage: null, to: null },
-      { v: 1, type: 'message', seq: 3, thread, at: at(0, 2), kind: 'post', author: { type: 'person' }, text: 'Put the token report with me and let us look at the search first.', code: null, params: {}, mentions: [], refs: [], attachments: [], anchor: null, stage: null, to: null },
-      { v: 1, type: 'message', seq: 4, thread, at: at(0, 3), kind: 'handoff', author: { type: 'agent', id: 'support' }, text: 'Open the board and move the card of the report to the person.', code: null, params: {}, mentions: [], refs: [], attachments: [], anchor: null, stage: null, to: 'person' },
+      { v: 1, type: 'message', seq: 2, thread, at: at(0, 1), kind: 'post', author: { type: 'agent', id: 'support' }, text: `Two activities are open: the search of the answered actions (#${CARD_SEARCH}) is at its second gate, and the report about the refused token (#${CARD_TOKEN}) has no owner.`, code: null, params: {}, mentions: [], refs: [], attachments: [], anchor: null, stage: null, to: null },
+      { v: 1, type: 'message', seq: 3, thread, at: at(0, 2), kind: 'post', author: { type: 'person' }, text: `Put #${CARD_TOKEN} with me and let us look at #${CARD_SEARCH} first.`, code: null, params: {}, mentions: [], refs: [], attachments: [], anchor: null, stage: null, to: null },
+      { v: 1, type: 'message', seq: 4, thread, at: at(0, 3), kind: 'handoff', author: { type: 'agent', id: 'support' }, text: `Open the board and move #${CARD_TOKEN} to the person.`, code: null, params: {}, mentions: [], refs: [], attachments: [], anchor: null, stage: null, to: 'person' },
     ],
+  };
+}
+
+/** The activities of the seeded day, by number: the same card serves the board, the ceremony and the turns' fingerprints. */
+const CARD_TITLES = { [CARD_SEARCH]: ['Search the actions the person already answered', 'gate2'], [CARD_TOKEN]: ['Say which token the host refused', 'refine'], [CARD_TODAY]: ['Show the queue of activities of the day', 'ready'] };
+
+/** One card of the day, in the shape the app reads (board and ceremony share it). */
+function ceremonyCard(n, stage = CARD_TITLES[n][1]) {
+  return {
+    id: String(n),
+    title: CARD_TITLES[n][0],
+    body: stage === 'ready' ? 'The day lists the activities in the order of the morning.' : CARD_TITLES[n][0],
+    column: stage,
+    squad: null,
+    priority: null,
+    labels: [],
+    repo: REPO_ID,
+    state: stage === 'ready' ? 'closed' : 'open',
+    createdAt: at(0),
+    updatedAt: at(2),
+    history: [{ at: at(2), what: stage }],
+    host: { vcs: 'host', project: ISSUE_PROJECT, iid: n, url: `https://example.com/${ISSUE_PROJECT}/issues/${n}` },
+    ref: `${REF_PREFIX}${n}`,
+  };
+}
+
+/** One agent turn of the ceremony, with the sources it read: what the screen shows next to the card. */
+function ceremonyTurn(ref, n = Number(String(ref).replace(/\D+/g, ''))) {
+  const search = n === CARD_SEARCH;
+  return {
+    ref,
+    sessionId: null,
+    speech: search
+      ? 'The filter over the answered actions is written and tested; what is left is the second gate, and the spec says which answers the filter may see.'
+      : n === CARD_TOKEN
+        ? 'The report has no owner yet: the app says the command was refused but not which token the host refused.'
+        : 'The queue of the day shipped and the activity is closed.',
+    did: search ? 'Ordered the actions by the answer the person gave, in the list of the day.' : n === CARD_TOKEN ? 'Read the report and the command that answers it.' : 'Shipped the list of the day.',
+    next: search ? 'Read the spec and say whether the filter may show an action of another squad.' : n === CARD_TOKEN ? 'Say who takes the report before the end of the day.' : 'Nothing left.',
+    blocker: n === CARD_TOKEN ? 'Carries two open questions and no decision yet.' : null,
+    question: null,
+    sources: search
+      ? ['docs/cycles/218-search-the-actions/1_SPEC.md', 'src/renderer/src/screens/Actions.tsx']
+      : n === CARD_TOKEN
+        ? ['docs/cycles/219-refused-token/1_SPEC.md']
+        : ['src/renderer/src/screens/Today.tsx'],
+  };
+}
+
+/**
+ * The ceremony in progress of the seeded day: its own file (`historico/`), read by the app on start as the state of today.
+ * The cards carry their prepared turns, so the screen draws a ceremony that is going on — the agenda and the agent's own
+ * reading of it — next to the state of the app's own data folder and not a ceremony whose agent failed for want of a key.
+ */
+function ceremony(id) {
+  const cards = [ceremonyCard(CARD_SEARCH), ceremonyCard(CARD_TOKEN)];
+  const refOf = (n) => `${REF_PREFIX}${n}`;
+  return {
+    version: 1,
+    id,
+    kind: 'pre-daily',
+    date: id.slice(0, 10),
+    cards: { generatedAt: at(0), total: cards.length, cards },
+    turns: { [refOf(CARD_SEARCH)]: ceremonyTurn(refOf(CARD_SEARCH)), [refOf(CARD_TOKEN)]: ceremonyTurn(refOf(CARD_TOKEN)) },
+    decisions: [],
+    effects: [],
+    answered: {},
+    log: [
+      { who: 'Moderador', text: 'Pre-daily of 2026-06-15, with two activities on the table.', at: at(0), color: 'ink' },
+      { who: 'Support', text: 'Two activities are open: the search of the answered actions is at its second gate, and the report about the refused token has no owner.', at: at(0, 1), color: 'blue' },
+      { who: 'Você', text: 'Put the report with me and let us look at the search first.', at: at(0, 2), color: 'amber' },
+    ],
+    startedAt: Date.parse(at(0)),
+    endedAt: null,
+    callIdx: 0,
+    callEnded: false,
+    spoken: {},
+    deep: {},
+    teams: null,
+    teamsKey: null,
+    saveResult: null,
   };
 }
 
@@ -336,11 +435,18 @@ function procedures() {
     previous: null,
   });
   return [
-    record('p-1a2b3c4d', 'github.com', 'Open a pull request from a run branch', 'gui', [step('Open the run screen', 'button "Run"'), step('Choose the branch of the run'), step('Write the title of the pull request'), step('Confirm the push in Actions')], { revision: 3, state: 'ok', lastVerified: at(24), uses: 5, failures: 0, lastUsed: at(24), origin: origin('developer', at(0), { stage: 'implement' }), stepsFrom: 'edited' }),
+    record('p-1a2b3c4d', 'example.com', 'Open a pull request from a run branch', 'gui', [step('Open the run screen', 'button "Run"'), step('Choose the branch of the run'), step('Write the title of the pull request'), step('Confirm the push in Actions')], { revision: 3, state: 'ok', lastVerified: at(24), uses: 5, failures: 0, lastUsed: at(24), origin: origin('developer', at(0), { stage: 'implement' }), stepsFrom: 'edited' }),
     record('p-5e6f7a8b', 'coxia', 'Run the repository test suite in the QA sandbox', 'repo', [step('Point the data folder at an empty one', 'CERIMONIAS_DATA_DIR=<value> npm test'), step('Run the suite'), step('Read the failures one by one')], { revision: 2, state: 'unverified', lastVerified: null, uses: 0, failures: 0, origin: origin('qa', at(3), { stage: 'qa', handoff: true }), reviewed: false, stepsFrom: 'agent' }),
     record('p-9c0d1e2f', 'example.com', 'Upload a release file to the host', 'tool', [step('Build the package'), step('Open the host page of the release'), step('Attach the package'), step('Publish the draft')], { revision: 1, state: 'failing', lastVerified: at(-120), uses: 4, failures: 2, failuresSinceSave: 2, lastUsed: at(-12), lastFailed: { at: at(-12), step: 3 }, origin: origin('release-manager', at(-240), { stage: 'release-beta' }) }),
   ];
 }
+
+/** The marker a reference is written with. */
+export const REF_MARK = '#';
+
+/** The data folder the seed writes into the throwaway copy of a phone capture, and the session it is signed in with. */
+export const PHONE_DATA_DIR = 'phone-data';
+export const PHONE_TOKEN = 'docs-phone-token';
 
 /** Whether the folder already holds a workspace: the seed never writes over one. */
 function holdsWorkspace(dir) {
@@ -348,7 +454,7 @@ function holdsWorkspace(dir) {
   if (existsSync(join(dir, 'workspaces.json'))) return true;
   if (existsSync(join(dir, 'config.json'))) return true;
   const at = /^\d{4}-\d{2}-\d{2}-pre-daily\.md$/;
-  return readdirSync(dir).some((n) => ['historico', 'atividade', 'gates', 'qa', 'retros', 'feedback', 'conflicts', 'workspaces'].includes(n) || at.test(n));
+  return readdirSync(dir).some((n) => ['historico', 'atividade', 'gates', 'qa', 'retros', 'feedback', 'conflicts', 'workspaces', PHONE_DATA_DIR].includes(n) || at.test(n));
 }
 
 const write = (file, text) => {
@@ -381,12 +487,23 @@ export async function seedDocsWorkspace(dir) {
   const call = conversation();
   write(join(id, 'forum', `${call.header.id}.jsonl`), [call.header, ...call.messages].map((line) => JSON.stringify(line)).join('\n'));
   written.push(`workspaces/principal/forum/${call.header.id}.jsonl`);
+  // The ceremony in progress of the day: the app reads the newest file of `historico/` of today as the state to resume.
+  json(join(id, 'historico', `${CEREMONY_ID}.json`), ceremony(CEREMONY_ID));
+  written.push(`workspaces/principal/historico/${CEREMONY_ID}.json`);
+  write(join(id, 'falas.json'), JSON.stringify({ version: 1, turns: {}, reuses: [] }));
+  written.push('workspaces/principal/falas.json');
   for (const p of procedures()) json(join(id, 'memory', 'procedures', `${p.id}.json`), p);
   written.push('workspaces/principal/memory/procedures/p-1a2b3c4d.json', 'workspaces/principal/memory/procedures/p-5e6f7a8b.json', 'workspaces/principal/memory/procedures/p-9c0d1e2f.json');
-  write(join(root, '2026-06-15-pre-daily.md'), ['# Pre-daily of 2026-06-15', '', '- The search of the answered actions is at its second gate.', '- The report about the refused token has no owner.', '- One activity shipped: the queue of the day.'].join('\n'));
+  write(join(root, '2026-06-15-pre-daily.md'), ['# Pre-daily of 2026-06-15', '', `- The search of the answered actions (#${CARD_SEARCH}) is at its second gate.`, `- The report about the refused token (#${CARD_TOKEN}) has no owner.`, `- One activity shipped: ${REF_PREFIX}${CARD_TODAY}, the queue of the day.`].join('\n'));
   written.push('2026-06-15-pre-daily.md');
-  json(join(root, 'web.json'), { enabled: true, port: 4330, paired: [{ id: 'phone-aurora', name: 'Phone of Aurora', pairedAt: at(-48) }] });
+  json(join(root, 'web.json'), { enabled: true, host: '127.0.0.1', port: 4330, basePath: '/cerimonias/', publicUrl: 'http://127.0.0.1:4330/cerimonias/', trustedProxy: '127.0.0.1/32', allowExternalEffects: false });
   written.push('web.json');
+  // The phone's own copy: the app keeps one data folder per kind of run, and the web mode reads its folder's registry. The
+  // session of the paired phone is written with its own token, so the capture opens the companion already paired.
+  json(join(root, PHONE_DATA_DIR, 'workspaces.json'), { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: WORKSPACE_NAME, createdAt: at(0), test: true }] });
+  json(join(root, PHONE_DATA_DIR, 'web.json'), { enabled: true, host: '127.0.0.1', port: 4330, basePath: '/cerimonias/', publicUrl: 'http://127.0.0.1:4330/cerimonias/', trustedProxy: '127.0.0.1/32', allowExternalEffects: false });
+  write(join(root, PHONE_DATA_DIR, 'web-sessions.json'), JSON.stringify({ sessions: [{ id: 'phone-aurora', name: 'Phone of Aurora', createdAt: at(-48), lastSeenAt: at(0), tokenHash: createHash('sha256').update(PHONE_TOKEN).digest('hex'), expiresAt: Number.MAX_SAFE_INTEGER }] }));
+  written.push('phone-data/workspaces.json', 'phone-data/web.json', 'phone-data/web-sessions.json');
   return written;
 }
 

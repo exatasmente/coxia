@@ -62,10 +62,22 @@ describe('the seeded documentation workspace', () => {
     expect(readFileSync(join(dir, '2026-06-15-pre-daily.md'), 'utf8')).toContain('Pre-daily of 2026-06-15');
     const cards = read(dir, 'workspaces/principal/board.json') as { version: number; cards: { column: string; host: { iid: number } }[] };
     expect(cards.version).toBe(1);
-    expect(cards.cards.map((c) => c.host.iid)).toEqual([101, 102, 103]);
+    // The card id doubles as the reference the screens draw (`#<id>`), so it carries the neutral placeholder `#123`.
+    expect(cards.cards.map((c) => c.host.iid)).toEqual([123, 124, 125]);
     expect(cards.cards.map((c) => c.column)).toEqual(['ready', 'gate2', 'refine']);
     expect(readFileSync(join(dir, 'workspaces/principal/forum/call-aurora.jsonl'), 'utf8')).toContain('"kind":"handoff"');
     for (const id of ['p-1a2b3c4d', 'p-5e6f7a8b', 'p-9c0d1e2f']) expect(read(dir, `workspaces/principal/memory/procedures/${id}.json`)).toMatchObject({ id });
+  });
+
+  // The host kind names the app draws its labels from are the real company's in every screen; the seeded workspace has no integration and
+  // the card's own host is the fake one, so the pictures stay neutral (the public audit cannot read the pixels of a PNG).
+  it('configures no code-host integration and links the cards to a host of the fictional kind', async () => {
+    const dir = await seed();
+    const config = read(dir, 'workspaces/principal/config.json') as { vcs: unknown[]; projects: { issues: { vcsId: string | null } } };
+    expect(config.vcs).toEqual([]);
+    expect(config.projects.issues.vcsId).toBe(null);
+    const cards = read(dir, 'workspaces/principal/board.json') as { cards: { host: { vcs: string } }[] };
+    expect(cards.cards.map((c) => c.host.vcs)).toEqual(['host', 'host', 'host']);
   });
 
   it('marks the setup as finished, so the app opens on the day and never on the first-run wizard', async () => {

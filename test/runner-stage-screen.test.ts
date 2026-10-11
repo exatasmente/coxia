@@ -255,7 +255,7 @@ describe('what a stage is offered of the screen', () => {
     if (row.browser) expect(screens.starts[0].display === null).toBe(!row.asksDisplay);
   });
 
-  // The stage of the flow carries the field: the stage is a stage with a display of its own, whatever agent works it and without the agent's own switch.
+  // The stage of the flow carries the field: it opens the display on its own, without the workspace's switch and without the agent's own switch.
   it('gives a stage that asks for the display of the flow the same display a QA stage gets', async () => {
     screens = fakeScreens();
     const sandbox = displayOnRequest(fakeSandbox({ gui: { browsers: null, display: 'on' }, screen: { socket: '/stage/x11/X99', kind: 'sandbox' } }));
@@ -267,7 +267,7 @@ describe('what a stage is offered of the screen', () => {
       asks: screens.asks,
       handoff: fakeHandoff().service,
       configure: (c) => {
-        c.runner.sandbox.display = true;
+        c.runner.sandbox.display = false;
         c.runner.sandbox.network = 'off';
         c.devCycle.stages.find((s) => s.id === 'refine')!.display = true;
         Object.assign(agentOf(c, 'refiner'), { shell: 'sandbox' });
@@ -292,7 +292,7 @@ describe('what a stage is offered of the screen', () => {
       asks: screens.asks,
       handoff: handoff.service,
       configure: (c) => {
-        c.runner.sandbox.display = true;
+        c.runner.sandbox.display = false;
         c.runner.sandbox.network = 'off';
         c.devCycle.stages.find((s) => s.id === 'refine')!.display = true;
         Object.assign(agentOf(c, 'refiner'), { shell: 'sandbox' });
