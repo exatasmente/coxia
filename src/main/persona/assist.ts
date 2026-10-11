@@ -38,7 +38,7 @@ function fail(e: unknown): Error {
 const through = (): 'window' | 'paired' => (callOrigin() === 'web' ? 'paired' : 'window');
 
 /** Every change of the persona is recorded with the door it came by and the agent's id; never a text. */
-function audit(op: 'finish' | 'save' | 'clear' | 'delete', agent: string): void {
+function audit(op: 'draft' | 'conclude' | 'discard' | 'finish' | 'save' | 'clear' | 'delete', agent: string): void {
   recordWrite({
     kind: 'persona',
     issue: 0,
@@ -164,6 +164,7 @@ export function personaSaveDraft(raw: unknown): { id: string } {
     });
     if (existing) deleteAgentThread(forum, attachmentStore(), id, endScreensOn, memoryStore());
     ensureAgentThread(forum, { id, name }, config.language);
+    audit('draft', id);
     return { id };
   } catch (e) {
     throw fail(e);
@@ -178,6 +179,7 @@ export function personaConclude(raw: unknown): { id: string } {
     const forum = forumStore();
     deleteAgentThread(forum, attachmentStore(), draft.id, endScreensOn, memoryStore());
     ensureAgentThread(forum, { id: draft.id, name: draft.name }, config.language);
+    audit('conclude', draft.id);
     return { id: draft.id };
   } catch (e) {
     throw fail(e);
@@ -190,6 +192,7 @@ export function personaDiscard(raw: unknown): { id: string } {
     const draft = draftOf(getConfig(), stringOf(raw));
     updateConfig((current) => removeAgent(current, draft.id));
     deleteAgentThread(forumStore(), attachmentStore(), draft.id, endScreensOn, memoryStore());
+    audit('discard', draft.id);
     return { id: draft.id };
   } catch (e) {
     throw fail(e);
@@ -229,7 +232,15 @@ export function personaFinish(raw: unknown): { id: string } {
 
 // ---- the editor ---------------------------------------------------------------------------------------------------------------------------------
 
-const modelOf = (v: unknown): AgentModel | null => (isRecord(v) && typeof v.provider === 'string' && typeof v.model === 'string' ? (structuredClone(v) as unknown as AgentModel) : null);
+// Only the keys of an agent's model are taken, so a body from a paired browser cannot carry anything else into the configuration; the pool lists are checked by the validation.
+const MODEL_KEYS = ['role', 'provider', 'model', 'fallbacks', 'activities', 'images', 'contextWindow', 'echoReasoning', 'offer'] as const satisfies readonly (keyof AgentModel)[];
+
+const modelOf = (v: unknown): AgentModel | null => {
+  if (!isRecord(v) || typeof v.provider !== 'string' || typeof v.model !== 'string') return null;
+  const out: Record<string, unknown> = {};
+  for (const k of MODEL_KEYS) if (k in v && v[k] !== undefined) out[k] = structuredClone(v[k]);
+  return out as unknown as AgentModel;
+};
 
 /**
  * The editor's Save: the three texts, the model and how its pool is used. From a paired browser the change is held to what the browser may change (a reserve model it adds is refused, as on the

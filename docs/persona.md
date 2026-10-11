@@ -57,7 +57,7 @@ Nome, a frase, as instruções e o modelo (como o editor de agentes), **Salvar**
 
 ### O celular pareado
 
-Faz com a persona **tudo o que o computador faz**: conversa, cria, ajusta, testa, limpa e exclui. Os canais do assistente têm um prefixo próprio, `persona:` (os do assistente de agentes, `agentAssist:`, continuam negados ao navegador). Um canal novo sob `persona:` é negado até alguém classificá-lo. Cada alteração (salvar, limpar, excluir, concluir o assistente) vai para o registro de auditoria com a porta por onde veio (janela ou navegador pareado), e nunca com o texto. O acesso inicial da persona é montado no app, a partir dos textos; uma tela nunca o envia, então um navegador pareado não eleva nada por aqui.
+Faz com a persona **tudo o que o computador faz**: conversa, cria, ajusta, testa, limpa e exclui. Os canais do assistente têm um prefixo próprio, `persona:` (os do assistente de agentes, `agentAssist:`, continuam negados ao navegador). Um canal novo sob `persona:` é negado até alguém classificá-lo. Cada alteração (salvar o rascunho do teste, concluir ou descartar o teste, salvar, limpar, excluir, concluir o assistente) vai para o registro de auditoria com a porta por onde veio (janela ou navegador pareado), e nunca com o texto. O acesso inicial da persona é montado no app, a partir dos textos; uma tela nunca o envia, então um navegador pareado não eleva nada por aqui.
 
 ### Configuração
 
@@ -131,7 +131,7 @@ Name, the sentence, instructions and model (as in the agent editor), **Save**, *
 
 ### The paired phone
 
-It does **everything the computer does** with the persona: chats, makes, adjusts, tests, clears and deletes. The wizard's channels have a prefix of their own, `persona:` (the agent assistant's, `agentAssist:`, stay denied to a browser). A new channel under `persona:` is denied until somebody classifies it. Every change (save, clear, delete, finishing the wizard) goes to the audit log with the door it came by (window or paired browser), and never with a text. The persona's starting access is built in the app from the texts; a screen never sends it, so a paired browser raises nothing through here.
+It does **everything the computer does** with the persona: chats, makes, adjusts, tests, clears and deletes. The wizard's channels have a prefix of their own, `persona:` (the agent assistant's, `agentAssist:`, stay denied to a browser). A new channel under `persona:` is denied until somebody classifies it. Every change (saving the test draft, concluding or discarding the test, save, clear, delete, finishing the wizard) goes to the audit log with the door it came by (window or paired browser), and never with a text. The persona's starting access is built in the app from the texts; a screen never sends it, so a paired browser raises nothing through here.
 
 ### Configuration
 

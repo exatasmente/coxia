@@ -387,6 +387,16 @@ describe('the editor', () => {
     expect(agent('me')?.model).toEqual({ role: null, provider: 'openai', model: 'a-model' });
   });
 
+  it('takes only the keys of a model from what the screen sends, so nothing else rides in on it', async () => {
+    withPersona();
+    const model = { ...(agent('me') as AgentDef).model, junk: 1, shell: 'host', stages: ['x'], offer: { flex: true } };
+    await window('persona:save', { name: 'Me 4', model });
+    const saved = agent('me') as AgentDef;
+    expect(Object.keys(saved.model).sort()).toEqual(['model', 'offer', 'provider', 'role']);
+    expect(saved.model.offer).toEqual({ flex: true });
+    expect(saved).toMatchObject({ shell: 'none', stages: [] });
+  });
+
   it('from a paired browser, takes the texts and a model, and refuses a reserve model added to the list', async () => {
     withPersona();
     await paired('persona:save', { name: 'Me 3', job: 'x', instructions: 'y' });
@@ -467,6 +477,7 @@ describe('what a paired browser can do, and what is recorded', () => {
     await paired('persona:delete');
     const entries = listAudit().filter((e) => e.kind === 'persona').reverse();
     expect(entries.map((e) => [e.target, e.via, e.fields])).toEqual([
+      ['persona:draft', 'window', { agent: id }],
       ['persona:finish', 'window', { agent: id }],
       ['persona:save', 'paired', { agent: id }],
       ['persona:clear', 'window', { agent: id }],
@@ -476,10 +487,19 @@ describe('what a paired browser can do, and what is recorded', () => {
     expect(JSON.stringify(entries)).not.toContain('Secret');
   });
 
-  it('records nothing for the steps of the wizard that change no persona', async () => {
-    const { id } = (await window('persona:saveDraft', body())) as { id: string };
-    await window('persona:conclude', id);
-    await window('persona:discard', id);
+  it('records the steps of the wizard that change the team or the conversation, with the door and the id, and nothing for the questions the model answers', async () => {
+    await window('persona:round', base);
+    await paired('persona:review', base);
     expect(listAudit().filter((e) => e.kind === 'persona')).toEqual([]);
+    const { id } = (await paired('persona:saveDraft', body())) as { id: string };
+    await window('persona:conclude', id);
+    await paired('persona:discard', id);
+    const entries = listAudit().filter((e) => e.kind === 'persona').reverse();
+    expect(entries.map((e) => [e.target, e.via, e.fields])).toEqual([
+      ['persona:draft', 'paired', { agent: id }],
+      ['persona:conclude', 'window', { agent: id }],
+      ['persona:discard', 'paired', { agent: id }],
+    ]);
+    expect(JSON.stringify(entries)).not.toContain('instructions');
   });
 });
