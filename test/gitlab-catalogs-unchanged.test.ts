@@ -200,6 +200,8 @@ const INTENDED: Record<string, Intended> = {
       ['no alto de Hoje', 'no alto do chat'],
     ],
   },
+  // The pre-daily notice opens the chat, where its card is: it says "open" and names the ceremony, and the text-mode wording no longer says "the chat" or "the conversation".
+  'notify.preDaily.body': { reason: 'the notice opens the chat with the ceremony card, so it says open and names the ceremony instead of joining the call or the chat', language: 'both' },
   // The wizard note no longer calls the open engine read-only: it writes inside the run's worktree and runs commands.
   'wizard.models.openEngineNote': { reason: 'the open engine writes inside the run\'s worktree and runs commands, so the wizard note no longer says read-only', language: 'both' },
 };
