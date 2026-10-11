@@ -63,17 +63,19 @@ const cut = (text: string, max: number): string => (text.length > max ? `${text.
 export function render(value: unknown): string {
   if (typeof value === 'string') return value;
   if (value === undefined || value === null) return '';
-  const seen = new WeakSet<object>();
+  // Only the ancestors of the value being written count: a value shared by two branches is shown twice, and only a real cycle is cut.
+  const ancestors: object[] = [];
   const text = JSON.stringify(
     value,
-    (_key, v: unknown) => {
+    function (this: unknown, _key: string, v: unknown) {
+      while (ancestors.length && ancestors[ancestors.length - 1] !== this) ancestors.pop();
       if (typeof v === 'string') return v.length > 2000 ? `${v.slice(0, 2000)}… (${v.length} characters)` : v;
       if (typeof v === 'bigint') return String(v);
       if (v instanceof ArrayBuffer || ArrayBuffer.isView(v)) return `[${v.byteLength} bytes]`;
-      if (Array.isArray(v) && v.length > 60) return [...v.slice(0, 60), `… ${v.length - 60} more`];
+      if (Array.isArray(v) && v.length > 60) v = [...v.slice(0, 60), `… ${v.length - 60} more`];
       if (v && typeof v === 'object') {
-        if (seen.has(v)) return '[circular]';
-        seen.add(v);
+        if (ancestors.includes(v)) return '[circular]';
+        ancestors.push(v);
       }
       return v;
     },

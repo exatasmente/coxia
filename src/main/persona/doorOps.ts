@@ -170,7 +170,8 @@ export const HOOKS: Record<string, Hooks> = {
   'Memory.save': { build: (v) => [v.conversation, v.agent, v.id, v.revision, only({ title: v.title, text: v.text, kind: v.kind })] },
 
   // ---- Settings
-  'Settings.get': { shape: (r, v) => slice((r as { config?: unknown })?.config, v.path) },
+  // No path: the top-level names, never the whole document (it is long, and holds the persona's own instructions and the team's).
+  'Settings.get': { shape: (r, v) => (typeof v.path === 'string' && v.path ? slice((r as { config?: unknown })?.config, v.path) : topLevel((r as { config?: unknown })?.config)) },
   'Settings.getApp': { shape: (r, v) => slice(r, v.path) },
   'Settings.schema': { shape: (r, v) => (typeof v.path === 'string' && v.path ? (schemaAt(r, v.path) ?? null) : r) },
   'Settings.set': {
@@ -295,6 +296,10 @@ export const HOOKS: Record<string, Hooks> = {
   'Ceremonies.discussionsResolve': { build: async (v, c) => [await c.card(str(v.card)), v.mr, v.discussion] },
   'Ceremonies.effectsMark': { build: (v) => [v.effect, typeof v.ceremonyId === 'string' ? v.ceremonyId : null, v.done] },
 };
+
+function topLevel(doc: unknown): string[] {
+  return doc && typeof doc === 'object' ? Object.keys(doc) : [];
+}
 
 function slice(doc: unknown, path: unknown): unknown {
   if (typeof path !== 'string' || !path) return doc;

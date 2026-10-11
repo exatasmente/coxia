@@ -30,15 +30,15 @@ const act = (tool: ToolName, name: string, channel: string, args: string[] = [],
 export const OPS: readonly Op[] = [
   // ---- Overview: what the day looks like, and the refreshes of it -------------------------------------------------------------------------------------------------------
   read('Overview', 'cards', 'cards:load', ['limit:i', 'refresh:b', 'squad:s'], { outside: true }),
-  read('Overview', 'cycle', 'cycle:view'),
+  read('Overview', 'cycle', 'cycle:view', [], { outside: true }),
   read('Overview', 'historyList', 'history:list'),
   read('Overview', 'historyGet', 'history:get', ['id:s@!'], { outside: true }),
   read('Overview', 'cost', 'custo:summary', ['scope:e[current,all]']),
   read('Overview', 'health', 'saude:get'),
-  read('Overview', 'errors', 'errors:get'),
+  read('Overview', 'errors', 'errors:get', [], { outside: true }),
   read('Overview', 'errorsSummary', 'errors:summary'),
   read('Overview', 'radar', 'radar:latest', [], { outside: true }),
-  read('Overview', 'watchers', 'watchers:list'),
+  read('Overview', 'watchers', 'watchers:list', [], { outside: true }),
   read('Overview', 'audit', 'auditoria:list'),
   read('Overview', 'worktrees', 'worktrees:health'),
   act('Overview', 'dismissWatcher', 'watchers:dismiss', ['id:s@!']),
@@ -52,7 +52,7 @@ export const OPS: readonly Op[] = [
   act('Overview', 'exportDay', 'tempo:day', ['date:s']),
 
   // ---- Runs: the runs of the cycle, their gates and answers -------------------------------------------------------------------------------------------------------------
-  read('Runs', 'list', 'runs:list'),
+  read('Runs', 'list', 'runs:list', [], { outside: true }),
   read('Runs', 'get', 'runs:get', ['run:s@!'], { outside: true }),
   read('Runs', 'activities', 'runs:activities'),
   read('Runs', 'artifact', 'runs:artifact', ['run:s@!', 'name:s!'], { outside: true }),
@@ -86,7 +86,7 @@ export const OPS: readonly Op[] = [
   act('Runs', 'docsStart', 'docs:start', ['repo:s@!', 'mode:s!', 'apply:b']),
 
   // ---- Actions: the proposals that wait, and the conflict flow ----------------------------------------------------------------------------------------------------------
-  read('Actions', 'list', 'actions:list'),
+  read('Actions', 'list', 'actions:list', [], { outside: true }),
   read('Actions', 'preview', 'actions:preview', ['id:s@!'], { outside: true }),
   read('Actions', 'quickContext', 'gitlabQuick:context', ['card:c@!']),
   read('Actions', 'quickMembers', 'gitlabQuick:members', ['projectPath:s@!']),
@@ -197,7 +197,7 @@ export const OPS: readonly Op[] = [
   // ---- Asks: everything that waits for the person ----------------------------------------------------------------------------------------------------------------------
   read('Asks', 'turnAsks', 'turnAsks:list'),
   read('Asks', 'ceremonyCommands', 'ceremony:commands'),
-  op('Asks', 'list', null, false, []),
+  op('Asks', 'list', null, false, [], { outside: true }),
   act('Asks', 'screenAnswer', 'runs:screenAnswer', ['askId:s@!', 'decision:e[yes,no,site]!', 'note:t']),
   act('Asks', 'handoffDecline', 'runs:handoffDecline', ['askId:s@!']),
   act('Asks', 'screenClose', 'runs:screenClose', ['key:s@!']),
