@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The terminal state server works in the installed app.** Its part of the app (the Settings section's answers, the opt-in, the server entry and the bridge for the persona's tools) was never registered, so Settings showed nothing for it and the persona's tools could not be reached from a terminal session. It now registers with the rest of the app.
+
 ## [0.11.0-beta.2] - 2026-10-11
 
 ### Fixed
