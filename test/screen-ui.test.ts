@@ -277,3 +277,14 @@ describe('the words of the screens', () => {
     }
   });
 });
+
+describe('the card of a step the screen step approvals would let run (#269)', () => {
+  it('says why it asks anyway, for a held step and a confirmation, and says nothing otherwise', () => {
+    for (const language of ['en', 'pt-BR'] as const) {
+      setLanguage(language);
+      expect(card(ask({ sensitive: 'payment' }))).toContain(CATALOGS[language]['main.browser.ask.sensitive.payment']);
+      expect(card(ask({ kind: 'confirm', why: 'agent', step: null, confirmKind: 'send', agentWords: 'the report', sensitive: 'people' }))).toContain(CATALOGS[language]['main.browser.ask.sensitive.people']);
+      expect(card(ask())).not.toContain('role="note"');
+    }
+  });
+});

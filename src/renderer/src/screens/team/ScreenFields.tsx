@@ -1,10 +1,13 @@
 import type { SandboxStatus } from '../../../../shared/sandbox';
+import { resolveScreenPolicy } from '../../../../shared/config/screenPolicy';
+import type { WorkspaceConfig } from '../../../../shared/config/types';
 import { isWeb } from '../../platform';
 import { useT } from '../../i18n';
 import type { AgentDraft } from './agentEdit';
 import { CHROMIUM_LABEL } from './labels';
 import { SessionsPanel } from './SessionsPanel';
 import { useSandboxStatus } from './sandboxStatus';
+import { ScreenPolicyFields } from './ScreenPolicyFields';
 import { ChipsInput, Toggle } from './ui';
 
 // The three settings that give an agent the app's browser, on the computer only: a paired browser may lower them but the editor does not draw them there, so a phone never
@@ -16,6 +19,8 @@ interface Props {
   hostsError?: string;
   /** Set for an agent already saved: the sessions its browser holds are listed (and revoked) for it. */
   agent?: { id: string; name: string };
+  /** The squads and the workspace the agent's screen step approvals follow; absent: the approvals are not drawn. */
+  policyView?: Pick<WorkspaceConfig, 'squads' | 'runner'>;
 }
 
 /** The agent's virtual screen, the sites it may reach and its logged-in browser, with the sessions the latter holds. */
@@ -25,7 +30,7 @@ export function ScreenFields(props: Props) {
 }
 
 /** The same, given what this computer can do (null while it is being asked). Nothing at all in a paired browser. */
-export function ScreenFieldsView({ draft, set, hostsError, agent, status }: Props & { status: SandboxStatus | null }) {
+export function ScreenFieldsView({ draft, set, hostsError, agent, status, policyView }: Props & { status: SandboxStatus | null }) {
   const t = useT();
   if (isWeb()) return null;
   const gui = status?.gui;
@@ -54,6 +59,14 @@ export function ScreenFieldsView({ draft, set, hostsError, agent, status }: Prop
       <p className="small muted">{t('ui.team.f.browserProfileHint')}</p>
       {draft.browserProfile && host && <p className="small muted" role="note">{t('ui.team.f.browserProfileHost')}</p>}
       {agent && <SessionsPanel agent={agent.id} name={agent.name} />}
+      {policyView && (
+        <ScreenPolicyFields
+          level="agent"
+          value={draft.screenPolicy}
+          onChange={(screenPolicy) => set({ screenPolicy })}
+          effective={resolveScreenPolicy(policyView, { squad: draft.squad ?? undefined, screenPolicy: draft.screenPolicy })}
+        />
+      )}
     </fieldset>
   );
 }

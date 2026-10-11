@@ -1,5 +1,6 @@
 // i18n-lint: allow-file English diagnostics of the import file, shown next to the JSON path they are about
 import { migrateConfig } from './migrations';
+import { releasedIn } from './screenPolicy';
 import { CONFIG_SCHEMA_VERSION, type SecretRequirement, type WorkspaceConfig } from './types';
 import { collectSecretRequirements, validateConfig, type ConfigIssue } from './validate';
 
@@ -157,9 +158,13 @@ export function collectCommands(c: WorkspaceConfig): { field: string; command: s
     if (a.screen) add(`agents.team[${a.id}].screen`, 'screen: the agent drives a browser on a virtual screen the app starts, within its allowed hosts');
     if (a.allowedHosts?.length) add(`agents.team[${a.id}].allowedHosts`, `allowedHosts: the agent may reach ${a.allowedHosts.join(', ')}`);
     if (a.browserProfile) add(`agents.team[${a.id}].browserProfile`, 'browserProfile: the agent\'s browser keeps its logins between uses, in this workspace');
+    if (releasedIn(a.screenPolicy).length) add(`agents.team[${a.id}].screenPolicy`, `screenPolicy: the agent's screen runs ${releasedIn(a.screenPolicy).join(', ')} steps without asking the person`);
     // Rules the ceremonies run without asking: a file is a way to hand them over, so each one is said.
     (a.allowedCommands ?? []).forEach((rule, i) => add(`agents.team[${a.id}].allowedCommands[${i}]`, rule));
   }
+  // The screen step approvals a file would let run without asking (#269), on the levels above the agent: said like the agent's own.
+  for (const s of c.squads ?? []) if (releasedIn(s.screenPolicy).length) add(`squads[${s.id}].screenPolicy`, `screenPolicy: the squad's screens run ${releasedIn(s.screenPolicy).join(', ')} steps without asking the person`);
+  if (releasedIn(c.runner.screenPolicy).length) add('runner.screenPolicy', `screenPolicy: every agent's screen runs ${releasedIn(c.runner.screenPolicy).join(', ')} steps without asking the person`);
   // Run with bash -lc in the worktree of a conflict resolution: a shell line, not an executable, and the importer should read it as well.
   for (const [project, command] of Object.entries(c.projects.verifyCommands)) add(`projects.verifyCommands[${project}]`, command);
   return found;

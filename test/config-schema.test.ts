@@ -103,8 +103,8 @@ describe('config schema', () => {
     // Fields that only appear when a list has items, or whose default is an empty list: the schema may know more than the defaults hold.
     // The pool of a role and the score overrides are absent from every default (absent = no fallbacks); a test below holds them to the schema.
     const optionalPool = (k: string) => k.startsWith('llm.scoreOverrides') || /^llm\.roles\.[a-z]+\.(fallbacks|activities|images|contextWindow|echoReasoning|offer)(\.|$)/.test(k) || k.startsWith('llm.effort');
-    // The roadmap pointer is absent from every default (absent = the agents are told there is no roadmap).
-    const optionalOnlyInItems = [...declared].filter((k) => !holds.has(k) && !k.includes('[]') && !optionalPool(k) && k !== 'docs.roadmapFile');
+    // The roadmap pointer is absent from every default (absent = the agents are told there is no roadmap), and so is every kind of the screen step approvals (absent = held).
+    const optionalOnlyInItems = [...declared].filter((k) => !holds.has(k) && !k.includes('[]') && !optionalPool(k) && k !== 'docs.roadmapFile' && !k.startsWith('runner.screenPolicy.'));
     expect(optionalOnlyInItems).toEqual([]);
   });
 

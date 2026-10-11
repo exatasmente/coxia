@@ -1,8 +1,10 @@
-// WorkspaceConfig (schema 28): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 29): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
-export const CONFIG_SCHEMA_VERSION = 28;
+import type { ScreenPolicy } from './screenPolicy';
+
+export const CONFIG_SCHEMA_VERSION = 29;
 
 /** The local read-only state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
@@ -684,6 +686,8 @@ export interface AgentDef {
   allowedHosts?: string[];
   /** The agent's browser keeps its logins between uses, in a profile folder of its own in the workspace's data. Absent: off, a fresh profile every time. */
   browserProfile?: boolean;
+  /** The screen step approvals of this agent (#269): which held kinds of step run without asking. A kind it does not name follows its squad, then the workspace. */
+  screenPolicy?: ScreenPolicy;
   /** How the agent's model pool is used. Absent: the stage's, then the workspace's `llm.poolMode`. */
   poolMode?: PoolMode;
   /** Appended to the agent's system prompt. A catalog key or a literal. */
@@ -725,6 +729,8 @@ export interface SquadDef {
   autonomy: boolean;
   /** A label the issue gets on the tracker when a run starts in the squad (and the squad's own requests carry). null: none. */
   label: string | null;
+  /** The screen step approvals of the squad's members (#269); a member's own word wins, and a kind neither names follows the workspace. */
+  screenPolicy?: ScreenPolicy;
 }
 
 export interface AgentsConfig {
@@ -949,6 +955,8 @@ export interface RunnerConfig {
   sandbox: RunnerSandbox;
   /** The autonomy block of the workspace: what each flow follows while its "Use the workspace's setting" is on. */
   autonomy: WorkspaceAutonomy;
+  /** The workspace's screen step approvals (#269): which held kinds of step the agents' screens run without asking. Empty: every kind asks, as it always did. */
+  screenPolicy: ScreenPolicy;
   /**
    * Where a stage's evidence is kept: only with the run, in the workspace's data (the default, so nothing goes into a commit), or also copied into the cycle
    * folder and committed with the stage, which is how it reaches the pull request. Only the computer changes it, because it decides what enters a commit.

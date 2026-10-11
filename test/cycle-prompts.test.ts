@@ -126,8 +126,9 @@ describe('the prompt catalogs', () => {
     }
     // Ids rendered by the rules of baseParams (cyclePrompts.ts) rather than named at a call.
     const direct = new Set(['rules.speech', 'rules.speechExamples', 'rules.chat', 'options.rule']);
-    // The effect check kinds are read by a computed id (efeitos.ts: `effects.kind.${kind}`), and so is the squad request of a front door (`runner.output.squad.${why}`).
-    const computed = /^(effects\.kind|runner\.denied|runner\.output\.squad|runner\.request\.kind)\./;
+    // The effect check kinds are read by a computed id (efeitos.ts: `effects.kind.${kind}`), and so is the squad request of a front door (`runner.output.squad.${why}`)
+    // and the kinds of step the screen step approvals let run (screenPrompt.ts: `runner.rules.screen.kind.${kind}`).
+    const computed = /^(effects\.kind|runner\.denied|runner\.output\.squad|runner\.request\.kind|runner\.rules\.screen\.kind)\./;
     // The rules of a stage's evidence are picked at the call between the text of a sandbox and the one of a stage that runs on this computer
     // (`runner.rules.evidence` / `runner.rules.evidence.host`): the id is written there, but never as the plain argument of one call.
     const picked = new Set(['runner.rules.evidence']);

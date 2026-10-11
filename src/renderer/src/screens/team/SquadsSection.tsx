@@ -2,10 +2,13 @@ import { useMemo, useState } from 'react';
 import { membersOf, squadsOf } from '../../../../shared/config/squads';
 import type { SquadDef, WorkspaceConfig } from '../../../../shared/config/types';
 import { squadIssueText } from '../../../../shared/runs/squadCheck';
+import { resolveLevels } from '../../../../shared/config/screenPolicy';
 import { errorText } from '../../api';
+import { isWeb } from '../../platform';
 import { useT } from '../../i18n';
 import { slugOf, uniqueId } from './agentEdit';
 import { applySquad, blankSquad, draftOfSquad, hasOwnFlow, memberChoices, movingAgents, normalizePrefix, squadIssues, squadProblems, withLabel, type SquadDraft } from './squadEdit';
+import { ScreenPolicyFields } from './ScreenPolicyFields';
 import { teamApi } from './teamApi';
 import { agentName, agentNameById, shown, squadName } from './text';
 import { ChipsInput, Confirm, Labeled, Problems, SidePanel, Toggle, type Problem, type SectionProps } from './ui';
@@ -237,6 +240,8 @@ function SquadPanel({ config, initial, isNew, save, reload, openFlow, onClose }:
         <Labeled label={t('ui.squads.f.label')} hint={t('ui.squads.f.labelHint')} error={fieldError('label')}>
           {(id) => <input id={id} className="text-input mono" maxLength={200} spellCheck={false} value={draft.label} onChange={(e) => set({ label: e.target.value })} />}
         </Labeled>
+        {/* Only the computer lets a kind run without asking: a paired browser keeps the squad's approvals as stored. */}
+        {!isWeb() && <ScreenPolicyFields level="squad" value={draft.screenPolicy} onChange={(screenPolicy) => set({ screenPolicy })} effective={resolveLevels({ squad: draft.screenPolicy, workspace: config.runner.screenPolicy })} />}
         {!isNew && (
           <div className="wz-stack">
             <div className="wz-label">{t('ui.squads.flow')}</div>

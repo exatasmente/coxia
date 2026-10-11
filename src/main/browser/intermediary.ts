@@ -1,4 +1,5 @@
-import { RESULT_MAX, type HeldAnswer, type HoldWhy, type StepClass, type StepOutcome } from '../../shared/browser';
+import { RESULT_MAX, type HeldAnswer, type HoldWhy, type SensitiveCategory, type StepClass, type StepOutcome } from '../../shared/browser';
+import { type PolicyLevel, type ResolvedScreenPolicy, runsAlone } from '../../shared/config/screenPolicy';
 import { HANDOFF_HELD_TEXT } from '../../shared/handoff';
 import { t } from '../../shared/i18n';
 import type { EffectiveNetwork } from '../../shared/network';
@@ -26,6 +27,18 @@ export interface HoldRequest {
   site: string;
   /** What the agent wrote about the step, as its own words. */
   agentWords?: string;
+  /** The policy of the call lets this kind run without asking, but the step is about a category always held: the card says why the person is asked anyway. */
+  sensitive?: SensitiveCategory;
+}
+
+/** A step the policy of the call let run without asking, as the audit keeps it. */
+export interface AutonomousStep {
+  why: HoldWhy;
+  step: StepWords;
+  site: string;
+  agentWords?: string;
+  /** The level the policy's word came from. */
+  level: PolicyLevel;
 }
 
 /** What the intermediary needs of the people side: the question, and the passes the person gave for steps the app could not read. */
@@ -34,6 +47,8 @@ export interface HoldGate {
   hold(request: HoldRequest, signal?: AbortSignal): Promise<HeldAnswer>;
   /** Whether the person gave a pass for unclassifiable steps on this site, for this screen. */
   passed(site: string): boolean;
+  /** Records a step the policy let run without asking. Never throws. Optional so a gate of a screen with no policy (a test, a tool) needs none. */
+  autonomous?(step: AutonomousStep): void;
 }
 
 /** What a call comes back as, for an engine to put in its own shape. */
@@ -72,6 +87,11 @@ export interface CallOptions {
    * browser when the person took it is asked once more before the server is called and after it answers: its page is dropped (the step is logged `not-run`).
    */
   held?: () => boolean;
+  /**
+   * The screen step approvals of the call (#269), resolved when the call opened its screen: a kind it lets run goes without asking, unless the step is about a category always
+   * held. Absent: every kind is held, as before the policy existed.
+   */
+  policy?: ResolvedScreenPolicy;
 }
 
 export interface Intermediary {
@@ -154,12 +174,12 @@ export function createIntermediary(d: IntermediaryDeps): Intermediary {
     return { site: mask(entry.site), path: mask(entry.path), ...(entry.name ? { name: mask(entry.name) } : {}) };
   };
 
-  async function run(tool: string, rawArgs: unknown, signal?: AbortSignal, held?: () => boolean): Promise<BrowserResult> {
+  async function run(tool: string, rawArgs: unknown, signal?: AbortSignal, held?: () => boolean, policy?: ResolvedScreenPolicy): Promise<BrowserResult> {
     // The first line of every call: while the person has the screen nothing is read, done or recorded, and the agent is not told what changed.
     if (held?.()) return refusal(HANDOFF_HELD_TEXT);
     const started = now();
     const at = new Date(started).toISOString();
-    const entry: { site: string; path: string; class: StepClass; role?: string; name?: string; key?: string; reason?: string; held?: { why: HoldWhy; answer: HeldAnswer }; passed?: true; outcome: StepOutcome } = {
+    const entry: { site: string; path: string; class: StepClass; role?: string; name?: string; key?: string; reason?: string; held?: { why: HoldWhy; answer: HeldAnswer }; passed?: true; autonomous?: true; outcome: StepOutcome } = {
       site: '',
       path: '',
       class: 'unclassified',
@@ -243,12 +263,21 @@ export function createIntermediary(d: IntermediaryDeps): Intermediary {
       if (seen?.name) entry.name = seen.name;
       if (c.words.key) entry.key = c.words.key;
 
-      // 4. Held for the person: what cannot be undone, and what the app cannot read unless the person gave a pass for the site.
+      // 4. Held for the person: what cannot be undone, and what the app cannot read unless the person gave a pass for the site or the call's policy lets the kind run. A
+      // step about a payment, a sending to people, a secret or card data asks every time: neither a pass nor a policy reaches it.
       if (c.class !== 'free') {
-        if (c.class === 'unclassified' && d.gate.passed(entry.site)) {
+        const why = c.why ?? 'unclassified';
+        const released = runsAlone(policy, why);
+        if (!c.sensitive && c.class === 'unclassified' && d.gate.passed(entry.site)) {
           entry.passed = true;
+        } else if (!c.sensitive && released && policy) {
+          entry.autonomous = true;
+          d.gate.autonomous?.({ why, step: c.words, site: entry.site, level: policy[why].source, ...(checked.reason ? { agentWords: checked.reason } : {}) });
         } else {
-          const answer = await d.gate.hold({ why: c.why ?? 'unclassified', step: c.words, site: entry.site, ...(checked.reason ? { agentWords: checked.reason } : {}) }, signal);
+          const answer = await d.gate.hold(
+            { why, step: c.words, site: entry.site, ...(checked.reason ? { agentWords: checked.reason } : {}), ...(c.sensitive && released ? { sensitive: c.sensitive } : {}) },
+            signal,
+          );
           entry.held = { why: c.why ?? 'unclassified', answer };
           if (answer !== 'yes' && answer !== 'site') {
             const key = answer === 'timeout' ? 'timeout' : answer === 'closed' ? 'closed' : 'declined';
@@ -331,7 +360,7 @@ export function createIntermediary(d: IntermediaryDeps): Intermediary {
     tools: () => toolsFor(d.seesImages),
     call(tool, args, options) {
       if (options?.held?.()) return Promise.resolve(refusal(HANDOFF_HELD_TEXT));
-      const next = queue.then(() => run(tool, args, options?.signal, options?.held));
+      const next = queue.then(() => run(tool, args, options?.signal, options?.held, options?.policy));
       queue = next.catch(() => undefined);
       return next;
     },

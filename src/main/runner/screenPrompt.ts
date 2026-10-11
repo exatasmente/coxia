@@ -1,4 +1,6 @@
+import type { StepKind } from '../../shared/browser';
 import type { AgentDef, RunnerSandbox } from '../../shared/config/types';
+import { type ResolvedScreenPolicy, releasedKinds } from '../../shared/config/screenPolicy';
 import { effectiveNetwork } from '../../shared/network';
 import { t } from '../../shared/i18n';
 import { prompt as cp } from '../cyclePrompts';
@@ -21,6 +23,8 @@ export interface ScreenPrompt {
   confirm: boolean;
   /** The hand-off tool is offered (#178): the agent is told when to use it and what to do with each answer. */
   handoff: boolean;
+  /** The kinds of held step the screen step approvals of the call let run without asking (#269); absent when none does, and then the prompt is what it always was. */
+  released?: StepKind[];
 }
 
 /** The fact of the agent's network, from the workspace's setting and the agent's own hosts (the table of rule 25). */
@@ -67,14 +71,17 @@ export function screenPromptOf(o: {
   confirm: boolean;
   /** The hand-off tool is offered. It gives an agent with no switch and no host list a prompt of its own: the tool is its to use, and so are the words about it. */
   handoff?: boolean;
+  /** The screen step approvals of the call: the prompt says the kinds they let run, from the same object the app decides with. */
+  policy?: ResolvedScreenPolicy;
 }): ScreenPrompt | undefined {
   const ownHosts = o.agent.shell === 'host' ? [] : o.allowedHosts;
+  const released = o.policy ? releasedKinds(o.policy) : [];
   if (o.agent.screen !== true && ownHosts.length === 0 && o.handoff !== true) return undefined;
   const browser: ScreenPrompt['browser'] =
     o.browser && 'tools' in o.browser
       ? { ok: true, tools: o.browser.tools, profile: o.browser.profile === 'own' ? 'own' : o.agent.browserProfile === true ? 'busy' : 'none' }
       : { ok: false, reason: o.browser && 'refusal' in o.browser ? o.browser.refusal : refusalText('unavailable') };
-  return { screen: o.agent.screen === true, browser, ownHosts, network: networkFor(o.workspace, o.agent, ownHosts), display: o.display, confirm: o.confirm, handoff: o.handoff === true };
+  return { screen: o.agent.screen === true, browser, ownHosts, network: networkFor(o.workspace, o.agent, ownHosts), display: o.display, confirm: o.confirm, handoff: o.handoff === true, ...(released.length ? { released } : {}) };
 }
 
 /** The sentence that says which shell the agent has, in the words of its network: the plain ones, or the one that lists the agent's own hosts. */
@@ -99,6 +106,9 @@ export function screenRules(p?: ScreenPrompt): string {
     }
   }
   if (p.confirm) parts.push(cp('runner.rules.screen.confirm'));
+  // Only the kinds this call has a way to take: the browser's when it has the browser, its own confirmations when it has the tool.
+  const kinds = (p.released ?? []).filter((k) => (k === 'agent' ? p.confirm : p.screen && p.browser.ok));
+  if (kinds.length) parts.push(cp('runner.rules.screen.policy', { kinds: kinds.map((k) => cp(`runner.rules.screen.kind.${k}`)).join(', ') }));
   if (p.handoff) {
     parts.push(cp('runner.rules.screenHandoff'));
     // An agent that has the app's browser and a shell session on the same display is pointed at the path where what the person typed is hidden.

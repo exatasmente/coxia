@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { ASK_DECISIONS, ASK_TIMEOUT_MS, type AskDecision, type ConfirmKind, type HeldAnswer, type HoldWhy, type PendingAsk, type StepWords } from '../../shared/browser';
+import { ASK_DECISIONS, ASK_TIMEOUT_MS, type AskDecision, type ConfirmKind, type HeldAnswer, type HoldWhy, type PendingAsk, type SensitiveCategory, type StepWords } from '../../shared/browser';
+import type { PolicyLevel } from '../../shared/config/screenPolicy';
 import type { HandoffCard } from '../../shared/handoff';
 import { t } from '../../shared/i18n';
 import { describeStep } from '../../shared/stepWords';
 import { type AnsweredThrough, type AuditSink, type ScreenPlace, auditScreen } from './audit';
-import type { HoldGate } from './intermediary';
+import type { AutonomousStep, HoldGate } from './intermediary';
 
 // The questions the app's screen asks the person: a step it holds before it reaches the browser, and a confirmation the agent asked for. It has the shape of the command store
 // the ceremonies use: `ask` returns a promise and waits, an unanswered question counts as declined after 15 minutes (fail closed), the pending ones are listed and published
@@ -28,6 +29,8 @@ export interface HoldAsk extends AskContext {
   step: StepWords;
   site: string;
   agentWords?: string;
+  /** The policy lets this kind run, but the step is about a category always held: the card says why it asks. */
+  sensitive?: SensitiveCategory;
 }
 
 export interface ConfirmAsk extends AskContext {
@@ -35,6 +38,15 @@ export interface ConfirmAsk extends AskContext {
   /** The step in a sentence, as the agent wrote it. */
   words: string;
   site?: string;
+  sensitive?: SensitiveCategory;
+}
+
+/** A confirmation the screen step approvals of the call answered yes to without asking (#269), as the audit keeps it. */
+export interface AutonomousConfirm extends AskContext {
+  confirmKind: ConfirmKind;
+  words: string;
+  site?: string;
+  level: PolicyLevel;
 }
 
 /** What a question came to. `note` is what the person wrote when they said no (cut to what fits in a tool result). */
@@ -104,6 +116,8 @@ export interface ScreenAsks {
   passed(key: string, site: string): boolean;
   /** Forgets the passes of a screen (it closed). */
   forget(key: string): void;
+  /** Records a confirmation the policy of the call answered without asking. Never throws. */
+  autonomous(ask: AutonomousConfirm): void;
   /** The door the intermediary asks through, for one screen. */
   gate(context: AskContext): HoldGate;
 }
@@ -117,8 +131,10 @@ export { describeStep };
 /** The notification for a question: who is waiting, and what for. */
 export function askNotice(ask: PendingAsk): { title: string; body: string } {
   const title = t('main.browser.ask.title', { agent: ask.agent });
-  if (ask.kind === 'confirm') return { title, body: t('main.browser.ask.confirm', { kind: t(`main.browser.confirmKind.${ask.confirmKind ?? 'other'}`), words: (ask.agentWords ?? '').slice(0, 200) }) };
-  return { title, body: t('main.browser.ask.hold', { step: ask.step ? describeStep(ask.step, ask.site) : '', why: t(`main.browser.why.${ask.why}`) }) };
+  // A step the policy would have let run says why it asks anyway.
+  const sensitive = ask.sensitive ? ` ${t(`main.browser.ask.sensitive.${ask.sensitive}`)}` : '';
+  if (ask.kind === 'confirm') return { title, body: t('main.browser.ask.confirm', { kind: t(`main.browser.confirmKind.${ask.confirmKind ?? 'other'}`), words: (ask.agentWords ?? '').slice(0, 200) }) + sensitive };
+  return { title, body: t('main.browser.ask.hold', { step: ask.step ? describeStep(ask.step, ask.site) : '', why: t(`main.browser.why.${ask.why}`) }) + sensitive };
 }
 
 interface Waiting {
@@ -192,14 +208,21 @@ export function createScreenAsks(d: ScreenAsksDeps): ScreenAsks {
   const self: ScreenAsks = {
     hold(ask, signal) {
       const text = describeStep(ask.step, ask.site);
-      return start(ask, { kind: 'hold', why: ask.why, step: ask.step, site: ask.site, ...(ask.agentWords ? { agentWords: ask.agentWords } : {}) }, signal, (answer, through) =>
+      return start(ask, { kind: 'hold', why: ask.why, step: ask.step, site: ask.site, ...(ask.agentWords ? { agentWords: ask.agentWords } : {}), ...(ask.sensitive ? { sensitive: ask.sensitive } : {}) }, signal, (answer, through) =>
         auditScreen.held({ ...who(ask), why: ask.why, step: text, site: ask.site, ...(ask.agentWords ? { agentWords: ask.agentWords } : {}), answer, through }, sink),
       );
     },
     confirm(ask, signal) {
-      return start(ask, { kind: 'confirm', why: 'agent', step: null, site: ask.site ?? '', agentWords: ask.words, confirmKind: ask.confirmKind }, signal, (answer, through) =>
+      return start(ask, { kind: 'confirm', why: 'agent', step: null, site: ask.site ?? '', agentWords: ask.words, confirmKind: ask.confirmKind, ...(ask.sensitive ? { sensitive: ask.sensitive } : {}) }, signal, (answer, through) =>
         auditScreen.confirmed({ ...who(ask), kind: ask.confirmKind, words: ask.words, ...(ask.site ? { site: ask.site } : {}), answer, through }, sink),
       );
+    },
+    autonomous(ask) {
+      try {
+        auditScreen.autonomous({ ...who(ask), why: 'agent', step: ask.words, site: ask.site ?? '', confirmKind: ask.confirmKind, level: ask.level }, sink);
+      } catch (e) {
+        console.error('[browser] could not audit a step taken without asking', e instanceof Error ? e.message : e);
+      }
     },
     list: (key) => [...[...waiting.values()].map((w) => w.item), ...shown.values()].filter((a) => key === undefined || a.key === key),
     show(ask) {
@@ -260,6 +283,13 @@ export function createScreenAsks(d: ScreenAsksDeps): ScreenAsks {
       return {
         hold: async (request, signal) => (await self.hold({ ...context, ...request }, signal)).answer,
         passed: (site) => self.passed(context.key, site),
+        autonomous: (step: AutonomousStep) => {
+          try {
+            auditScreen.autonomous({ ...who(context), why: step.why, step: describeStep(step.step, step.site), site: step.site, ...(step.agentWords ? { agentWords: step.agentWords } : {}), level: step.level }, sink);
+          } catch (e) {
+            console.error('[browser] could not audit a step taken without asking', e instanceof Error ? e.message : e);
+          }
+        },
       };
     },
   };

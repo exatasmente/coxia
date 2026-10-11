@@ -45,6 +45,15 @@ export function keyOf(value: unknown): string | null {
 export type StepClass = 'free' | 'irreversible' | 'unclassified';
 /** Why a step is held, for the card: a submit, a name, a shortcut, a dialog, or a step the app could not read. */
 export type HoldWhy = 'submit' | 'name' | 'shortcut' | 'dialog' | 'unclassified';
+/**
+ * The kinds of step the screen step approvals (#269) decide on: the reasons a step is held, and the agent's own confirmation. A kind is held (asks the person) unless the policy
+ * in effect lets it run without asking. No other kind exists: what is always held is not a kind but a category (below).
+ */
+export const STEP_KINDS = ['submit', 'name', 'shortcut', 'dialog', 'unclassified', 'agent'] as const;
+export type StepKind = (typeof STEP_KINDS)[number];
+/** What a step that cannot be undone may be about that no policy lets run without asking: a payment, a sending to people, a secret, card data. */
+export const SENSITIVE_CATEGORIES = ['payment', 'people', 'secret', 'card'] as const;
+export type SensitiveCategory = (typeof SENSITIVE_CATEGORIES)[number];
 /** How a held step ended. */
 export type HeldAnswer = 'yes' | 'no' | 'site' | 'timeout' | 'closed';
 /** What came of a step: it was done, it failed, the person said no, or it was never run (refused by the app before the browser). */
@@ -73,6 +82,8 @@ export interface StepEntry {
   held?: { why: HoldWhy; answer: HeldAnswer };
   /** An unclassifiable step let through by the person's pass for the site. */
   passed?: true;
+  /** A held kind of step let through without asking by the screen step approvals of the call (#269). */
+  autonomous?: true;
   outcome: StepOutcome;
   /** How long the call took, waiting for the person included. */
   ms: number;
@@ -116,6 +127,8 @@ export interface PendingAsk {
   /** What the agent wrote about the step, as its own words. */
   agentWords?: string;
   confirmKind?: ConfirmKind;
+  /** The policy in effect lets this kind of step run without asking, but the step is about one of the categories always held: the card says why the person is asked. */
+  sensitive?: SensitiveCategory;
   /** ISO time it started waiting. */
   since: string;
   /** Only on a request to hand the screen over: `agentWords` is what the agent needs of the person, and this is the rest of the card. */

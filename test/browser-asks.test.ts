@@ -355,3 +355,30 @@ describe('a request to hand the screen over', () => {
     expect(asks.list().filter((a) => a.kind === 'hold')).toHaveLength(MAX_PENDING_PER_SCREEN);
   });
 });
+
+describe('the screen step approvals (#269)', () => {
+  it('audits a step the policy let run, with the level, through the gate, and never asks', () => {
+    const asks = make();
+    asks.gate(ctx).autonomous?.({ why: 'name', step: { action: 'click', role: 'button', name: 'Save draft' }, site: 'example.com', level: 'squad', agentWords: 'keep the draft' });
+    expect(told).toEqual([]);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ kind: 'screen-autonomous', by: 'coder', via: 'policy', ok: true, fields: { why: 'name', site: 'example.com', policy: 'autonomous', policyLevel: 'squad', agentWords: 'keep the draft' } });
+    expect(audit[0].fields.step).toContain('Save draft');
+  });
+
+  it('audits a confirmation the policy answered', () => {
+    const asks = make();
+    asks.autonomous({ ...ctx, confirmKind: 'save', words: 'save the draft', level: 'agent' });
+    expect(audit[0]).toMatchObject({ kind: 'screen-autonomous', fields: { why: 'agent', confirmKind: 'save', policyLevel: 'agent' } });
+  });
+
+  it('puts on the card and in the notice why a released kind asks anyway', async () => {
+    const asks = make();
+    const waiting = asks.hold({ ...submit, sensitive: 'payment' });
+    expect(told[0].sensitive).toBe('payment');
+    expect(askNotice(told[0]).body).toContain(t('main.browser.ask.sensitive.payment'));
+    expect(askNotice({ ...told[0], sensitive: undefined }).body).not.toContain(t('main.browser.ask.sensitive.payment'));
+    asks.answer('ask-1', 'no', 'window');
+    await waiting;
+  });
+});

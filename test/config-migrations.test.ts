@@ -929,9 +929,36 @@ describe('migrateConfig', () => {
       expect(twice.config).toEqual(once.config);
     });
 
-    it('is the newest step: 28 is current and 29 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(28);
-      expect(() => migrateConfig({ schemaVersion: 29 }, { legacyInstall: false })).toThrow(/newer app/);
+  });
+
+  describe('schema 28 to 29: the screen step approvals', () => {
+    const v28 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 28;
+      delete c.runner.screenPolicy;
+      change(c);
+      return c;
+    };
+
+    it('writes an empty policy (every kind asks, as before), bumps the version and yields a valid file', () => {
+      const r = migrateConfig(v28(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(28);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.runner.screenPolicy).toEqual({});
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('touches nothing else of the file, and only bumps a document whose runner is not an object', () => {
+      const before = v28((c) => (c.runner.enabled = true));
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect({ ...r.config, schemaVersion: 28, runner: { ...r.config.runner, screenPolicy: undefined } }).toEqual({ ...before, runner: { ...before.runner, screenPolicy: undefined } });
+      expect(migrateConfig(v28((c) => (c.runner = 'broken')), { legacyInstall: false }).config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+    });
+
+    it('is the newest step: 29 is current and 30 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(29);
+      expect(() => migrateConfig({ schemaVersion: 30 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

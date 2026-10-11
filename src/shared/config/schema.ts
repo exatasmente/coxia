@@ -1,9 +1,10 @@
 // i18n-lint: allow-file JSON Schema descriptions: English documentation of the config format, for whoever edits config.json
 import type { JsonSchema } from './jsonSchema';
+import { STEP_KINDS } from '../browser';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
 import { ACTIVITIES, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 28). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 29). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -51,6 +52,13 @@ const modelRef = object(
 );
 
 const modelList = (description: string): JsonSchema => list(description, modelRef, { maxItems: MAX_POOL_ENTRIES });
+
+/** The screen step approvals of one level (#269): per kind of held step, ask the person or run without asking. A kind not named follows the next level. */
+const screenPolicy = (description: string): JsonSchema =>
+  object(
+    `${description} Payment, sending to people, secrets and card data are not kinds: they always ask, whatever this says.`,
+    Object.fromEntries(STEP_KINDS.map((k) => [k, enumOf(`The "${k}" kind of step: held asks the person, autonomous runs without asking.`, ['held', 'autonomous'])])),
+  );
 
 const poolFields = {
   fallbacks: modelList('Spare models, cheapest first: the call moves to the next one when the model in use is busy. Absent: none, nothing changes.'),
@@ -286,6 +294,7 @@ const agentDef = object(
     allowedHosts: list('The hosts the agent may reach through the app\'s filtering proxy: exact lowercase names, HTTPS port 443, no wildcard or port. Not used by an agent on shell: host. Absent: none.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
     browserProfile: boolean('The agent\'s browser keeps its logins between uses, in a profile folder of its own in the workspace\'s data. Absent: off, a fresh profile every time.'),
     poolMode: enumOf('How the agent\'s model pool is used (fallback, switch or delegate). Absent: the stage\'s, then the workspace\'s llm.poolMode.', POOL_MODES),
+    screenPolicy: screenPolicy('The agent\'s screen step approvals; its word wins over its squad\'s and the workspace\'s. A paired browser, a template or an import never lets a kind run without asking.'),
     instructions: string('Appended to the agent system prompt (a catalog key or a literal).', { maxLength: 20_000 }),
     system: boolean('One of the five built-in agents: it can be edited and never removed.'),
   },
@@ -318,6 +327,7 @@ const squad = object(
     liaison: { type: ['string', 'null'], description: 'The member that speaks for the squad to the other squads: questions and requests from them arrive to it, and its members\' questions about another squad leave through it.', pattern: ID },
     autonomy: boolean('A squad-wide switch: off makes every member wait for the person (each agent\'s own switch applies when it is on).'),
     label: nullableString('A label the issue gets on the tracker when a run starts in the squad; null: none.'),
+    screenPolicy: screenPolicy('The squad\'s screen step approvals; a member\'s own word wins, and the squad\'s wins over the workspace\'s.'),
   },
   ['id', 'name'],
 );
@@ -561,6 +571,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         stageMaxMs: integer('A stage still going after this long fails whatever the agent shows; the cap on a stage that keeps talking and never finishes (ms).', 60_000, 86_400_000),
         turns: object('How many steps (model turns) an agent may take in one pass of a stage.', { read: integer('An agent that only reads and writes its documents.', 1, 500), write: integer('An agent that changes files.', 1, 500) }),
         autonomy: workspaceAutonomy,
+        screenPolicy: screenPolicy('The workspace\'s screen step approvals: what the agents\' screens let run without asking when neither the agent nor its squad says. Empty: everything asks.'),
         sandbox: object('What the sandbox of an agent set to `shell: sandbox` may reach and use.', {
           network: enumOf('off: no network at all; registry: only HTTPS (port 443) to registryHosts, through the app\'s filtering proxy; open: the computer\'s own network, shared whole, with no proxy and no host list (desktop only, a choice of risk). "Localhost" inside the sandbox is the sandbox\'s own except in open mode.', SANDBOX_NETWORKS),
           registryHosts: list('Exact host names the registry switch lets through.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),

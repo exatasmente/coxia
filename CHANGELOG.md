@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Screen step approvals.** Settings can let some kinds of step an agent takes on its screen run without asking: submitting a form, a control named like an act that cannot be undone, a keyboard shortcut, a dialog, a step the app cannot read, and the agent's own confirmations. Each kind is set on the workspace, the squad or the agent; the agent's word wins, then the squad's, then the workspace's, and the settings show where each mode comes from. With nothing set every step still asks, as before. A payment, a sending to people, a secret or card data always asks, whatever the setting, and the approval card says why. A step that runs without asking is kept in the audit log, and so is every change of the setting, which applies from the next stage. Only the computer lets a kind run without asking; a paired browser and a template cannot. Not for production before the audit of autonomous steps ships.
+
 ### Fixed
 
 - **A plugin that fails is no longer silent.** Every call of a plugin leaves a line in the workspace's audit log ("Plugin call": the plugin, the event, the stage, and whether it ran, failed with the reason, or waits for an answer in Actions). A call that fails also leaves a line in the run's conversation with the plugin's name, the event, the stage and the reason (no run to write into, a required setting empty, the sandbox did not open, the script ended with an error or without a result). Settings › Plugins shows each plugin's last call since the app opened.

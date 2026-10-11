@@ -50,6 +50,16 @@ describe('a fresh install', () => {
     expect(() => saveSettings({ ...getSettings(), models: { ...getSettings().models, turn: 'has space' } })).toThrow(/invalid model/);
     expect(() => cfg.saveConfig({ ...cfg.getConfig(), language: 'fr' })).toThrow(/invalid configuration: language/);
   });
+
+  it('records a change of the screen step approvals on the save that makes it, and nothing on a save that changes none', async () => {
+    const { listAudit } = await import('../src/main/auditoria');
+    const count = () => listAudit().filter((r) => r.kind === 'screen-policy').length;
+    const was = count();
+    cfg.saveConfig({ ...cfg.getConfig(), runner: { ...cfg.getConfig().runner, screenPolicy: { name: 'autonomous' } } });
+    expect(listAudit().filter((r) => r.kind === 'screen-policy').slice(was)).toMatchObject([{ target: 'screen-policy:workspace', fields: { level: 'workspace', stepKind: 'name', before: 'inherit', after: 'autonomous' } }]);
+    cfg.saveConfig(cfg.getConfig());
+    expect(count()).toBe(was + 1);
+  });
 });
 
 describe('after the previous app profile is applied', () => {

@@ -6,8 +6,10 @@ import { loadClaudeSdkModule } from '../claudeSdk';
 import { type ToolImpl, ToolError, clip } from '../engine/open/tools/types';
 import type { Json } from '../engine/open/types';
 import { type ExposedTool, type Prop, checkToolArguments, jsonSchemaOf } from './allowlist';
+import { type ResolvedScreenPolicy, runsAlone } from '../../shared/config/screenPolicy';
 import type { AskContext, AskResult, ScreenAsks } from './asks';
 import { type BrowserResult, problemText } from './intermediary';
+import { sensitiveCategory } from './sensitive';
 import { resultText } from '../screen/handoff';
 import type { TypedValues } from '../screen/typedValues';
 
@@ -103,9 +105,18 @@ export const screenMcpToolNames = (set: ScreenToolset): string[] => [
 
 /** The confirmation tool over the app's asks, for a screen: it asks as the screen asks, with its clocks. */
 export const confirmPortFor =
-  (asks: Pick<ScreenAsks, 'confirm'>, context: AskContext): ConfirmPort =>
-  (ask, signal) =>
-    asks.confirm({ ...context, ...ask }, signal);
+  (asks: Pick<ScreenAsks, 'confirm'> & Partial<Pick<ScreenAsks, 'autonomous'>>, context: AskContext, policy?: ResolvedScreenPolicy): ConfirmPort =>
+  async (ask, signal) => {
+    // A payment or a sending (by its kind or by its words) asks every time, whatever the policy of the call says (#269). Anything else the policy lets the agent's own
+    // confirmations through is answered yes here, and kept in the audit.
+    const released = runsAlone(policy, 'agent');
+    const sensitive = ask.confirmKind === 'pay' ? 'payment' : ask.confirmKind === 'send' ? 'people' : sensitiveCategory(`${ask.words} ${ask.site ?? ''}`);
+    if (released && !sensitive && policy && asks.autonomous) {
+      asks.autonomous({ ...context, ...ask, level: policy.agent.source });
+      return { answer: 'yes' };
+    }
+    return asks.confirm({ ...context, ...ask, ...(released && sensitive ? { sensitive } : {}) }, signal);
+  };
 
 // ---- one run, whatever the shape --------------------------------------------------------------------------------------------------------------
 

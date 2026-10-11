@@ -6,21 +6,26 @@ import { setLanguage, t } from '../src/shared/i18n';
 import { createHostsTally } from '../src/main/browser/hosts';
 import { type HoldGate, type HoldRequest, type Intermediary, checkAddress, createIntermediary } from '../src/main/browser/intermediary';
 import { createMaskSet } from '../src/main/browser/mask';
-import { createStepLog, pathOf } from '../src/main/browser/stepLog';import { fakeServer, formSnapshot } from './helpers/browserServer';
+import { createStepLog, pathOf } from '../src/main/browser/stepLog';
+import { fakeServer, formSnapshot } from './helpers/browserServer';
+import { HELD_POLICY, type ResolvedScreenPolicy } from '../src/shared/config/screenPolicy';
+import type { AutonomousStep } from '../src/main/browser/intermediary';
 
 beforeEach(() => setLanguage('en'));
 
 /** A gate whose answers the test decides. */
 function fakeGate(answer: HeldAnswer | ((r: HoldRequest) => Promise<HeldAnswer>) = 'yes', passes: string[] = []) {
   const requests: HoldRequest[] = [];
+  const alone: AutonomousStep[] = [];
   const gate: HoldGate = {
     async hold(r) {
       requests.push(r);
       return typeof answer === 'function' ? answer(r) : answer;
     },
     passed: (site) => passes.includes(site),
+    autonomous: (step) => void alone.push(step),
   };
-  return { gate, requests, passes };
+  return { gate, requests, passes, alone };
 }
 
 function setup(over: { network?: { mode: 'off' | 'proxy' | 'open'; hosts: string[] }; gate?: ReturnType<typeof fakeGate>; seesImages?: boolean; resultMax?: number; hide?: string[] } = {}) {
@@ -481,5 +486,45 @@ describe('the mask set', () => {
     off();
     expect(masks.apply('a')).toBe('a');
     expect(masks.size).toBe(1);
+  });
+});
+
+/** A resolved policy that lets the kinds given run without asking, from the workspace. */
+const releasing = (...kinds: (keyof ResolvedScreenPolicy)[]): ResolvedScreenPolicy => ({ ...HELD_POLICY, ...Object.fromEntries(kinds.map((k) => [k, { mode: 'autonomous', source: 'workspace' }])) });
+
+describe('the screen step approvals of the call', () => {
+  it('asks for a payment with no policy, as before', async () => {
+    const { inter, gate, server } = setup({ gate: fakeGate('no') });
+    await inter.call('browser_click', { target: 'e24' });
+    expect(gate.requests[0]).toMatchObject({ why: 'name', step: { name: 'Pagar' } });
+    expect(gate.requests[0].sensitive).toBeUndefined();
+    expect(server.acts()).toEqual([]);
+  });
+
+  it('runs a released kind without asking and records it as autonomous, with the level', async () => {
+    const { inter, gate, server, log } = setup({ gate: fakeGate('no') });
+    const r = await inter.call('browser_click', { target: 'e22', reason: 'remove the stale item' }, { policy: releasing('name') });
+    expect(r.isError).toBe(false);
+    expect(gate.requests).toEqual([]);
+    expect(server.acts()).toEqual([{ name: 'browser_click', args: { target: 'e22' } }]);
+    expect(gate.alone).toEqual([{ why: 'name', step: expect.objectContaining({ name: 'Delete' }), site: 'example.com', level: 'workspace', agentWords: 'remove the stale item' }]);
+    expect(log.entries()[0]).toMatchObject({ class: 'irreversible', autonomous: true, outcome: 'ok' });
+    expect(log.entries()[0].held).toBeUndefined();
+  });
+
+  it('keeps asking for a payment and a sending to people when their kind is released, and says why', async () => {
+    const { inter, gate, server } = setup({ gate: fakeGate('no') });
+    await inter.call('browser_click', { target: 'e24' }, { policy: releasing('name') });
+    await inter.call('browser_click', { target: 'e15' }, { policy: releasing('submit') });
+    expect(gate.requests.map((r) => [r.why, r.sensitive])).toEqual([['name', 'payment'], ['submit', 'people']]);
+    expect(gate.alone).toEqual([]);
+    expect(server.acts()).toEqual([]);
+  });
+
+  it('asks for a kind the policy does not release, without the warning', async () => {
+    const { inter, gate } = setup({ gate: fakeGate('no') });
+    await inter.call('browser_click', { target: 'e24' }, { policy: releasing('submit') });
+    expect(gate.requests[0]).toMatchObject({ why: 'name' });
+    expect(gate.requests[0].sensitive).toBeUndefined();
   });
 });

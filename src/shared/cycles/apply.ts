@@ -4,6 +4,7 @@ import type { AgentDef, AgentModel, AgentShell, AgentTracker, DeepPartial, DevCy
 import { validateConfig, type ConfigIssue } from '../config/validate';
 import { DOCS_FLOW_KEY, RELEASE_FLOW_KEY } from '../config/squads';
 import { isDraft, newAgent, pruneAgentStages, withoutSandbox } from '../config/team';
+import { heldOnly, releasedIn } from '../config/screenPolicy';
 import { neutralDevCycle } from './neutral';
 import { TEMPLATE_FORMAT, TEMPLATE_FORMAT_VERSION, type CycleTemplate, type TemplateFile, type TemplateNeed } from './types';
 
@@ -65,7 +66,7 @@ export function mergeTemplateTeam(current: WorkspaceConfig['agents']['team'], br
     .map((a) => {
       // Nor does it bring commands allowed always: those are the person's answers on this computer.
       // The screen, the hosts it reaches and its logged-in browser are the person's choice on this computer too: a template never brings them.
-      const made = newAgent({ ...structuredClone(a), model: withoutPool(a.model), system: false, squad: undefined, allowedCommands: undefined, screen: undefined, allowedHosts: undefined, browserProfile: undefined });
+      const made = newAgent({ ...structuredClone(a), model: withoutPool(a.model), system: false, squad: undefined, allowedCommands: undefined, screen: undefined, allowedHosts: undefined, browserProfile: undefined, screenPolicy: heldOnly(a.screenPolicy) });
       const agent = made.shell === 'host' ? { ...made, shell: 'sandbox' as const } : made;
       return options.sandbox === true ? agent : { ...agent, shell: withoutSandbox(agent.shell, agent.permission) };
     });
@@ -108,7 +109,10 @@ export function templateFromConfig(config: WorkspaceConfig, meta: TemplateMeta):
   // A draft is an agent still being tried out: it is not part of the cycle that is shared.
   const team = pruneAgentStages(config.agents.team.filter((a) => !a.system && !isDraft(a)), cycle).map((a) => {
     // The squad is the workspace's own, and so are the screen, the hosts and the logged-in browser: a shared template carries none of them.
-    const { squad: _squad, screen: _screen, allowedHosts: _hosts, browserProfile: _profile, ...rest } = structuredClone(a);
+    // A template keeps only the holds of the screen step approvals: letting a kind run without asking is the person's choice on the computer (#269).
+    const { squad: _squad, screen: _screen, allowedHosts: _hosts, browserProfile: _profile, screenPolicy, ...rest } = structuredClone(a);
+    const held = heldOnly(screenPolicy);
+    if (held) return { ...rest, screenPolicy: held, model: withoutPool(rest.model) };
     return { ...rest, model: withoutPool(rest.model) };
   });
   return { id: meta.id, name: meta.name, description: meta.description, needs: needsOf(cycle), devCycle: withoutNeutral(cycle), ...(team.length ? { team } : {}) };
@@ -204,6 +208,7 @@ export function parseTemplate(raw: unknown): TemplateCheck {
     ...(a.screen ? [{ path: `template.team[${a.id}].screen`, message: 'ignored: a template never gives an agent a virtual screen; turn it on in Settings, on the computer' }] : []),
     ...(a.allowedHosts?.length ? [{ path: `template.team[${a.id}].allowedHosts`, message: 'ignored: a template never gives an agent hosts to reach; add them in Settings, on the computer' }] : []),
     ...(a.browserProfile ? [{ path: `template.team[${a.id}].browserProfile`, message: 'ignored: a template never gives an agent a logged-in browser; turn it on in Settings, on the computer' }] : []),
+    ...(releasedIn(a.screenPolicy).length ? [{ path: `template.team[${a.id}].screenPolicy`, message: 'ignored: a template never lets a step on the screen run without asking; set it in Settings, on the computer' }] : []),
     ...(withPool.some((p) => p.id === a.id) ? [{ path: `template.team[${a.id}].model`, message: 'ignored: a template never brings fallback models; they point at providers of one workspace, add them in Settings' }] : []),
   ]);
   return { ok: issues.length === 0, template: issues.length ? null : template, errors: issues, warnings: [...prefix(checked.warnings), ...notes, ...ignored], powers };

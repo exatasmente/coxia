@@ -320,3 +320,21 @@ describe('reading the page through the server', () => {
     expect(await readTarget(recordedClient({ fail: 'throw' }), page, 'e15')).toMatchObject({ probe: null });
   });
 });
+
+describe('the categories always held, over a recorded page', () => {
+  it('marks a held step about a payment, a sending to people or a secret, and leaves its class and reason alone', () => {
+    const pay = classify({ tool: 'browser_click', args: { target: 'e24' }, target: el('button Pagar') });
+    expect(pay).toMatchObject({ class: HELD, why: 'name', sensitive: 'payment' });
+    const send = classify({ tool: 'browser_click', args: { target: 'e15' }, target: el('button Send') });
+    expect(send).toMatchObject({ class: HELD, why: 'submit', sensitive: 'people' });
+    const secret = { ...el('button Delete'), name: 'Field', probe: { ...el('button Delete').probe!, tag: 'input', type: 'password', texts: [] } };
+    expect(classify({ tool: 'browser_press_key', args: { key: 'Enter' }, focus: secret }).sensitive).toBe('secret');
+    const card = { ...el('button Delete'), name: 'Card number' };
+    expect(classify({ tool: 'browser_click', args: { target: 'e22' }, target: card }).sensitive).toBe('card');
+  });
+
+  it('leaves a step about none of them, and a free step, unmarked', () => {
+    expect(classify({ tool: 'browser_click', args: { target: 'e22' }, target: el('button Delete') }).sensitive).toBeUndefined();
+    expect(classify({ tool: 'browser_snapshot', args: {} }).sensitive).toBeUndefined();
+  });
+});
