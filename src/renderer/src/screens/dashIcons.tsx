@@ -1,18 +1,5 @@
 const base = { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true } as const;
 
-export const HomeIcon = () => (
-  <svg {...base}>
-    <path d="M4 11l8-7 8 7M6 10v9h12v-9" />
-  </svg>
-);
-
-export const CallIcon = () => (
-  <svg {...base}>
-    <rect x="9" y="3" width="6" height="11" rx="3" />
-    <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-  </svg>
-);
-
 export const ChatIcon = () => (
   <svg {...base}>
     <path d="M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-8l-4 4v-4H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z" />

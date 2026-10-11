@@ -6,7 +6,6 @@ import {
   agoraPlan,
   conflictMrs,
   bottomNavActive,
-  greeting,
   mrLabel,
   needsYou,
   pendingQuestions,
@@ -146,10 +145,6 @@ describe('needsYou', () => {
 });
 
 describe('small helpers', () => {
-  it('greets by the hour', () => {
-    expect([3, 9, 12, 17, 18, 23].map(greeting)).toEqual(['Boa noite', 'Bom dia', 'Boa tarde', 'Boa tarde', 'Boa noite', 'Boa noite']);
-  });
-
   it('labels MRs and stages', () => {
     expect([0, 1, 3].map(mrLabel)).toEqual(['sem MR', '1 MR', '3 MRs']);
     expect(stageLabel(card('1', { stage: 'STAGE:: Ready To Test' }))).toBe('Ready To Test');
@@ -226,9 +221,8 @@ describe('the dashboard follows the cycle', () => {
     expect(agoraPlan(base).title).toBe('Pré-daily');
   });
 
-  it('greets in the language of the screen', () => {
+  it('labels a card with no stage in the language of the screen', () => {
     setLanguage('en');
-    expect([3, 9, 14, 20].map(greeting)).toEqual(['Good evening', 'Good morning', 'Good afternoon', 'Good evening']);
     expect(stageLabel(card('7', { stage: null }))).toBe('no stage');
     setLanguage('pt-BR');
   });

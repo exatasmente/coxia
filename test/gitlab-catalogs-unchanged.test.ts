@@ -225,6 +225,14 @@ const REMOVED: Record<string, string> = {
   // The first item of the phone's bottom bar is the chat; Today is not a screen any more.
   'ui.today.greetingName': 'the header of the Overview no longer greets: the greeting went with the header of Today, and the chat names the persona instead',
   'ui.nav.today': 'the first item of the bottom bar is the Chat now, and no screen is called Today any more (the Overview holds its content)',
+  // The call and its greeting are not items of any bar or header any more: the chat's menu names the screens and the chat names the persona.
+  'nav.call': 'no screen draws a bar item for the call: the first item is the Chat and the pre-daily is reached from the ceremony card and the menu',
+  'nav.call.novoice': 'the text-mode label of the call item went with nav.call',
+  'nav.call.live': 'the live mark of a running pre-daily is a dot on the Chat item, not a label of its own',
+  'nav.call.live.novoice': 'the text-mode live label went with nav.call.live',
+  'today.greeting.night': 'the greeting went with the header of Today; the chat header names the persona',
+  'today.greeting.morning': 'the greeting went with the header of Today; the chat header names the persona',
+  'today.greeting.afternoon': 'the greeting went with the header of Today; the chat header names the persona',
   // The panel of running work is a tree: no activity is folded into one generic "Agent" card, each is an entry named for its agent.
   'activity.generic': 'the dock no longer has a generic card for the runs no job owns: each one is an entry of its own, named for its agent',
 };

@@ -43,7 +43,7 @@ describe('the catalogs', () => {
     for (const lang of ['pt-BR', 'en'] as const) {
       for (const key of variants) expect(CATALOGS[lang][key], `${lang} ${key}`).not.toMatch(CALL_WORD);
     }
-    for (const base of ['nav.call', 'call.enter', 'call.back', 'call.controls', 'call.inProgress', 'call.after', 'outbox.reply']) {
+    for (const base of ['call.enter', 'call.back', 'call.controls', 'call.inProgress', 'call.after', 'outbox.reply']) {
       for (const lang of ['pt-BR', 'en'] as const) expect(CATALOGS[lang][base], `${lang} ${base}`).toMatch(CALL_WORD);
     }
   });
@@ -74,10 +74,10 @@ describe('tv', () => {
 
   it('gives the main labels in every language and voice state', () => {
     const table: Record<string, Record<string, string>> = {
-      'pt-BR/voice': { 'nav.call': 'Call', 'call.back': 'Voltar à call', 'call.controls': 'Controles da call', 'call.inProgress': 'Call em andamento', 'notify.preDaily.body': 'Os agentes estão prontos para a call da X. Clique para abrir.' },
-      'pt-BR/text': { 'nav.call': 'Conversa', 'call.back': 'Voltar à conversa', 'call.controls': 'Controles da conversa', 'call.inProgress': 'Conversa em andamento', 'notify.preDaily.body': 'Os agentes estão prontos para a X. Clique para abrir.' },
-      'en/voice': { 'nav.call': 'Call', 'call.back': 'Back to the call', 'call.controls': 'Call controls', 'call.inProgress': 'Call in progress', 'notify.preDaily.body': 'The agents are ready for the X call. Click to open it.' },
-      'en/text': { 'nav.call': 'Chat', 'call.back': 'Back to the chat', 'call.controls': 'Chat controls', 'call.inProgress': 'Chat in progress', 'notify.preDaily.body': 'The agents are ready for the X. Click to open it.' },
+      'pt-BR/voice': { 'call.back': 'Voltar à call', 'call.controls': 'Controles da call', 'call.inProgress': 'Call em andamento', 'notify.preDaily.body': 'Os agentes estão prontos para a call da X. Clique para abrir.' },
+      'pt-BR/text': { 'call.back': 'Voltar à conversa', 'call.controls': 'Controles da conversa', 'call.inProgress': 'Conversa em andamento', 'notify.preDaily.body': 'Os agentes estão prontos para a X. Clique para abrir.' },
+      'en/voice': { 'call.back': 'Back to the call', 'call.controls': 'Call controls', 'call.inProgress': 'Call in progress', 'notify.preDaily.body': 'The agents are ready for the X call. Click to open it.' },
+      'en/text': { 'call.back': 'Back to the chat', 'call.controls': 'Chat controls', 'call.inProgress': 'Chat in progress', 'notify.preDaily.body': 'The agents are ready for the X. Click to open it.' },
     };
     for (const [state, labels] of Object.entries(table)) {
       const [language, mode] = state.split('/');

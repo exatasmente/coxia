@@ -6,13 +6,6 @@ import type { WatcherAlert } from '../../shared/watchers';
 
 // Pure rules behind the Hoje dashboard: what the main card offers, what needs the person.
 
-export function greeting(hour: number): string {
-  if (hour < 5) return t('today.greeting.night');
-  if (hour < 12) return t('today.greeting.morning');
-  if (hour < 18) return t('today.greeting.afternoon');
-  return t('today.greeting.night');
-}
-
 function minutesOf(time: string): number {
   const [h, m] = time.split(':').map(Number);
   return (h || 0) * 60 + (m || 0);
