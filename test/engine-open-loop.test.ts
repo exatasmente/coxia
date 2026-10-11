@@ -169,11 +169,11 @@ describe('tool failures are fed back, not thrown', () => {
     ]);
     const r = await runOpen<typeof answer>(params(fake));
     const [a, b, c] = toolMessages(fake.chats()[1].body as Record<string, any>).map((t) => t.content);
-    expect(a).toContain('[erro da ferramenta]');
+    expect(a).toContain('[tool error]');
     expect(a).toContain('does not exist');
-    expect(b).toContain('Argumentos inválidos');
+    expect(b).toContain('Invalid arguments');
     expect(b).toContain('file_path');
-    expect(c).toContain('Ferramenta desconhecida: Teleport');
+    expect(c).toContain('Unknown tool: Teleport');
     expect(r.sources).toEqual(['Read nope.txt', 'Read', 'Teleport']);
   });
 
@@ -541,7 +541,7 @@ describe('MCP', () => {
     const msgs = toolMessages(fake.chats()[1].body as Record<string, any>).map((t) => t.content);
     expect(msgs[0]).toBe('echo: via loop');
     expect(msgs[1]).toContain('called get_merge_request_details_and_changes_with_a_very_long_name_for_mapping {"iid":7}');
-    expect(msgs[2]).toContain('Ferramenta desconhecida');
+    expect(msgs[2]).toContain('Unknown tool');
   });
 });
 

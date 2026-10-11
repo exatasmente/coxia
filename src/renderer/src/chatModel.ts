@@ -191,6 +191,17 @@ export const ACT_TOOL_KEY: Record<PersonaToolName, string> = {
   Ceremonies: 'ui.chat.act.tool.Ceremonies',
 };
 
+/** The words of why a call was refused before it reached any handler, by the code the door stored. A code this version has no words for reads as the stored reason. */
+export const ACT_PROBLEM_KEY: Record<string, string> = {
+  required: 'ui.chat.act.problem.required',
+  type: 'ui.chat.act.problem.type',
+  long: 'ui.chat.act.problem.long',
+  enum: 'ui.chat.act.problem.enum',
+  unknown: 'ui.chat.act.problem.unknown',
+  why: 'ui.chat.act.problem.why',
+  op: 'ui.chat.act.problem.op',
+};
+
 /** The target an act line carries (a JSON string in the stored params): parsed with the vocabulary of the notifications, so a line cannot open what a button could not. */
 export function actTarget(raw: unknown): PushTarget | null {
   if (typeof raw !== 'string' || !raw) return null;
@@ -215,7 +226,11 @@ export function actLine(m: Pick<ForumMessage, 'params'>, say: Say): ActLine {
   const reason = text(p.reason);
   const verb = Object.hasOwn(ACT_VERBS, `${tool}.${op}`) ? ACT_VERBS[`${tool}.${op}`] : null;
   // Said from the tool, the operation and the subject, with no code in it: the area, then what was done. An operation this version has no words for reads as its name.
-  const sentence = refused
+  const problem = text(p.problem);
+  const early = p.stage === 'before-handler' && Object.hasOwn(ACT_PROBLEM_KEY, problem);
+  const sentence = early
+    ? say('ui.chat.act.refused.early', { area, op: op || '—', problem: say(ACT_PROBLEM_KEY[problem], { name: text(p.arg) || '—' }) })
+    : refused
     ? say(subject ? 'ui.chat.act.refused.on' : 'ui.chat.act.refused', { area, subject, reason: reason || '—' })
     : verb
       ? say('ui.chat.act.did', { area, did: say(verb, { subject: subject || '—' }) })
