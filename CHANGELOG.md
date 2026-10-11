@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A command that turns screenshots into one contact sheet.** `node scripts/evidence-sheet.mjs <out.png> <image>...` lays up to 48 `.png`, `.jpg`, `.jpeg` or `.webp` files on one captioned grid (`--cols`, `--width`, `--title`, `--caption "<file>=<text>"`, `--theme light|dark`), so a pull request carries one picture to look at instead of twenty. The page is built with the pictures inlined and renders offline in the Chromium that `playwright-core` drives (`npx playwright install chromium`); a sheet taller than 12000 px is cut and the command says so. It exits 1 naming the offending file when the arguments or an input are wrong, and 2 when the rendering fails.
+
 ## [0.10.0-beta.2] - 2026-10-11
 
 ### Added
