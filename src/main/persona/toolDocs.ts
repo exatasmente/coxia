@@ -237,7 +237,7 @@ export const OP_DOCS: Record<string, string> = {
   'Ceremonies.effectsCheck': 'Checks the effects ceremonies asked for.',
 };
 
-/** What an argument is, by name, for the schema's property descriptions. An argument that is not here is described by the operations that use it. */
+/** What an argument is, by name, for the schema's property descriptions. An argument that is not here is left without words: its name and type say it, and the operations' lines show where it goes. */
 export const ARG_DOCS: Record<string, string> = {
   op: 'The operation, one of those listed in the description.',
   why: 'Required on an operation that writes: ONE sentence, at most 300 characters, saying why you do it. It is kept in the audit as your own reason.',
@@ -246,20 +246,11 @@ export const ARG_DOCS: Record<string, string> = {
   card: 'The reference of a card of the day, as the cards show it.',
   id: 'An id: an action, a card of the board, a plugin, a gate, a template, a minutes version...',
   thread: 'The id of a conversation (general-..., agent-<id>, run-<id>).',
-  text: 'A text.',
-  note: 'A note or reason, in a few words.',
-  reason: 'The reason, in a few words.',
-  body: 'The text.',
-  title: 'A title.',
   path: 'A path of the document, with the elements of a list named by id: agents.team[me].shell.',
   value: 'The value (any JSON, or a text for a secret). Never put a secret you were not given.',
   mode: 'How to apply the change: set (default), append or remove for the settings; create or update for documentation.',
   refresh: 'true asks the code host again instead of using what the app already holds.',
-  limit: 'How many.',
   scope: 'current (this workspace) or all.',
-  on: 'true or false.',
-  enabled: 'true or false.',
-  confirm: 'true to confirm.',
   attachments: 'The files of the person\'s message (a list of ids the conversation holds).',
 };
 

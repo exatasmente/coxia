@@ -65,7 +65,8 @@ describe('the eleven tools on the Claude engine', () => {
     const runs = tools.find((x) => x.name === 'Runs')!;
     expect(Object.keys(runs.shape)).toEqual(expect.arrayContaining(['op', 'why', 'run', 'action']));
     expect(runs.shape.op.description).toBe(ARG_DOCS.op);
-    expect(runs.shape.action.description).toContain('Used by: gate');
+    expect(runs.shape.run.description).toBe(ARG_DOCS.run);
+    expect(runs.shape.action.description).toBeUndefined();
     // an op that is not in the enum is the door's to answer, in its own words: the SDK lets it through
     expect(runs.shape.op.safeParse('resume').success).toBe(true);
     expect(runs.shape.run.safeParse(5).success).toBe(true);

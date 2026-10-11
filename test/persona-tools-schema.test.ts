@@ -23,11 +23,17 @@ describe('the schema of a tool', () => {
     for (const p of Object.values(schema.properties)) expect(p).not.toHaveProperty('properties');
   });
 
-  it('describes every property, so the Claude path (where each field is loose) still tells the model what it is', () => {
+  it('describes the properties that need words, and only those: a name that says what it is has no description, and none says where it is used', () => {
     for (const tool of TOOL_NAMES) {
       const schema = schemaOf(tool) as unknown as Schema;
-      for (const [name, p] of Object.entries(schema.properties)) expect(p.description, `${tool}.${name}`).toBeTruthy();
+      for (const [name, p] of Object.entries(schema.properties)) {
+        expect(p.description, `${tool}.${name}`).toBe(ARG_DOCS[name]);
+        expect(p.description ?? '', `${tool}.${name}`).not.toContain('Used by');
+      }
+      expect(schema.properties.op.description).toBeTruthy();
+      expect(schema.properties.why.description).toBeTruthy();
     }
+    for (const name of ['text', 'note', 'reason', 'body', 'title']) expect(ARG_DOCS, name).not.toHaveProperty(name);
   });
 
   it('takes the union of the values of an enum argument that two operations of a tool spell differently', () => {
@@ -49,7 +55,8 @@ describe('the description of a tool', () => {
       if (o.write) expect(line, keyOf(o)).toContain('why');
       for (const a of o.args.filter((x) => x.required)) expect(line, `${keyOf(o)} ${a.name}`).toMatch(new RegExp(`[(,] ?${a.name}[=,)]`));
     }
-    expect(text).toContain('<data>');
+    // the paragraph that teaches the shape of a call is in the persona's prompt once, not in the eleven descriptions
+    expect(text).not.toContain('Call it with op');
   });
 
   it('has words for every operation and for every tool, and none for an operation that is not in the table', () => {
@@ -62,7 +69,7 @@ describe('the description of a tool', () => {
   it('stays a bounded size: the eleven descriptions are in the prompt of every answer of the persona', () => {
     const chars = TOOL_NAMES.map((t) => describeTool(t).length + JSON.stringify(schemaOf(t)).length).reduce((a, b) => a + b, 0);
     // about four characters to a token; the figure is in the implementation notes
-    expect(chars).toBeLessThan(110_000);
+    expect(chars).toBeLessThan(40_000);
     expect(chars).toBeGreaterThan(20_000);
   });
 });
