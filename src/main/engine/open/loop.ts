@@ -819,9 +819,13 @@ export async function runOpen<T>(p: OpenRunParams): Promise<OpenRunResult<T>> {
       noteSteps = 0;
     }
     if (!p.schema) {
-      // A call without a schema has no shape to collect: the text is the answer, but the door is asked first, since the step just ended and a message that arrived
-      // meanwhile is still due.
-      if ((await throughDoor()).took === 'message') continue;
+      // A call without a schema has no shape to collect: the text is the answer, but the mailbox is asked first, since the step just ended and a message that arrived
+      // meanwhile is still due (`throughDoor` is for a schema's closing call and says nothing for a call without one).
+      if (await deliver()) {
+        // The text just written was not the answer: the model goes on from the message, so what the bubble holds is cleared.
+        events.onRestart?.();
+        continue;
+      }
       events.onTurnEnd?.(false);
       return done(c.text, turns);
     }

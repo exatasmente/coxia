@@ -78,6 +78,22 @@ describe('a call with no schema on the open engine', () => {
     expect(activityLog.get('mention:agent-me').some((e) => e.kind === 'text' && e.label === 'Let me read the file first.')).toBe(true);
   });
 
+  it('restarts when a message that arrived during the last turn is delivered, so the text written before it is not the answer', async () => {
+    script = (req) => (((req.body?.messages ?? []) as { role: string; content?: unknown }[]).some((m) => m.role === 'user' && String(m.content).includes('one more thing')) ? textStep('The real answer.', { pieces: 2 }) : textStep('A first draft.', { pieces: 2 }));
+    let waiting: string | null = 'one more thing';
+    const incoming = async () => {
+      const m = waiting;
+      waiting = null;
+      return m;
+    };
+    const { sink, events } = spy();
+    const r = await runAgent<string>(plain(sink, { incoming }));
+    expect(r.data).toBe('The real answer.');
+    const seq = collapsed(events);
+    expect(seq.map((e) => e[0])).toEqual(['piece', 'piece', 'restart', 'piece', 'piece', 'settle']);
+    expect(seq.at(-1)).toEqual(['settle', 'The real answer.']);
+  });
+
   it('restarts when the attempt fails after it began to write, and the failure goes up', async () => {
     // The server reports a failure inside the stream, after three pieces.
     script = () => ({ chunks: ['Half ', 'of a ', 'sentence'].map((content, i) => ({ choices: [{ index: 0, delta: i === 0 ? { role: 'assistant', content } : { content } }] })).concat([{ error: { message: 'upstream exploded', type: 'server_error' } } as never]) });
