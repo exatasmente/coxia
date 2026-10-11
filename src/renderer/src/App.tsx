@@ -69,7 +69,7 @@ export type Screen =
   | { name: 'discussions'; ref: string; mr?: string; card?: Card }
   | { name: 'radar' }
   | { name: 'saude' }
-  | { name: 'auditoria' }
+  | { name: 'auditoria'; id?: string }
   | { name: 'help' }
   | { name: 'glossario' }
   | { name: 'wizard' }
@@ -276,7 +276,7 @@ export function App() {
     case 'run':
       return <RunScreen id={screen.id} go={go} ceremony={ceremony} actions={actions} tab={screen.tab} back={screen.from === 'runs' ? { name: 'runs' } : undefined} />;
     case 'auditoria':
-      return <Auditoria go={go} />;
+      return <Auditoria go={go} act={screen.id} />;
     case 'radar':
       return <Radar go={go} />;
     case 'saude':

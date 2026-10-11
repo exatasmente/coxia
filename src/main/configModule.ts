@@ -13,6 +13,9 @@ import { DATA_ROOT, HOME, WORKSPACE_ID } from './env';
 import { locateSdk } from './claudeSdk';
 import type { Module } from './module';
 import { recordWrite } from './auditoria';
+import { configAuditEntry, type ConfigOp } from './configAudit';
+import { secretAuditEntry, type SecretOp } from './decisionAudit';
+import { viaOf } from './rpc';
 import { secrets, testEnvLedger } from './secrets';
 import { readRegistry } from './workspaces-core';
 import { keepStoredTurns, refusedPaths } from './configScope';
@@ -45,6 +48,32 @@ function workspaceName(id: string): string {
   return readRegistry(DATA_ROOT)?.list.find((w) => w.id === id)?.name ?? id;
 }
 
+/** Runs a change of the configuration and writes the line that says what changed, for whoever made it. A refused save changed nothing and has none. */
+function recordedConfig<T>(op: ConfigOp, change: () => T): T {
+  const before = getConfig();
+  const result = change();
+  try {
+    const line = configAuditEntry(before, getConfig(), { op, via: viaOf() });
+    if (line) recordWrite(line);
+  } catch (e) {
+    // The change already happened; a failing log must not turn it into a reported failure.
+    console.error('[config] audit', e instanceof Error ? e.message : e);
+  }
+  return result;
+}
+
+/** The line of a secret's change, written after it whatever the outcome: the name and the kind of source, never a value, a command, a variable or a path. */
+function recordedSecret<T>(op: SecretOp, ref: unknown, source: unknown, change: () => T): T {
+  try {
+    const result = change();
+    recordWrite(secretAuditEntry({ op, ref, source, ok: true, via: viaOf() }));
+    return result;
+  } catch (e) {
+    recordWrite(secretAuditEntry({ op, ref, source, ok: false, via: viaOf() }));
+    throw e;
+  }
+}
+
 export const configModule: Module = (ctx) => {
   const announce = (): ConfigView => {
     const v = view();
@@ -59,7 +88,7 @@ export const configModule: Module = (ctx) => {
     return { ok: r.ok, errors: r.errors, warnings: r.warnings };
   });
   ctx.handle('config:save', (next: WorkspaceConfig) => {
-    saveConfig(keepStoredTurns(next, getConfig()));
+    recordedConfig('save', () => saveConfig(keepStoredTurns(next, getConfig())));
     return announce();
   });
 
@@ -69,7 +98,7 @@ export const configModule: Module = (ctx) => {
     const config = checkConfig(keepStoredTurns(next, getConfig()));
     const refused = refusedPaths(getConfig(), config);
     if (refused.length) throw new Error(t('main.config.webScope', { paths: refused.slice(0, 4).join(', ') }));
-    saveConfig(config);
+    recordedConfig('cycle-save', () => saveConfig(config));
     return announce();
   });
 
@@ -78,23 +107,24 @@ export const configModule: Module = (ctx) => {
   // is what every agent is told, so a paired browser neither reads the editor's list nor writes it.
   ctx.handle('config:prompts', (): PromptEntry[] => promptEntries(getConfig().devCycle));
   ctx.handle('config:prompt-set', (id: string, language: Language, text: string | null): PromptEntry[] => {
-    updateConfig((c) => ({ ...c, devCycle: { ...c.devCycle, promptOverrides: withPromptOverride(c.devCycle.promptOverrides, id, language, text) } }));
+    recordedConfig('prompt-set', () => updateConfig((c) => ({ ...c, devCycle: { ...c.devCycle, promptOverrides: withPromptOverride(c.devCycle.promptOverrides, id, language, text) } })));
     announce();
     return promptEntries(getConfig().devCycle);
   });
 
   ctx.handle('config:secret-set', (input: SecretInput): SecretInfo => {
-    const info = secrets().set(input);
+    const info = recordedSecret('set', input?.ref, input?.source, () => secrets().set(input));
     announce();
     return info;
   });
   ctx.handle('config:secret-remove', (ref: string) => {
-    secrets().remove(ref);
+    // The kind of source is read before the entry goes.
+    recordedSecret('remove', ref, secrets().list().find((x) => x.ref === ref)?.source, () => secrets().remove(ref));
     return announce();
   });
   ctx.handle('config:secret-check', (ref: string) => secrets().check(ref));
   ctx.handle('config:secrets-accept-insecure', (): SecretsStorageStatus => {
-    secrets().acceptInsecureStorage();
+    recordedSecret('accept-insecure', undefined, undefined, () => secrets().acceptInsecureStorage());
     announce();
     return secrets().storage();
   });
@@ -135,9 +165,12 @@ export const configModule: Module = (ctx) => {
   });
   ctx.handle('config:import-preview', (source: ImportSource, target: ImportTarget): ImportPreview => previewImport(transferDeps(), source, target));
   ctx.handle('config:import-apply', (req: ImportApply): ImportResult => {
+    const before = getConfig();
     const result = applyImport(transferDeps(), req, WORKSPACE_ID);
     if (result.appliedToRunning) {
       reloadConfig();
+      const line = configAuditEntry(before, getConfig(), { op: 'import-apply', via: viaOf() });
+      if (line) recordWrite(line);
       // An import can drop agents: their logged-in profiles go with them.
       syncProfiles();
     }

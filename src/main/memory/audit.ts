@@ -60,6 +60,6 @@ export function memoryAuditEntry(o: MemoryAuditInput): Omit<AuditEntry, 'at'> {
     code: null,
     result: RESULT[o.op],
     origin: { actionId: '', kind: 'memory', key: o.conversation ?? o.ref ?? '', summary: null },
-    by: o.by ?? 'person',
+    by: o.by ?? (o.via === 'persona' ? 'persona' : 'person'),
   };
 }

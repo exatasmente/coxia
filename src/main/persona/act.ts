@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import type { AuditKind } from '../../shared/auditoria';
+import type { AuditBasis, AuditKind } from '../../shared/auditoria';
 
 // The scope of one act of the persona: what the call origin and the audit writer consult to know that a call is the persona's. A leaf module (only `node:async_hooks`) so the
 // call wrapper and the audit can both import it with no cycle. The scope closes when the handler's promise settles: work the handler leaves running (a run it started, a timer)
@@ -14,6 +14,8 @@ export interface Act {
   door: string;
   /** The model's stated reason, masked and cut. */
   said: string;
+  /** What the persona had read when it decided, built by the door before the handler starts; absent for a read. */
+  basis?: AuditBasis;
   /** The answer's exact-value mask (a secret the persona read), applied to everything the act writes. */
   mask: (text: string) => string;
   /** What the handler wrote, to decide whether the door writes a line of its own. */

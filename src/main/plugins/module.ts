@@ -14,6 +14,8 @@ import { runStore } from '../runs';
 import { sandbox } from '../sandbox/workspace';
 import { externalRefusal } from '../workspace';
 import { recordWrite } from '../auditoria';
+import { pluginDecisionEntry } from '../decisionAudit';
+import { viaOf } from '../rpc';
 import { getConfig, updateConfig } from '../workspaceConfig';
 import { announcePluginWrite, auditPluginRequest, onActionSkipped, pendingPluginAsks, pendingPluginWrites, proposePluginAsk, rearmPluginWrite, releasePluginAsks as releaseAsks, sendDuePluginWrite, settlePluginAsk, withdrawPluginWrite, writePluginNow, type PluginAskUnit, type PluginWriteInput } from '../actions';
 import { gatePluginDocuments } from '../gate';
@@ -647,20 +649,49 @@ export function liveContext(run: Run, context: { stage?: string } = {}): PluginC
   return { issue: run.issue.iid, issueTitle: run.issue.title, stage: context.stage ?? run.stage, runId: run.id };
 }
 
+/** One line for a decision about a plugin (an answer, a revocation, a switch, a setting), written after it whatever the outcome: the plugin, the need and the choice, never a value or a text. */
+function decided<T>(o: { op: Parameters<typeof pluginDecisionEntry>[0]['op']; plugin?: unknown; need?: unknown; choice?: unknown; key?: unknown; issue?: number; actionId?: string }, run: () => T): T {
+  const note = (ok: boolean): void => {
+    try {
+      recordWrite(pluginDecisionEntry({ ...o, ok, via: viaOf() }));
+    } catch (e) {
+      console.error('[plugins] audit', e instanceof Error ? e.message : e);
+    }
+  };
+  try {
+    const result = run();
+    if (result instanceof Promise) return result.then((r) => (note(true), r), (e: unknown) => (note(false), Promise.reject(e))) as T;
+    note(true);
+    return result;
+  } catch (e) {
+    note(false);
+    throw e;
+  }
+}
+
+/** The plugin an announced write or a waiting request belongs to, read before the decision removes it. */
+const pluginOfAction = (actionId: string, d: PluginsDeps = pluginsDeps): string => {
+  const a = [...d.door.writes(), ...d.door.pending()].find((x) => x.id === actionId);
+  return a ? String((a.unit ?? {}).plugin ?? '') : '';
+};
+
 export const pluginsModule: Module = (ctx: ModuleContext) => {
   ctx.handle('plugins:list', () => listPlugins());
   // Only the computer switches a plugin, answers its requests or takes a permission back: desktop-only (webPolicy.ts), like the other boundary decisions.
   // Blocking an announced write is `actions:skip`, which a paired browser may do: it only ever takes something away.
-  ctx.handle('plugins:set-enabled', (id: string, enabled: boolean) => setPluginEnabled(String(id), enabled === true));
-  ctx.handle('plugins:settings', (dir: string, confirmSeconds: number) => setPluginSettings(String(dir ?? ''), Number(confirmSeconds)));
-  ctx.handle('plugins:set-setting', (id: string, key: string, value: string) => setPluginSetting(String(id), String(key), String(value ?? '')));
-  ctx.handle('plugins:set-secret', (id: string, key: string, value: string) => setPluginSecret(String(id), String(key), String(value ?? '')));
-  ctx.handle('plugins:answer', (id: string, answer: PluginAnswer) => answerPluginAsk(String(id), answer));
+  ctx.handle('plugins:set-enabled', (id: string, enabled: boolean) => decided({ op: 'set-enabled', plugin: id, choice: enabled === true ? 'on' : 'off' }, () => setPluginEnabled(String(id), enabled === true)));
+  ctx.handle('plugins:settings', (dir: string, confirmSeconds: number) => decided({ op: 'settings' }, () => setPluginSettings(String(dir ?? ''), Number(confirmSeconds))));
+  ctx.handle('plugins:set-setting', (id: string, key: string, value: string) => decided({ op: 'set-setting', plugin: id, key }, () => setPluginSetting(String(id), String(key), String(value ?? ''))));
+  ctx.handle('plugins:set-secret', (id: string, key: string, value: string) => decided({ op: 'set-secret', plugin: id, key }, () => setPluginSecret(String(id), String(key), String(value ?? ''))));
+  ctx.handle('plugins:answer', (id: string, answer: PluginAnswer) => {
+    const asked = pluginsDeps.door.pending().find((a) => a.id === String(id));
+    return decided({ op: 'answer', plugin: asked ? unitOf(asked).plugin : '', need: asked ? unitOf(asked).need : '', choice: answer, issue: asked?.issue, actionId: String(id) }, () => answerPluginAsk(String(id), answer));
+  });
   ctx.handle('plugins:revoke', (id: string, need: PluginNeed) => {
     if (!isPluginNeed(need)) throw new Error(t('main.plugins.ask.badAnswer'));
-    return revokePluginAllow(String(id), need);
+    return decided({ op: 'revoke', plugin: id, need }, () => revokePluginAllow(String(id), need));
   });
-  ctx.handle('plugins:revoke-write', (actionId: string) => revokePluginWrite(String(actionId)));
+  ctx.handle('plugins:revoke-write', (actionId: string) => decided({ op: 'revoke-write', plugin: pluginOfAction(String(actionId)), need: 'write', actionId: String(actionId) }, () => revokePluginWrite(String(actionId))));
   // The document types the plugins that are on add enter the list the gate already walks: read at the moment of use, so switching a plugin off retires them.
   gatePluginDocuments.files = () => pluginsDeps.read(pluginsDeps.dir(), pluginsDeps.config()).filter((r) => r.enabled && !r.refused).flatMap((r) => r.documents.map((x): [string, string] => [x.name, x.label]));
   // A request set aside from the list (a paired browser may refuse) lets its run go on; a blocked write is never sent.

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The Audit tells a person's changes from the persona's, and records the person's own configuration, secret and plugin changes.** Four kinds of line are new and are written for whoever makes the change: a **configuration change** (the paths that changed, the old and new value of a switch, a number or a short choice such as `read` or `host`, only the length of any text, and a mark when the change gives an agent more reach), a **secret** (set, removed, or the insecure store accepted, with the name and the kind of source, never a value, a command or a path), a **plugin decision** (an answer, a revocation, a switch, a setting, with the plugin and the need, never a value) and the **act of the persona**. A line the persona wrote carries a badge, the door the request came by, the reason it gave and, folded, what it had read when it decided; the screen has a **Who** filter (everyone, the person, the persona). Lines written before show as the person's. Nothing writes, edits or deletes the audit but the app.
+
 ## [0.10.0-beta.1] - 2026-10-11
 
 ### Added
