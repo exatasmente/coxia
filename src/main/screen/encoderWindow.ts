@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { BrowserWindow, ipcMain } from 'electron';
 import { SCREEN_ENCODER_COMMAND, SCREEN_ENCODER_EVENT } from '../../shared/screen';
-import { RESOURCES } from '../paths';
+import { resourcesDir } from '../paths';
 import type { EncoderEnv } from './encoderHost';
 
 // The real window behind the encoder host: hidden, sandboxed, with a bridge that offers it nothing but the two channels, an in-memory partition of its own, every
@@ -32,7 +32,7 @@ export function realEncoderEnv(): EncoderEnv {
       wc.session.setPermissionCheckHandler(() => false);
       wc.on('render-process-gone', gone);
       w.on('closed', gone);
-      void w.loadFile(join(RESOURCES, 'encoder.html')).catch(gone);
+      void w.loadFile(join(resourcesDir(), 'encoder.html')).catch(gone);
       return {
         id: wc.id,
         send: (command) => {

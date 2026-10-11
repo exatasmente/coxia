@@ -26,7 +26,7 @@ import {
 import { DATA_ROOT } from './env';
 import { logError } from './errorlog';
 import type { Module, ModuleContext } from './module';
-import { PACKAGED } from './paths';
+import { isPackaged } from './paths';
 import { updateEnv } from './update-core';
 import { BUILD, sourceDir, sourceRecord, terminateChildren, updateLogPath, writeReleaseMarker } from './update';
 import {
@@ -94,7 +94,7 @@ function writeSettings(next: UpdateSettings): void {
 // ---- mode -----------------------------------------------------------------------------------------------------------------------------------
 
 function readFeed(): FeedConfig | null {
-  if (!PACKAGED) return null;
+  if (!isPackaged()) return null;
   try {
     return parseAppUpdateYml(readFileSync(join(process.resourcesPath, 'app-update.yml'), 'utf8'));
   } catch {
@@ -105,7 +105,7 @@ function readFeed(): FeedConfig | null {
 export function currentMode(): ModeInfo {
   const record = sourceRecord();
   return detectMode({
-    packaged: PACKAGED,
+    packaged: isPackaged(),
     platform: process.platform,
     appImage: process.env.APPIMAGE,
     feed: readFeed(),
@@ -120,7 +120,7 @@ function status(): UpdatesStatus {
   return {
     build: BUILD,
     platform: process.platform,
-    packaged: PACKAGED,
+    packaged: isPackaged(),
     mode,
     settings,
     release,
