@@ -81,6 +81,20 @@ recebe uma pasta vazia própria e nada é escrito. O contexto traz o que foi ped
 JavaScript), a conversa (`$3`, `ctx.thread`) e a execução quando há (`ctx.runId`); nos quatro acontecimentos do ciclo
 esses três campos são vazios.
 
+### O que fica de cada chamada
+
+Toda chamada de um plugin deixa uma linha no registro de auditoria do espaço de trabalho (tipo "Chamada de
+plugin"): o plugin, o acontecimento, a etapa, a execução e como terminou — rodou, falhou (com o motivo) ou espera
+a resposta de um pedido em Ações. Nunca o que o plugin devolveu.
+
+Quando a chamada **falha** (não há execução onde escrever, falta uma configuração obrigatória, a sandbox não
+abriu, o script terminou com erro ou sem resultado, uma escrita não pôde seguir), a conversa da execução ganha uma
+linha com o nome do plugin, o acontecimento, a etapa e o motivo. A execução segue. Uma chamada que rodou fica só no
+registro; uma que espera um pedido já aparece como a espera da execução.
+
+A lista de plugins (Configurações → Plugins) mostra a última chamada de cada um desde que o aplicativo abriu: como
+terminou, para qual acontecimento, etapa e issue, o documento escrito ou o motivo.
+
 ### A fronteira
 
 - O script do plugin roda dentro da **mesma** sandbox que o aplicativo já dá a uma etapa, entregue como o próprio
@@ -90,7 +104,13 @@ esses três campos são vazios.
 - O que o plugin pode alcançar está declarado nele e é dito na lista de plugins (Configurações → Plugins); o que
   não estiver declarado é recusado, com o motivo.
 - O que o plugin imprime vira o documento que ele declarou na pasta do ciclo da execução, escrito pelo
-  aplicativo pelo mesmo caminho dos documentos de uma etapa.
+  aplicativo pelo mesmo caminho dos documentos de uma etapa (no máximo 20.000 caracteres). Antes, o aplicativo
+  mascara só o que tem forma de credencial: chave com prefixo conhecido, token `Bearer`/`Basic`, cabeçalho de
+  autorização, JWT, endereço com senha (`https://user:pass@…`), literal entre aspas atribuído a um nome de segredo
+  (`password = "…"`), e troca a pasta pessoal por `~`. A consulta de um link (`https://wa.me/…?text=…`), um
+  e-mail e um id longo (um hash de commit) passam como estão. O plugin não guarda segredo: as chamadas dele quem
+  faz é o aplicativo, e a resposta já chega mascarada — nela, sim, a consulta de um link e um e-mail chegam como
+  `[redacted]` e `[email]`.
 - Um plugin nunca escreve por conta própria: a escrita declarada sai pela porta única de Ações, só com a
   permissão, e entra no registro de auditoria. Num espaço de trabalho de teste nada é pedido e nada sai.
 
@@ -150,7 +170,8 @@ Só um plugin em JavaScript declara **configurações** e **requisições**:
   leitura; outro método tem de ser declarado `"write": true`.
 - Exemplo em JavaScript: [`example-notify/`](example-notify/).
 - `ctx.write(id, …)` pede uma escrita declarada, que segue o contrato de permissão depois
-  que o plugin termina.
+  que o plugin termina. Uma chamada repassa **no máximo 5 escritas**, as primeiras pedidas;
+  as seguintes são descartadas, e o registro de auditoria diz quantas (`dropped`).
 - Leituras precisam da permissão de rede do plugin; escritas, da de escrita. Tudo o que o
   aplicativo faz por um plugin fica na auditoria, sem chave e sem corpo.
 
@@ -233,6 +254,20 @@ empty folder of its own and nothing is written. The context carries what was ask
 JavaScript), the conversation (`$3`, `ctx.thread`) and the run when there is one (`ctx.runId`); on the four events of a
 cycle those three fields are empty.
 
+### What each call leaves
+
+Every call of a plugin leaves a line in the workspace's audit log (kind "Plugin call"): the plugin, the event, the
+stage, the run and how it ended — it ran, it failed (with the reason) or it waits for the answer to a request in
+Actions. Never what the plugin returned.
+
+When a call **fails** (there is no run to write into, a required setting is empty, the sandbox did not open, the
+script ended with an error or without a result, a write could not go on), the run's conversation gets a line with
+the plugin's name, the event, the stage and the reason. The run goes on. A call that ran is only in the log; one
+that waits for a request already shows as the run's wait.
+
+The plugin list (Settings → Plugins) shows each plugin's last call since the app opened: how it ended, for which
+event, stage and issue, the document written or the reason.
+
 ### The boundary
 
 - The plugin script runs inside the **same** sandbox the app already gives a stage, handed over as the command
@@ -242,7 +277,13 @@ cycle those three fields are empty.
 - What a plugin may reach is declared in it and is said in the plugin list (Settings → Plugins); whatever is not
   declared is refused, with the reason.
 - What the plugin prints becomes the document it declared in the run's cycle folder, written by the app through
-  the same path as the documents of a stage.
+  the same path as the documents of a stage (20,000 characters at most). Before that, the app masks only what is
+  shaped like a credential: a key with a known prefix, a `Bearer`/`Basic` token, an authorization header, a JWT, an
+  address with a password (`https://user:pass@…`), a quoted literal assigned to a secret's name
+  (`password = "…"`), and it replaces the home folder with `~`. The query of a link (`https://wa.me/…?text=…`), an
+  email address and a long id (a commit hash) go through as they are. A plugin holds no secret: its calls are made
+  by the app, and the response arrives already masked — there, the query of a link and an email address do arrive
+  as `[redacted]` and `[email]`.
 - A plugin never writes by itself: its declared write goes out through the single door of Actions, only with the
   permission, and lands in the audit log. In a test workspace nothing is asked and nothing goes out.
 
@@ -289,6 +330,7 @@ Only a JavaScript plugin declares **settings** and **requests** (see the example
   other method has to be declared `"write": true`.
 - Example in JavaScript: [`example-notify/`](example-notify/).
 - `ctx.write(id, …)` asks for a declared write, which follows the permission contract once
-  the plugin ends.
+  the plugin ends. One call hands on **at most 5 writes**, the first ones asked; the rest
+  are dropped, and the audit log says how many (`dropped`).
 - Reads need the plugin's network permission; writes, its write permission. Everything the
   app does for a plugin lands in the audit log, without the key and without the body.

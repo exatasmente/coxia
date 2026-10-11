@@ -4,7 +4,7 @@ import type { PluginDocumentType } from '../../shared/plugins/declaration';
 import { pluginDocumentText } from '../../shared/plugins/grants';
 import { ARTIFACT_NAME } from '../../shared/runs/output';
 import { checkPath } from '../engine/guard';
-import { redact } from '../errorlog-core';
+import { redact, redactCredentials } from '../errorlog-core';
 import { writeArtifact } from '../runner/cycleFolder';
 import type { RunnerSandbox } from '../../shared/config/types';
 import type { SandboxService } from '../sandbox';
@@ -53,6 +53,8 @@ export interface PluginRun {
   refused: string | null;
   /** The document of the cycle folder the app wrote from what the plugin returned, or null when there was nothing to write. */
   document: { path: string; name: string } | null;
+  /** A request for the person was opened (a network or a write it was not allowed): the call waits for the answer, it did not fail. */
+  asked?: boolean;
 }
 
 /** The most text one plugin's answer keeps. */
@@ -95,7 +97,9 @@ export async function runPlugin(deps: PluginRuntimeDeps, plugin: RunnablePlugin,
     const result = await session.exec(command);
     if (result.refused) return fail(plugin.id, `the command was not run (${result.refused})`);
     if (result.exitCode !== 0) return fail(plugin.id, `the plugin ended with code ${result.exitCode ?? '—'}`);
-    text = redact(result.output).slice(0, OUTPUT_MAX);
+    // A plugin holds no secret (its requests are made by the app, and their answers come masked), so only what is a credential by its shape is taken out here:
+    // the query of a link and an address are often what the plugin is for.
+    text = redactCredentials(result.output).slice(0, OUTPUT_MAX);
   } catch (e) {
     return fail(plugin.id, e instanceof Error ? e.message : String(e));
   } finally {
@@ -189,6 +193,8 @@ export interface JsRuntimeDeps {
 /** What a JavaScript plugin left: the run, and the writes it asked for (they follow the permission contract afterwards). */
 export interface JsPluginRun extends PluginRun {
   writes: JsCall[];
+  /** The writes it asked for past `JS_REQUESTS_PER_ROUND`, which are not handed on. */
+  dropped?: number;
 }
 
 interface HarnessResult {
@@ -304,10 +310,12 @@ export async function runJsPlugin(deps: JsRuntimeDeps, plugin: JsPlugin, event: 
       if (result.pending.length > JS_REQUESTS_PER_ROUND) return failJs(`the plugin asked for more than ${JS_REQUESTS_PER_ROUND} requests in one round`);
       for (const call of result.pending) answers.push(await deps.read(call));
     }
-    const text = redact(result?.document ?? '').slice(0, OUTPUT_MAX);
+    // The same masking as the output of a shell plugin: the answers it read already came masked, and its links and addresses are its content.
+    const text = redactCredentials(result?.document ?? '').slice(0, OUTPUT_MAX);
     const type = plugin.documents?.[0];
     const document = type ? writePluginDocument(target, type, { plugin: plugin.id, event, text }) : null;
-    return { plugin: plugin.id, ok: true, text, refused: null, document, writes: (result?.writes ?? []).slice(0, JS_REQUESTS_PER_ROUND) };
+    const writes = result?.writes ?? [];
+    return { plugin: plugin.id, ok: true, text, refused: null, document, writes: writes.slice(0, JS_REQUESTS_PER_ROUND), dropped: Math.max(0, writes.length - JS_REQUESTS_PER_ROUND) };
   } catch (e) {
     return failJs(e instanceof Error ? e.message : String(e));
   } finally {

@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
+import { shownText } from '../../../shared/cycles/text';
 import type { PluginNeed } from '../../../shared/plugins/grants';
 import type { PluginView, PluginsView } from '../../../shared/plugins/view';
 import { errorText } from '../api';
-import { useT } from '../i18n';
+import { intlLocale, useT } from '../i18n';
 import { isWeb } from '../platform';
 import { pluginsApi } from '../pluginsApi';
 
@@ -132,9 +133,29 @@ function PluginItem({ p, web, onChange, onError }: { p: PluginView; web: boolean
             <SettingField key={s.key} p={p} s={s} web={web} onChange={onChange} onError={onError} />
           ))}
           {p.waiting > 0 && <p className="small" role="status">{t('ui.plugins.waiting', { count: p.waiting })}</p>}
+          {p.last && <LastCall last={p.last} />}
         </>
       )}
     </div>
+  );
+}
+
+const LAST_KEY: Record<NonNullable<PluginView['last']>['state'], string> = {
+  ok: 'ui.plugins.last.ok',
+  failed: 'ui.plugins.last.failed',
+  waiting: 'ui.plugins.last.waiting',
+};
+
+/** How the plugin's last call ended: a failure says why, so a plugin that produced nothing is never silent. */
+function LastCall({ last }: { last: NonNullable<PluginView['last']> }) {
+  const t = useT();
+  const params = { event: t(EVENT_KEY[last.event] ?? last.event), stage: last.stage ? shownText(last.stage) : '—', issue: last.issue, at: new Date(last.at).toLocaleString(intlLocale(), { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) };
+  return (
+    <p className={`small ${last.state === 'failed' ? 'error' : 'muted'}`} role="status">
+      {t(LAST_KEY[last.state], params)}
+      {last.state === 'ok' && last.document && ` · ${t('ui.plugins.last.document', { name: last.document })}`}
+      {last.state !== 'ok' && last.reason && ` · ${last.reason}`}
+    </p>
   );
 }
 

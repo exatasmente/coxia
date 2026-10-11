@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { type Run } from '../src/shared/runs';
-import { runThreadId } from '../src/shared/forum';
+import { messageText, runThreadId } from '../src/shared/forum';
 import { type Boot, boot, doc, work } from './helpers/runner';
 
 // The runner calls a plugin where an event of the fixed catalog already happens: a stage was entered or finished, a gate was decided, the run
@@ -91,6 +91,47 @@ describe('the events a run hands to the plugins', () => {
     const run = await b.runner.start('app#101');
     await reach(b, run, 'ready');
     expect(b.runner.get(run.id)).toMatchObject({ status: 'done' });
+  });
+});
+
+describe('what the run says about a plugin call', () => {
+  it('leaves a line in the run\'s thread when a plugin fails on stage-finished: its name, the event, the stage and the reason, and the run goes on', async () => {
+    const b = await boot({
+      pluginEvent: (event) => (event === 'stage-finished' ? [{ name: 'Contact links', state: 'failed' as const, refused: 'the plugin ended with code 1 and no result' }] : []),
+    });
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await b.settle();
+    const lines = (b.forum.read(runThreadId(run.id))?.messages ?? []).filter((m) => m.code === 'run.plugin.callFailed.stageFinished');
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines[0]).toMatchObject({ kind: 'system', params: { plugin: 'Contact links', stage: 'refine', reason: 'the plugin ended with code 1 and no result' }, stage: 'refine' });
+    const text = messageText(lines[0]);
+    expect(text).toContain('Contact links');
+    expect(text).toContain('the plugin ended with code 1 and no result');
+    expect(text).not.toContain('main.forum.code');
+    expect(b.runner.get(run.id)!.status).not.toBe('failed');
+  });
+
+  it('says nothing in the thread for a plugin that ran or that waits for an answer', async () => {
+    const b = await boot({
+      pluginEvent: () => [
+        { name: 'Ran', state: 'ok' as const, refused: null },
+        { name: 'Waits', state: 'waiting' as const, refused: 'waits for your network permission' },
+      ],
+    });
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await reach(b, run, 'ready');
+    expect((b.forum.read(runThreadId(run.id))?.messages ?? []).some((m) => m.code?.startsWith('run.plugin.callFailed'))).toBe(false);
+  });
+
+  it('names the event the plugin failed on', async () => {
+    const b = await boot({ pluginEvent: (event) => (event === 'run-finished' ? [{ name: 'Notify', state: 'failed' as const, refused: 'no sandbox' }] : []) });
+    easy(b);
+    const run = await b.runner.start('app#101');
+    await reach(b, run, 'ready');
+    const codes = (b.forum.read(runThreadId(run.id))?.messages ?? []).map((m) => m.code).filter((c) => c?.startsWith('run.plugin.callFailed'));
+    expect(codes).toEqual(['run.plugin.callFailed.runFinished']);
   });
 });
 

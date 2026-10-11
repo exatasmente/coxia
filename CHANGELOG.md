@@ -15,6 +15,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - **The Documentation writer builds the site.** The agent of the documentation flow runs commands in the stage's sandbox, so it can build the site and check its links and its languages before handing the work over; it still reads no code host, and the fence over what it may write is unchanged. Where the machine has no sandbox, the template lowers it to the commands the agent could run before one, as for every other agent.
 - **The screenshots of the documentation are taken from the app itself, and a release refreshes them.** The README no longer promises pictures: it shows the day, a ceremony, the actions queue, the setup wizard and the paired phone, in both languages, and every one of them is written by a capture script over a workspace of fictional data, so nothing real can appear in an image. A command writes that workspace into a folder you choose (`scripts/seed-docs-workspace.mjs`), and it refuses a folder that already holds a workspace or that is the app's own data folder; the list of screens is a file (`scripts/captures/index.json`) that says where each image is used, and a check in CI refuses a reference with no image, an image nobody references, a capture with no script and a script the list does not name. Inside a release, a stage of the release flow refreshes the images on the branch and leaves them to the pull request, so a screen that changed shows up as a change you review like any other; the version is still cut by the one release step, behind your yes. A stage of a flow can also ask for the virtual display a QA stage gets (`display: true`, off when left out), which is what lets that stage run a capture; an existing flow changes nothing.
 
+### Fixed
+
+- **A plugin that fails is no longer silent.** Every call of a plugin leaves a line in the workspace's audit log ("Plugin call": the plugin, the event, the stage, and whether it ran, failed with the reason, or waits for an answer in Actions). A call that fails also leaves a line in the run's conversation with the plugin's name, the event, the stage and the reason (no run to write into, a required setting empty, the sandbox did not open, the script ended with an error or without a result). Settings › Plugins shows each plugin's last call since the app opened.
+- **A plugin's document keeps its links and addresses.** Only what is shaped like a credential is masked in it now (a key, a token, an authorization header, a JWT, an address with a password); the query of a link such as a contact link, an email address and a long id go through. The answers to a plugin's requests stay masked as before.
+
+### Changed
+
+- The plugin guide says that one call of a JavaScript plugin hands on at most 5 writes (the rest are dropped, and the audit line counts them) and how its document is masked.
+
 ## [0.10.0-beta.1] - 2026-10-11
 
 ### Added

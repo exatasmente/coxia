@@ -9,7 +9,7 @@ import type { ExecResult } from '../src/main/sandbox';
 // and never a policy of its own. The script is handed over as the command itself, with the event as $1 (the plugin folder is never mounted). The fake session records what the app asked for and what it ran. What the plugin returns is applied by the app: the
 // document goes into the run's cycle folder through the same guard a stage's documents go through.
 
-const { runPlugin, writePluginDocument } = await import('../src/main/plugins/runtime');
+const { JS_REQUESTS_PER_ROUND, runJsPlugin, runPlugin, writePluginDocument } = await import('../src/main/plugins/runtime');
 const { writeArtifact } = await import('../src/main/runner/cycleFolder');
 
 interface Opened {
@@ -111,6 +111,50 @@ describe('running a plugin', () => {
     // i18n-ignore: the redaction test feeds a made-up token
     const out = await runPlugin(deps(f.service), plugin, 'stage-finished', target());
     expect(out.text).not.toContain('glpat-abcdefghij0123456789');
+  });
+
+  it('keeps the query of a link and an email address it prints: they are what a contact link is made of', async () => {
+    const link = 'https://wa.me/5500000000000?text=Hi%2C%20your%20order%20is%20ready';
+    const f = fakeSandbox({ output: `${link}\nmail someone@example.com\ntoken glpat-abcdefghij0123456789` });
+    const out = await runPlugin(deps(f.service), plugin, 'stage-finished', target());
+    expect(out.text).toContain(link);
+    expect(out.text).toContain('someone@example.com');
+    expect(out.text).not.toContain('glpat-abcdefghij0123456789');
+  });
+});
+
+describe('running a JavaScript plugin', () => {
+  /** A session that hands back the result a harness would leave, without running anything. */
+  function fakeJsSandbox(result: object) {
+    const service = {
+      open: async () => ({
+        exec: async (command: string): Promise<ExecResult> => ({ n: 1, command, exitCode: 0, timedOut: false, output: '', ms: 1 }),
+        put: (name: string) => `/ctl/${name}`,
+        take: () => JSON.stringify(result),
+        log: [],
+        close: async () => undefined,
+      }),
+    };
+    return service as never;
+  }
+  const js = { id: 'contacts', files: { 'index.mjs': 'export default () => ({})' }, entry: 'index.mjs', settings: {}, documents: [{ name: '7_CONTACTS.md', label: 'Contacts', title: 'Contacts' }] };
+  const jsDeps = (service: never) => ({ sandbox: service, config: neutralSandbox(), executable: '/opt/app/app', read: async (c: { id: string }) => ({ id: c.id, refused: 'no reads here' }) });
+
+  it('hands on at most JS_REQUESTS_PER_ROUND writes and counts the ones it dropped', async () => {
+    const writes = Array.from({ length: JS_REQUESTS_PER_ROUND + 2 }, (_, i) => ({ id: `w${i}` }));
+    const out = await runJsPlugin(jsDeps(fakeJsSandbox({ pending: [], writes, document: null, error: null })), js, 'stage-finished', { issue: 123 }, target());
+    expect(out.writes.map((w) => w.id)).toEqual(writes.slice(0, JS_REQUESTS_PER_ROUND).map((w) => w.id));
+    expect(out.dropped).toBe(2);
+  });
+
+  it('writes its document with the links and addresses it built, and only credentials masked', async () => {
+    const link = 'https://wa.me/5500000000000?text=Hi%2C%20your%20order%20is%20ready';
+    const out = await runJsPlugin(jsDeps(fakeJsSandbox({ pending: [], writes: [], document: `# Contacts\n\n- ${link}\n- someone@example.com\n- Bearer abcdefghij0123456789`, error: null })), js, 'stage-finished', { issue: 123 }, target());
+    expect(out).toMatchObject({ ok: true, dropped: 0, document: { name: '7_CONTACTS.md' } });
+    const written = readFileSync(out.document!.path, 'utf8');
+    expect(written).toContain(link);
+    expect(written).toContain('someone@example.com');
+    expect(written).not.toContain('abcdefghij0123456789');
   });
 });
 

@@ -7,6 +7,7 @@
   "ui.audit.kind.minutes": "Minutes",
   "ui.audit.kind.noteEdit": "Note edit",
   "ui.audit.kind.persona": "Persona change",
+  "ui.audit.kind.pluginCall": "Plugin call",
   "ui.audit.kind.pluginRequest": "Plugin request",
   "ui.audit.kind.pluginWrite": "Plugin write",
   "ui.audit.kind.procedure": "Learned procedure",
