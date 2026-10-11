@@ -10,6 +10,9 @@ export type SecretOp = 'set' | 'remove' | 'accept-insecure' | 'read';
 const REF = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const SOURCES: readonly string[] = ['stored', 'command', 'env'];
 
+/** A secret that runs a command, set by the persona: the app will run what it names whenever the secret is resolved, so the line is marked as a raise, like a change of reach. */
+export const SECRET_RAISED = 'secret command';
+
 export function secretAuditEntry(o: { op: SecretOp; ref?: unknown; source?: unknown; ok: boolean; via: Through }): Omit<AuditEntry, 'at'> {
   const ref = typeof o.ref === 'string' && REF.test(o.ref) ? o.ref : '';
   const source = typeof o.source === 'string' && SOURCES.includes(o.source) ? (o.source as SecretSourceType) : '';
@@ -18,7 +21,7 @@ export function secretAuditEntry(o: { op: SecretOp; ref?: unknown; source?: unkn
     issue: 0,
     target: `secret:${o.op}`,
     via: o.via,
-    fields: { op: o.op, ...(ref ? { ref } : {}), ...(source ? { source } : {}) },
+    fields: { op: o.op, ...(ref ? { ref } : {}), ...(source ? { source } : {}), ...(o.op === 'set' && source === 'command' && o.via === 'persona' ? { raised: SECRET_RAISED } : {}) },
     ok: o.ok,
     code: null,
     result: o.ok ? o.op : 'refused',

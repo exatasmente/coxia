@@ -193,9 +193,11 @@ export function createDoor(deps: DoorDeps = {}): Door {
     // ---- one synchronous stretch: the latch, the act in flight, the handler's first line. A tool call that was on its way when the Stop was pressed is refused here.
     if (stopped()) throw new ToolError(t('main.persona.door.stopped'));
     const finished = beginInflight(cut(`${op.tool}.${op.op} ${subject}`.trim(), INFLIGHT_MAX));
+    // A change the persona may not make through the settings is refused here, in the same stretch, and recorded as a refused act.
+    const blocked = h.guard ? h.guard(args, values, ctx) : null;
     let pending: Promise<unknown>;
     try {
-      pending = Promise.resolve(runAct(act, () => (op.channel ? invokePersona(op.channel, args) : h.run ? h.run(values, { ...ctx, session, via: 'persona' }) : Promise.reject(new Error(`no way to run ${keyOf(op)}`)))));
+      pending = blocked ? Promise.resolve({ ok: false, reason: blocked }) : Promise.resolve(runAct(act, () => (op.channel ? invokePersona(op.channel, args) : h.run ? h.run(values, { ...ctx, session, via: 'persona' }) : Promise.reject(new Error(`no way to run ${keyOf(op)}`)))));
     } catch (e) {
       pending = Promise.reject(e);
     }
@@ -211,13 +213,13 @@ export function createDoor(deps: DoorDeps = {}): Door {
     const refused = failure !== null ? reasonOf(failure, mask) : refusalOf(result) !== null ? mask(redact(String(refusalOf(result)))).slice(0, 400) : null;
 
     // The lines of the act are written inside it, so they carry who acted, the reason and what was read; then the act closes, and nothing it left running is the persona's.
-    let raised: string[] = [];
+    let raised: string[] = refused === null ? [...(h.raised?.(values) ?? [])] : [];
     try {
       runAct(act, () => {
         if (op.write) {
           const after = getConfig();
           if (before && after !== before) {
-            raised = raisedFields(before, after);
+            raised = [...new Set([...raised, ...raisedFields(before, after)])];
             if (!act.wrote.kinds.has('config')) {
               const line = configAuditEntry(before, after, { op: 'act', via: 'persona' });
               if (line) recordWrite(line);

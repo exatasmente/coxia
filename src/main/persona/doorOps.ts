@@ -4,7 +4,7 @@ import { t } from '../../shared/i18n';
 import { waitingRuns } from '../../shared/runs/view';
 import { actionSubject } from '../actions';
 import { recordWrite } from '../auditoria';
-import { secretAuditEntry } from '../decisionAudit';
+import { SECRET_RAISED, secretAuditEntry } from '../decisionAudit';
 import { describeStep } from '../browser/asks';
 import { ceremonyCommands } from '../ceremonyCommands';
 import { getSettings } from '../config';
@@ -22,6 +22,7 @@ import { loadCards } from '../cards';
 import { ToolError } from '../engine/open/tools/types';
 import { type Op, keyOf } from './doorTable';
 import { PathError, applyPath, readPath } from './configPath';
+import { personaSettingsRefusal } from './settingsGuard';
 import type { AnswerSession } from './session';
 
 // What each operation of the persona's door builds, says and runs beyond the table (#248): the arguments of the channel from the tool's, the subject the app itself puts before a
@@ -44,6 +45,10 @@ export interface Hooks {
   build?(v: Values, c: OpCtx): unknown[] | Promise<unknown[]>;
   subject?(v: Values, c: OpCtx): string | null | Promise<string | null>;
   shape?(result: unknown, v: Values): unknown;
+  /** A reason to refuse, from the arguments just built, in the same synchronous stretch in which the handler would start; the act is then recorded as refused. */
+  guard?(args: unknown[], v: Values, c: OpCtx): string | null;
+  /** Names a raise the operation makes that the configuration's diff does not show (a secret that runs a command): marked in the audit line and in the act line. */
+  raised?(v: Values): string[];
   /** The operations with no channel run here. */
   run?(v: Values, c: RunCtx): unknown | Promise<unknown>;
 }
@@ -179,6 +184,7 @@ export const HOOKS: Record<string, Hooks> = {
       }
     },
     subject: (v) => `${str(v.path)} (${str(v.mode) || 'set'})`,
+    guard: (args, _v, c) => personaSettingsRefusal(c.config(), args[0] as WorkspaceConfig),
   },
   'Settings.setApp': {
     build(v) {
@@ -208,7 +214,9 @@ export const HOOKS: Record<string, Hooks> = {
       if (!str(v.name)) throw new ToolError(t('main.persona.door.arg.required', { name: 'name' }));
       return [{ ref, source: 'env', name: str(v.name) }];
     },
-    subject: (v) => `${str(v.ref)} (${str(v.source)})`,
+    // A secret that runs a command is a command the app will run when it resolves it: the executable and how many arguments are said, so the record is not a bare name.
+    subject: (v) => (v.source === 'command' ? `${str(v.ref)} (command: ${str(v.command)}, ${Array.isArray(v.args) ? v.args.length : 0} arguments)` : `${str(v.ref)} (${str(v.source)})`),
+    raised: (v) => (v.source === 'command' ? [SECRET_RAISED] : []),
   },
   'Secrets.list': {
     // Names and where each comes from, as the screens list them; not the command line or the variable behind one, and never a value.
