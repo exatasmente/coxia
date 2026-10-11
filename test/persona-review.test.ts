@@ -197,3 +197,34 @@ describe('what a read gives the model', () => {
     expect(text.endsWith('</data>')).toBe(true);
   });
 });
+
+describe('an operation with no channel', () => {
+  it('runs inside the act\'s scope, so its lines are stamped, and says the persona itself because the call origin does not', async () => {
+    const { recordWrite } = await import('../src/main/auditoria');
+    const { openAct } = await import('../src/main/persona/act');
+    const { callOrigin } = await import('../src/main/rpc');
+    const seen: { open: boolean; id: string | undefined; origin: string } = { open: false, id: undefined, origin: '' };
+    const table = [{ tool: 'Board' as const, op: 'door', channel: null, write: true, args: [] }];
+    const door = createDoor({
+      table,
+      hooks: () => ({
+        run: (_v, c) => {
+          const act = openAct();
+          seen.open = !!act;
+          seen.id = act?.id;
+          seen.origin = callOrigin();
+          recordWrite({ kind: 'secret', issue: 0, target: 'probe', via: c.via, fields: {}, ok: true, code: null, result: 'x', origin: { actionId: '', kind: 'secret', key: 'probe', summary: null }, by: null });
+          return 'ok';
+        },
+      }),
+      stopped: () => false,
+    });
+    await door.run(session(), 'Board', { op: 'door', why });
+    const line = listAudit().find((e) => e.target === 'probe');
+    expect(seen.open).toBe(true);
+    expect(seen.origin).toBe('ipc');
+    expect(line).toMatchObject({ actor: 'persona', via: 'persona', said: why, id: seen.id, door: 'window' });
+    // the handler wrote a line, so the door writes no second one for the act
+    expect(listAudit().filter((e) => e.kind === 'act' && e.target === 'Board.door')).toHaveLength(0);
+  });
+});

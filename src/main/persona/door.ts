@@ -208,6 +208,8 @@ export function createDoor(deps: DoorDeps = {}): Door {
     const finished = beginInflight(cut(`${op.tool}.${op.op} ${subject}`.trim(), INFLIGHT_MAX));
     // A change the persona may not make through the settings is refused here, in the same stretch, and recorded as a refused act.
     const blocked = h.guard ? h.guard(args, values, ctx) : null;
+    // An operation with no channel (`h.run`) runs inside the act's scope, so every line it writes is stamped like a handler's; but it is not a call of the wrapper, so the call
+    // origin does not say `persona` in it and it names the persona itself (`via: 'persona'`, as `Secrets.read` does).
     let pending: Promise<unknown>;
     try {
       pending = blocked ? Promise.resolve({ ok: false, reason: blocked }) : Promise.resolve(runAct(act, () => (op.channel ? invokePersona(op.channel, args) : h.run ? h.run(values, { ...ctx, session, via: 'persona' }) : Promise.reject(new Error(`no way to run ${keyOf(op)}`)))));
@@ -257,8 +259,7 @@ export function createDoor(deps: DoorDeps = {}): Door {
     const body = readSecret ? rawText : mask(redact(rawText));
     const text = clip(body, RESULT_MAX);
     if (!op.write) {
-      const excerpt = readSecret ? `[secret ${String(values.ref)}]` : cut(oneLine(text), 240);
-      const stored = op.tool === 'Settings' && op.op === 'get' && /(?:^|\.)instructions$/.test(String(values.path ?? '')) ? `[${rawText.length} characters]` : excerpt;
+      const stored = op.tool === 'Settings' && op.op === 'get' && /(?:^|\.)instructions$/.test(String(values.path ?? '')) ? `[${rawText.length} characters]` : cut(oneLine(text), 240);
       session.remember({ tool: op.tool, op: op.op, target: targetText(op, values), excerpt: stored });
     }
     if (op.write) return text ? `${t('main.persona.door.done')}\n${text}` : t('main.persona.door.done');
