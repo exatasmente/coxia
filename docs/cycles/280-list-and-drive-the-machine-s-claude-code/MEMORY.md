@@ -9,6 +9,7 @@
 - Implementação: passos 1 a 7 feitos. Desvio aceito: os 12 canais ficam sempre registrados; desligado, todos menos `enabled` e `set-enabled` recusam. Todo handler recusa porta que não seja a janela. Sessões conduzidas usam `query` em entrada contínua. Redação reusa `redact` de errorlog-core. Nota m-dfa8dee2.
 - Revisão rodada 2: aprovado, sem bloqueantes.
 - QA: 7 arquivos de teste do recurso (191) passaram e o build electron-vite passou (ev-2, ev-3); a tela chama follow(null) ao sair (lido, ev-4).
+- Resposta: 280 primeiro <!-- answer:145 -->
 
 ## Restrições
 
@@ -40,3 +41,4 @@
 - Passagem revisor-plataforma → developer: Revisão devolvida: a branch não tem nenhuma alteração de código fora da pasta do ciclo. Os passos 1 a 7 do plano (configuração, fronteira, emissor só da janela, núcleo, auditoria, tela, documentação) e os testes não existem, então nenhum dos 12 critérios de aceite é atendido. Nenhum portão foi rodado nesta etapa. [bloqueia] docs/cycles/[redacted]/3_IMPLEMENTATION.md: A branch não contém nenhuma alteração de código: só o passo 0 (sondagem) foi feito. Os passos 1 a 7 do plano e os testes correspondentes não existem, então os critérios de aceite da especificação (tela, canais, permissões, parar, … <!-- handoff:63 -->
 - Passagem developer → revisor-plataforma: Revisão: conferir o diff contra 2_PLAN.md e 1_SPEC.md. Pontos de atenção: - canais sempre registrados e recusando quando desligado (desvio do plano, explicado em 3_IMPLEMENTATION.md); - `guardedRead` como único ponto de disco, sem seguir link; - `emitWindow` só para a janela; - três camadas contra o celular e a persona; - `test:true` antes do SDK. Os 5 portões rodaram. Na rodada final, 2 testes estouraram o limite de 5 s com a máquina carregada e passaram sozinhos. A verificação contra o Claude Code real fica para a QA. <!-- handoff:94 -->
 - Passagem revisor-plataforma → qa-plataforma-2: QA: verificar contra o Claude Code real os critérios 2 a 6 e 8 (listar, ao vivo, enviar, cópia, permissão, parar/encerrar), que sair da tela encerra o acompanhamento e que o build electron-vite passa. <!-- handoff:102 -->
+- Passagem qa-plataforma-2 → integrator: QA concluída sem falhas nos testes automáticos e no build. A verificação contra o Claude Code real e com a tela aberta não foi feita; precisa de uma pessoa com o claude instalado e logado. <!-- handoff:120 -->
