@@ -1,26 +1,25 @@
-# Revisão: segunda rodada da entrega da mensagem ao chamado
+# Revisão: terceira rodada, a cadeia foi corrigida mas um teste de atividade ficou vermelho
 
 Veredito: **mudanças**.
 
 ## Bloqueantes anteriores
 
-1. Teste do aviso imediato (TS2352): tratado. `tsc --noEmit` passa.
-2. Teste de tela com abort local: tratado, passa.
-3. `activity-calls` com mensagem pendente: tratado, passa.
-4. Teste de `callAgent`: escrito, mas **falha** (ver abaixo). A caracterização do relógio de ociosidade (critério 8) continua não escrita.
+1. `chain.push(to)` nunca desfeito (`executor.ts`): tratado. `forget()` retira o chamado da cadeia; `test/runner-send-call.test.ts` passa (segunda chamada abre conversa nova).
+2. Teste de segunda chamada vermelho: tratado, passa.
 
 ## O que foi verificado (rodado)
 
 - `npm ci` e `npx tsc --noEmit`: passam.
-- `vitest run` completo: 9153 passam, 2 falham. Uma falha é `test/runner-send-call.test.ts` (o teste novo). A outra foi um timeout de worker em `cycle-parity-novoice`, que passou ao rodar sozinho (não relacionada).
-- `npm run i18n:lint` passa (6416 chaves). `node scripts/public-audit.mjs` passa.
-- `theme-audit`: não rodado nesta rodada (o diff não toca o renderer).
+- `npm run i18n:lint` (6416 chaves nos dois idiomas) e `node scripts/public-audit.mjs`: passam.
+- vitest nos arquivos da área (runner-send-call, runner-conversation, runner-conversation-stall, runner-conversation-screen, activity-calls, qa-conversation-commit): 45 passam, 1 falha.
+- A falha se repetiu em duas execuções seguidas do arquivo: não é intermitente.
 
-## Bloqueantes
+## Bloqueante
 
-1. `test/runner-send-call.test.ts:221` e `src/main/runner/executor.ts:1134`: o teste espera dois turnos do chamado (duas conversas seguidas), mas recebe um. Causa lida: `chain.push(to)` nunca é desfeito, então a segunda chamada ao mesmo agente é recusada como ciclo (`callRefusal`), mesmo com a primeira conversa já encerrada e `forget()` feito. Resultado: o teste novo está vermelho e a nota do CHANGELOG ("the next `CallAgent` to it opens a new conversation") não é verdadeira para o chamado que escreve nem para o leitor. Ou o fim da conversa tira o chamado da cadeia (e o teste passa a valer), ou o teste e a nota mudam para o comportamento real. A causa do ciclo foi lida, não confirmada por execução isolada.
+1. `test/activity-calls.test.ts:249` ("keeps one node for several rounds and an excerpt for each round that answered"): recebe `['started','started','finished']` no nó do chamado, esperava `['started','finished']`. O teste foi ajustado nesta entrega (passou a ter mensagem pendente para haver segunda rodada) e a segunda rodada agora usa `resume`; o evento extra de `started` aparece nesse segundo turno. Ou a retomada da sessão não deve abrir novo início no mesmo nó (código), ou a expectativa muda de forma justificada. A causa do segundo `started` não foi isolada; o fato novo é a falha reproduzida no diff desta rodada.
 
-## Não bloqueantes
+## Não bloqueantes (não verificados)
 
-- Falta a caracterização do relógio de ociosidade (critério 8) e teste do retorno `stalled`/`stopped` por `callAgent`; a chave de `screenApi.stop` contra `callStops` não foi conferida. Seguem não verificados.
-- Repositório público e regra de config: nada de nome ou segredo; sem campo novo de config; sem escrita nova fora da porta Actions.
+- Caracterização do relógio de ociosidade (critério 8), teste do retorno `stalled`/`stopped` por `callAgent` e a chave de `screenApi.stop` contra `callStops` seguem sem teste/conferência.
+- Vitest completo e `theme-audit` não foram rodados nesta rodada.
+- Repositório público: sem nome, host ou segredo; sem campo novo de config; nenhuma escrita nova fora da porta Actions.
