@@ -5,7 +5,6 @@
 - Resposta: C <!-- answer:68 -->
 - Resposta: 1 <!-- answer:85 -->: seguir pela API `./bridge` (alpha) do SDK, com sondagem com login antes do código.
 - Revisão rodadas 1 e 2: "mudanças" (não havia código). Rodada 3: **aprovado** com ressalvas.
-- Resposta da pessoa: volta e pede para ele desenvolver; dúvidas ao team lead, persona ou PO <!-- answer:144 -->
 - Decisões da implementação, confirmadas pela revisão:
   - token = [redacted] OAuth do Claude Code, lida ao abrir e nunca guardada;
   - só `off` e `mirror`, sem `control`;
@@ -14,14 +13,16 @@
   - close() no fim da tentativa, sem arquivar;
   - só etapas de uma execução abrem a ponte;
   - a execução só baixa o nível (função; sem interface).
+- Resposta: volta e pede para ele desenvolver, qualquer duvida ele chama o team lead ou a persona ou o PO <!-- answer:144 -->
 
 ## Restrições
 
 - Regra 12 da spec: não ofertar como se funcionasse.
 - Persona, celular pareado, workspace `test: true` e modelos de ciclo nunca ligam o Remote Control.
 - Uma linha de auditoria por id de `createCodeSession`.
-- `test/runs-policy.test.ts`: só `door.ts` cita `isTestWorkspace` em `src/main/runner/`; a consulta mora em `remoteBridge.ts`.
+- `test/runs-policy.test.ts`: só `door.ts` cita `isTestWorkspace` em `src/main/runner/`.
 - API `./bridge` alpha: só `src/main/remoteBridge.ts` a importa; testes usam fake.
+- Nunca merge/rebase/commit pelo shell; a base vem pela ferramenta de conflito do app.
 
 ## Tentado e descartado
 
@@ -29,20 +30,18 @@
 
 ## Perguntas abertas
 
-- Modo `control` (entrada remota pelas aprovações): issue própria.
-- Escolha por execução na interface (critério 10; `run` nunca é preenchido).
-- Tela de sessões (critério 9) depende da issue de sessões.
+- Modo `control`: issue própria.
+- Escolha por execução na interface (critério 10); tela de sessões (critério 9) depende da issue de sessões.
 - Renovação da credencial do worker (46800 s) e arquivamento.
-- Sugestões da revisão: não abrir/auditar a ponte quando o motor não é o do Claude; o aviso do editor deve dizer que o conteúdo da etapa é enviado a claude.ai.
+- Sugestões da revisão: não abrir/auditar a ponte em motor que não é o do Claude; aviso do editor deve citar envio do conteúdo a claude.ai.
 - Critérios 1 e 3 com a conta real: nunca verificados.
 
 ## Onde o trabalho está
 
-- Código no worktree: `src/shared/remoteControl.ts`, `src/main/remoteBridge.ts`, `EngineRequest.mirror`, executor, migração v35, `configScope.remoteControlRaised`, `webPolicy`, editor de agente, catálogos, CHANGELOG, `docs/configuration.md`, testes `test/remote-control-*.test.ts` e `test/runner-remote-control.test.ts`.
-- QA (rodou agora): tsc, vitest completo (8944 passaram, 4 pulados), theme-audit, i18n:lint, public-audit e electron-vite build, todos saída 0 (ev-10). Plano em 5_TEST_PLAN.md.
-- Não verificados: critérios 1 e 3 com a conta real, interface no app em execução, celular.
-- Duas sessões de teste da sondagem continuam na conta da pessoa.
-- Próximo passo: integração.
+- Código no worktree (remoteControl.ts, remoteBridge.ts, EngineRequest.mirror, executor, migração v35, configScope, webPolicy, editor, catálogos, CHANGELOG, docs/configuration.md, testes).
+- Integração (7_INTEGRATION.md): gates verdes nesta etapa (tsc, vitest 8944, theme, i18n, public-audit, build; ev-11). Um `out/` velho no worktree faz `test/public-audit.test.ts` falhar: apagar `out/` após build.
+- Bloqueio: PR #286 (base release/0.11.0, correta) com hasConflicts=true; base não medida (sem .git no shell); passo v35 do esquema não conferido contra a release. Título/descrição do PR desatualizados.
+- Próximo passo: implement traz a base pela ferramenta do app, confere/renumera v35, atualiza o PR; depois nova integração.
 - Passagem support → product-owner: Especificação: verificar no SDK se uma sessão iniciada pelo Agent SDK abre a ponte (remoteControlAtStartup/autoUploadSessions não verificados), definir nível por agente vs por run, espelho só de leitura, e a dependência da issue de sessões (sem ciclo). Pontos de entrada: src/main/agents.ts sdkOptions, src/main/webPolicy.ts DESKTOP_ONLY/PERSONA_UNLISTED, auditoria da #268. <!-- handoff:11 -->
 - Passagem product-owner → pessoa: Planejamento: primeiro verificar no SDK se uma sessão não interativa abre a ponte e se há espelho só de leitura; definir a precedência agente x execução; apoiar-se em sdkOptions (agents.ts), DESKTOP_ONLY/PERSONA_UNLISTED (webPolicy.ts), recusa em test:true e o mecanismo de auditoria da #268. Registrar a dependência da issue de sessões. <!-- handoff:20 -->
 - Passagem tl-plataforma → pessoa: Implementação: executar primeiro a etapa 0 (sondagem do SDK: ponte em sessão não interativa e espelho só de leitura) e registrar o resultado; se a ponte não abrir, parar e devolver ao product owner o comportamento alternativo (regra 12). Só então seguir 1 a 6 e 8 de 2_PLAN.md. Verificar como a auditoria das ações autônomas (#268) pode registrar um evento que não é escrita no host de código. A tela de sessões (item 7) fica fora até a issue de sessões existir. <!-- handoff:33 -->
@@ -52,3 +51,4 @@
 - Passagem pessoa → developer: volta e pede para ele desenvolver, qualquer duvida ele chama o team lead ou a persona ou o PO <!-- handoff:145 -->
 - Passagem developer → revisor-plataforma: Revisão (revisor-plataforma): revisar o código de Remote Control (só leitura) contra a spec, conferindo as decisões tomadas sem plano refeito. São elas: o token é a credencial do Claude Code; o espelho abre com uma mensagem fixa de somente leitura no lugar de uma recusa visível; `control` fica fora; uma falha da ponte faz a etapa rodar sem ela, com uma linha na conversa; a sessão é fechada com close() e não é arquivada; só as etapas de uma execução abrem a ponte. Não foram verificados nesta tentativa: o conjunto completo de testes depois da correção do runs-policy, `electron-vite build` e os c… <!-- handoff:208 -->
 - Passagem revisor-plataforma → qa-plataforma-2: Revisão aprovada. QA: rodar o conjunto completo (vitest, tsc, theme-audit, i18n:lint, public-audit) e `electron-vite build`, que não foram verificados aqui; testar manualmente os critérios 1 e 3 com a conta real. Pendentes sem bloqueio: escolha por execução (critério 10), tela de sessões (critério 9), mirror aberto em motor que não é o do Claude. <!-- handoff:214 -->
+- Passagem qa-plataforma-2 → integrator: Integração: os portões e o build passam. Pendentes sem bloqueio: critérios 1 e 3 com a conta real, 9 (issue de sessões) e 10 (escolha por execução na interface); sugestões da revisão (não abrir a ponte em motor que não é o do Claude; o aviso deve citar o envio do conteúdo a claude.ai). <!-- handoff:233 -->
