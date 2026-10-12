@@ -1,42 +1,40 @@
-# Plano de testes: etapa entregue a uma sessão do Claude Code (rodada 3)
+# Plano de testes: etapa entregue a uma sessão do Claude Code (rodada 4, base nova)
 
 ## Resultado
 
-O bloqueio anterior foi resolvido: os 3 testes da persona passam (ev-9) e o tsc passa (ev-9), inclusive com `_dropped`. theme-audit, i18n:lint e public-audit saem com 0 (ev-8). A suíte completa foi rodada 3 vezes com falhas diferentes a cada vez (ev-10): `update-script` (rodada 1) e `modules-registered` (rodada 3) passam isoladamente (13 e 2 testes); a falha da rodada 2 não teve o nome capturado. Padrão de instabilidade por tempo/carga, sem relação com a entrega. Interface e SDK real não exercitados.
+Bloqueado. Com o ramo ainda 33 commits atrás de origin/release/0.11.0, `config-migrations` falha em 85 testes com "no migration from config schema 34" (ev-13): o STEPS do ramo não tem os passos 34 e 35 da release, e a versão alvo é 37. tsc passa (ev-13). Os outros 5 arquivos de teste rodados passam (ev-13). Nada além disso foi rodado nesta rodada.
 
-## Comandos rodados nesta etapa
+## Comando rodado nesta etapa
 
-1. `npx vitest run test/config-claude-code-persona.test.ts`: saída 0, 3 passaram (ev-9).
-2. `npx tsc --noEmit`: saída 0 (ev-9).
-3. `npx vitest run` completo (3 vezes): saída 1 em todas; rodada 1: 3 falhas, 9023 passaram, 4 ignoradas; rodada 2: 1 arquivo... (2 arquivos falhos, nomes não capturados); rodada 3: 1 arquivo, `modules-registered` (ev-10).
-4. `npx vitest run test/update-script.test.ts` e `test/modules-registered.test.ts` isolados: saída 0 (ev-10).
-5. `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`: saída 0 (ev-8).
+1. Um único comando: `git log`, `git rev-list --count HEAD..origin/release/0.11.0` (resultado 33), `npx tsc --noEmit` (tsc=0) e `npx vitest run` em 6 arquivos (config-migrations, docs-schema-version, config-claude-code-persona, runner-claude-code-stage e outros da entrega). Resultado: 1 arquivo falhou, 5 passaram; 85 testes falharam, 53 passaram (ev-13).
 
 ## Cenários
 
-| # | Critério | Resultado |
+| # | Cenário | Resultado |
 |---|---|---|
-| 1/2/8 | Resultado, transcrição, falha (sessão simulada) | Sem falha nos testes de runner-claude-code-stage em nenhuma das rodadas (ev-10). |
-| 3/4 | Permissão e escrita fora do worktree (módulo) | Sem falha nos testes de módulo; SDK real não observado. |
-| 5/6 | Opção desligada, workspace de teste | Sem falha. |
-| 7 | Celular e persona | Passou: 3 testes (ev-9). |
-| 9/10 | Padrão intacto, sem ~/.claude | Sem falha de fluxo; sem ~/.claude só por testes e leitura. |
-| 11 | Portões | tsc, theme-audit, i18n:lint, public-audit passam (ev-8, ev-9). Vitest completo: só falhas instáveis que passam isoladas (ev-10). |
-| — | Interface | Não rodou: sem app subido nem teste de componente. |
+| 1 | Base: o ramo contém a release 0.11.0? | Falhou: 33 commits atrás (ev-13). |
+| 2 | Migração com os passos da release (`config-migrations`) | Falhou: 85 testes com "no migration from config schema 34"; STEPS sem 34/35 (ev-13). |
+| 3 | tsc --noEmit | Passou, saída 0 (ev-13). |
+| 4 | Testes da entrega (persona, estágio, tarefa, guarda, docs-schema-version) | 5 arquivos passaram; só `config-migrations` falhou (ev-13). O nome exato de cada arquivo está no comando, não na evidência salva; por isso só afirmo a contagem. |
+| 5 | vitest completo, theme-audit, i18n:lint, public-audit, build | Não rodou nesta rodada. |
+| 6 | Interface (campo Executor, botão da opção) | Não rodou. |
+| 7 | SDK real (deny respeitado, structured_output) | Não verificado. |
 
 ## Não verificado
 
-- Suíte completa verde numa única rodada: não obtida; a falha da rodada 2 não foi identificada.
-- Interface (campo Executor, botão da opção).
-- Comportamento real do SDK (`canUseTool`, deny respeitado, `structured_output`).
-- Link da transcrição, `PendingCommand.tool`, `flow-check`: fora de escopo por decisão.
-- Renumeração do passo v34→v35 com a #280: integração.
+- Qualquer portão além de tsc e dos 6 arquivos, depois da base nova.
+- Interface e SDK real.
+- Se a mesclagem da base, com v37 e STEPS 34/35 + v36ToV37, faz `config-migrations` passar: ainda não feita.
+
+## O que desbloqueia
+
+Trazer origin/release/0.11.0 (pela ferramenta de conflito do app), manter v37 com STEPS 34/35 da release e 36: v36ToV37, refazer a linha do CHANGELOG, e rodar tudo de novo.
 
 ## Resultado dos cenários
 
-- 7 Celular e persona: passou (executado na sandbox) — Os 3 testes da persona passam, inclusive o que baixa o executor removendo a chave.
-- Portão tsc: passou (executado na sandbox) — tsc --noEmit saída 0, sem aviso por _dropped.
-- Portões theme-audit, i18n:lint, public-audit: passou (executado na sandbox) — Os três saem com 0.
-- Suíte vitest completa: passou (executado na sandbox) — Três rodadas, falhas diferentes a cada vez (update-script, modules-registered, uma não identificada); as duas identificadas passam isoladas. Nenhuma falha nos testes da entrega. Uma rodada totalmente verde não foi obtida.
-- 1-6, 8-10 Resultado, transcrição, permissão, escrita, recusas, falha, padrão (sessão simulada): passou (executado na sandbox) — Cobertos pelos testes automatizados que não falharam em nenhuma das rodadas completas; SDK real não observado.
-- Interface: campo Executor e botão da opção: não rodou (lido) — Nenhum app subido nem teste de componente; sem comprovação.
+- 1 Base: ramo contém a release 0.11.0: falhou (executado na sandbox) — git rev-list --count HEAD..origin/release/0.11.0 retornou 33: o ramo está atrás da release.
+- 2 Migração com passos da release (config-migrations): falhou (executado na sandbox) — 85 testes falham com 'no migration from config schema 34'; STEPS sem 34/35 porque a base não foi trazida (causa lida na mensagem de erro).
+- 3 tsc --noEmit: passou (executado na sandbox) — tsc=0 no mesmo comando.
+- 4 Testes da entrega (persona, estágio, tarefa, guarda, docs-schema-version): passou (executado na sandbox) — Test Files: 1 failed | 5 passed (6); o único arquivo que falhou foi config-migrations (cenário 2). Os 5 arquivos restantes passaram.
+- 5 vitest completo, theme-audit, i18n:lint, public-audit, build: não rodou (lido) — Não rodados nesta rodada.
+- 6 Interface (campo Executor, botão da opção): não rodou (lido) — Nenhum app subido nesta rodada.

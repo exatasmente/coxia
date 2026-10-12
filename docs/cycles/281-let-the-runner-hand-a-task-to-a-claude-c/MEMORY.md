@@ -7,7 +7,6 @@
 - Aceito fora do escopo: link da transcrição na timeline, `PendingCommand.tool`, flow-check de executor sem agente, teste de componente do StagePanel.
 - Teste da persona: para baixar o executor, remover a chave (saveConfig recusa chave com valor undefined). Corrigido.
 - Migração desta entrega: v36→v37 (CONFIG_SCHEMA_VERSION=37), porque a release 0.11.0 tem v34→v35 (claudeSessions, #280) e v35→v36 (outra entrega).
-- Resposta de produto: campo Executor na etapa, opção global desligada por padrão; recusa clara sem fallback; celular e persona não ligam.
 - Resposta: (1) Como a etapa é configurada: um campo na própria etapa do fluxo, "Executor", com duas opções: "Agente do Coxia" (padrão, o que existe hoje) e "Sessão do Claude Code". Quem não mexe no campo não vê mudança. O campo só aparece e só pode ser escolhido com a opção global "Entregar tarefas ao Claude Code" ligada (desligada por padrão, só desktop). Com a opção desligada, ou em workspace test: true, a etapa não alcança nenhuma sessão: a execução recusa com mensagem clara, sem cair silenciosamente no agente normal. Celular pareado e persona não podem ligar a opção nem escolher o executor. (2) Resul… <!-- answer:22 -->
 - Resposta: Volta e pede as correções <!-- answer:132 -->
 - Resposta: O que continua em aberto: - 7 Celular e persona — Recusas passam; o terceiro teste da persona falha ao salvar config com `executor: undefined` explícito (expected string, got undefined). Suposição do teste; portão vermelho. - Suíte vitest completa — 1 falha, 9025 passaram, 4 ignoradas. <!-- answer:239 -->
@@ -22,7 +21,7 @@
 ## Tentado e descartado
 
 - ACP: exigiria dependência nova e segunda via de permissões.
-- `executor: undefined` explícito no teste da persona: recusado pela validação (corrigido por desestruturação).
+- `executor: undefined` explícito no teste da persona: recusado pela validação (corrigido por remoção da chave).
 
 ## Perguntas abertas
 
@@ -30,11 +29,11 @@
 
 ## Onde o trabalho está
 
-- Revisão rodada 8: aprovado por leitura; renumeração v36→v37 coerente em migrations.ts, types.ts, schema.ts, docs/configuration.md e config-migrations.test.ts. Nada rodado.
-- QA anterior (antes da base nova): tsc, theme-audit, i18n:lint, public-audit, build e testes da entrega passaram; suíte completa só com falhas instáveis por carga (update-script, modules-registered) que passam isoladas.
-- PENDENTE: trazer a base (33 commits atrás de origin/release/0.11.0; conflitos em CHANGELOG, docs/configuration.md, configModule, configScope, executor, service, migrations, schema, types, config-migrations.test, test/helpers/runner.ts). Ao resolver: v37, STEPS com 34/35 da release + 36: v36ToV37, refazer linha do CHANGELOG. Sem a mesclagem o ramo não migra v34/v35.
-- Depois da mesclagem, rodar todos os gates de novo (tsc, vitest, theme-audit, i18n:lint, public-audit, build).
-- Não verificado: interface, SDK real (deny respeitado), pull requests abertos para a release.
+- QA rodada 4 (comando rodado, ev-13): tsc passa; ramo 33 commits atrás de origin/release/0.11.0; dos 6 arquivos de teste rodados, 5 passam e config-migrations tem 85 falhas "no migration from config schema 34" (STEPS sem 34/35 da release, base não trazida).
+- PENDENTE: trazer a base (conflitos em CHANGELOG, docs/configuration.md, configModule, configScope, executor, service, migrations, schema, types, config-migrations.test, test/helpers/runner.ts). Ao resolver: v37, STEPS com 34/35 da release + 36: v36ToV37, refazer linha do CHANGELOG.
+- Depois da mesclagem, rodar todos os gates de novo (tsc, vitest completo, theme-audit, i18n:lint, public-audit, build).
+- QA anterior (antes da base nova): tsc, theme-audit, i18n:lint, public-audit e testes da entrega passaram; suíte completa só com falhas instáveis por carga (update-script, modules-registered) que passam isoladas.
+- Não verificado: interface, SDK real (deny respeitado), suíte completa e demais portões com a base nova.
 - Passagem support → product-owner: Planejar: escolher ACP vs. Agent SDK (SDK já embarcado), como impor o limite de escrita ao worktree, o campo "Executor" no esquema do fluxo (qualquer etapa) e o encaixe com os canais de sessões da #280 (recusa quando desligado, persona/celular negados). <!-- handoff:35 -->
 - Passagem product-owner → pessoa: Planejar: escolher ACP vs. Agent SDK (SDK já embarcado em src/main/claudeSdk.ts), como impor o limite de escrita ao worktree, o campo "Executor" em FlowStage (src/shared/runs/types.ts) e o encaixe com a #280, cujo módulo de sessões não foi achado nesta worktree (conferir se a base já a inclui). <!-- handoff:45 -->
 - Passagem tl-plataforma → pessoa: Implementar 2_PLAN.md: (1) esquema/migração (StageDef.executor, runner.claudeCodeTasks, passo v34→v35, hash do fluxo estável); (2) fronteira em configScope/persona; (3) src/main/runner/claudeCodeTask.ts com Agent SDK; (4) guarda e ramo em executor.ts; (5) UI e i18n; (6) testes com sessão simulada. Antes de codar: confirmar o formato de readOutput, o destino da transcrição e o ponto de recusa da persona. <!-- handoff:59 -->
@@ -56,3 +55,4 @@
 - Passagem qa-plataforma-2 → integrator: Integração: renumerar o passo de migração v34→v35 com a #280. Se a suíte completa ficar vermelha por update-script ou modules-registered, rodar isolado (instabilidade por carga, timeout de 5s na importação). <!-- handoff:293 -->
 - Passagem integrator → developer: Devolver ao implement. A base está 33 commits atrás de origin/release/0.11.0 e a mesclagem de teste tem conflitos. O passo de migração 35 colide com o da #280. Os gates passaram. Cenário que falhou: 2 Esquema vs release. Branch v35 colide com v35 (claudeSessions) da release 0.11.0, que está em 36. Renumerar para v36→v37. Cenário que falhou: 3 Base. 33 commits atrás de origin/release/0.11.0 e conflito em 11 arquivos (merge-tree). Sem fetch nesta etapa. <!-- handoff:313 -->
 - Passagem developer → revisor-plataforma: Integração/QA: trazer a base origin/release/0.11.0 pela ferramenta de conflito do app (manter v37, STEPS 34/35 da release + 36: v36ToV37, refazer a linha do CHANGELOG) e rodar tsc, vitest completo, theme-audit, i18n:lint, public-audit e build; conferir config-migrations e docs-schema-version. <!-- handoff:321 -->
+- Passagem revisor-plataforma → qa-plataforma-2: Integração/QA: trazer a base origin/release/0.11.0 pela ferramenta de conflito do app (manter v37, STEPS 34/35 da release + 36: v36ToV37, refazer a linha do CHANGELOG) e rodar tsc, vitest completo, theme-audit, i18n:lint, public-audit e build; conferir config-migrations e docs-schema-version. <!-- handoff:328 -->
