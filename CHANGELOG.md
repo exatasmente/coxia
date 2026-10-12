@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.11.0-beta.5] - 2026-10-11
+
 ### Changed
 
 - **A conversation with the persona keeps one Claude Code session.** On the Claude engine (the signed-in CLI or an Anthropic key), the persona's next answer in a conversation continues the session of its last answer instead of opening a new one per message, and is sent only what was said since then; a scheduled wake-up and the answer after a Stop follow the same rule. When the session cannot be continued (removed, expired, held by another process) the answer starts a new session with the whole conversation, with no error in the thread; changing the persona's provider also starts a new one. The session of each conversation is kept in the workspace's own data (`persona-sessions.json`, no configuration change) and survives a restart. The open engine, the persona's test copy and the other agents are unchanged.
@@ -473,7 +475,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.4...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.5...HEAD
+[0.11.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.4...v0.11.0-beta.5
 [0.11.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.3...v0.11.0-beta.4
 [0.11.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.2...v0.11.0-beta.3
 [0.11.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.1...v0.11.0-beta.2
