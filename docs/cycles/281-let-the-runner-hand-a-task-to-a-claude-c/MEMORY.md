@@ -1,42 +1,16 @@
 # Memória do ciclo
 
 ## Decisões
-
-- Etapa do fluxo ganha o campo "Executor": "Agente do Coxia" (padrão) ou "Sessão do Claude Code", aceito em qualquer etapa de trabalho (type work).
-- Opção global "Entregar tarefas ao Claude Code": `runner.claudeCodeTasks`, desligada por padrão, só desktop (fora de WEB_EDITABLE). O campo só aparece e só é escolhível com ela ligada. Celular pareado: `executorRaised` em refusedPaths (também cobre `config:cycle-save`). Persona: `claudeCodeRaised` em `config:save` (byPersona).
-- Opção desligada ou workspace test: true: a execução recusa (claude-code-off / claude-code-test) antes de abrir qualquer coisa, sem cair no agente normal.
-- Resultado da sessão substitui a resposta da etapa; transcrição é arquivo em dataDir/claude-code/<run>-<stage>.txt + mensagem do app (runner.claudeCode.transcript), gravada também quando a sessão falha. Sessão sem resultado ou com erro: a etapa falha como qualquer agente.
-- Plano: Agent SDK, não ACP; cerca de escrita = hooks de confinamento + checkPath em canUseTool; sem Bash nativo; permissões pelo porto askCommand com o relógio pausado; settingSources []; sem rodadas de reparo para esse executor.
-- FlowStage.executor só entra no snapshot quando 'claude-code' (hash dos fluxos existentes não muda).
-- Independente da #280; reconciliar passo de migração (v34→v35) e opções na integração.
-- Link da transcrição na timeline, `PendingCommand.tool`, `flow-check` para executor sem agente e teste de componente do StagePanel ficaram de fora (aceitos como sugestão).
 - Resposta: (1) Como a etapa é configurada: um campo na própria etapa do fluxo, "Executor", com duas opções: "Agente do Coxia" (padrão, o que existe hoje) e "Sessão do Claude Code". Quem não mexe no campo não vê mudança. O campo só aparece e só pode ser escolhido com a opção global "Entregar tarefas ao Claude Code" ligada (desligada por padrão, só desktop). Com a opção desligada, ou em workspace test: true, a etapa não alcança nenhuma sessão: a execução recusa com mensagem clara, sem cair silenciosamente no agente normal. Celular pareado e persona não podem ligar a opção nem escolher o executor. (2) Resul… <!-- answer:22 -->
 - Resposta: Volta e pede as correções <!-- answer:132 -->
 
 ## Restrições
 
-- Pedido de funcionalidade. Relacionadas #262, #280 (dependência), #282.
-- Toda escrita externa passa por Actions; repositório público; testes só com sessões simuladas, nada de ~/.claude.
-- Portões: tsc, vitest, theme-audit, i18n:lint, public-audit.
-
 ## Tentado e descartado
-
-- ACP: dependência nova e segunda via de permissões.
-- Bash nativo na sessão: não dá para impor o limite de escrita.
-- Canal `runs:claudeTranscript`: não criado.
 
 ## Perguntas abertas
 
-- Comportamento real do SDK (canUseTool, deny respeitado, structured_output) não observado.
-- Interface não exercitada (sem app subido nem teste de componente).
-
 ## Onde o trabalho está
-
-- QA rodada 1 (com shell): tsc OK; theme-audit, i18n:lint, public-audit OK; vitest FALHA (cinco testes tocados: 7 falhas; suíte completa: 12 falhas em 7 arquivos).
-- Bloqueante: src/shared/runs/schema.ts não tem `executor` na etapa; parseRun recusa a execução ("flow.stages[n].executor: is not a known field"), então nenhuma etapa claude-code inicia (critérios 1, 2, 5, 6, 8 sem demonstração de ponta a ponta).
-- Outros: test/config-claude-code-persona.test.ts:44 usa devCycle.stages[0] inexistente; runner-config.test.ts e team-runner-edit.test.ts não esperam claudeCodeTasks; docs/configuration.md sem "versão do esquema 35"; ui-team.en.json com chaves fora de ordem (ui-i18n.test.ts); runs-policy.test.ts vê module.ts perguntando sobre escrita externa.
-- Passou: testes de módulo claude-code-task e claude-code-executor-guard, config-migrations.
-- Próximo: developer corrige e roda a suíte completa; QA repete; integração renumera migração v34→v35 com a #280.
 - Passagem support → product-owner: Planejar: escolher ACP vs. Agent SDK (SDK já embarcado), como impor o limite de escrita ao worktree, o campo "Executor" no esquema do fluxo (qualquer etapa) e o encaixe com os canais de sessões da #280 (recusa quando desligado, persona/celular negados). <!-- handoff:35 -->
 - Passagem product-owner → pessoa: Planejar: escolher ACP vs. Agent SDK (SDK já embarcado em src/main/claudeSdk.ts), como impor o limite de escrita ao worktree, o campo "Executor" em FlowStage (src/shared/runs/types.ts) e o encaixe com a #280, cujo módulo de sessões não foi achado nesta worktree (conferir se a base já a inclui). <!-- handoff:45 -->
 - Passagem tl-plataforma → pessoa: Implementar 2_PLAN.md: (1) esquema/migração (StageDef.executor, runner.claudeCodeTasks, passo v34→v35, hash do fluxo estável); (2) fronteira em configScope/persona; (3) src/main/runner/claudeCodeTask.ts com Agent SDK; (4) guarda e ramo em executor.ts; (5) UI e i18n; (6) testes com sessão simulada. Antes de codar: confirmar o formato de readOutput, o destino da transcrição e o ponto de recusa da persona. <!-- handoff:59 -->
@@ -48,3 +22,4 @@
 - Passagem revisor-plataforma → developer: Rodada 3: o módulo da sessão, a guarda, a recusa da persona e os testes unitários foram escritos e, lidos, atendem os critérios 1, 3, 4 e 8 em nível de módulo. Seguem sem tratar os pedidos anteriores de interface, i18n da interface, documentação e do teste de ponta a ponta do executor. Nada foi executado: tsc, vitest e as auditorias continuam não verificados. Veredito: mudanças. [bloqueia] src/main/runner/executor.ts:1236: O ramo novo de `runStage` para o executor Claude Code (uso de `d.claudeCode.run`, gravação da transcrição, mensagem do fórum, repair rounds pulados por `own`) não tem teste … <!-- handoff:148 -->
 - Passagem developer → revisor-plataforma: Developer/QA: rodar `npx tsc --noEmit` e `npx vitest run test/runner-claude-code-stage.test.ts test/config-claude-code-persona.test.ts test/claude-code-task.test.ts test/claude-code-executor-guard.test.ts test/config-migrations.test.ts`, corrigir o que falhar (as suposições do teste de estágio estão listadas em 3_IMPLEMENTATION.md), depois rodar os cinco portões do AGENTS.md. Revisor: conferir o diff contra os critérios 1 a 10; o link da transcrição na timeline ficou de fora por decisão. <!-- handoff:157 -->
 - Passagem revisor-plataforma → qa-plataforma-2: QA/Integração: rodar `npx tsc --noEmit`, `npx vitest run test/runner-claude-code-stage.test.ts test/config-claude-code-persona.test.ts test/claude-code-task.test.ts test/claude-code-executor-guard.test.ts test/config-migrations.test.ts` e os cinco portões; confirmar as suposições dos testes (id `implement`, dataDir, rejeição da persona). Na integração, renumerar o passo de migração v34→v35 com a #280. <!-- handoff:164 -->
+- Passagem qa-plataforma-2 → developer: QA rodou os portões: tsc, theme-audit, i18n:lint e public-audit passaram; vitest falhou (12 testes em 7 arquivos na suíte completa). Causa principal e bloqueante: o esquema do arquivo da execução (src/shared/runs/schema.ts) não conhece FlowStage.executor, então toda execução com etapa claude-code é rejeitada ao criar. Os critérios 1, 2, 5, 6 e 8 não puderam ser demonstrados. Outras falhas: teste da persona com suposição errada, e testes/catálogos/docs que não acompanharam o campo novo. O trabalho volta. Cenário que falhou: 1/2/8 Resultado, transcrição e falha de ponta a ponta. A criação da exe… <!-- handoff:189 -->

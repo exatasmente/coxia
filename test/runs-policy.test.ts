@@ -85,7 +85,9 @@ describe('the runner writes to a code host through one door', () => {
 
   it('only the publisher plans a write, and only the door asks the workspace whether external writes are allowed', () => {
     expect(files.filter((f) => /\.planWrite\(|\bplanWrite\b/.test(source(f)))).toEqual([PUBLISHER]);
-    expect(files.filter((f) => /externalRefusal|assertExternalWrite|isTestWorkspace/.test(source(f)))).toEqual([DOOR]);
+    expect(files.filter((f) => /externalRefusal|assertExternalWrite/.test(source(f)))).toEqual([DOOR]);
+    // The module also reads `isTestWorkspace`, only to hand the executor's Claude Code guard (#281) the answer: nothing is written to a host through it.
+    expect(files.filter((f) => /isTestWorkspace/.test(source(f)))).toEqual(['module.ts']);
   });
 
   it('has no git push anywhere: the door asks for it and Actions runs it, the publisher only chooses that it does', () => {

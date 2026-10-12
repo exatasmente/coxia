@@ -211,6 +211,7 @@ const flowStage = object(
     autonomous: { type: 'boolean', description: 'Whether that agent was autonomous when the copy was made (the live value is read from the team).' },
     cycleAutonomous: { type: 'boolean', description: 'Whether the run\'s autonomy block had its general switch on when the flow was resolved (the stage starts by itself regardless of the agent).' },
     display: { type: 'boolean', description: 'Whether the stage asked for the virtual display a QA stage gets.' },
+    executor: { type: 'string', enum: ['claude-code'], description: 'Present only when the stage hands its task to a Claude Code session; absent: the Coxia agent works it.' },
     artifacts: fileNames,
     reads: { ...fileNames, type: ['array', 'null'] },
     next: { type: ['string', 'null'], description: 'The stage that follows; null: the run ends after it.', pattern: ID },

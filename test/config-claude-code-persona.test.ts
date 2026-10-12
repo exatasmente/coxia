@@ -25,6 +25,8 @@ const act = (): Act => ({ open: true, id: newActId(), door: 'window', said: '', 
 const asPersona = async (next: WorkspaceConfig) => runAct(act(), () => invokePersona('config:save', [next]));
 
 const withOption = (on: boolean): WorkspaceConfig => ({ ...structuredClone(getConfig()), runner: { ...getConfig().runner, claudeCodeTasks: on } });
+// The neutral configuration has no stage list, so the tests start from one work stage.
+const withStage = (): WorkspaceConfig => ({ ...neutralConfig(), devCycle: { ...neutralConfig().devCycle, stages: [{ id: 'build', label: 'Build', match: [], kind: 'development', rank: 1, type: 'work' }] } });
 const withExecutor = (): WorkspaceConfig => {
   const c = structuredClone(getConfig());
   c.devCycle.stages[0] = { ...c.devCycle.stages[0], executor: 'claude-code' };
@@ -39,13 +41,13 @@ describe('config:save and the persona', () => {
   });
 
   it('refuses the persona choosing the Claude Code executor for a stage', async () => {
-    saveConfig(neutralConfig());
+    saveConfig(withStage());
     await expect(asPersona(withExecutor())).rejects.toThrow(/executor/);
     expect(getConfig().devCycle.stages[0].executor).toBeUndefined();
   });
 
   it('lets the person in the window turn the option on and choose the executor, and the persona lower them again', async () => {
-    saveConfig(neutralConfig());
+    saveConfig(withStage());
     await asWindow('config:save', withOption(true));
     expect(getConfig().runner.claudeCodeTasks).toBe(true);
     await asWindow('config:save', { ...withExecutor(), runner: { ...getConfig().runner, claudeCodeTasks: true } });

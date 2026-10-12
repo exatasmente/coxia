@@ -6,13 +6,13 @@
 
 ## Português
 
-Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` (versão do esquema 34). Provedores e motores de agente: [`llm-providers.md`](llm-providers.md). Provedores de VCS (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
+Esta é a fundação de configuração do Coxia (fase 0). Tudo que antes estava fixo no código (a empresa, a máquina, o fluxo de trabalho) vive agora em um documento versionado por workspace: o `WorkspaceConfig` (versão do esquema 35). Provedores e motores de agente: [`llm-providers.md`](llm-providers.md). Provedores de VCS (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Onde as coisas moram
 
 | O quê | Onde | Escopo |
 |---|---|---|
-| Configuração | `<dados>/workspaces/<id>/config.json` (`schemaVersion: 34`) | por workspace |
+| Configuração | `<dados>/workspaces/<id>/config.json` (`schemaVersion: 35`) | por workspace |
 | Segredos (referências resolvidas) | `<dados>/secrets.json` (modo 0600), por `secretRef` | máquina; **nunca exportado** |
 | Acesso pelo navegador | `<dados>/web.json` | máquina (todos os workspaces) |
 | Marcador da migração | `<dados>/config-migration.json` | máquina |
@@ -165,13 +165,13 @@ Canais (módulo `configModule.ts`; os que escrevem ou tocam arquivo são **só d
 
 ## English
 
-This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` (schema version 34). Providers and agent engines: [`llm-providers.md`](llm-providers.md). VCS providers (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
+This is the configuration foundation of Coxia (phase 0). What used to be hardcoded (the company, the machine, the workflow) now lives in one versioned document per workspace: `WorkspaceConfig` (schema version 35). Providers and agent engines: [`llm-providers.md`](llm-providers.md). VCS providers (GitLab, GitHub, Bitbucket): [`vcs-providers.md`](vcs-providers.md).
 
 ### Where things live
 
 | What | Where | Scope |
 |---|---|---|
-| Configuration | `<data>/workspaces/<id>/config.json` (`schemaVersion: 34`) | per workspace |
+| Configuration | `<data>/workspaces/<id>/config.json` (`schemaVersion: 35`) | per workspace |
 | Secrets (resolved references) | `<data>/secrets.json` (mode 0600), by `secretRef` | machine; **never exported** |
 | Browser access | `<data>/web.json` | machine (every workspace) |
 | Migration marker | `<data>/config-migration.json` | machine |
