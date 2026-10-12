@@ -255,6 +255,11 @@ const REMOVED: Record<string, string> = {
   // The home's navigation is a sidebar (a sheet on a phone) whose rows carry their counts apart from their words.
   'ui.nav.radarCount': 'the radar row of the navigation shows its count as a badge beside the word, not in the label',
   'ui.nav.healthCount': 'the health row of the navigation shows its count as a badge beside the word, not in the label',
+  // The phone's bottom bar went away: every screen of the navigation carries the menu button of the home, whose rows have their own words.
+  'ui.nav.actions': 'the bottom bar went away; the Actions row of the navigation is named by ui.today.tiles.actions',
+  'ui.nav.actionsPending': 'the bottom bar went away; the Actions row carries its count as a badge with its own accessible label',
+  'ui.nav.mainLabel': 'the bottom bar went away; the navigation of the home is labelled by ui.today.navLabel',
+  'ui.nav.more': 'the bottom bar and its More sheet went away; every screen is a row of the navigation',
   // The panel of running work is a tree: no activity is folded into one generic "Agent" card, each is an entry named for its agent.
   'activity.generic': 'the dock no longer has a generic card for the runs no job owns: each one is an entry of its own, named for its agent',
 };

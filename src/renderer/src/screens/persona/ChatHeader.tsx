@@ -35,7 +35,7 @@ interface MenuProps {
 }
 
 /** The phone's menu button and the sheet it opens. The counts are read here, so the computer, whose sidebar reads them, does not read them twice. */
-function PhoneMenu({ go, ceremony, actions, current, persona }: MenuProps) {
+export function PhoneMenu({ go, ceremony, actions, current, persona }: MenuProps) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const counted = anyCount(useHomeCounts(ceremony, actions));

@@ -34,10 +34,10 @@ With voice on the app says **call** (as it always did). With voice off:
 | Controles da call / da conversa | Call controls / Chat controls |
 | Call em andamento / Conversa em andamento | Call in progress / Chat in progress |
 | Depois da call / Depois da conversa | After the call / After the chat |
-| bottom nav "Call" / "Conversa" (icon: microphone / bubble) | Call / Chat |
+| navigation row "Call" / "Conversa" | Call / Chat |
 | notification "Os agentes estão prontos para a call" / "...para a conversa" | ready for the call / ready for the chat |
 
-English picks **chat** (short enough for the bottom nav and the buttons), pt-BR **conversa**; never "conversation".
+English picks **chat** (short enough for the navigation and the buttons), pt-BR **conversa**; never "conversation".
 
 It is done with keys and a voice-aware translator, never a string replace: `tv('call.enter')` (`src/shared/i18n`) reads `call.enter` while voice is on and `call.enter.novoice` while it is off, and falls back to the plain key when a string has no variant. `t()` does not follow the voice state. The state is set from the config in the main process (`workspaceConfig`) and in the renderer (`applyVoiceMode`, from `settings:get` and the `settings` event; the last value is cached in localStorage so the first paint is right). In a component call `useTv()` or `useVoiceEnabled()` to re-render on a change (the whole tree already re-renders from `App`).
 

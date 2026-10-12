@@ -25,7 +25,7 @@ import { personaDoor } from '../persona/door';
 import { type AnswerSession, createSession } from '../persona/session';
 import { proposeMention } from './propose';
 import { createSharedMemory } from '../runner/activities';
-import { personaLive, personaScreens, personaStop, personaThreadNow, setAnswerPending } from '../persona/runtime';
+import { personaLive, personaScreens, personaSessions, personaStop, personaThreadNow, setAnswerPending } from '../persona/runtime';
 import { handoffService, screenAsks, screenSessions } from '../runner/module';
 
 // Mentions answered outside a run's thread: a squad channel, the channel the squads talk in, a conversation a person opened, and the direct conversation of an agent
@@ -89,7 +89,7 @@ export const mentionsModule: Module = () => {
     // What the message names, for the ranking of the memory's list.
     named: (place, message) => ({ refs: refsInMessage(message), agents: callsOf(message, ownerOfThread(forum.summary(place.thread))) }),
     // The persona's chat: the live text of its answers, and what its button tool checks a target against.
-    persona: { live: personaLive(), screens: personaScreens(), door: personaDoor },
+    persona: { live: personaLive(), screens: personaScreens(), door: personaDoor, sessions: personaSessions() },
     // An answer the persona's Stop ended does not write the line of a stop of one answer: the stop says it.
     latched: (thread) => held(thread),
     // The last turn of an answer that had trial and error and kept nothing, and the card it may leave (#187).

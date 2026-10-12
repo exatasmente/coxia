@@ -8,7 +8,7 @@ function subscribe(cb: () => void): () => void {
   return () => mq.removeEventListener('change', cb);
 }
 
-/** Phone layout of the dashboard: bottom bar and a single column. */
+/** Phone layout: the navigation behind the header's menu button and a single column. */
 export function useIsPhone(): boolean {
   return useSyncExternalStore(subscribe, () => window.matchMedia(PHONE).matches, () => false);
 }

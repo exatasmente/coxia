@@ -1058,6 +1058,7 @@
   "prompt.sdd.runner.section.clipped": "(cortado aqui: o arquivo é maior)",
   "prompt.sdd.runner.section.memoryOver": "A memória do ciclo acima passou do teto de {max} caracteres. Ainda assim ela foi lida inteira; reduza-a para dentro do teto no que você devolver, mantendo o que ainda importa para uma etapa posterior.",
   "prompt.sdd.runner.section.thread": "O que já se disse na conversa da atividade, do mais antigo ao mais novo:\n<data>\n{text}\n</data>",
+  "prompt.sdd.runner.section.threadSince": "O que se disse na conversa desde a sua última resposta, do mais antigo ao mais novo (o que veio antes já está nesta sessão):\n<data>\n{text}\n</data>",
   "prompt.sdd.runner.section.attachments": "A resposta que você recebe carrega arquivos que a pessoa anexou. Abra cada um com a ferramenta ConversationAttachment (a referência é o id abaixo); nunca um caminho neste computador, e somente leitura:\n<data>\n{text}\n</data>",
   "prompt.sdd.runner.section.handoff": "Recado para você, de {from}:\n<data>\n{text}\n</data>",
   "prompt.sdd.runner.section.resume": "Esta tentativa retoma a etapa: {why}\n{request}\nO que as tentativas anteriores já deixaram feito. Documentos desta etapa na pasta do ciclo: {done}. Comprovações guardadas: {evidence}.\n{previous}\n{rules}",

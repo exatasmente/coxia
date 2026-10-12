@@ -10,7 +10,7 @@ import { ATAS } from '../env';
 import { viaOf } from '../rpc';
 import { ceremonyLabel } from '../cyclePrompts';
 import { listActions } from '../actions';
-import { workspaceProjects } from '../agents';
+import { engineTargetOf, workspaceProjects } from '../agents';
 import { loadCards } from '../cards';
 import { cycleView } from '../cycle-core';
 import { redact } from '../errorlog-core';
@@ -22,6 +22,7 @@ import { type PersonaLive, createPersonaLive } from './live';
 import { inflightLabels } from './inflight';
 import { LATCH_FILE, createLatch } from './latch';
 import type { ScreenFacts } from './openScreen';
+import { type PersonaSessions, SESSIONS_FILE, createSessionKeep } from './sessionKeep';
 import { createPersonaStop, type PersonaStop } from './stop';
 
 // What the persona's chat shares between the module that serves it and the mentions module that answers it: the live text of the answers being written, and the facts
@@ -60,6 +61,14 @@ export function ensurePersonaThread(): void {
   const config = getConfig();
   const persona = personaOf(config.agents.team);
   if (persona) ensureAgentThread(forumStore(), persona, config.language);
+}
+
+let sessions: PersonaSessions | null = null;
+
+/** The engine session each conversation of the persona continues (#279), from its file in the workspace's folder, read the first time an answer asks. */
+export function personaSessions(): PersonaSessions {
+  sessions ??= { keep: createSessionKeep(join(ATAS, SESSIONS_FILE)), target: engineTargetOf };
+  return sessions;
 }
 
 let latchEmitter: ((state: PersonaState) => void) | null = null;

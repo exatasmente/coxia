@@ -1058,6 +1058,7 @@
   "prompt.sdd.runner.section.clipped": "(cut here: the file is longer)",
   "prompt.sdd.runner.section.memoryOver": "The cycle memory above is over its cap of {max} characters. It was read whole all the same; cut it back inside the cap in what you return, keeping what still matters to a later stage.",
   "prompt.sdd.runner.section.thread": "What was said in the activity's thread so far, oldest first:\n<data>\n{text}\n</data>",
+  "prompt.sdd.runner.section.threadSince": "What was said in the conversation since your last answer, oldest first (what came before is already in this session):\n<data>\n{text}\n</data>",
   "prompt.sdd.runner.section.attachments": "The answer you are given carries files the person attached. Open each one with the ConversationAttachment tool (the ref is the id below); never a path on this computer, and read only:\n<data>\n{text}\n</data>",
   "prompt.sdd.runner.section.handoff": "Handoff for you, from {from}:\n<data>\n{text}\n</data>",
   "prompt.sdd.runner.section.resume": "This attempt picks the stage up again: {why}\n{request}\nAlready done by the earlier attempts. Documents of this stage in the cycle folder: {done}. Evidence kept: {evidence}.\n{previous}\n{rules}",

@@ -69,6 +69,8 @@
 .home-side-slot { display: flex; flex-direction: column; gap: 6px; padding: 0 6px; }
 .home-side-slot:empty { display: none; }
 .home-main { min-width: 0; min-height: 0; overflow-y: auto; }
+/* the phone's bar over a screen whose own header has no menu: the same button as the chat's header, kept in reach while the page scrolls */
+.home-phone-bar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line-3); background: var(--ground); }
 
 /* the rows of the navigation; a count is a small badge beside the words, absent at zero */
 .home-nav { display: flex; flex-direction: column; gap: 10px; }
@@ -167,5 +169,5 @@
 .persona-indicator { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 6px 14px; border-bottom: 1px solid var(--night-line); background: var(--night); color: var(--on-night); font-size: 13px; }
 .persona-indicator-stopped { border-bottom-color: var(--warn-solid); }
 .persona-indicator-btn { min-height: 36px; }
-/* On a phone it is a pill lifted over the bottom bar; on the computer it is a bar in the flow above the screen, so it lies over nothing. */
-@media (max-width: 600px) { .persona-indicator { position: fixed; left: 12px; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 40; display: inline-flex; max-width: calc(100vw - 96px); padding: 6px 8px 6px 14px; border: 1px solid var(--night-line); border-radius: 999px; box-shadow: 0 10px 26px -10px color-mix(in srgb, var(--night) 75%, transparent); } .persona-indicator-stopped { border-color: var(--warn-solid); } }
+/* On a phone it is a pill at the foot of the screen, beside the jobs button; on the computer it is a bar in the flow above the screen, so it lies over nothing. */
+@media (max-width: 600px) { .persona-indicator { position: fixed; left: 12px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 40; display: inline-flex; max-width: calc(100vw - 96px); padding: 6px 8px 6px 14px; border: 1px solid var(--night-line); border-radius: 999px; box-shadow: 0 10px 26px -10px color-mix(in srgb, var(--night) 75%, transparent); } .persona-indicator-stopped { border-color: var(--warn-solid); } }

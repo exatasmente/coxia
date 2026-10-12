@@ -60,6 +60,8 @@ export interface MentionInput {
   index?: string;
   /** The session writes (a mention may keep and remove notes of its own); a call of a ceremony reads only. */
   indexWrite?: boolean;
+  /** The call continues the conversation's session, which already holds what was said up to its last answer: `thread` is only what came after it, and is told so. */
+  since?: boolean;
 }
 
 /** An issue the answer proposes, read leniently: a title and a body are needed, labels are optional. */
@@ -218,7 +220,8 @@ export function mentionCall(i: MentionInput): AgentCall {
     i.procedures ? cp('runner.section.procedures', { text: fence(i.procedures) }) : '',
     // The files of the message the agent was called in: the warning names them by the ref the tool takes, and never a path.
     i.attachments?.refs.length ? cp('runner.mention.attachment.list', { text: fence(attachmentsSection(i.attachments.refs)) }) : '',
-    threadText(i.thread.slice(-40)) ? cp('runner.section.thread', { text: fence(threadText(i.thread.slice(-40))) }) : '',
+    // A continued session already holds what came before its last answer: the section says the thread it carries is only what came after.
+    threadText(i.thread.slice(-40)) ? (i.since ? cp('runner.section.threadSince', { text: fence(threadText(i.thread.slice(-40))) }) : cp('runner.section.thread', { text: fence(threadText(i.thread.slice(-40))) })) : '',
   ].filter(Boolean);
   return {
     agent: i.agent,

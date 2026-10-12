@@ -507,7 +507,7 @@ html.has-now-playing body { padding-top: 60px; }
 html.has-now-playing .hero { top: calc(env(safe-area-inset-top, 0px) + 68px); }
 @media (max-width: 600px) { .now-playing-back .spectrum { max-width: 64px; } }
 
-/* dashboard (Hoje): top bar, Agora card, tiles, needs, activities, ceremonies, tempo, bottom bar and sheet */
+/* dashboard (Hoje): top bar, Agora card, tiles, needs, activities, ceremonies, tempo and sheet */
 .dash { max-width: 1320px; gap: 20px; }
 .dash-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .dash-hello { display: flex; align-items: center; gap: 14px; min-width: 0; }
@@ -605,20 +605,6 @@ button.need-main { cursor: pointer; }
 .tempo-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tempo-min { font-weight: 600; white-space: nowrap; }
 .tempo-by { grid-column: 3 / -1; }
-
-.bnav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 45; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); background: var(--surface); border-top: 1px solid var(--line); box-shadow: 0 -6px 20px -14px color-mix(in srgb, var(--night) 50%, transparent); }
-.bnav-item { min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 2px; background: transparent; border: 0; color: var(--muted); font: inherit; cursor: pointer; }
-.bnav-item:disabled { opacity: 0.45; cursor: not-allowed; }
-.bnav-item[aria-current="page"] { color: var(--teal); }
-.bnav-item[aria-current="page"] .bnav-label { font-weight: 700; }
-.bnav-item:focus-visible { outline-offset: -3px; }
-.bnav-icon { position: relative; display: inline-flex; }
-.bnav-label { font-size: 12px; font-weight: 500; }
-.bnav-badge { position: absolute; top: -7px; left: 12px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--red-solid); color: var(--white); font-size: 12px; font-weight: 700; line-height: 18px; text-align: center; }
-.bnav-live { position: absolute; top: -2px; right: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--red-solid); animation: pulse 1.2s ease-in-out infinite; }
-body:has(.bnav) { --bottom-nav-h: calc(56px + env(safe-area-inset-bottom)); }
-body:has(.bnav) .page { padding-bottom: calc(var(--bottom-nav-h) + 20px); }
-body:has(.bnav) .outbox { bottom: var(--bottom-nav-h); padding-bottom: 8px; }
 
 .sheet-backdrop { position: fixed; inset: 0; z-index: 60; background: color-mix(in srgb, var(--night) 60%, transparent); display: flex; align-items: flex-end; justify-content: center; }
 .sheet { width: 100%; max-width: 560px; max-height: 85vh; max-height: 85dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 10px 16px calc(16px + env(safe-area-inset-bottom)); background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 20px 20px 0 0; }

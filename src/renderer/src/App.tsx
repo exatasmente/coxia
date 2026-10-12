@@ -35,9 +35,9 @@ import { Saude } from './screens/Saude';
 import { SchedulesScreen } from './screens/Schedules';
 import { SchedulerAsk } from './SchedulerAsk';
 import { SettingsScreen } from './screens/Settings';
-import { BottomNav } from './screens/BottomNav';
 import { Overview } from './screens/Overview';
 import { ChatScreen } from './screens/persona/ChatScreen';
+import { HomeShell } from './screens/persona/HomeShell';
 import { PersonaWizard } from './screens/persona/PersonaWizard';
 import { VoiceModeScreen, useVoiceShortcut } from './screens/persona/VoiceModeScreen';
 import { useConfigView } from './screens/team/teamApi';
@@ -47,7 +47,7 @@ import { UpdatePrompt } from './UpdatePrompt';
 import { UpdateToast } from './UpdateToast';
 import { useReportUpdateBusy } from './updateApi';
 import { useJobsSnapshot } from './useJobs';
-import { type DeepBack, HOME, OVERVIEW, type OverviewSection, homeView, personaIn, snoozeWizard, wizardSnoozed } from './home';
+import { type DeepBack, HOME, OVERVIEW, type OverviewSection, framedScreen, homeView, personaIn, snoozeWizard, wizardSnoozed } from './home';
 import { useAnyLive } from './liveApi';
 import { targetToScreen } from './pushTarget';
 import { useWorkspaces } from './workspaceApi';
@@ -311,9 +311,17 @@ export function App() {
   return (
     <>
       {away && origin && player.speaking && <NowPlaying who={player.speaking} origin={origin} go={go} stop={player.stop} />}
-      <PersonaIndicator screen={screen.name} />
-      {view}
-      <BottomNav screen={screen.name} go={go} pendingActions={pendingActions} callLive={callLive} />
+      {framedScreen(screen.name) ? (
+        <HomeShell go={go} ceremony={ceremony} actions={actions} current={screen.name} persona={!!persona} bar>
+          <PersonaIndicator screen={screen.name} />
+          {view}
+        </HomeShell>
+      ) : (
+        <>
+          <PersonaIndicator screen={screen.name} />
+          {view}
+        </>
+      )}
       <JobsDock screen={screen} go={go} />
       <UpdateToast />
       <UpdatePrompt hidden={screen.name === 'settings'} />

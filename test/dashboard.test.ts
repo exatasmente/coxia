@@ -5,7 +5,6 @@ import type { WatcherAlert } from '../src/shared/watchers';
 import {
   agoraPlan,
   conflictMrs,
-  bottomNavActive,
   mrLabel,
   needsYou,
   pendingQuestions,
@@ -159,20 +158,6 @@ describe('small helpers', () => {
     ]);
     expect(segs.map((s) => s.pct)).toEqual([25, 75]);
     expect(tempoSegments([])).toEqual([]);
-  });
-
-  it('shows the bottom bar only where there is no floating composer', () => {
-    // the Overview marks the first item, as Today did; the name `today` is no longer a screen
-    expect(bottomNavActive('overview')).toBe('chat');
-    expect(bottomNavActive('today')).toBeNull();
-    // the chat has a box at the bottom, so it has no bar
-    expect(bottomNavActive('chat')).toBeNull();
-    expect(bottomNavActive('actions')).toBe('actions');
-    expect(bottomNavActive('history')).toBe('history');
-    expect(bottomNavActive('radar')).toBe('more');
-    expect(bottomNavActive('call')).toBeNull();
-    expect(bottomNavActive('deep')).toBeNull();
-    expect(bottomNavActive('gate')).toBeNull();
   });
 });
 
