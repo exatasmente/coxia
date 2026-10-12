@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.11.0-beta.6] - 2026-10-12
+
 ### Added
 
 - **Talk to the persona by voice, in the chat and in a voice mode.** Beside the chat's box there are three voice buttons: talk (tap, speak, tap again or go quiet to send), hands-free (it listens again after each answer) and voice mode, a full screen for a spoken conversation that also opens with Ctrl/Cmd+Shift+M. Voice mode shows whether it is listening, thinking or speaking, has captions that turn on and off, a mute and an end button, and keeps going hands-free until it is ended. What is said goes into the same conversation as the chat, marked as spoken, and the persona is told to answer short and without Markdown. The answer is read aloud by the device that spoke, starting with its first complete sentence while the rest is still being written; talking over it interrupts it. A spoken "yes" approves nothing that changes anything outside the computer: those approvals stay on screen. With the voice off or not installed, the buttons say so and lead to the voice settings; nothing records or downloads. On a paired phone, a page that cannot record says why (https, a refused permission), and voice mode pauses when the screen locks or the tab changes, until a tap resumes it. The voice settings now say that, with Edge, the persona's answers read aloud go to Microsoft too.
@@ -479,7 +481,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.5...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.6...HEAD
+[0.11.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.5...v0.11.0-beta.6
 [0.11.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.4...v0.11.0-beta.5
 [0.11.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.3...v0.11.0-beta.4
 [0.11.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.2...v0.11.0-beta.3
