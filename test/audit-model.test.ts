@@ -24,6 +24,12 @@ describe('who an entry belongs to', () => {
     expect(filterEntries(rows, { issue: '', who: 'agent' })).toEqual([rows[1]]);
   });
 
+  it('reads the person\'s decision on a held step or change of policy as the person\'s', () => {
+    expect(whoOf(entry({ kind: 'decision', by: 'person' }))).toBe('person');
+    expect(whoOf(entry({ kind: 'policy-change', by: 'person' }))).toBe('person');
+    expect(whoOf(entry({ kind: 'decision', by: 'persona' }))).toBe('persona');
+  });
+
   it('filters by who and by issue together, and lets everything through when asked for all', () => {
     const rows = [entry({ issue: 101 }), entry({ issue: 101, actor: 'persona' }), entry({ issue: 202, actor: 'persona' })];
     expect(filterEntries(rows, { issue: '', who: 'all' })).toHaveLength(3);

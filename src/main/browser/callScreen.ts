@@ -1,10 +1,11 @@
-import type { AgentDef, RunnerSandbox } from '../../shared/config/types';
+import type { AgentDef, RunnerSandbox, WorkspaceConfig } from '../../shared/config/types';
+import { HELD_POLICY, type ResolvedScreenPolicy, resolveScreenPolicy } from '../../shared/config/screenPolicy';
 import type { HandoffPaths } from '../../shared/handoff';
 import { text as cycleWord } from '../cyclePrompts';
 import type { BeginInput, CallHandoff, HandoffService } from '../screen/handoff';
 import { type ScreenPrompt, refusalText, screenPromptOf } from '../runner/screenPrompt';
 import type { ScreenGrants } from './guard';
-import { rc } from '../workspaceConfig';
+import { getConfig, rc } from '../workspaceConfig';
 import { type ScreenToolset, confirmPortFor } from './engineTool';
 import type { AskContext, ScreenAsks } from './asks';
 import type { ScreenPlace } from './audit';
@@ -21,6 +22,8 @@ export interface ScreenPorts {
   asks: ScreenAsks;
   /** The hand-off of the screen to the person (#178); absent, or null before the app has it: no call is offered the tool. */
   handoff?: HandoffService | null;
+  /** The config the screen step approvals of a call are read from; the workspace's own, replaced in tests. */
+  config?: () => Pick<WorkspaceConfig, 'squads' | 'runner' | 'agents'>;
 }
 
 export interface CallScreen {
@@ -30,6 +33,11 @@ export interface CallScreen {
   lease: ScreenLease | null;
   /** Why the agent has no browser, in words, when it has the switch and the screen could not be had; null otherwise. */
   refusal: string | null;
+  /**
+   * The screen step approvals of the call (#269), read once when it opened: every browser step and confirmation of the call follows them, and its prompt says them, so a change
+   * made in the middle of a stage waits for the next one.
+   */
+  policy?: ResolvedScreenPolicy;
   /** The call is over. Idempotent, and safe to call when there is no lease. */
   release(): void;
 }
@@ -47,6 +55,16 @@ export function modelSeesImages(agent: Pick<AgentDef, 'model'>): boolean {
 export interface CallScreenRequest extends AcquireRequest {
   /** The call's shell session carries a display (a QA stage's, a conversation's): the confirmation tool is offered even with no browser. */
   hasDisplay?: boolean;
+}
+
+/** The screen step approvals of an agent as the workspace has them now; everything held when the config cannot be read. */
+export function policyOf(ports: Pick<ScreenPorts, 'config'>, agentId: string): ResolvedScreenPolicy {
+  try {
+    const c = (ports.config ?? getConfig)();
+    return resolveScreenPolicy(c, c.agents.team.find((a) => a.id === agentId) ?? null);
+  } catch {
+    return HELD_POLICY;
+  }
 }
 
 /**
@@ -73,11 +91,15 @@ export async function openCallScreen(ports: ScreenPorts | null, req: CallScreenR
       ...(req.issue ? { issue: req.issue } : {}),
       ...(req.pause ? { pause: req.pause } : {}),
     };
+  const policy = policyOf(ports, req.agent.id);
+  // The screen of a run outlives its stages, so the policy goes with each call of this one, never with the screen.
+  const leased = lease;
+  const browser = leased ? { tools: () => leased.browser.tools(), call: (tool: string, args: unknown, o?: Parameters<ScreenLease['browser']['call']>[2]) => leased.browser.call(tool, args, { ...o, policy }) } : null;
   const toolset: ScreenToolset = {
-    ...(lease ? { browser: lease.browser, signal: lease.closed } : {}),
-    confirm: confirmPortFor(ports.asks, context),
+    ...(lease && browser ? { browser, signal: lease.closed } : {}),
+    confirm: confirmPortFor(ports.asks, context, policy),
   };
-  return { toolset, lease, refusal, release: () => lease?.release() };
+  return { toolset, lease, refusal, policy, release: () => lease?.release() };
 }
 
 /**
@@ -93,6 +115,7 @@ export function promptFor(screen: CallScreen | null, agent: Pick<AgentDef, 'scre
     display,
     confirm: !!screen?.toolset?.confirm,
     handoff: !!screen?.toolset?.handoff,
+    ...(screen?.policy ? { policy: screen.policy } : {}),
   });
 }
 

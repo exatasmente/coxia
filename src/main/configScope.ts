@@ -1,3 +1,4 @@
+import { screenPolicyChanges } from '../shared/config/screenPolicy';
 import { shellRaised, trackerRaised } from '../shared/config/team';
 import { ACTIVITIES, type AgentDef, type ModelRef, type WorkspaceConfig } from '../shared/config/types';
 
@@ -134,7 +135,18 @@ export function poolRaised(before: WorkspaceConfig, after: WorkspaceConfig): str
 
 /** The changed paths a paired browser may not change (empty: the change is allowed). */
 export function refusedPaths(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
-  return [...changedPaths(before, after).filter((p) => !covered(p)), ...raisedPermissions(before, after), ...poolRaised(before, after), ...raisedAutonomy(before, after)];
+  return [...changedPaths(before, after).filter((p) => !covered(p)), ...raisedPermissions(before, after), ...poolRaised(before, after), ...raisedAutonomy(before, after), ...screenPolicyRaised(before, after)];
+}
+
+/**
+ * The screen step approvals (#269) of an agent or a squad: a paired browser may hold more, never let a kind run without asking. A word set to autonomous, and a hold taken
+ * away (the kind would follow a level that may release it), are refused by name. The workspace's (`runner.screenPolicy`) is not an editable path at all.
+ */
+export function screenPolicyRaised(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
+  const out = screenPolicyChanges(before, after)
+    .filter((c) => c.level !== 'workspace' && (c.after === 'autonomous' || (c.before === 'held' && c.after === 'inherit')))
+    .map((c) => (c.level === 'agent' ? `agents.team[${c.owner}].screenPolicy.${c.kind}` : `squads[${c.owner}].screenPolicy.${c.kind}`));
+  return [...new Set(out)];
 }
 
 const AUTONOMY_FIELDS = ['cycle', 'hostCommands', 'gates', 'push', 'pullRequest'] as const;

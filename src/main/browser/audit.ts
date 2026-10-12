@@ -1,6 +1,8 @@
 import type { AuditEntry, Through } from '../../shared/auditoria';
 import { recordWrite } from '../auditoria';
 import { redact } from '../errorlog-core';
+import { type ScreenPolicyChange, screenPolicyChanges } from '../../shared/config/screenPolicy';
+import type { WorkspaceConfig } from '../../shared/config/types';
 
 // What an agent's virtual screen writes to `auditoria.jsonl`: the screen opening and closing, a step the app held for the person, a confirmation the agent asked for, and the
 // intervals in which a person used the screen. Each entry is built from a fixed set of fields, so what the log never holds has no field to arrive in: no keystroke, no typed
@@ -161,6 +163,61 @@ export const screenConfirmEntry = (o: ScreenConfirmed): Omit<AuditEntry, 'at'> =
   result: o.answer === 'yes' || o.answer === 'site' ? 'approved' : 'not approved',
 });
 
+/** A step the screen step approvals of the call let run without asking (#269). `level` is where the policy's word came from; #268 reads the same names. */
+export interface ScreenAutonomous extends Who {
+  /** The kind of step: a reason the app holds a step, or `agent` for a confirmation the agent asked for. */
+  why: string;
+  step: string;
+  site: string;
+  agentWords?: string;
+  /** For a confirmation: send, save, delete, publish, pay or other. */
+  confirmKind?: string;
+  level: string;
+}
+
+export const screenAutonomousEntry = (o: ScreenAutonomous): Omit<AuditEntry, 'at'> => ({
+  ...base(o),
+  kind: 'screen-autonomous',
+  target: `screen:${o.key}`,
+  via: 'policy',
+  fields: {
+    agent: o.agent,
+    why: o.why.slice(0, 40),
+    step: words(o.step),
+    site: siteOf(o.site),
+    ...(o.agentWords ? { agentWords: words(o.agentWords) } : {}),
+    ...(o.confirmKind ? { confirmKind: o.confirmKind.slice(0, 20) } : {}),
+    policy: 'autonomous',
+    policyLevel: o.level.slice(0, 20),
+  },
+  ok: true,
+  code: null,
+  result: 'let through by the policy',
+});
+
+/** One kind whose screen step approval changed on one level (#269): the level, whose it is (an agent's or a squad's id, empty for the workspace), before and after. */
+export const screenPolicyEntry = (c: ScreenPolicyChange): Omit<AuditEntry, 'at'> => ({
+  issue: 0,
+  origin: { actionId: '', kind: 'config', key: 'screen-policy', summary: null },
+  by: null,
+  kind: 'screen-policy',
+  target: `screen-policy:${c.level}${c.owner ? `:${c.owner.slice(0, 80)}` : ''}`,
+  via: 'config',
+  fields: { level: c.level, owner: c.owner.slice(0, 80), stepKind: c.kind, before: c.before, after: c.after },
+  ok: true,
+  code: null,
+  result: 'changed',
+});
+
+/** Records every word of the screen step approvals a save changed, on every level. Never throws: a save is not undone by its record. */
+export function auditPolicyChanges(prev: WorkspaceConfig, next: WorkspaceConfig, sink: AuditSink = toLog): void {
+  try {
+    for (const c of screenPolicyChanges(prev, next)) sink(screenPolicyEntry(c));
+  } catch (e) {
+    console.error('[config] could not audit a change of the screen step approvals', e instanceof Error ? e.message : e);
+  }
+}
+
 export interface ScreenUsed extends Who {
   /** ISO times: the whole of what is kept about the person's use, never what they did. */
   from: string;
@@ -212,6 +269,7 @@ export const auditScreen = {
   closed: (o: ScreenClosed, sink: AuditSink = toLog): void => sink(screenCloseEntry(o)),
   held: (o: ScreenHeld, sink: AuditSink = toLog): void => sink(screenHoldEntry(o)),
   confirmed: (o: ScreenConfirmed, sink: AuditSink = toLog): void => sink(screenConfirmEntry(o)),
+  autonomous: (o: ScreenAutonomous, sink: AuditSink = toLog): void => sink(screenAutonomousEntry(o)),
   used: (o: ScreenUsed, sink: AuditSink = toLog): void => sink(screenUseEntry(o)),
   handedOver: (o: ScreenHandedOver, sink: AuditSink = toLog): void => sink(screenHandoffEntry(o)),
 };

@@ -3,7 +3,7 @@ import { offersViewImage } from '../sandbox/tool';
 import { existsSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { docsFlowOf, flowStagesOf, releaseFlowOf, squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
-import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
+import { auditPolicyOf, autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
 import { agentLabel, personaIdsOf, workingTeam } from '../../shared/config/team';
 import type { AgentDef, PoolMode, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
@@ -543,9 +543,13 @@ function hostApproval(d: ExecutorDeps, run: Run, stage: FlowStage, agent: AgentD
   let trusted = false;
   // The autonomy block of the run may let every command of a `shell: host` agent through; it is read when the stage opens its session, so a change applies from the next stage.
   const auto = choiceOn(autonomyOf(d.config(), flowKeyOf(run.squad)), 'hostCommands');
+  // Read with `auto`, so the line says the policy that actually let the commands through.
+  const policy = auditPolicyOf(d.config(), flowKeyOf(run.squad));
   // The command that ran under the autonomy is said as such, so the person keeps the mark that an agent had the machine's own shell without being asked.
   let spotted = false;
   const noteAuto = (command: string): void => {
+    // The thread says it once; the audit log has a line per command, each one let through with no "yes".
+    recordWrite({ kind: 'auto-step', issue: run.issue.iid, target: clipText(redact(command.replace(/\s+/g, ' ')), 300), via: 'host', fields: { step: 'host-command', run: run.id, stage: stage.id, agent: agent.id }, ok: true, code: null, result: '', origin: { actionId: '', kind: 'run-exec', key: `${run.id}:${stage.id}`, summary: null }, by: agent.id, policy });
     if (spotted) return;
     spotted = true;
     try {

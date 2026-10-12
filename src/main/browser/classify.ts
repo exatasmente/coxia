@@ -1,5 +1,6 @@
-import type { HoldWhy, StepClass, StepWords } from '../../shared/browser';
+import type { HoldWhy, SensitiveCategory, StepClass, StepWords } from '../../shared/browser';
 import type { Probe, TargetInfo } from './probe';
+import { sensitiveTarget } from './sensitive';
 
 export type { HoldWhy, StepClass, StepWords };
 
@@ -12,6 +13,8 @@ export interface Classification {
   class: StepClass;
   why?: HoldWhy;
   words: StepWords;
+  /** A held step about a payment, a sending to people, a secret or card data (`sensitive.ts`): no policy lets it run without asking. */
+  sensitive?: SensitiveCategory;
 }
 
 export interface ClassifyInput {
@@ -279,8 +282,18 @@ function pressKey(raw: string, focus: TargetInfo | null | undefined): Classifica
 /** Types in a text that holds a line break when it is typed key by key: the break is an Enter. */
 const typesEnter = (text: unknown): boolean => typeof text === 'string' && /[\r\n]/.test(text);
 
-/** Classifies one call of the app's browser. Total: a tool or an argument without a row is `unclassified`, never free. */
+/**
+ * Classifies one call of the app's browser. Total: a tool or an argument without a row is `unclassified`, never free. A held step whose element is about one of the four
+ * categories always held is marked so; the class and the reason stay what they were.
+ */
 export function classify(i: ClassifyInput): Classification {
+  const c = classifyStep(i);
+  if (c.class === 'free') return c;
+  const sensitive = sensitiveTarget(i.target) ?? sensitiveTarget(i.focus);
+  return sensitive ? { ...c, sensitive } : c;
+}
+
+function classifyStep(i: ClassifyInput): Classification {
   const a = i.args;
   switch (i.tool) {
     case 'browser_navigate':

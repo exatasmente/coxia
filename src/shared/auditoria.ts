@@ -1,10 +1,29 @@
 /** How a call reached the app: the window, a paired browser, or the persona acting on the person's behalf. One name for what `callOrigin()` says, whichever audit line or answer carries it. */
 export type Through = 'window' | 'paired' | 'persona';
 
-export type AuditKind = 'gitlab' | 'github' | 'bitbucket' | 'graphql' | 'sync' | 'publish' | 'note-edit' | 'push' | 'minutes' | 'exec' | 'release' | 'worktree' | 'plugin-write' | 'plugin-request' | 'plugin-call' | 'screen-open' | 'screen-close' | 'screen-hold' | 'screen-confirm' | 'screen-use' | 'procedure' | 'screen-handoff' | 'test-env' | 'memory' | 'turn-limit' | 'persona' | 'config' | 'secret' | 'plugin-decision' | 'act';
+export type AuditKind = 'gitlab' | 'github' | 'bitbucket' | 'graphql' | 'sync' | 'publish' | 'note-edit' | 'push' | 'minutes' | 'exec' | 'release' | 'worktree' | 'plugin-write' | 'plugin-request' | 'plugin-call' | 'screen-open' | 'screen-close' | 'screen-hold' | 'screen-confirm' | 'screen-use' | 'procedure' | 'screen-handoff' | 'test-env' | 'memory' | 'turn-limit' | 'persona' | 'config' | 'secret' | 'plugin-decision' | 'act' | 'auto-step' | 'decision' | 'policy-change' | 'screen-autonomous' | 'screen-policy';
+
+/** The kinds the autonomy policy writes: a step it let go out with no "yes" (a stage start, a host command, a gate), the person's decision on a held step, and a change of the policy itself. */
+export const AUTONOMY_AUDIT_KINDS = ['auto-step', 'decision', 'policy-change'] as const satisfies readonly AuditKind[];
+
+/** The level a policy came from. Only `levelOf` in the autonomy module names it, so the levels of a finer policy change one place. */
+export type AuditPolicyLevel = 'workspace' | 'flow';
+
+/** The autonomy policy in effect when a step went out: its choices, the level it came from and the flow that decided (`''` the main flow, a squad id, `release`). */
+export interface AuditPolicy {
+  cycle: boolean;
+  hostCommands: boolean;
+  gates: boolean;
+  push: boolean;
+  pullRequest: boolean;
+  /** The workspace's own choice for the board; present only on a write of the board. */
+  board?: boolean;
+  level: AuditPolicyLevel;
+  flow: string;
+}
 
 /** The kinds an agent's virtual screen writes: its opening and closing, a step held for the person, a confirmation the agent asked for, the person's use of the screen, and the agent handing the screen over. */
-export const SCREEN_AUDIT_KINDS = ['screen-open', 'screen-close', 'screen-hold', 'screen-confirm', 'screen-use', 'screen-handoff'] as const satisfies readonly AuditKind[];
+export const SCREEN_AUDIT_KINDS = ['screen-open', 'screen-close', 'screen-hold', 'screen-confirm', 'screen-use', 'screen-handoff', 'screen-autonomous'] as const satisfies readonly AuditKind[];
 
 /**
  * What the persona had in front of it when it decided a write, bounded and masked: the `subject` is what the app itself puts before a person to decide (read by the app at the
@@ -39,6 +58,12 @@ export interface AuditEntry {
   by?: string | null;
   /** Hash of the body of a comment, so the log says which text went out without keeping it. */
   bodyHash?: string | null;
+  /** The autonomy policy in effect when the step went out with no "yes". Absent on what a person approved, on plugins and on entries older than the field. */
+  policy?: AuditPolicy | null;
+  /** Hash of the previous line's `chain` and this line's body: a line edited or removed afterwards breaks it. Absent on entries older than the field. */
+  chain?: string;
+  /** Set by the reader, never written: a line whose chain does not close (it was edited, or the line before it was removed). */
+  tampered?: boolean;
   /**
    * Who acted, when it was not a person: `persona`. Absent on a line written before, and for the person's own acts, which every old line reads as. It never means the agent whose
    * autonomy let a write go out (that is `by`). Stamped by the writer while a persona act is open, never by the handler.

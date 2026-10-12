@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileS
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import type { AuditEntry } from '../shared/auditoria';
+import type { AuditEntry, AuditPolicy } from '../shared/auditoria';
 import { getTerms, t } from '../shared/i18n';
 import { withEvidenceImages } from '../shared/evidence';
 import { crRef } from '../shared/vcs';
@@ -11,6 +11,7 @@ import { type ConflictResolve, type HunkChoice, conflictStep, hunkReady } from '
 import { isStageKind } from '../shared/cycles/stages';
 import type { AppEvent, Card, ReleaseAction, VcsCommand } from '../shared/types';
 import { MEMORY_FILE } from '../shared/runs/output';
+import { PERSON_WHO } from '../shared/runs/transitions';
 import { conflictAsk, conflictPropose as askProposal, issueRef, rewriteQaComment, secretPath } from './agents';
 import { recordWrite } from './auditoria';
 import { openAct } from './persona/act';
@@ -500,11 +501,18 @@ export interface AuditOrigin {
   summary: string | null;
   by?: string;
   bodyHash?: string;
+  /** The autonomy policy that let the write out with no "yes"; absent on what a person approved and on what the policy does not decide (a plugin, an agent's own switch). */
+  policy?: AuditPolicy;
   /** The proposal was made under the persona's door: the line of approving it says so, and the Audit screen tells a persona that approved its own proposal. */
   proposedBy?: 'persona';
 }
 
 const originOf = (a: ReleaseAction): AuditOrigin => ({ issue: a.issue, actionId: a.id, kind: a.kind, key: a.key, summary: a.summary, ...(a.proposedBy ? { proposedBy: a.proposedBy } : {}) });
+
+/** The decision on a held step, in the log beside the write it let out (the same action id ties them): approved, or refused and never run. The persona's decision is worded as its own. */
+function recordDecision(a: ReleaseAction, decision: 'approved' | 'refused', result = ''): void {
+  recordWrite({ kind: 'decision', issue: a.issue, target: a.summary ?? a.key, via: 'app', fields: { decision, step: a.kind }, ok: true, code: null, result, origin: { actionId: a.id, kind: a.kind, key: a.key, summary: a.summary }, by: openAct() ? 'persona' : PERSON_WHO.by });
+}
 
 // Every real write goes through here: one line in auditoria.jsonl, whatever the outcome.
 async function audited(from: AuditOrigin, base: AuditBase, write: (meta: ExecMeta) => Promise<string>): Promise<string> {
@@ -516,6 +524,7 @@ async function audited(from: AuditOrigin, base: AuditBase, write: (meta: ExecMet
     origin: { actionId: from.actionId, kind: from.kind, key: from.key, summary: from.summary },
     ...(from.by ? { by: from.by } : {}),
     ...(from.bodyHash ? { bodyHash: from.bodyHash } : {}),
+    ...(from.policy ? { policy: from.policy } : {}),
     ...(from.proposedBy ? { proposedBy: from.proposedBy } : {}),
   };
   try {
@@ -537,13 +546,15 @@ export interface AutoWrite {
   summary: string;
   by: string;
   bodyHash?: string;
+  /** The autonomy policy in effect, when it is what let the write out (a push, a pull request, the board). */
+  policy?: AuditPolicy;
 }
 
 export async function runVcsAuto(w: AutoWrite, c: VcsCommand): Promise<unknown> {
   validateVcsCommand(c);
   assertNoTestEnvLeak(c);
   let response: unknown;
-  await audited({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by, bodyHash: w.bodyHash }, { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
+  await audited({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by, bodyHash: w.bodyHash, policy: w.policy }, { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
     const out = await runVcs(c, meta);
     response = meta.response;
     return out;
@@ -569,6 +580,8 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
     if (first.length) throw refused(a, t('main.release.waitsForStep', { step: a.summary ?? '', first: first.map((b) => b.summary ?? b.key).join('; ') }));
   }
   update(id, (x) => ({ ...x, state: 'running' }));
+  // The decision is the person's "yes", taken here; what the step then did is the line of its own write.
+  recordDecision(a, 'approved');
   const responses: unknown[] = [];
   let nothingSent = false;
   try {
@@ -667,6 +680,8 @@ export async function skipAction(id: string): Promise<ReleaseAction> {
   // A plugin's write set aside before its deadline is blocked: it never goes out, and the list says so.
   const blocked = a?.kind === 'plugin-write' && a.state === 'pending' ? { output: t('main.plugins.write.blocked') } : {};
   const done = update(id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString(), ...blocked }));
+  // Only a step that still waited is refused: setting aside one already done or skipped decides nothing.
+  if (a && (a.state === 'pending' || a.state === 'failed')) recordDecision(a, 'refused', done.output ?? '');
   for (const fn of skipListeners) {
     try {
       fn(done);
@@ -1155,7 +1170,7 @@ export async function pushRunBranchAuto(w: AutoWrite, runId: string, branch: str
   const replaced = store.actions.map((x) => (x.kind === 'run-push' && x.state === 'pending' && x.unit?.runId === runId ? { ...x, state: 'skipped' as const, finishedAt: now, output: t('main.actions.replaced') } : x));
   write({ ...store, actions: replaced });
   const fields = { repo: run.repo, branch: run.branch, run: run.id, head: (await git(run.worktree, ['rev-parse', 'HEAD'])).stdout.trim() };
-  await audited({ ...originOf(a), kind: 'auto', by: w.by }, { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
+  await audited({ ...originOf(a), kind: 'auto', by: w.by, policy: w.policy }, { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
   // The branch is on the host: the same notice a person's "sim" gives, so the pull request follows the push by itself too.
   told(a, []);
 }

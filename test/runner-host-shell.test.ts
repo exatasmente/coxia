@@ -73,6 +73,15 @@ describe('a stage with shell: host', () => {
     expect(codes).toEqual(['runner.command.ask', 'runner.command.once', 'runner.exec.host', 'runner.command.ask', 'runner.command.deny', 'runner.exec.host', 'runner.commands.list']);
     const audit = listAudit().filter((e) => e.kind === 'exec');
     expect(audit.map((e) => [e.target, e.via])).toEqual([['npm test', 'host']]);
+    // each answer is the person's decision on a held command; nothing ran as a step of the policy
+    const decisions = listAudit().filter((e) => e.kind === 'decision' && e.fields.run === run.id).reverse();
+    expect(decisions.filter((e) => e.fields.step === 'host-command').map((e) => [e.target, e.fields.decision, e.fields.scope, e.by])).toEqual([['npm test', 'approved', 'once', 'person'], ['rm -rf build', 'refused', 'deny', 'person']]);
+    // the gates the person approved are decisions too, with no policy: the person decided them, not the policy
+    const gates = decisions.filter((e) => e.fields.step === 'gate');
+    expect(gates.map((e) => [e.target, e.fields.decision, e.by])).toEqual([['gate gate1', 'approved', 'person'], ['gate gate2', 'approved', 'person']]);
+    expect(gates.every((e) => e.policy === undefined)).toBe(true);
+    // with the autonomy off, no command and no gate went out with no "yes"
+    expect(listAudit().filter((e) => e.kind === 'auto-step' && e.fields.run === run.id && e.fields.step !== 'stage-start')).toEqual([]);
   });
 
   it('stops asking for the rest of the stage after "until the stage ends"', async () => {
@@ -148,6 +157,40 @@ describe('a stage with shell: host', () => {
     expect(String(list[0].params?.text)).toContain('developer (2 commands)');
     expect(String(list[0].params?.text)).toContain('npm test');
     expect(String(list[0].params?.text)).toContain('on this computer');
+    // the audit log has a line per command the policy let through, with the agent, the time and the policy in effect with its level
+    const steps = listAudit().filter((e) => e.kind === 'auto-step' && e.fields.step === 'host-command' && e.fields.run === run.id);
+    expect(steps.map((e) => e.target).sort()).toEqual(['npm run build', 'npm test']);
+    expect(steps.every((e) => e.by === 'developer' && e.fields.agent === 'developer' && /^\d{4}-\d{2}-\d{2}T/.test(e.at))).toBe(true);
+    expect(steps[0].policy).toMatchObject({ cycle: true, hostCommands: true, level: 'workspace' });
+  });
+
+  it('records each gate the app approved under the policy as a step of the policy, with the agent of the stage it judged', async () => {
+    const b = await boot({ sandbox: fakeSandbox(), configure: (c) => { hostFor(c, 'developer'); c.runner.autonomy = { ...c.runner.autonomy, cycle: true, hostCommands: true, gates: true }; } });
+    easy(b);
+    b.engine.script('developer', async (_c, tools) => {
+      await tools.write('src/feature.ts', 'export const feature = 1;\n');
+      return work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
+    });
+    const run = await reach(b, await b.runner.start('app#101'), 'ready');
+    const gates = listAudit().filter((e) => e.fields.run === run.id && e.fields.step === 'gate');
+    expect(gates.length).toBeGreaterThan(0);
+    expect(gates.every((e) => e.kind === 'auto-step' && e.fields.judged && e.by && !['person', 'app'].includes(e.by))).toBe(true);
+    expect(gates[0].policy).toMatchObject({ cycle: true, gates: true, level: 'workspace', flow: '' });
+    expect(listAudit().filter((e) => e.fields.run === run.id && e.kind === 'decision')).toEqual([]);
+  });
+
+  it('keeps a token out of the line of a command the policy let through', async () => {
+    const b = await boot({ sandbox: fakeSandbox(), configure: (c) => { hostFor(c, 'developer'); c.runner.autonomy = { ...c.runner.autonomy, cycle: true, hostCommands: true }; } });
+    easy(b);
+    b.engine.script('developer', async (c, tools) => {
+      await c.exec!.exec('curl -H "Authorization: Bearer abcdefghijklmnop1234" https://example.com');
+      await tools.write('src/feature.ts', 'export const feature = 1;\n');
+      return work('Done.', { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });
+    });
+    const run = await reach(b, await b.runner.start('app#101'), 'ready');
+    const [line] = listAudit().filter((e) => e.kind === 'auto-step' && e.fields.step === 'host-command' && e.fields.run === run.id);
+    expect(line.target).toContain('curl');
+    expect(line.target).not.toContain('abcdefghijklmnop1234');
   });
 
   it('opens on a machine that cannot make a sandbox, and refuses an answer to a command that no longer waits', async () => {

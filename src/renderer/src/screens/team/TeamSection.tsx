@@ -321,7 +321,7 @@ export function AgentPanel({ config, initial, isNew, suggestionId, assisted, pro
           )}
         </Labeled>
         <PermissionFields config={config} initial={initial} draft={draft} isNew={isNew} set={set} error={fieldError('shell')} />
-        <ScreenFields draft={draft} set={set} hostsError={fieldError('allowedHosts')} agent={isNew || promote ? undefined : { id: initial.id, name: agentName({ id: initial.id, name: initial.name }) }} />
+        <ScreenFields draft={draft} set={set} policyView={config} hostsError={fieldError('allowedHosts')} agent={isNew || promote ? undefined : { id: initial.id, name: agentName({ id: initial.id, name: initial.name }) }} />
         <Toggle checked={draft.autonomous} onChange={(autonomous) => set({ autonomous })} label={t('ui.team.autonomy')} />
         <p className="small muted">{t('ui.team.autonomyHint')}</p>
         <ToolsFields config={config} draft={draft} set={set} />

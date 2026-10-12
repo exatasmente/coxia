@@ -1091,18 +1091,60 @@ describe('migrateConfig', () => {
       expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(32);
     });
   });
-  describe('schema 32 to 33: the budget fallback on the signed-in Claude Code CLI', () => {
+
+  describe('schema 32 to 33: the screen step approvals', () => {
     const v32 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
       const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
       c.schemaVersion = 32;
+      delete c.runner.screenPolicy;
+      change(c);
+      return c;
+    };
+
+    it('writes an empty policy (every kind asks, as before), bumps the version and yields a valid file', () => {
+      const r = migrateConfig(v32(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(32);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.runner.screenPolicy).toEqual({});
+      expect(r.notes).toEqual([]);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('touches nothing else of the file, and only bumps a document whose runner is not an object', () => {
+      const before = v32((c) => (c.runner.enabled = true));
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect({ ...r.config, schemaVersion: 32, runner: { ...r.config.runner, screenPolicy: undefined } }).toEqual({ ...before, runner: { ...before.runner, screenPolicy: undefined } });
+      expect(migrateConfig(v32((c) => (c.runner = 'broken')), { legacyInstall: false }).config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+    });
+
+    it('a workspace from before the approvals existed (v28) reaches the current version with every step held', () => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 28;
+      delete c.runner.screenPolicy;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.runner.screenPolicy).toEqual({});
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('is followed by later steps: the chain does not stop at 33', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(33);
+    });
+  });
+
+  describe('schema 33 to 34: the budget fallback on the signed-in Claude Code CLI', () => {
+    const v33 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 33;
       delete c.llm.cliFallback;
       change(c);
       return c;
     };
 
     it('adds the fallback off with no agent, bumps the version, leaves a note and yields a valid file', () => {
-      const r = migrateConfig(v32(), { legacyInstall: false });
-      expect(r.fromVersion).toBe(32);
+      const r = migrateConfig(v33(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(33);
       expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.llm.cliFallback).toEqual({ enabled: false, agents: [] });
       expect(r.notes.join(' ')).toContain('the budget fallback on the signed-in Claude Code CLI was added (off; no agent listed)');
@@ -1110,24 +1152,24 @@ describe('migrateConfig', () => {
     });
 
     it('keeps a fallback the file already has, touches nothing else and a second start changes nothing', () => {
-      const before = v32((c) => (c.llm.cliFallback = { enabled: true, agents: ['deep'] }));
+      const before = v33((c) => (c.llm.cliFallback = { enabled: true, agents: ['deep'] }));
       const r = migrateConfig(structuredClone(before), { legacyInstall: false });
       expect(r.config.llm.cliFallback).toEqual({ enabled: true, agents: ['deep'] });
-      expect({ ...r.config, schemaVersion: 32 }).toEqual(before);
+      expect({ ...r.config, schemaVersion: 33 }).toEqual(before);
       const twice = migrateConfig(structuredClone(r.config) as unknown as Record<string, any>, { legacyInstall: false });
       expect(twice.changed).toBe(false);
       expect(twice.config).toEqual(r.config);
     });
 
     it('only bumps a document whose llm is not an object', () => {
-      const r = migrateConfig(v32((c) => (c.llm = 'broken')), { legacyInstall: false });
-      expect(r.fromVersion).toBe(32);
+      const r = migrateConfig(v33((c) => (c.llm = 'broken')), { legacyInstall: false });
+      expect(r.fromVersion).toBe(33);
       expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     });
 
-    it('is the newest step: 33 is current and 34 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(33);
-      expect(() => migrateConfig({ schemaVersion: 34 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is the newest step: 34 is current and 35 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(34);
+      expect(() => migrateConfig({ schemaVersion: 35 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

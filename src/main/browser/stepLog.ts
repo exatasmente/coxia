@@ -64,6 +64,7 @@ export function createStepLog(max = STEP_LOG_MAX, now: () => number = Date.now):
         class: input.class,
         ...(input.held ? { held: { why: input.held.why, answer: input.held.answer } } : {}),
         ...(input.passed ? { passed: true as const } : {}),
+        ...(input.autonomous ? { autonomous: true as const } : {}),
         outcome: input.outcome,
         ms: Math.max(0, Math.round(input.ms)),
       };

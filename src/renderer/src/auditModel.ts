@@ -12,7 +12,7 @@ export const isWhoFilter = (v: unknown): v is WhoFilter => typeof v === 'string'
  * Who a line belongs to: the persona (it says so), an agent acting by its own autonomy (`by` is set and nobody stamped the line), or the person. A line written before the
  * persona has neither field, and reads as the person's; an autonomous agent's write is not the person's.
  */
-export const whoOf = (e: Pick<AuditEntry, 'actor' | 'by'>): 'person' | 'persona' | 'agent' => (e.actor === 'persona' ? 'persona' : e.by ? 'agent' : 'person');
+export const whoOf = (e: Pick<AuditEntry, 'actor' | 'by'>): 'person' | 'persona' | 'agent' => (e.actor === 'persona' || e.by === 'persona' ? 'persona' : e.by && e.by !== 'person' ? 'agent' : 'person');
 
 /** The entries the filters let through: those of an issue (digits anywhere in its number) and those of the person, of the persona or of an agent's autonomy. */
 export function filterEntries(rows: readonly AuditEntry[], o: { issue: string; who: WhoFilter }): AuditEntry[] {

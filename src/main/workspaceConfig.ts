@@ -1,16 +1,19 @@
 import { existsSync } from 'node:fs';
 import { termsFor } from '../shared/cycles/terms';
 import { setLanguage, setTerms, setVoiceEnabled, t } from '../shared/i18n';
+import { policyChanges } from '../shared/config/autonomy';
 import { migrateConfig } from '../shared/config/migrations';
 import { workingTeam } from '../shared/config/team';
 import type { VcsKind, WorkspaceConfig } from '../shared/config/types';
 import { summarizeIssues, validateConfig } from '../shared/config/validate';
+import { recordWrite } from './auditoria';
 import { bootstrapConfigs, readConfigFile, writeConfigFile } from './config-bootstrap';
 import { type ResolvedConfig, type ResolvedDocs, resolveConfig, resolveDocs } from './config-resolve';
 import { ATAS, DATA_ROOT, EXISTING_INSTALL, HOME, WORKSPACE_ID } from './env';
 import { loadLegacyProfile } from './legacy-profile';
 import { moveVerifyCommands } from './verify-move';
 import { secrets, seedLegacySecrets } from './secrets';
+import { auditPolicyChanges as auditScreenPolicyChanges } from './browser/audit';
 
 // The loaded config of the running workspace, and the getters that replaced the constants env.ts used to hold.
 // Modules read `rc()` at call time, never at import time: the config can change while the app runs (Settings, import, the wizard).
@@ -97,10 +100,33 @@ export function checkConfig(next: unknown): WorkspaceConfig {
   return checked.config;
 }
 
-/** Validates, writes and applies a whole config. Throws with every problem named when it is invalid. */
-export function saveConfig(next: unknown): WorkspaceConfig {
+/** One line of the audit log per autonomy choice a save changed. The first load has nothing before it, so it records nothing. */
+function auditPolicyChanges(before: WorkspaceConfig | undefined, after: WorkspaceConfig, by: string): void {
+  if (!before) return;
+  for (const c of policyChanges(before, after)) {
+    recordWrite({
+      kind: 'policy-change',
+      issue: 0,
+      target: `${c.level}${c.flow ? `:${c.flow}` : ''} ${c.choice}`,
+      via: 'config',
+      fields: { level: c.level, flow: c.flow, choice: c.choice, before: String(c.before), after: String(c.after) },
+      ok: true,
+      code: null,
+      result: '',
+      origin: { actionId: '', kind: 'config', key: c.choice, summary: null },
+      by,
+    });
+  }
+}
+
+/** Validates, writes and applies a whole config. Throws with every problem named when it is invalid. `by` is who changed it, for the audit of a change of the autonomy policy. */
+export function saveConfig(next: unknown, by = 'person'): WorkspaceConfig {
   const config = checkConfig(next);
+  const before = state?.config;
   writeConfigFile(ATAS, config);
+  auditPolicyChanges(before, config, by);
+  // A change of the screen step approvals is recorded here, the one door every save goes through; the first load of a workspace has nothing to compare with.
+  if (before) auditScreenPolicyChanges(before, config);
   state = { config, resolved: resolveConfig(config, context()), degraded: false };
   setLanguage(config.language);
   setTerms(termsFor(config, config.language));
@@ -109,8 +135,8 @@ export function saveConfig(next: unknown): WorkspaceConfig {
   return config;
 }
 
-export function updateConfig(change: (current: WorkspaceConfig) => WorkspaceConfig): WorkspaceConfig {
-  return saveConfig(change(structuredClone(getConfig())));
+export function updateConfig(change: (current: WorkspaceConfig) => WorkspaceConfig, by = 'person'): WorkspaceConfig {
+  return saveConfig(change(structuredClone(getConfig())), by);
 }
 
 export function reloadConfig(): WorkspaceConfig {

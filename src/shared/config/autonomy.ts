@@ -1,5 +1,6 @@
+import type { AuditPolicy, AuditPolicyLevel } from '../auditoria';
 import { RELEASE_FLOW_KEY } from './squads';
-import type { AutonomyBlock, AutonomyChoice, WorkspaceConfig } from './types';
+import type { AutonomyBlock, AutonomyChoice, WorkspaceAutonomy, WorkspaceConfig } from './types';
 
 // Which autonomy block decides a run, and what each of its five choices means. Pure: it takes a config and returns the effective values, the origin and the flow,
 // so the decision is read the same way at every step (a stage start, a command, a gate, a push, a pull request) and is testable without the app.
@@ -42,6 +43,46 @@ export const choiceOn = (a: Pick<EffectiveAutonomy, 'cycle'> & AutonomyBlock, ch
  * the board is not a run, and a person who never starts one still decides how it writes. Only the workspace's block has it; a flow's does not.
  */
 export const boardAutonomous = (c: Pick<WorkspaceConfig, 'runner'>): boolean => c.runner.autonomy.board === true;
+
+/** The name the audit log gives a policy's level. The only place that names it: the levels of a finer policy change here and nowhere else. */
+export const levelOf = (from: EffectiveAutonomy['from']): AuditPolicyLevel => from;
+
+/** The policy in effect for a run of `flowKey`, as the audit log keeps it; `board` adds the workspace's board choice, for a write of the board. */
+export function auditPolicyOf(c: Pick<WorkspaceConfig, 'runner' | 'devCycle'>, flowKey: string, opts: { board?: boolean } = {}): AuditPolicy {
+  const a = autonomyOf(c, flowKey);
+  const policy: AuditPolicy = { cycle: a.cycle, hostCommands: a.hostCommands, gates: a.gates, push: a.push, pullRequest: a.pullRequest, level: levelOf(a.from), flow: flowKey };
+  return opts.board ? { ...policy, board: boardAutonomous(c) } : policy;
+}
+
+/** One choice of an autonomy block that a save changed: the level and the flow it belongs to, and the value before and after. */
+export interface PolicyChange {
+  level: AuditPolicyLevel;
+  /** `''` for the workspace's block and the main flow's; the flow's key otherwise. */
+  flow: string;
+  choice: string;
+  before: boolean;
+  after: boolean;
+}
+
+const WORKSPACE_FIELDS = ['cycle', 'hostCommands', 'gates', 'push', 'pullRequest', 'board'] as const;
+const FLOW_FIELDS = ['useWorkspace', 'cycle', 'hostCommands', 'gates', 'push', 'pullRequest'] as const;
+
+/** Every choice of the workspace's block and of each flow's block that differs between two configs. A flow with no block reads as the neutral one (it follows the workspace). */
+export function policyChanges(before: Pick<WorkspaceConfig, 'runner' | 'devCycle'>, after: Pick<WorkspaceConfig, 'runner' | 'devCycle'>): PolicyChange[] {
+  const out: PolicyChange[] = [];
+  // Read as partial: a config from before a choice existed has no value for it, which reads as off.
+  const wb: Partial<WorkspaceAutonomy> = before.runner.autonomy ?? {};
+  const wa: Partial<WorkspaceAutonomy> = after.runner.autonomy ?? {};
+  for (const f of WORKSPACE_FIELDS) if ((wb[f] === true) !== (wa[f] === true)) out.push({ level: levelOf('workspace'), flow: '', choice: f, before: wb[f] === true, after: wa[f] === true });
+  const fb = before.devCycle.autonomy ?? {};
+  const fa = after.devCycle.autonomy ?? {};
+  for (const key of [...new Set([...Object.keys(fb), ...Object.keys(fa)])].sort()) {
+    const b = newFlowAutonomy(fb[key]);
+    const a = newFlowAutonomy(fa[key]);
+    for (const f of FLOW_FIELDS) if (b[f] !== a[f]) out.push({ level: levelOf('flow'), flow: key, choice: f, before: b[f], after: a[f] });
+  }
+  return out;
+}
 
 /** The four choices that are on, for the header of the run's screen. */
 export const onChoices = (a: EffectiveAutonomy): AutonomyChoice[] =>

@@ -441,3 +441,25 @@ describe('the two permissions of an agent, from a paired browser', () => {
     expect(refusedPaths(writer, agentOf(writer, (a) => { a.permission = 'read'; }))).toEqual([]);
   });
 });
+
+describe('the screen step approvals (#269)', () => {
+  const withPolicies = (agent?: import('../src/shared/config/screenPolicy').ScreenPolicy, squad?: import('../src/shared/config/screenPolicy').ScreenPolicy): WorkspaceConfig =>
+    edit((c) => {
+      c.squads = [...(c.squads ?? []), { id: 'platform', name: 'Platform', mission: '', scope: { repos: [], labels: [], paths: [], unclaimed: false }, liaison: null, autonomy: true, label: null, ...(squad ? { screenPolicy: squad } : {}) }];
+      c.agents.team.push(newAgent({ id: 'dev', squad: 'platform', ...(agent ? { screenPolicy: agent } : {}) }));
+    });
+
+  it('may hold more on an agent or a squad', () => {
+    expect(refusedPaths(withPolicies({ name: 'autonomous' }, { submit: 'autonomous' }), withPolicies({ name: 'held' }, { submit: 'held' }))).toEqual([]);
+    expect(refusedPaths(withPolicies({ name: 'autonomous' }), withPolicies())).toEqual([]);
+  });
+
+  it('may not let a kind run without asking, nor take a hold away, and the refusal names the field', () => {
+    expect(refusedPaths(withPolicies(), withPolicies({ name: 'autonomous' }))).toEqual(['agents.team[dev].screenPolicy.name']);
+    expect(refusedPaths(withPolicies(undefined, { submit: 'held' }), withPolicies())).toEqual(['squads[platform].screenPolicy.submit']);
+  });
+
+  it('may not change the workspace\'s at all', () => {
+    expect(refusedPaths(base(), edit((c) => (c.runner.screenPolicy = { dialog: 'held' })))).toEqual(['runner.screenPolicy.dialog']);
+  });
+});

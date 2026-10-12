@@ -18,7 +18,10 @@ await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
 const actions = await import('../src/main/actions');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
-const { listAudit } = await import('../src/main/auditoria');
+const { listAudit: allAudit } = await import('../src/main/auditoria');
+// The writes themselves: the lines the autonomy policy adds beside them are read through allAudit.
+const listAudit = () => writesOf(allAudit());
+const { writesOf } = await import('./helpers/audit');
 
 const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 

@@ -139,3 +139,40 @@ describe('the words of the settings', () => {
     }
   });
 });
+
+const { neutralConfig } = await import('../src/shared/config');
+const { ScreenPolicyFields } = await import('../src/renderer/src/screens/team/ScreenPolicyFields');
+const { resolveLevels } = await import('../src/shared/config/screenPolicy');
+
+describe('the screen step approvals (#269)', () => {
+  const kinds = ['submit', 'name', 'shortcut', 'dialog', 'unclassified', 'agent'] as const;
+
+  it('shows each of the six kinds with its mode and the level it comes from, in both languages', () => {
+    for (const language of ['en', 'pt-BR'] as const) {
+      setLanguage(language);
+      const c = CATALOGS[language];
+      const html = renderToStaticMarkup(createElement(ScreenPolicyFields, { level: 'agent', value: { name: 'held' }, onChange: () => undefined, effective: resolveLevels({ agent: { name: 'held' }, squad: { submit: 'autonomous' } }) }));
+      for (const k of kinds) expect(html, k).toContain(c[`ui.team.policy.kind.${k}`]);
+      expect(html).toContain(t('ui.team.policy.effective', { mode: c['ui.team.policy.mode.held'], source: c['ui.team.policy.source.agent'] }));
+      expect(html).toContain(t('ui.team.policy.effective', { mode: c['ui.team.policy.mode.autonomous'], source: c['ui.team.policy.source.squad'] }));
+      expect(html).toContain(t('ui.team.policy.effective', { mode: c['ui.team.policy.mode.held'], source: c['ui.team.policy.source.default'] }));
+      expect(html).toContain(c['ui.team.policy.always']);
+      expect(html).not.toContain(c['ui.team.policy.released']);
+    }
+  });
+
+  it('warns when the level lets a kind run, and the workspace offers no inherit', () => {
+    setLanguage('en');
+    const html = renderToStaticMarkup(createElement(ScreenPolicyFields, { level: 'workspace', value: { dialog: 'autonomous' }, onChange: () => undefined, effective: resolveLevels({ workspace: { dialog: 'autonomous' } }) }));
+    expect(html).toContain(t('ui.team.policy.released'));
+    expect(html).not.toContain(t('ui.team.policy.mode.inherit'));
+  });
+
+  it('is part of the agent editor on the computer, read with the squad and the workspace of the config', () => {
+    setLanguage('en');
+    const c = neutralConfig();
+    const html = renderToStaticMarkup(createElement(ScreenFieldsView, { draft: { ...blankAgent(), screenPolicy: {} }, set: () => undefined, status: null, policyView: { ...c, runner: { ...c.runner, screenPolicy: { submit: 'autonomous' } } } }));
+    expect(html).toContain(t('ui.team.policy.title'));
+    expect(html).toContain(t('ui.team.policy.effective', { mode: t('ui.team.policy.mode.autonomous'), source: t('ui.team.policy.source.workspace') }));
+  });
+});

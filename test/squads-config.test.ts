@@ -46,7 +46,7 @@ describe('the squads in the config', () => {
 
   it('describes every squad field in the schema', () => {
     const squads = CONFIG_SCHEMA.properties?.squads;
-    expect(Object.keys(squads?.items?.properties ?? {})).toEqual(['id', 'name', 'mission', 'scope', 'liaison', 'autonomy', 'label']);
+    expect(Object.keys(squads?.items?.properties ?? {})).toEqual(['id', 'name', 'mission', 'scope', 'liaison', 'autonomy', 'label', 'screenPolicy']);
     expect(squads?.items?.required).toEqual(['id', 'name']);
     expect(Object.keys(squads?.items?.properties?.scope.properties ?? {})).toEqual(['repos', 'labels', 'paths', 'unclaimed']);
     expect(CONFIG_SCHEMA.properties?.devCycle.properties?.flows?.description).toBeTruthy();

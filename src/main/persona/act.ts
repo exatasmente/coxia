@@ -10,8 +10,10 @@ export interface Act {
   open: boolean;
   /** One per door call that writes: `a-<time36>-<n>`, shared by every audit line the act writes. */
   id: string;
-  /** How the message the answer began from came in: `window` or `paired`; open to more values (a later schedule). */
+  /** How the message the answer began from came in: `window`, `paired`, `terminal` or `schedule` (#275). */
   door: string;
+  /** The conversation of the answer: where a schedule the persona makes posts by default. */
+  thread?: string;
   /** The model's stated reason, masked and cut. */
   said: string;
   /** What the persona had read when it decided, built by the door before the handler starts; absent for a read. */

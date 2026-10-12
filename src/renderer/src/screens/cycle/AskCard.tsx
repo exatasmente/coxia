@@ -7,7 +7,7 @@ import { errorText } from '../../api';
 import { intlLocale, useT } from '../../i18n';
 import { useExternalEffects } from '../../useExternalEffects';
 import { AgentWords } from './AgentWords';
-import { CONFIRM_KIND_KEY, WHY_KEY, choicesOf } from './askView';
+import { CONFIRM_KIND_KEY, SENSITIVE_KEY, WHY_KEY, choicesOf } from './askView';
 import { HandoffActions, HandoffBody } from './HandoffCard';
 import { agentName } from './names';
 import { screenApi } from './screenApi';
@@ -31,6 +31,7 @@ function AskBody({ ask, team }: { ask: PendingAsk; team: readonly AgentDef[] | u
       <>
         <p className="cy-ask-line">{t('ui.screen.ask.confirm', { agent, kind: t(CONFIRM_KIND_KEY[ask.confirmKind ?? 'other']) })}</p>
         {ask.site && <p className="faint small">{t('ui.screen.ask.onSite', { site: ask.site })}</p>}
+        {ask.sensitive && <p className="small cy-offer-warning" role="note">{t(SENSITIVE_KEY[ask.sensitive])}</p>}
         <AgentWords words={ask.agentWords} />
       </>
     );
@@ -40,6 +41,7 @@ function AskBody({ ask, team }: { ask: PendingAsk; team: readonly AgentDef[] | u
       <>
         <p className="cy-ask-line">{t('ui.screen.ask.hold', { agent, step: ask.step ? describeStep(ask.step, ask.site, t) : '' })}</p>
         <p className="faint small">{t('ui.screen.ask.why', { why: t(WHY_KEY[ask.why]) })}</p>
+        {ask.sensitive && <p className="small cy-offer-warning" role="note">{t(SENSITIVE_KEY[ask.sensitive])}</p>}
         <AgentWords words={ask.agentWords} />
       </>
     );

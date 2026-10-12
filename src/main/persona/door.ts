@@ -253,6 +253,7 @@ export function createDoor(deps: DoorDeps = {}): Door {
       open: true,
       id: newActId(),
       door: session.door,
+      thread: session.thread,
       said: why,
       mask,
       wrote: { count: 0, kinds: new Set() },

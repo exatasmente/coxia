@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { type BoardCard, type BoardPatch, type BoardHostLink, type BoardTarget, type HostRequest, type HostSent, type Waiting, derivedFields } from '../shared/board';
 import { type WrittenLabel, cardLabelChanges, issueBodyOf, issueLabelsOfCard, issueRefOfAnswer, moveLabels, stageLabel } from '../shared/boardHost';
-import { boardAutonomous } from '../shared/config/autonomy';
+import { auditPolicyOf, boardAutonomous } from '../shared/config/autonomy';
 import { squadsOf } from '../shared/config/squads';
 import { t } from '../shared/i18n';
 import type { ReleaseAction, VcsCommand } from '../shared/types';
@@ -161,9 +161,11 @@ function exclusive(p: Planned): void {
 
 async function runNow(p: Planned): Promise<HostSent> {
   const answers: unknown[] = [];
+  // The board's choice is the workspace's alone: the line keeps it with the rest of the workspace's policy.
+  const policy = auditPolicyOf(getConfig(), '', { board: true });
   try {
     for (const [i, command] of p.commands.entries()) {
-      answers.push(await runVcsAuto({ issue: p.iid, key: p.commands.length > 1 ? `${p.key}#${i + 1}` : p.key, summary: p.summary, by: BY, ...(p.bodyHash ? { bodyHash: p.bodyHash } : {}) }, command));
+      answers.push(await runVcsAuto({ issue: p.iid, key: p.commands.length > 1 ? `${p.key}#${i + 1}` : p.key, summary: p.summary, by: BY, policy, ...(p.bodyHash ? { bodyHash: p.bodyHash } : {}) }, command));
     }
   } finally {
     stale();
