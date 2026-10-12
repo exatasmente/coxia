@@ -1,8 +1,12 @@
 # Remote Control pela API bridge: a sessão aparece e o espelho não entrega entrada
 
-## O que foi feito
+## Situação desta tentativa (3)
 
-A pessoa escolheu seguir pela API `./bridge` do SDK, que é alpha, com uma sondagem com login antes do código de produto. Esta tentativa fez só essa sondagem. Nenhum código de produto, teste, configuração, migração ou texto de interface mudou.
+A revisão devolveu o trabalho ao planejamento com o veredito "mudanças". O 2_PLAN.md recebido ainda descreve a ponte como uma opção em `sdkOptions` (passo 3) e a auditoria sem o id de `createCodeSession` (passo 4). Implementar esse plano produziria código que não cumpre o critério 1. Por isso esta tentativa não mudou código, teste, configuração nem texto de interface, e não rodou nenhum portão. A etapa volta à tl-plataforma para refazer o plano.
+
+## O que foi feito antes (tentativa 2)
+
+A pessoa escolheu seguir pela API `./bridge` do SDK, que é alpha, com uma sondagem com login antes do código de produto. Só essa sondagem foi feita.
 
 ## Sondagem com login (ev-6, ev-7, ev-8)
 
@@ -12,46 +16,39 @@ A pessoa escolheu seguir pela API `./bridge` do SDK, que é alpha, com uma sonda
 
 ### Modo `mirror` (`outboundOnly: true`)
 
-- A sessão "Coxia probe (mirror)" apareceu no topo de Recentes em claude.ai/code, com as duas mensagens e a marca "Conectado via Controle Remoto".
+- A sessão apareceu no topo de Recentes em claude.ai/code, com as duas mensagens e a marca "Conectado via Controle Remoto".
 - Uma mensagem digitada na página e o botão Parar não chegaram ao processo: 0 entradas recebidas (ev-6).
-- **A página não mostra recusa.** Ela aceita a mensagem, mostra "executando / Processando…" e só para quando alguém clica em Parar. Para o critério 3 ("a entrada é recusada"), o Coxia teria de avisar por conta própria. Uma opção é escrever na sessão uma mensagem fixa de "somente leitura" ao abrir. Isso não foi testado.
+- **A página não mostra recusa.** Ela aceita a mensagem, mostra "executando / Processando…" e só para quando alguém clica em Parar. Para o critério 3, o Coxia teria de avisar por conta própria, por exemplo com uma mensagem fixa de "somente leitura" ao abrir. Isso não foi testado.
 
 ### Modo `control` (`outboundOnly: false`)
 
-- A sessão "Coxia probe (control)" apareceu na lista.
+- A sessão apareceu na lista.
 - A mensagem digitada na página chegou ao processo por `onInboundMessage`, e o Parar chegou por `onInterrupt` (ev-7).
-- Então a entrada remota passa pelo Coxia, que decide o que fazer com ela. O controle pode passar pelas aprovações do Coxia em vez de contorná-las. Isso não foi testado.
+- A entrada remota passa pelo Coxia, que decide o que fazer com ela. Ela pode passar pelas aprovações do Coxia em vez de contorná-las. Isso não foi testado.
 
 ### Outros fatos vistos
 
-- A sessão continua na lista da conta depois de `close()`, marcada "Sem atividade". As duas sessões de teste não foram arquivadas e continuam na conta da pessoa.
-- Abrir a sessão pelo endereço `cse_…` às vezes não carrega a página. Pela lista, o endereço é `session_…` e carrega.
+- A sessão continua na lista da conta depois de `close()`, marcada "Sem atividade". As duas sessões de teste não foram arquivadas.
+- Abrir pelo endereço `cse_…` às vezes não carrega a página. Pela lista, o endereço é `session_…` e carrega.
 - O seletor de modelo da página mostra "Modelo não suportado" para uma sessão criada assim.
 
-## Consequência para o plano (2_PLAN.md)
+## O que o plano revisado precisa trazer
 
-O plano está errado no passo 3 e incompleto no passo 4. Por isso a etapa volta ao planejamento em vez de improvisar.
-
-- **Passo 3 (ligação ao motor):** passar uma opção ao `query()` não abre a ponte (sondagens anteriores, ev-1 e ev-4). O caminho é o próprio processo do Coxia:
-  - criar a sessão com `createCodeSession`;
-  - emitir a credencial do worker;
-  - ligar com `attachBridgeSession`;
-  - repassar cada mensagem do `query()` com `write()`;
-  - fechar a sessão no fim da etapa.
-  `EngineRequest` pode continuar levando o nível decidido, mas quem age é um módulo novo no processo principal, não `sdkOptions`.
-- **Passo 4 (auditoria):** o id da sessão para a linha e para a deduplicação é o que `createCodeSession` devolve.
-- **Decisões novas para o plano:**
-  1. De onde vem o token: ler a credencial que o Claude Code já guarda, ou ter um login próprio no Coxia.
-  2. Como mostrar a recusa no espelho.
-  3. Se, no modo `control`, a entrada remota passa pelas aprovações do Coxia.
-  4. O que fazer com `untrusted_device`, `session_stale_relogin` e `oauth_rejected`: a etapa roda sem ponte e registra o motivo.
-  5. Arquivar ou não as sessões no fim.
-- Continuam valendo: política pura (1), configuração e migração (2), fronteira em `webPolicy` (5), interface com aviso (6) e documentação (8).
+- **Passo 3:** a ponte é aberta por um módulo novo no processo principal (`createCodeSession` → `fetchRemoteCredentials` → `attachBridgeSession` → `write()` de cada mensagem do `query()` → `close`), isolado atrás de uma interface mínima e testado com um fake. `EngineRequest` pode levar o nível decidido, mas não é `sdkOptions` que age.
+- **Passo 4:** a linha de auditoria e a deduplicação usam o id devolvido por `createCodeSession`.
+- **Decisões a fixar:**
+  1. de onde vem o token (credencial do Claude Code ou login próprio);
+  2. como a recusa aparece no espelho, ou a reescrita do critério 3;
+  3. se a entrada do modo `control` passa pelas aprovações do Coxia;
+  4. o que acontece em `untrusted_device`, `session_stale_relogin` e `oauth_rejected` (proposta: a etapa roda sem ponte e registra o motivo);
+  5. se as sessões são arquivadas no fim.
+- Sugeridas pela revisão: filtrar ou não o que é repassado a claude.ai; o que fazer quando a credencial do worker expira (46800 s).
+- Continuam valendo: os passos 1, 2, 5, 6 e 8.
 
 ## O que não foi verificado
 
 - Se a sessão aparece no app Claude do celular.
-- Quanto a credencial do worker dura numa etapa longa (`expires_in` informado: 46800 s), e a renovação com `reconnectTransport`.
-- Se outras contas, ou o servidor no futuro, vão exigir o token de dispositivo confiável.
+- A duração real da credencial do worker e a renovação com `reconnectTransport`.
+- Se outras contas vão exigir o token de dispositivo confiável.
 - Como a auditoria da #268 registra um evento que não é escrita no host de código.
 - Portões do repositório (`tsc`, `vitest`, `theme-audit`, `i18n:lint`, `public-audit`): não rodados, porque o código não mudou.
