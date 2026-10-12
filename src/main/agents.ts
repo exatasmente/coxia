@@ -15,7 +15,7 @@ import { ACTIVITY_NODE_MAX } from '../shared/activity';
 import { type RunActivity, beginActivity, bindActivityParent, currentActivity, withActivityParent } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, type TextSink, type TurnLimit, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, type TextSink, type TurnLimit, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, SessionGoneError, poolNoticeText } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
 import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
 import { budgetText, busyText, clipProviderText } from './engine/budget';
@@ -869,6 +869,8 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   const assistantText: string[] = [];
   // Whether the model used a tool: a busy refusal after that cannot be handed to another model, since what the tools did is not undone.
   let toolUsed = false;
+  // Whether the model wrote or did anything in this call: a resumed session that fails before it did could not be continued, and nothing is undone by starting a new one.
+  let wrote = false;
   // The sub-agents of this call by the id of the tool use that started them: the SDK marks what a sub-agent produces with that id, so two that run at once never share a line.
   const nodes = new Map<string, RunActivity>();
   const closeNodes = (state: 'finished' | 'failed'): void => {
@@ -901,6 +903,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     else if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') restartText();
     else if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta' && event.delta.text) {
       written = true;
+      wrote = true;
       req.text.piece(event.delta.text);
     }
   };
@@ -920,6 +923,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
       }
       if (m.type === 'rate_limit_event') limit = m.rate_limit_info.status === 'rejected' ? { until: resetMs(m.rate_limit_info.resetsAt), kind: m.rate_limit_info.rateLimitType ?? '' } : null;
       if (m.type === 'assistant') {
+        wrote = true;
         // Each content block of one response is a message of its own with the same id: its use is counted once.
         const used = (m.message as { id?: string; usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number } }).usage;
         const id = (m.message as { id?: string }).id;
@@ -1004,6 +1008,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
           // A busy model says so in the same text: the pool of the role may hand the start of the call to its next model (same message otherwise).
           const busy = busyText(said);
           if (busy) throw new EngineBusyError(failure, busy, toolUsed);
+          if (req.resume !== undefined && !wrote) throw new SessionGoneError(failure);
           throw new Error(failure);
         }
         stream?.end();
@@ -1019,6 +1024,11 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     }
     // i18n-ignore: developer error from the SDK result
     throw new Error('agent ended without a result');
+  } catch (e) {
+    // The CLI refusing the session (a process that ends before the model said anything) is a session that could not be continued too; a stop is never one.
+    const known = e instanceof SessionGoneError || e instanceof ProviderBudgetError || e instanceof EngineBusyError || e instanceof MaxTurnsError;
+    if (req.resume !== undefined && !wrote && !known && !req.abort?.signal.aborted) throw new SessionGoneError(redact(e instanceof Error ? e.message : String(e)));
+    throw e;
   } finally {
     // A call that ends by an error, an abort or a refusal leaves no sub-agent shown as working.
     flushThought();
@@ -1515,7 +1525,17 @@ export interface AgentCall {
    * A call that continues the session of the call before it (the one repair round of a QA stage): the same dialog, the same tools and the same sandbox, with one
    * prompt of the app in between. The engine of that first call is the one that holds its session, so the round runs there (`resumeOf`).
    */
-  resume?: { session: string; engine: ResolvedRole['engine'] };
+  resume?: {
+    session: string;
+    engine: ResolvedRole['engine'];
+    /**
+     * `round` (the default): a round of a stage, whose end the run's own state says, so the activity is left working. `conversation`: the next answer of a conversation
+     * that keeps one session (the persona's), which ends its activity like any call and hands the session to the SDK.
+     */
+    mode?: 'round' | 'conversation';
+    /** What the call asks when the session cannot be continued (it failed before the model did anything): the same call in a new session, with this prompt, once. */
+    fallback?: { prompt: string };
+  };
   /** The mailbox of a stage that talks while it works: where the engine gets a message to deliver between two steps (see EngineRequest.incoming). */
   incoming?: (delivered: (text: string) => void) => Promise<string | null>;
   /** Reaching the turn limit asks the person instead of failing (see EngineRequest.turnLimit). The call's own node shows the wait; a sub-agent's is the engine's. */
@@ -1645,7 +1665,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           extraDirs: call.confine || only ? [] : extraDirs(call.cwd, modelRole, { claude: false }),
           isolated: true,
           shell: only ? { rules: [], patterns: shell.patterns } : { rules, patterns: shell.patterns },
-          extra: { maxTurns: call.maxTurns },
+          // A conversation's session reaches the engines through `extra`, as every resume does; a round keeps what it always passed.
+          extra: { maxTurns: call.maxTurns, ...(call.resume?.mode === 'conversation' ? { resume: call.resume.session } : {}) },
           activity,
           // Nothing of the code host, no file confinement to carry (no file tool), no sandbox, evidence, release, attachments, mailbox, runner tool or screen: only `procedures`.
           confine: only ? undefined : call.confine,
@@ -1687,6 +1708,13 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
               const r = await runnerFor(picked)<T>(current);
               return granted ? { ...r, sources: [...before, ...r.sources] } : r;
             } catch (e) {
+              // The session of the conversation could not be continued and nothing was done in it: the same call starts a new session, once, and nothing says it failed.
+              if (e instanceof SessionGoneError && current.resume !== undefined && call.resume?.fallback && !call.abort?.signal.aborted) {
+                console.error('[agent] the session could not be continued, starting a new one');
+                call.text?.restart();
+                current = freshSession(request, call.resume.fallback.prompt);
+                continue;
+              }
               if (!(e instanceof MaxTurnsError)) throw e;
               if (asks && e.sessionId && request.turnLimit && (await anotherRound(request.turnLimit, picked.role, call.maxTurns, granted, call.abort?.signal))) {
                 before.push(...e.sources);
@@ -1723,9 +1751,9 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     // The engine reports the session it opened or resumed: what a later round of the same stage continues from.
     resumed = r.sessionId;
     // A call whose session is kept for a round that continues it is not the end of the stage: the activity is left working, and the run's own state says when
-    // the stage finished. Every other call reports the end here, as it always did.
-    activity.status(call.resume ? 'started' : 'finished');
-    return r;
+    // the stage finished. Every other call reports the end here, as it always did, a conversation's next answer included.
+    activity.status(call.resume && call.resume.mode !== 'conversation' ? 'started' : 'finished');
+    return { ...r, provider: target.providerId };
   } catch (e) {
     activity.status('failed', e instanceof Error ? e.message : String(e));
     // One seam for stages, mentions and the chain: the reason carries the provider that refused (a spare of the pool names itself), else the one the call ran on.
@@ -1751,6 +1779,19 @@ async function anotherRound(limit: TurnLimit, role: string, round: number, grant
 // Both `resume` fields are set: the engines read the session from `extra`, and `noteSession` from the request, so the session is not indexed twice.
 function continueRound(request: EngineRequest, sessionId: string, round: number): EngineRequest {
   return { ...request, prompt: t('main.engine.text.continueRound'), resume: sessionId, extra: { ...request.extra, maxTurns: round, resume: sessionId } };
+}
+
+// The request of a conversation whose session is gone: the same call with no session to continue, so it opens its own, and the prompt that carries the whole conversation.
+function freshSession(request: EngineRequest, prompt: string): EngineRequest {
+  const { resume: _gone, ...extra } = request.extra;
+  const { resume: _held, ...rest } = request;
+  return { ...rest, prompt, extra };
+}
+
+/** The engine and the provider an agent's call starts on now, as `runAgent` resolves them: what a kept session is compared with before it is continued. */
+export function engineTargetOf(agent: Pick<AgentDef, 'model'>): { engine: ResolvedRole['engine']; provider: string } {
+  const resolved = rc().agentModel(agent.model);
+  return { engine: openEngineFromEnv() ? 'open' : resolved.engine, provider: resolved.providerId };
 }
 
 // The call's question at a turn limit with its own node told: the node of an agent that waits says so, and says it works again when the person lets it go on. A sub-agent

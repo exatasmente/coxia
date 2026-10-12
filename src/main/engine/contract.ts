@@ -24,6 +24,20 @@ export interface Run<T> {
   partial?: true;
   /** The engine that answered, which `runAgent` fills: with a pool of models it is the engine of the model that was picked, not always the role's first one. */
   engine?: EngineId;
+  /** The provider of the model that answered, which `runAgent` fills: a pool's spare or the signed-in CLI after a budget refusal names itself, not the agent's first one. */
+  provider?: string;
+}
+
+/**
+ * Thrown by the Claude SDK path when a call that resumes a session (`resume`) failed before the model wrote anything or used a tool: the session could not be continued
+ * (expired, removed, held by another process). Nothing was done, so a caller that has a fallback may start a new session instead. Its message is the failure the call
+ * would have thrown otherwise, already redacted.
+ */
+export class SessionGoneError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SessionGoneError';
+  }
 }
 
 /** Thrown by an engine whose agent hit its turn limit; `run` then resumes the session once, without tools, for a partial answer. */

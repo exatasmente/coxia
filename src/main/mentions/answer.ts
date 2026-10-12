@@ -27,7 +27,7 @@ import { readFolder, type FolderFile } from '../runner/cycleFolder';
 import { limitsOf, watchdog, type StageEngine } from '../runner/executor';
 import type { TurnAsks } from '../turnAsks-core';
 import { turnAsker } from '../turnLimit';
-import { mentionCall, readProposedWrites, type ProposedWrite } from './call';
+import { type MentionInput, mentionCall, readProposedWrites, type ProposedWrite } from './call';
 import { conversationCallTool } from './converse';
 import { type ProposalOutcome } from './propose';
 import { type Binding, type BindingCell, type KeptSessions, type KeptShell, type ShellSource, keptSessions } from './kept';
@@ -45,6 +45,7 @@ import type { PersonaLive } from '../persona/live';
 import type { Door } from '../persona/door';
 import { type ScreenFacts, createButtons, openDiscussionsTool, openScreenTool } from '../persona/openScreen';
 import { type AnswerSession, createSession } from '../persona/session';
+import type { PersonaSessions, SessionEntry } from '../persona/sessionKeep';
 import { personaToolImpls } from '../persona/tools';
 
 // The answer an agent named in a message gives, wherever the person wrote (a run's thread, a channel, a general conversation, the direct conversation of an agent).
@@ -135,8 +136,9 @@ export interface MentionDeps {
   /**
    * The persona's chat (#247): where the text of its answer is published as it is written, and what the button tool checks a target against. Absent: the persona still answers
    * in plain text, with nothing shown while it is written and no button. `door` (#248) is the door its tools go through: absent, the real persona has no tool but the button.
+   * `sessions` (#279) is where each conversation of the real persona keeps the Claude Code session its next answer continues: absent, every answer opens a new one.
    */
-  persona?: { live: PersonaLive; screens: ScreenFacts; door?: Door };
+  persona?: { live: PersonaLive; screens: ScreenFacts; door?: Door; sessions?: PersonaSessions };
   /**
    * How the message being answered came in (`window` or `paired`; open to more): every act of the persona in this answer says so in the audit. Read where the message was
    * posted, since only there is the call that carried it. Absent: the window.
@@ -343,11 +345,16 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       }
       // The files the message carries go to the agent only when the workspace gives them: the person still attaches and opens them, the agent is told why not.
       const attachments = deps.config().attachments?.agents === false ? null : attachmentsFor(deps, place.thread, message);
-      const call: AgentCall = mentionCall({
+      const thread = deps.forum.read(place.thread, 0, 2000)?.messages ?? [];
+      // The real persona's own conversation keeps one Claude Code session (#279): an answer continues the one the last answer left, and is sent only what came after it.
+      const keeps = persona && !isDraft(def) && !deps.chain?.length && place.kind !== 'ceremony' ? (deps.persona?.sessions ?? null) : null;
+      const target = keeps ? keptTarget(keeps, def) : null;
+      const resume = keeps && target ? sessionToContinue(keeps.keep.get(place.thread), target, thread) : null;
+      const input: MentionInput = {
         agent: reader,
         config,
         message,
-        thread: deps.forum.read(place.thread, 0, 2000)?.messages ?? [],
+        thread,
         files: info.files,
         cwd: source?.cwd ?? (place.run && existsSync(place.run.worktree) ? place.run.worktree : deps.env().fallbackCwd),
         ref: info.ref,
@@ -368,7 +375,10 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         proceduresGui: procedures?.has.screen === true,
         proceduresCmd: procedures?.has.commands === true,
         ...(shared ? { index: shared.list.text, indexWrite: shared.writes } : {}),
-      });
+      };
+      const call: AgentCall = mentionCall(resume ? { ...input, thread: thread.filter((m) => m.seq > resume.upTo && m.seq !== message.seq), since: true } : input);
+      // A session that cannot be continued falls back to a new one inside the engine, with the whole conversation, as an answer always had it.
+      if (resume) call.resume = { session: resume.session, engine: resume.engine, mode: 'conversation', fallback: { prompt: mentionCall(input).prompt } };
       if (procedures) {
         call.procedures = procedures.tools;
         call.onUsage = procedures.wrapUsage();
@@ -473,8 +483,13 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
       // The persona's answer says which message it answers (the chat finds the work of the call by it) and carries the buttons it offered.
       // Another agent's answer carries a button only when it offered one (the discussions of a merge request).
       const offered = buttons.list();
-      deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false, ...(persona ? { answersTo: message.seq, buttons: offered } : offered.length ? { buttons: offered } : {}) });
+      const [said] = deps.forum.append(place.thread, { kind: 'post', author: { type: 'agent', id }, text, stage, public: false, ...(persona ? { answersTo: message.seq, buttons: offered } : offered.length ? { buttons: offered } : {}) });
       posted = true;
+      // The session that answered is the one the next answer continues, knowing the conversation up to this answer. A stopped or failed answer keeps the one before.
+      if (keeps && target && said) {
+        const engine = r.engine ?? target.engine;
+        if (engine === 'claude-sdk' && r.sessionId) keeps.keep.set(place.thread, { session: r.sessionId, engine, provider: r.provider ?? target.provider, upTo: said.seq });
+      }
       // What the thread shows of the answer is what the call's node shows of it, here and not in the engine, which never reports a closing answer as a step.
       made?.activity.answer(text);
       // The answer is out: the work may have earned one last turn, which runs beside the thread and not in front of its next message.
@@ -532,6 +547,27 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
     }
   }
   return out;
+}
+
+/** The engine and provider the persona starts on now, when its session may be kept at all: the Claude engine only (the open one keeps its own transcript). */
+function keptTarget(keeps: PersonaSessions, def: AgentDef): { engine: 'claude-sdk'; provider: string } | null {
+  try {
+    const target = keeps.target(def);
+    return target.engine === 'claude-sdk' ? { engine: 'claude-sdk', provider: target.provider } : null;
+  } catch (e) {
+    console.error('[mentions] could not resolve the persona\'s model', e instanceof Error ? e.message : e);
+    return null;
+  }
+}
+
+/**
+ * The kept session an answer continues: only on the engine and provider that hold it (another provider opens a new session) and only while the conversation still has the
+ * message it knows up to (an emptied conversation starts over).
+ */
+function sessionToContinue(kept: SessionEntry | null, target: { engine: 'claude-sdk'; provider: string }, thread: readonly ForumMessage[]): SessionEntry | null {
+  if (!kept || kept.engine !== target.engine || kept.provider !== target.provider) return null;
+  const last = thread.reduce((top, m) => Math.max(top, m.seq), 0);
+  return kept.upTo <= last ? kept : null;
 }
 
 /** Whether the agent is autonomous now: the team's current entry, which a change in Settings updates, before the definition the call started with. */
