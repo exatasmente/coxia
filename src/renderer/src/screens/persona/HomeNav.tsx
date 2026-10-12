@@ -3,6 +3,7 @@ import type { ReleaseAction } from '../../../../shared/types';
 import { totalUnread } from '../../../../shared/forumView';
 import type { Screen } from '../../App';
 import type { Ceremony } from '../../ceremony';
+import { useClaudeSessionsOn } from '../../claudeSessionsApi';
 import { useCycle } from '../../cycleApi';
 import { type HomeCounts, type NavId, type RowContext, blockedCards, homeCounts, isCurrentRow, navGroups, qaCandidates, resolveRow, rowTitle } from '../../home';
 import { useT, useTv } from '../../i18n';
@@ -53,6 +54,7 @@ export function HomeNav({ go, ceremony: c, actions, current, persona, folded = f
   const counts = useHomeCounts(c, actions);
   const health = useSaudeBadge();
   const radar = useRadarCount();
+  const claude = useClaudeSessionsOn();
   const waiting = waitingRuns(runs ?? []).length;
   const unread = totalUnread(useThreads() ?? [], useSeen());
   const cards = useMemo(() => c.cards?.cards ?? [], [c.cards]);
@@ -81,7 +83,7 @@ export function HomeNav({ go, ceremony: c, actions, current, persona, folded = f
 
   return (
     <nav className={`home-nav ${folded ? 'home-nav-folded' : ''}`} aria-label={t('ui.today.navLabel')}>
-      {navGroups(cycle?.ceremonies, persona).map((g) => (
+      {navGroups(cycle?.ceremonies, persona, claude).map((g) => (
         <div key={g.id} className="home-nav-group" role="group" aria-label={g.label ? t(g.label) : undefined}>
           {g.label && !folded && <div className="home-nav-head">{t(g.label)}</div>}
           {g.rows.map((r) => {

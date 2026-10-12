@@ -68,6 +68,11 @@ function emit(ev: AppEvent): void {
   broadcast(ev);
 }
 
+// The window alone: what a paired browser must never receive (the machine's Claude Code sessions).
+function emitWindow(ev: AppEvent): void {
+  if (win && !win.isDestroyed()) win.webContents.send('app:event', ev);
+}
+
 function showNotice(n: Notice, send: (ev: AppEvent) => void): void {
   if (!Notification.isSupported()) return;
   const note = new Notification({ title: n.title, body: n.body, icon: join(resourcesDir(), 'icon.png') });
@@ -296,7 +301,7 @@ if (!app.requestSingleInstanceLock()) {
     setBoardHost(realBoardHost);
     startBoardHost();
     for (const register of MODULES) {
-      register({ handle, notify, emit, job: registerJob });
+      register({ handle, notify, emit, emitWindow, job: registerJob });
     }
     startScheduler({ notify, emit });
     void syncWebAccess().catch((e) => fail('[web]', 'module:web', e));

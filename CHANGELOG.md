@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **The machine's Claude Code sessions in the app, off by default.** Turned on in Settings, a Claude Code screen on the computer lists the saved transcripts, the sessions running now and the ones in the background, and opens one in the same activity view the runs use, following new messages as they come. From there a message can be sent (to a copy when another process holds the session open), a permission request answered with allow or deny, the app's turn stopped, a process the app started ended, and a new session started in a project folder of the workspace. It uses the `claude` the person already installed and signed in to: no login is offered and no credential or key file is opened. Every message, permission answer, stop and start leaves an audit line naming the session, without the text. A paired phone is refused on every channel and gets none of its events, the persona cannot reach it, and a test workspace refuses sending and starting. The configuration moves to schema 35. See [docs/claude-sessions.md](docs/claude-sessions.md).
+
 ## [0.11.0-beta.6] - 2026-10-12
 
 ### Added

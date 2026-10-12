@@ -15,7 +15,10 @@ export interface ModuleContext {
   // The rpc registry: IPC for the window and the HTTP RPC for the browser; the renderer calls api.invoke(channel, ...args).
   handle(channel: string, fn: (...args: never[]) => unknown): void;
   notify(n: Notice): void;
+  // To the desktop window and to every paired browser.
   emit(ev: AppEvent): void;
+  // To the desktop window only, never through broadcast: for a feature a paired browser must not see. Absent outside the desktop app, where nothing is sent.
+  emitWindow?(ev: AppEvent): void;
   job(job: Job): void;
 }
 

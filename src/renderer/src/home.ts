@@ -103,6 +103,7 @@ export type NavId =
   | 'saude'
   | 'schedules'
   | 'auditoria'
+  | 'claudeSessions'
   | 'help';
 
 export interface NavRow {
@@ -135,9 +136,10 @@ function ceremonyRows(on: Partial<CycleView['ceremonies']> | undefined): NavRow[
 
 /**
  * The navigation of the home, in groups: the sidebar on the computer and the menu sheet on the phone list the same rows. What needs the person comes first, with its counts;
- * then the ceremonies, the cycle's screens and the app's. Every screen is one tap away, so none depends on the model understanding a request.
+ * then the ceremonies, the cycle's screens and the app's. Every screen is one tap away, so none depends on the model understanding a request. The machine's Claude Code
+ * sessions are listed only when the feature is on, and only in the desktop window (`claude` is false in a paired browser).
  */
-export function navGroups(on: Partial<CycleView['ceremonies']> | undefined, persona: boolean): NavGroup[] {
+export function navGroups(on: Partial<CycleView['ceremonies']> | undefined, persona: boolean, claude = false): NavGroup[] {
   return [
     { id: 'home', label: null, rows: [...(persona ? [row('chat', 'ui.nav.chat')] : []), row('overview', 'ui.chat.menu.overview')] },
     {
@@ -154,7 +156,7 @@ export function navGroups(on: Partial<CycleView['ceremonies']> | undefined, pers
     {
       id: 'app',
       label: 'ui.chat.nav.app',
-      rows: [row('radar', 'ui.nav.radar'), row('saude', 'ui.nav.health'), row('schedules', 'ui.schedules.nav'), row('custo', 'ui.nav.cost'), row('auditoria', 'ui.nav.audit'), row('settings', 'ui.nav.settings'), row('help', 'ui.nav.help')],
+      rows: [row('radar', 'ui.nav.radar'), row('saude', 'ui.nav.health'), row('schedules', 'ui.schedules.nav'), row('custo', 'ui.nav.cost'), row('auditoria', 'ui.nav.audit'), ...(claude ? [row('claudeSessions', 'ui.claude.nav')] : []), row('settings', 'ui.nav.settings'), row('help', 'ui.nav.help')],
     },
   ].filter((g) => g.rows.length > 0) as NavGroup[];
 }
@@ -202,7 +204,7 @@ export function rowTitle(label: string, detail: string | undefined, folded: bool
 // away from the home. The chat and the Overview draw the frame themselves, since their header carries the phone's menu; the conversations (call, deep dive, gate, QA...) and
 // the wizards keep the whole screen.
 const FRAMED: ReadonlySet<Screen['name']> = new Set<Screen['name']>([
-  'actions', 'history', 'settings', 'custo', 'radar', 'saude', 'schedules', 'auditoria', 'help', 'glossario', 'run', 'runs', 'board', 'forum', 'procedures', 'memory', 'prompts',
+  'actions', 'history', 'settings', 'custo', 'radar', 'saude', 'schedules', 'auditoria', 'help', 'glossario', 'run', 'runs', 'board', 'forum', 'procedures', 'memory', 'prompts', 'claudeSessions',
 ]);
 
 export const framedScreen = (name: Screen['name']): boolean => FRAMED.has(name);

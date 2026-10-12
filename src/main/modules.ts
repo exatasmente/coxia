@@ -6,6 +6,7 @@ import { browserModule } from './browser/module';
 import { custoTempo } from './custo-tempo';
 import { register as auditoria } from './auditoria';
 import { register as ceremonyCommands } from './ceremonyCommands';
+import { claudeSessionsModule } from './claudeSessions/module';
 import { configModule } from './configModule';
 import { register as conflictVerify } from './conflictVerify';
 import { cycleModule } from './cycle';
@@ -50,6 +51,7 @@ const ALL: Module[] = [
   board,
   browserModule,
   ceremonyCommands,
+  claudeSessionsModule,
   configModule,
   conflictVerify,
   cycleModule,

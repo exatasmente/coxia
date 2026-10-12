@@ -8,6 +8,7 @@ import { ConfigExport, ConfigImport } from '../wizard/ConfigTransfer';
 import { Notice } from '../wizard/ui';
 import { RestartOverlay, WorkspacesSection } from './WorkspacesSection';
 import { McpStateSection } from './McpStateSection';
+import { ClaudeSessionsSection } from './ClaudeSessionsSection';
 
 /** Settings → "Configurações e workspaces": the setup wizard, export and import of a configuration, the terminal state server, and the list of workspaces. */
 export function ConfigWorkspacesSection({ go }: { go: (s: Screen) => void }) {
@@ -77,6 +78,7 @@ export function ConfigWorkspacesSection({ go }: { go: (s: Screen) => void }) {
           </div>
 
           <McpStateSection />
+          <ClaudeSessionsSection />
         </>
       )}
       <WorkspacesSection />
