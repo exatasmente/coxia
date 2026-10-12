@@ -26,6 +26,24 @@ Os passos 1 a 7 de 2_PLAN.md, sobre o passo 0 feito na tentativa anterior.
 
 Os canais ficam registrados sempre e recusam quando o recurso está desligado. O plano dizia "não registra nada". Assim, ligar ou desligar não exige reiniciar o app. O critério 1 ("nenhum canal respondendo") vale, porque todo canal recusa.
 
+## Ordem de entrada e esquema (tentativa 3)
+
+A integração devolveu o trabalho porque esta branch e a da #282 usam o mesmo passo `v34ToV35`. A decisão da pessoa foi que a #280 entra primeiro. Por isso esta branch mantém o esquema 35, e o código não mudou nesta tentativa.
+
+Conferido nesta tentativa com `git grep` (ev-7):
+
+- Esta branch: `CONFIG_SCHEMA_VERSION = 35` (`types.ts:7`) e `v34ToV35` (`migrations.ts:500`).
+- #282 (d434be69): também `CONFIG_SCHEMA_VERSION = 35` e `v34ToV35`. A colisão existe.
+- `origin/release/0.11.0`: `CONFIG_SCHEMA_VERSION = 34`, então 35 é o próximo número certo para esta branch.
+
+Quem renumera é a #282, depois que esta branch entrar na release:
+
+- `CONFIG_SCHEMA_VERSION` 36 e um passo `v35ToV36` em `STEPS`;
+- `types.ts`, o comentário de histórico em `migrations.ts` e `docs/configuration.md`;
+- `test/config-migrations.test.ts`.
+
+Isso fica fora deste ciclo.
+
 ## Testes (todos com fakes; nada de `~/.claude`)
 
 - `test/claude-sessions-source.test.ts`: `guardedRead` recusa credenciais, `.key`, `control.key`, outros nomes, caminho fora da pasta e link para uma chave. Também cobre os campos permitidos, vivos e mortos, e a divisão entre em execução e em segundo plano.
@@ -45,18 +63,21 @@ Os canais ficam registrados sempre e recusam quando o recurso está desligado. O
 - `test/claude-sessions-view.test.ts`: grupos, linhas, controles (parar, encerrar, cópia), pedidos da sessão e da cópia, recusas em palavras, linha do menu só ligada.
 - Ajustados: `config-migrations.test.ts` (bloco 34→35), `persona-door-table.test.ts` (contagens), `persona-worded.test.ts` (asks-core listado), `mentions-module.test.ts` (`emitWindow`).
 
-## Portões rodados nesta tentativa
+## Portões
+
+Na tentativa 2:
 
 - `npx tsc --noEmit`: passou.
-- `npx vitest run`:
-  - Antes das últimas correções da conferência, passaram 562 arquivos e 9065 testes, com 4 pulados.
-  - Na rodada final, passaram 560 arquivos. Falharam 2 por estourar o limite de 5 s com a máquina carregada: `modules-registered.test.ts` e `agent-assist-prompts.test.ts`. Rodados sozinhos em seguida, os 2 passaram (38 testes). O `agent-assist-prompts` já tinha estourado esse limite na primeira rodada, antes desta mudança tocar nele.
+- `npx vitest run`: na rodada final, 560 arquivos passaram. Dois arquivos falharam por estourar o limite de 5 s com a máquina carregada: `modules-registered.test.ts` e `agent-assist-prompts.test.ts`. Rodados sozinhos em seguida, os dois passaram (38 testes).
 - `node scripts/theme-audit.mjs`, `npm run i18n:lint` e `node scripts/public-audit.mjs`: passaram.
+
+Na tentativa 3 o código não mudou, então nenhum portão foi rodado de novo. Só o `git grep` do esquema rodou (ev-7).
 
 ## Não verificado
 
-- Nada contra o Claude Code real: listar, enviar, cópia, permissão, parar e iniciar ficam para a verificação manual da QA (critérios 2 a 6 e 8).
-- A tela não foi aberta num app em execução, e o build `electron-vite` não foi rodado.
+- Nada contra o Claude Code real: listar, enviar, cópia, permissão, parar e iniciar dependem de uma pessoa com o `claude` instalado e logado (critérios 2 a 6 e 8).
+- A tela não foi aberta num app em execução.
+- Os pull requests abertos para a release não foram consultados. A ordem de entrada vem da decisão da pessoa.
 - Um pedido de permissão só aparece para uma sessão que o app conduz; uma sessão aberta num terminal pergunta no próprio terminal.
 - "Sem login" só aparece quando o SDK recusa; o app não confere a credencial.
 - Uma linha de auditoria não é gravada quando o envio ou o início falha depois de entregar o texto ao SDK, nem quando `interrupt` lança erro.
