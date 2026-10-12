@@ -2,7 +2,8 @@
 
 ## Decisões
 
-- Triagem: pedido de funcionalidade, entendível como escrito (só lido). Sugestão: priority:medium, squad plataforma.
+- Triagem: pedido de funcionalidade, entendível como escrito. Sugestão: priority:medium, squad plataforma.
+- Refinamento: 1_SPEC.md escrita (12 regras, 10 critérios). Proposta priority:medium, sem marco (depende da issue de sessões).
 
 ## Restrições
 
@@ -15,9 +16,12 @@
 
 ## Perguntas abertas
 
-- O SDK abre a ponte em sessão não interativa? Não verificado.
-- Precedência por agente vs por run; suporte real a espelho só de leitura.
+- O SDK abre a ponte em sessão não interativa? Não verificado (bloqueia a implementação).
+- Espelho só de leitura suportado de fato? Não verificado.
+- Precedência agente vs execução: não decidida (proposta: execução só restringe).
+- Dependência: issue de sessões (entregas 1 e 2 da #262), sem ciclo nem código.
 
 ## Onde o trabalho está
 
-- Triagem pronta (0_TRIAGE.md). Dependência: issue de sessões (entregas 1 e 2 da #262), sem ciclo nem código. Relacionadas: #262, #269, #270, #157, #268.
+- Triagem (0_TRIAGE.md) e especificação (1_SPEC.md) prontas. Próxima etapa: planejamento. Pontos de entrada: src/main/agents.ts sdkOptions, src/main/webPolicy.ts DESKTOP_ONLY/PERSONA_UNLISTED, src/main/workspaces-core.ts (test: true), auditoria da #268. Relacionadas: #262, #269, #270, #157, #268.
+- Passagem support → product-owner: Especificação: verificar no SDK se uma sessão iniciada pelo Agent SDK abre a ponte (remoteControlAtStartup/autoUploadSessions não verificados), definir nível por agente vs por run, espelho só de leitura, e a dependência da issue de sessões (sem ciclo). Pontos de entrada: src/main/agents.ts sdkOptions, src/main/webPolicy.ts DESKTOP_ONLY/PERSONA_UNLISTED, auditoria da #268. <!-- handoff:11 -->
