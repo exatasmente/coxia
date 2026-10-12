@@ -7,8 +7,9 @@
 - Plano (2_PLAN.md): primeira mensagem no prompt; turno sem AskConversation encerra (só continua com mensagem pendente, com resume); chamado que escreve recebe aviso imediato (callerWaiting); tempo limite fixo = metade de stageIdleMs (piso 30 s), sem config nova; conversa registrada em callStops; reason 'stalled'/'stopped'; entrada de conversa terminada removida.
 - Implementação: conversation.ts, executor.ts (callAgent), catálogos en/pt-BR, CHANGELOG, testes em runner-conversation*.test.ts e runner-send-call.test.ts.
 - forget() tira o chamado da chain; o resume do turno seguinte passa mode 'conversation'.
-- Revisão rodada 4: aprovado (tsc, vitest completo 9155 ok, i18n:lint, public-audit passam; theme-audit 17 ocorrências fora do diff, não comparado com a base).
-- QA (tentativa 1): rodou os 6 arquivos da área (46 ok), tsc, i18n:lint, public-audit: tudo saída 0. Plano em 5_TEST_PLAN.md.
+- Revisão rodada 4: aprovado (tsc, vitest completo 9155 ok, i18n:lint, public-audit passam; theme-audit 17 ocorrências fora do diff).
+- QA: 6 arquivos da área (46 ok), tsc, i18n:lint, public-audit saída 0.
+- Integração devolveu: a nota do CHANGELOG estava em [0.11.0-beta.5] (já cortada). Corrigido: agora em [Unreleased] / Fixed (esquema 36 igual à release, base 0 atrás, PR #294 base release/0.11.0).
 - Resposta: O que continua em aberto: - src/main/runner/executor.ts:1134 — `chain.push(to)` nunca é desfeito quando a conversa termina. A segunda chamada ao mesmo agente depois do fim é recusada como ciclo, então o teste novo de callAgent falha (1 turno em vez de 2) e a nota do CHANGELOG, que diz que a próxima chamada abre conversa nova, não é verdadeira. Retirar o chamad… - test/runner-send-call.test.ts:221 — O teste falha no vitest: `topics` tem 1 item, esperado 2. Gate vermelho; só passa depois de tratar a recusa por ciclo na segunda chamada. <!-- answer:92 -->
 
 ## Restrições
@@ -25,11 +26,11 @@
 ## Perguntas abertas
 
 - Não bloqueantes: teste do relógio de ociosidade (critério 8), teste de stalled/stopped via CallAgent, chave de screenApi.stop vs callStops. Causa dos 70 min segue hipótese.
-- Duplicadas no tracker: não pesquisadas.
+- Duplicadas no tracker: não pesquisadas; outros PRs abertos além do #294 não vistos.
 
 ## Onde o trabalho está
 
-- QA concluída sem falhas; segue para o pull request. Vitest completo e theme-audit não rodados pela QA.
+- CHANGELOG corrigido nesta passada (nada rodado depois). Segue para integração: reconferir CHANGELOG, gates (vitest incluso) e abrir o pull request.
 - Passagem support → product-owner: Refino: confirmar escopo das cinco frentes e propor prioridade. Análise técnica: descobrir o que bate o relógio de ociosidade durante a espera, decidir entre responder ao chamador ou AskConversation retornar imediatamente, e escrever os testes com fakes da seção de aceitação. <!-- handoff:12 -->
 - Passagem product-owner → pessoa: Análise técnica: confirmar por teste com fakes a causa de o relógio de ociosidade não disparar (hipótese: respostas do chamado entram na inbox da etapa e batem o relógio, ou pausa do relógio), escolher entre o chamador responder ao chamado ou AskConversation voltar na hora, definir o tempo limite sem progresso (menor que a ociosidade da etapa) e registrar conversas do runner na parada. Escrever os testes dos critérios 1 a 8 de 1_SPEC.md. <!-- handoff:22 -->
 - Passagem tl-plataforma → pessoa: Implementação: seguir 2_PLAN.md na ordem. Começar pelos testes vermelhos (inclusive a caracterização do relógio de ociosidade, critério 8, que decide se `answered` deixa de rearmar o relógio), depois conversation.ts, executor.ts (callAgent), i18n nos dois catálogos e CHANGELOG. Conferir se a chave de screenApi.stop bate com o registro em callStops. Rodar os cinco gates do AGENTS.md. <!-- handoff:35 -->
@@ -42,3 +43,4 @@
 - Passagem developer → revisor-plataforma: Rodar vitest (começando por test/activity-calls.test.ts, depois o completo), tsc, theme-audit, i18n:lint e public-audit; confirmar que o nó do chamado tem só um 'started' no segundo turno e que o resume em modo conversation não quebrou runner-conversation*. Seguem pendentes: caracterização do relógio de ociosidade, teste de stalled/stopped por callAgent, chave de screenApi.stop. <!-- handoff:124 -->
 - Passagem revisor-plataforma → qa-plataforma-2: Abrir o pull request. Pendências não bloqueantes: teste do relógio de ociosidade, teste de stalled/stopped via CallAgent e conferência da chave de screenApi.stop. <!-- handoff:135 -->
 - Passagem qa-plataforma-2 → integrator: Abrir o pull request. Pendências não bloqueantes: teste do relógio de ociosidade (critério 8), teste de stalled/stopped via CallAgent, conferência da chave de screenApi.stop; vitest completo e theme-audit não rodados nesta etapa. <!-- handoff:155 -->
+- Passagem integrator → developer: Veredito: devolver ao implement. O item 1 (CHANGELOG) falha: a linha da mudança está em "[0.11.0-beta.5] / Fixed", versão já cortada, e "[Unreleased]" (linha 7) está vazio. Nas verificações desta etapa, o esquema (36) é igual ao da release, a base está 0 atrás de origin/release/0.11.0, não há nomes de módulo duplicados e os gates listados em ev-4 saíram com 0. Não verificado: vitest (não consta no log ev-4) e outros PRs abertos além do #294. Cenário que falhou: CHANGELOG em [Unreleased]. A linha está sob [0.11.0-beta.5] / Fixed; [Unreleased] está vazio. <!-- handoff:186 -->
