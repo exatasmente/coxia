@@ -2,10 +2,10 @@
 
 ## Decisões
 
-- Ordem de entrada e esquema: a pessoa respondeu "280 primeiro", depois "2882 vai primeiro" (lido como #282), depois "Espera e ajusta a versão do schema" e, à pergunta de caminho, "Esperar". Leitura adotada: esperar a #282 entrar na base e só então renumerar esta branch de 35 para 36 (`v35ToV36`). Não renumerar antes: a cadeia ficaria sem o passo 35.
+- Ordem de entrada e esquema: a pessoa respondeu "280 primeiro", "2882 vai primeiro" (lido como #282), "Espera e ajusta a versão do schema" e "Esperar". Depois, a pessoa avisou que a #282 já está na 0.11.0: a branch precisa trazer a base e renumerar de 35 para 36 (`v35ToV36`).
 - Os canais ficam sempre registrados e recusam quando o recurso está desligado (desvio do plano, em 3_IMPLEMENTATION.md).
 - Fonte de sessões em execução: `~/.claude/sessions/<pid>.json` via `guardedRead`, só campos permitidos (nota m-7d7da8eb).
-- Respostas da pessoa: 280 primeiro; 2882 vai primeiro; Espera e ajusta a versão do schema; Esperar.
+- Comunicação: nota de lançamento (6_RELEASE_NOTE.md) e comentário escritos; sem código alterado.
 - Resposta: 280 primeiro <!-- answer:145 -->
 - Resposta: 2882 vai primeiro <!-- answer:225 -->
 - Resposta: Espera e ajusta a versão do schema <!-- answer:242 -->
@@ -16,11 +16,11 @@
 - Nunca abrir `.credentials.json`, `*.key`, `control.key`; `guardedRead` é o único ponto de disco.
 - Eventos só pela janela (`emitWindow`); canais negados ao celular (`/^claudeSessions:/`) e em `EXCLUDED` da persona.
 - `test:true` recusa enviar e iniciar. Nada de `~/.claude` em testes.
-- PR com base `release/0.11.0` (esquema 34 hoje). #282 e esta branch usam `v34ToV35`.
+- PR com base `release/0.11.0`.
 
 ## Tentado e descartado
 
-- Renumerar para 36 agora (ou `v34ToV36`): descartado, deixa v34 sem caminho até a #282 entrar.
+- Renumerar para 36 antes da #282 entrar: deixaria v34 sem caminho.
 
 ## Perguntas abertas
 
@@ -28,9 +28,9 @@
 
 ## Onde o trabalho está
 
-- Passos 1 a 7 implementados; revisão aprovada (rodadas 3 e 4); QA com fakes passou (191 testes do recurso, build ok, tentativa anterior); QA tentativa 5 só releu o esquema (35, `v34ToV35`), sem mudança de código.
-- Falta: quando a #282 estiver na base, renumerar para 36 (types.ts, migrations.ts, docs/configuration.md, test/config-migrations.test.ts, CHANGELOG) e rodar os cinco portões.
-- Não verificado: Claude Code real (critérios 2 a 6 e 8), tela em app aberto, esquema da #282.
+- Passos 1 a 7 implementados; revisão aprovada; QA com fakes passou (191 testes do recurso, build ok, em tentativas anteriores).
+- Falta: trazer a base (#282 integrada), renumerar para 36 (types.ts, migrations.ts, docs/configuration.md, test/config-migrations.test.ts, CHANGELOG) e rodar os cinco portões.
+- Não verificado: Claude Code real (critérios 2 a 6 e 8), tela em app aberto, base do PR e esquema contra a release.
 - Lacuna conhecida (sugestão): sem linha de auditoria quando send/start falha após entregar o texto ao SDK ou quando `interrupt` lança.
 - Passagem support → product-owner: Refino: confirmar a fonte das sessões em execução/em segundo plano sem tocar nas chaves, checar a API do SDK instalado, achar onde entra o prefixo negado em webPolicy.ts e alinhar com #262 e #282. <!-- handoff:11 -->
 - Passagem product-owner → pessoa: Plano: resolver a fonte de sessões em execução/segundo plano sem abrir chaves e verificar a API do SDK instalado (instalar dependências); o prefixo negado entra como novo padrão em webPolicy.ts (lista de padrões na linha ~120, ex.: /^claudeSessions:/); incluir o recurso em EXCLUDED de doorTable.ts; combinar com #282 o ciclo de vida das sessões iniciadas pelo Coxia. <!-- handoff:21 -->
@@ -50,3 +50,4 @@
 - Passagem developer → revisor-plataforma: Implementação: a pessoa respondeu "Esperar" (opção a). Esta branch fica no esquema 35 (`v34ToV35`) e o código não mudou. Quando a #282 entrar na base, trazer a base pela ferramenta de conflito, renumerar para 36 (`v35ToV36`, types.ts, histórico em migrations.ts, docs/configuration.md, test/config-migrations.test.ts, CHANGELOG) e rodar os cinco portões. Até lá, não renumerar. Verificação contra o Claude Code real segue pendente. <!-- handoff:286 -->
 - Passagem revisor-plataforma → qa-plataforma-2: Revisão rodada 4: aprovada, sem bloqueantes. Esquema 35 mantido até a #282 entrar; depois renumerar para 36 e rodar os cinco portões. Verificação contra o Claude Code real segue pendente. <!-- handoff:293 -->
 - Passagem qa-plataforma-2 → integrator: QA: código inalterado; esquema ainda 35 (v34ToV35) por decisão "Esperar". Testes do recurso (191) e build passaram em tentativa anterior. Pendente: renumerar para 36 quando a #282 entrar na base, rodar os cinco portões e verificar manualmente contra o Claude Code real. <!-- handoff:303 -->
+- Passagem integrator → pessoa: Trazer a base pela ferramenta de conflito do app e conferir o esquema 35 contra a release aberta e os PRs abertos antes de abrir o PR. <!-- handoff:323 -->
