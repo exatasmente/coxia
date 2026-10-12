@@ -1,5 +1,6 @@
 import { unconfinedOf } from '../../shared/unconfined';
 import type { AgentDef, WorkspaceConfig } from '../../shared/config/types';
+import { agentLabel } from '../../shared/config/team';
 import { runThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import type { FlowStage, Run } from '../../shared/runs';
@@ -7,11 +8,13 @@ import { callKey } from '../../shared/browser';
 import { type CallScreen, type ScreenPorts, modelSeesImages, openCallScreen, promptFor } from '../browser/callScreen';
 import { grantsFor } from '../browser/guard';
 import { type RunActivity, beginActivity, currentActivity } from '../activity';
-import type { AgentCall } from '../agents';
+import { type AgentCall, secretPath } from '../agents';
 import { poolNoticeLine } from '../engine/contract';
 import type { ForumStore } from '../forum-core';
 import type { SandboxSession } from '../sandbox';
 import type { StageEngine } from './executor';
+import type { TurnAsks } from '../turnAsks-core';
+import { turnAsker } from '../turnLimit';
 import { type RunnerTools, calledAgentTools } from './tools';
 import { screenRules } from './screenPrompt';
 import { confinedHooks } from './hooks';
@@ -77,6 +80,10 @@ export interface ConversationDeps {
   procedures?: ProceduresPort;
   /** The shared memory: the called agent gets the index and the tools, and keeps notes in its own folder of the conversation it was called in. Absent, or the switch off: none. */
   memoryPort?: MemoryPort;
+  /** The questions at a turn limit: a sub-agent of the called agent that uses its last turn asks the person here. Absent: it stops at its limit as it always did. The called agent's own limit is fixed and keeps ending in a partial answer. */
+  turnAsks?: TurnAsks;
+  /** The calling stage's clocks, stood still while a question of the called agent's sub-agents waits (the conversation has none of its own). */
+  pause?: () => () => void;
   /** The abort of the run: it ends the conversation with everything else. */
   abort: AbortController;
   /** The chain of calls that brought the run here (the caller first): the cycle is refused against it. */
@@ -344,6 +351,23 @@ async function turnOf(
     onUsage: procedures ? procedures.wrapUsage(deps.onUsage) : deps.onUsage,
     onPool: (notice) => say({ kind: 'system', author: { type: 'app' }, ...poolNoticeLine(deps.called.id, notice), stage: deps.stage.id }),
     ...(held?.screen.toolset ? { screen: held.screen.toolset } : {}),
+    // Only its sub-agents ask: its own 12 turns are fixed and end in a partial answer.
+    ...(deps.turnAsks
+      ? {
+          turnLimit: {
+            own: false,
+            ask: turnAsker({
+              store: deps.turnAsks,
+              place: { run: deps.run.id, thread, stage: deps.stage.id, ref: deps.run.issue.ref, issue: deps.run.issue.iid },
+              agent: { id: deps.called.id, name: agentLabel(deps.config().agents.team, deps.called.id) },
+              say: (code, params) => say({ kind: 'system', author: { type: 'app' }, code, params, stage: deps.stage.id }),
+              pause: deps.pause ?? (() => () => undefined),
+              signal: (held?.abort ?? deps.abort).signal,
+              isSecretPath: (token) => secretPath(token, deps.run.worktree),
+            }),
+          },
+        }
+      : {}),
   };
   let r: Awaited<ReturnType<StageEngine>>;
   try {

@@ -1,8 +1,10 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AuditEntry } from '../shared/auditoria';
+import { BASIS_LIMITS, type AuditBasis, type AuditEntry } from '../shared/auditoria';
 import { ATAS } from './env';
+import { redact } from './errorlog-core';
 import type { Module } from './module';
+import { openAct, type Act } from './persona/act';
 
 const FILE = join(ATAS, 'auditoria.jsonl');
 const FIELD_MAX = 300;
@@ -21,15 +23,50 @@ function cut(text: string, max: number): string {
   return t.length > max ? `${t.slice(0, max)}… (${t.length} caracteres)` : t;
 }
 
+/** Text the persona's act writes: the answer's exact-value mask (a secret it read), the app's redaction, then the log's own scrubbing. */
+const masked = (act: Act, text: string): string => scrub(redact(act.mask(text)));
+
+const clip = (text: string, max: number): string => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+/** The `basis` of a persona's write as it is written: eight reads, an excerpt of 240, the whole within 2,000 characters, every string masked. Reads go from the oldest, then the subject. */
+export function boundBasis(act: Act, basis: AuditBasis): AuditBasis {
+  const word = (text: string, max: number): string => clip(masked(act, text), max);
+  const out: AuditBasis = {
+    subject: word(basis.subject, BASIS_LIMITS.subject),
+    reads: basis.reads.slice(0, BASIS_LIMITS.reads).map((r) => ({ tool: word(r.tool, BASIS_LIMITS.name), op: word(r.op, BASIS_LIMITS.name), target: word(r.target, BASIS_LIMITS.target), excerpt: word(r.excerpt, BASIS_LIMITS.excerpt) })),
+    message: typeof basis.message === 'number' && Number.isFinite(basis.message) ? basis.message : null,
+  };
+  const size = (): number => JSON.stringify(out).length;
+  for (let i = out.reads.length - 1; i >= 0 && size() > BASIS_LIMITS.total; i--) out.reads[i].excerpt = '';
+  while (out.reads.length && size() > BASIS_LIMITS.total) out.reads.pop();
+  if (size() > BASIS_LIMITS.total) out.subject = clip(out.subject, Math.max(0, out.subject.length - (size() - BASIS_LIMITS.total)));
+  return out;
+}
+
+/** What a persona act stamps on every line written while it is open. The handler's own fields cannot override it. */
+function stamp(act: Act): Partial<AuditEntry> {
+  return { actor: 'persona', door: act.door, id: act.id, ...(act.said ? { said: masked(act, act.said).slice(0, BASIS_LIMITS.said) } : {}), ...(act.basis ? { basis: boundBasis(act, act.basis) } : {}) };
+}
+
 export function recordWrite(entry: Omit<AuditEntry, 'at'>): void {
   try {
+    // While the persona's act is open the line says so and the act's mask applies to everything it writes; once the act settles, work it left running writes as itself.
+    const act = openAct();
+    const word = (text: string): string => (act ? masked(act, text) : text);
+    // Who is said by the act and by nobody else: a handler's own claim to any of these fields is dropped while an act is open.
+    const { actor: _actor, door: _door, id: _id, said: _said, basis: _basis, ...own } = entry;
     const line: AuditEntry = {
-      ...entry,
+      ...(act ? own : entry),
       at: new Date().toISOString(),
-      target: scrub(entry.target),
-      fields: Object.fromEntries(Object.entries(entry.fields).map(([k, v]) => [k, cut(v, FIELD_MAX)])),
-      result: cut(entry.result, RESULT_MAX),
+      target: scrub(word(entry.target)),
+      fields: Object.fromEntries(Object.entries(entry.fields).map(([k, v]) => [k, cut(word(v), FIELD_MAX)])),
+      result: cut(word(entry.result), RESULT_MAX),
+      ...(act ? stamp(act) : {}),
     };
+    if (act) {
+      act.wrote.count += 1;
+      act.wrote.kinds.add(entry.kind);
+    }
     mkdirSync(ATAS, { recursive: true });
     appendFileSync(FILE, `${JSON.stringify(line)}\n`);
   } catch (e) {

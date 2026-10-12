@@ -210,6 +210,7 @@ const flowStage = object(
     agent: { type: ['string', 'null'], description: 'The agent that works it.', pattern: ID },
     autonomous: { type: 'boolean', description: 'Whether that agent was autonomous when the copy was made (the live value is read from the team).' },
     cycleAutonomous: { type: 'boolean', description: 'Whether the run\'s autonomy block had its general switch on when the flow was resolved (the stage starts by itself regardless of the agent).' },
+    display: { type: 'boolean', description: 'Whether the stage asked for the virtual display a QA stage gets.' },
     artifacts: fileNames,
     reads: { ...fileNames, type: ['array', 'null'] },
     next: { type: ['string', 'null'], description: 'The stage that follows; null: the run ends after it.', pattern: ID },

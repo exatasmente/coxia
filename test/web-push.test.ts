@@ -147,9 +147,13 @@ describe('push targets', () => {
     expect(noticeTarget({ type: 'deep', card: { ref: 'web#123' } as never })).toEqual({ to: 'deep', ref: 'web#123' });
     expect(noticeTarget({ type: 'conflict', id: 'abc' })).toEqual({ to: 'conflict', id: 'abc' });
     expect(noticeTarget({ type: 'open', screen: { name: 'qa', ref: 'web#9' } })).toEqual({ to: 'qa', ref: 'web#9' });
-    expect(noticeTarget({ type: 'open', screen: { name: 'qa' } })).toEqual({ to: 'today' });
-    expect(noticeTarget({ type: 'open', screen: { name: 'nope' } })).toEqual({ to: 'today' });
-    expect(noticeTarget({ type: 'module', name: 'x', payload: 1 })).toEqual({ to: 'today' });
+    expect(noticeTarget({ type: 'open', screen: { name: 'qa' } })).toEqual({ to: 'overview' });
+    expect(noticeTarget({ type: 'open', screen: { name: 'nope' } })).toEqual({ to: 'overview' });
+    expect(noticeTarget({ type: 'module', name: 'x', payload: 1 })).toEqual({ to: 'overview' });
+    // the names the chat added, and the old one a notice made before the update may carry
+    expect(noticeTarget({ type: 'navigate', to: 'chat' })).toEqual({ to: 'chat' });
+    expect(noticeTarget({ type: 'navigate', to: 'overview' })).toEqual({ to: 'overview' });
+    expect(noticeTarget({ type: 'navigate', to: 'today' })).toEqual({ to: 'today' });
   });
 
   it('round-trips through the URL query and rejects hostile values', () => {
@@ -210,6 +214,23 @@ describe('push service', () => {
     expect(JSON.stringify(payload).length).toBeLessThan(600);
   });
 
+  it('keeps the high urgency of the pre-daily notice now that it opens the chat, and sends the notices about cards as normal', async () => {
+    const { push, sent } = setup();
+    push.subscribe('dev1', sub(1).sub);
+    for (const to of ['call', 'chat'] as const) {
+      sent.length = 0;
+      push.notify({ title: 'Pré-daily', body: 'b', onClick: { type: 'navigate', to } });
+      await push.flush();
+      expect(sent[0].headers.Urgency, to).toBe('high');
+    }
+    for (const to of ['overview', 'today'] as const) {
+      sent.length = 0;
+      push.notify({ title: 'Bloqueio', body: 'b', onClick: { type: 'navigate', to } });
+      await push.flush();
+      expect(sent[0].headers.Urgency, to).toBe('normal');
+    }
+  });
+
   it('does nothing when the notifications setting is off, but the test still goes out', async () => {
     const { push, sent } = setup({ notificationsOn: () => false });
     push.subscribe('dev1', sub(1).sub);
@@ -232,7 +253,7 @@ describe('push service', () => {
     for (let i = 0; i < 6; i++) push.notify({ title: `n${i}`, body: 'b', onClick: { type: 'navigate', to: 'today' } });
     await push.flush();
     expect(sent).toHaveLength(1);
-    expect(open(sent[0], a.r)).toMatchObject({ title: '6 notificações novas', target: { to: 'today' } });
+    expect(open(sent[0], a.r)).toMatchObject({ title: '6 notificações novas', target: { to: 'overview' } });
   });
 
   it('caps the pushes per device per hour', async () => {

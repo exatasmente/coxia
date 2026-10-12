@@ -45,6 +45,20 @@ maybe('a JavaScript plugin in a real sandbox', () => {
     expect(readFileSync(join(wt, 'docs/cycles/1-x/7_WEB_SEARCH.md'), 'utf8')).toContain('Q=what is a plugin B={"results":1} R=2');
   }, 120_000);
 
+  it('carries what a call from a conversation asked, the conversation and the run in the context', async () => {
+    const wt = join(root, 'wt3');
+    mkdirSync(join(wt, 'docs/cycles/1-x'), { recursive: true });
+    const sandbox = createSandboxService({ dir: join(root, 'sandbox3'), protect: [join(root, 'data')] });
+    const files = { 'index.mjs': "export default async (ctx) => ({ document: ctx.event + ' ' + JSON.stringify([ctx.asked, ctx.thread, ctx.runId]) });" };
+    const listen = { sandbox, config: neutralSandbox(), executable, read: async (call: JsCall) => ({ id: call.id, refused: 'no' as const }) };
+    const asked = await runJsPlugin(listen, { id: 'asked', files, entry: 'index.mjs', settings: {} }, 'conversation-called', { issue: 123, stage: 'implement', asked: 'how does replay work?', thread: 'run-r1', runId: 'r1' }, { worktree: wt, cycleFolder: 'docs/cycles/1-x' });
+    expect(asked.ok).toBe(true);
+    expect(asked.text).toBe('conversation-called ["how does replay work?","run-r1","r1"]');
+    // On the four events of a cycle the three fields are null.
+    const cycle = await runJsPlugin(listen, { id: 'cycle', files, entry: 'index.mjs', settings: {} }, 'stage-finished', { issue: 1 }, { worktree: wt, cycleFolder: 'docs/cycles/1-x' });
+    expect(cycle.text).toBe('stage-finished [null,null,null]');
+  }, 120_000);
+
   it('says why a plugin that throws failed, and writes nothing', async () => {
     const wt = join(root, 'wt2');
     mkdirSync(join(wt, 'docs/cycles/1-x'), { recursive: true });

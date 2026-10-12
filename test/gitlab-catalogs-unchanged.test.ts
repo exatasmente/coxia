@@ -184,6 +184,24 @@ const INTENDED: Record<string, Intended> = {
     language: 'both',
     replace: [["Merge branch 'main'", "Merge branch '{target}'"]],
   },
+  // The app opens on a chat with the persona and Today's content is the Overview: no label names the screen that is gone, and "back" lands on the home.
+  'ui.nav.backToday': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.actions.backToday': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.quick.backToday': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.call.backToToday': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.settings.back': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.help.back': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['Back to Today', 'Back to Home'], ['Voltar para Hoje', 'Voltar ao início']] },
+  'ui.ata.backToday': { reason: 'the back button lands on the home (the chat, or the Overview), no longer on Today', language: 'both', replace: [['← Today', '← Home'], ['← Hoje', '← Início']] },
+  'ui.help.agentVoice.text': {
+    reason: 'the voice switch is in the header of the chat now that Today is the Overview',
+    language: 'both',
+    replace: [
+      ['at the top of Today', 'at the top of the chat'],
+      ['no alto de Hoje', 'no alto do chat'],
+    ],
+  },
+  // The pre-daily notice opens the chat, where its card is: it says "open" and names the ceremony, and the text-mode wording no longer says "the chat" or "the conversation".
+  'notify.preDaily.body': { reason: 'the notice opens the chat with the ceremony card, so it says open and names the ceremony instead of joining the call or the chat', language: 'both' },
   // The wizard note no longer calls the open engine read-only: it writes inside the run's worktree and runs commands.
   'wizard.models.openEngineNote': { reason: 'the open engine writes inside the run\'s worktree and runs commands, so the wizard note no longer says read-only', language: 'both' },
   'wizard.models.noSubscription': { reason: 'a keyless Anthropic provider is named the signed-in Claude Code CLI: the app still offers no login, but uses the one the CLI already has (#262)', language: 'both' },
@@ -193,6 +211,7 @@ const applyIntended = (key: string, was: string): string => (INTENDED[key].repla
 // Keys of main that this change takes out of the catalogs for good: what they said no longer happens. Each one must be gone from CATALOGS.
 const REMOVED: Record<string, string> = {
   'main.conflictMr.notMain': 'the conflict of an MR is resolved against whatever branch it targets, a release branch included, so nothing refuses a target other than main',
+  'ui.settings.save': 'the Settings page\'s save names the page (ui.settings.saveAll), so it is not read as the save of the persona section under it',
   'ui.retro.improvements.title': 'the retro has no section of proposed improvements any more (rule 1)',
   'ui.retro.improvements.hint': 'the retro no longer offers the IMPROVEMENTS.md flow to take by hand (decision 5)',
   'ui.retro.improvements.hintPlain': 'the retro no longer offers the team improvements record to take by hand (decision 5)',
@@ -205,6 +224,37 @@ const REMOVED: Record<string, string> = {
   'ui.retro.entry.proposal': 'the proposal line of the copied improvement entry has no caller any more (rule 1)',
   'ui.retro.problem': 'the problem label of the retro improvement entry has no caller any more (rule 1)',
   'ui.retro.proposal': 'the proposal label of the retro improvement entry has no caller any more (rule 1)',
+  // What the open engine tells its model about a failed tool call is fixed English, like the tool descriptions: no person reads it, so it is not in the catalogs.
+  'main.engine.text.toolError': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.unknownTool': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.badArgs': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.anyOf': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.const': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.enum': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.type': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.or': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.tooShort': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.tooLong': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.min': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.max': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.minItems': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.maxItems': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.required': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  'main.engine.text.schema.unexpected': 'the open engine words what the model reads about a wrong tool call in fixed English (tool-call wrapper and schema findings)',
+  // The first item of the phone's bottom bar is the chat; Today is not a screen any more.
+  'ui.today.greetingName': 'the header of the Overview no longer greets: the greeting went with the header of Today, and the chat names the persona instead',
+  'ui.nav.today': 'the first item of the bottom bar is the Chat now, and no screen is called Today any more (the Overview holds its content)',
+  // The call and its greeting are not items of any bar or header any more: the chat's menu names the screens and the chat names the persona.
+  'nav.call': 'no screen draws a bar item for the call: the first item is the Chat and the pre-daily is reached from the ceremony card and the menu',
+  'nav.call.novoice': 'the text-mode label of the call item went with nav.call',
+  'nav.call.live': 'the live mark of a running pre-daily is a dot on the Chat item, not a label of its own',
+  'nav.call.live.novoice': 'the text-mode live label went with nav.call.live',
+  'today.greeting.night': 'the greeting went with the header of Today; the chat header names the persona',
+  'today.greeting.morning': 'the greeting went with the header of Today; the chat header names the persona',
+  'today.greeting.afternoon': 'the greeting went with the header of Today; the chat header names the persona',
+  // The home's navigation is a sidebar (a sheet on a phone) whose rows carry their counts apart from their words.
+  'ui.nav.radarCount': 'the radar row of the navigation shows its count as a badge beside the word, not in the label',
+  'ui.nav.healthCount': 'the health row of the navigation shows its count as a badge beside the word, not in the label',
   // The panel of running work is a tree: no activity is folded into one generic "Agent" card, each is an entry named for its agent.
   'activity.generic': 'the dock no longer has a generic card for the runs no job owns: each one is an entry of its own, named for its agent',
 };

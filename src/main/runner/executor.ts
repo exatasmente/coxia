@@ -4,7 +4,7 @@ import { existsSync, rmSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { docsFlowOf, flowStagesOf, releaseFlowOf, squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
-import { agentLabel, workingTeam } from '../../shared/config/team';
+import { agentLabel, personaIdsOf, workingTeam } from '../../shared/config/team';
 import type { AgentDef, PoolMode, WorkspaceConfig } from '../../shared/config/types';
 import type { AttachmentRef } from '../../shared/attachments';
 import { type ForumMessage, runThreadId } from '../../shared/forum';
@@ -15,7 +15,7 @@ import { type CommandDecision, type UsageReport, type FlowStage, type OutputKind
 import { currentActivity, withActivityContext } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import { rc } from '../workspaceConfig';
-import { type AgentCall, extraReadRoots } from '../agents';
+import { type AgentCall, extraReadRoots, secretPath } from '../agents';
 import { MaxTurnsError, ProviderBudgetError, ProviderBusyError, type ReadConfinement, budgetResetText, poolBusyParams, poolNoticeLine } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
@@ -63,6 +63,8 @@ import { grantsFor, withheldText } from '../browser/guard';
 import { type CallHandoffOffer, type CallScreen, beginHandoff, modelSeesImages, offerHandoff, openCallScreen, promptFor } from '../browser/callScreen';
 import type { HandoffService } from '../screen/handoff';
 import type { ScreenAsks } from '../browser/asks';
+import type { TurnAsks } from '../turnAsks-core';
+import { turnAsker } from '../turnLimit';
 import type { ScreenSessions } from '../browser/sessions';
 
 // One attempt at one stage: build what the agent reads, run it, write the documents it returned into the cycle folder and commit what it did.
@@ -126,6 +128,8 @@ export interface ExecutorDeps {
   sharedMemory?: (run: Run, narrow: boolean) => string;
   /** The workspace's data folder: where a run's evidence is stored. */
   dataDir: () => string;
+  /** The questions at a turn limit (#246): a stage and its sub-agents wait here for the person when they use their last turn. Absent: they stop at the limit as they always did. */
+  turnAsks?: TurnAsks;
   /** The live screens of the stages that have a virtual display; absent: none is opened. */
   screens?: ScreenHub;
   /** The workspace's learned procedures: a stage and the agents it calls get their list and tools from here. Absent, or the workspace's switch off: none. */
@@ -191,6 +195,15 @@ export function pickAgent(config: WorkspaceConfig, run: Run, flow: FlowStage[]):
 export function stagePoolModeOf(config: WorkspaceConfig, run: Pick<Run, 'subject' | 'docs' | 'squad'>, stageId: string): PoolMode | undefined {
   const stages = run.subject ? releaseFlowOf(config) : run.docs ? docsFlowOf(config) : flowStagesOf(config, run.squad);
   return stages?.find((s) => s.id === stageId)?.poolMode;
+}
+
+/**
+ * Whether the stage asks for the virtual display a QA stage gets, read from the live list of the flow the run follows (a release run's, a documentation run's, the
+ * squad's or the workspace's). Like the pool mode, the flag is no part of the flow snapshot: it is a choice of the version of the flow the workspace holds now.
+ */
+export function stageDisplayOf(config: WorkspaceConfig, run: Pick<Run, 'subject' | 'docs' | 'squad'>, stageId: string): boolean {
+  const stages = run.subject ? releaseFlowOf(config) : run.docs ? docsFlowOf(config) : flowStagesOf(config, run.squad);
+  return stages?.find((s) => s.id === stageId)?.display === true;
 }
 
 /** The last note another stage left for `agent` that it has not answered with a post since. */
@@ -373,6 +386,8 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
   const host = agent.shell === 'host';
   const config = d.config();
   const threadId = runThreadId(run.id);
+  // The stage that asks for the display: read from the live flow the run follows, the way its pool mode is (the snapshot does not carry it).
+  const stageDisplay = stageDisplayOf(config, run, stage.id);
   // Only the gate and the mask of a hand-off: nothing else of the caller's options reaches the sandbox.
   const gate = { ...(handoff?.held ? { held: handoff.held } : {}), ...(handoff?.mask ? { mask: handoff.mask } : {}) };
   if (!d.sandbox) throw new StageError('no-sandbox', { agent: agent.id, reason: t('main.sandbox.reason.platform') });
@@ -446,10 +461,10 @@ export async function openStageSandbox(d: ExecutorDeps, run: Run, stage: FlowSta
   try {
     // The stage that produces the QA output asks for a display, and so does the stage of an agent that has a screen (the app's browser draws on it); the browsers folder,
     // when the person set one, comes with every sandbox and every host session.
-    const display = outputKindOf(stage.kind) === 'qa' || (own && agent.screen === true && grants.browser && !!d.sessions) || wantsDisplay;
+    const display = outputKindOf(stage.kind) === 'qa' || (own && agent.screen === true && grants.browser && !!d.sessions) || wantsDisplay || stageDisplay;
     const session = host
-      ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), approve: hostApproval(d, run, stage, agent, signal, clock), signal, display, ...gate })
-      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), onProxy, onNote, signal, display, agent: { allowedHosts: grants.allowedHosts }, ...gate });
+      ? await d.sandbox.openHost({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), approve: hostApproval(d, run, stage, agent, signal, clock), signal, display, stageDisplay, ...gate })
+      : await d.sandbox.open({ worktree: run.worktree, reader: !writes, config: stageSandbox, onExec: report, ...(delivery ? { testEnv: delivery } : {}), onProxy, onNote, signal, display, stageDisplay, agent: { allowedHosts: grants.allowedHosts }, ...gate });
     const gui = session.gui;
     // What the person switched on and the stage does not have is said once, at its start; the stage goes on and its prompt says the same.
     if (gui?.browsersGone) appendGui('runner.sandbox.noBrowsers', { path: gui.browsersGone });
@@ -617,7 +632,7 @@ export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[],
   // The hand-off of the stage's screen: the call object comes before the session, which reads its gate and its mask. Only a stage that can have a screen has one (the agent's
   // switch, or the display a QA stage is given); a documentation run has none.
   const about = `${run.issue.ref} ${clipText(run.issue.title, 120)}`.trim();
-  const offer = run.docs || !(agent.screen === true || outputKindOf(stage.kind) === 'qa') ? null : beginHandoff(d.handoff, agent, { key: runKey(run.id), thread: runThreadId(run.id), place: 'stage', stage: stage.id, issue: run.issue.iid, about, pause: () => clock.pause(), signal: abort.signal });
+  const offer = run.docs || !(agent.screen === true || outputKindOf(stage.kind) === 'qa' || stageDisplayOf(d.config(), run, stage.id)) ? null : beginHandoff(d.handoff, agent, { key: runKey(run.id), thread: runThreadId(run.id), place: 'stage', stage: stage.id, issue: run.issue.iid, about, pause: () => clock.pause(), signal: abort.signal });
   const session = !run.docs && (agent.shell === 'sandbox' || agent.shell === 'host')
     ? await openStageSandbox(d, run, stage, agent, writes, abort.signal, clock, true, false, offer ? { held: offer.call.active, mask: offer.call.typed.mask } : undefined).catch((e: unknown) => {
         offer?.call.end();
@@ -659,7 +674,7 @@ async function openStageScreen(d: ExecutorDeps, run: Run, stage: FlowStage, agen
   const lent = session?.screen && session.gui?.display === 'on' ? { socket: session.screen.socket, kind: session.screen.kind } : null;
   const screen = await openCallScreen(
     { sessions: d.sessions, asks: d.asks },
-    { key: runKey(run.id), thread: runThreadId(run.id), place: 'stage', stage: stage.id, issue: run.issue.iid, display: lent, agent, seesImages: modelSeesImages(agent), pause: clock.pause, hasDisplay: lent !== null, signal },
+    { key: runKey(run.id), thread: runThreadId(run.id), place: 'stage', stage: stage.id, issue: run.issue.iid, display: lent, agent, seesImages: modelSeesImages(agent), pause: clock.pause, hasDisplay: lent !== null || stageDisplayOf(d.config(), run, stage.id), signal },
   );
   // A browser on a display of its own (the agent has no shell session to lend one): the stage's live screen and recording follow that display, as they follow a session's.
   const own = screen.lease?.display;
@@ -706,10 +721,10 @@ type Answered = { sessionId: string | null; engine: ResolvedRole['engine'] };
 /**
  * Asks the agent of a stage once more, in its own stage and with its own tools and sandbox: the call continues the session of the answer it is about, on the
  * engine that opened that session, so the round sees what the agent read. Without a session the stage's prompt goes first, so the round still knows the task.
- * `incoming` is left out: a message of the person is not what the round waits for. Null when the round fails: the answer before it then stands.
+ * `incoming` is left out: a message of the person is not what the round waits for. The round's own limit stays quiet (it ends as before), but the sub-agents it starts ask. Null when the round fails: the answer before it then stands.
  */
 async function askAgain(d: ExecutorDeps, call: AgentCall, commands: string[], watch: Watchdog, text: string, first: Answered): Promise<{ data: unknown; answered: Answered } | null> {
-  const round: AgentCall = { ...call, prompt: first.sessionId ? text : `${call.prompt}\n\n${text}`, ...(first.sessionId ? { resume: { session: first.sessionId, engine: first.engine } } : {}), incoming: undefined };
+  const round: AgentCall = { ...call, prompt: first.sessionId ? text : `${call.prompt}\n\n${text}`, ...(first.sessionId ? { resume: { session: first.sessionId, engine: first.engine } } : {}), incoming: undefined, turnLimit: call.turnLimit && { ...call.turnLimit, own: false } };
   try {
     // One link, one idle clock: the round runs inside the caller's `guard`, as the first call did, so the attempt's cap of wall-clock counts once.
     const r = await watch.guard(d.engine(round, commands));
@@ -784,7 +799,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const born = ensureMemory(wt, run.cycleFolder);
   // The conversation feeds the memory here, once per message (the marker makes it idempotent), so what the person answered and what a stage handed over survive the
   // 40-message window of the prompt. Tracked by the run's own commits, like the documents.
-  const facts = factsOfThread(thread);
+  const facts = factsOfThread(thread, personaIdsOf(d.config().agents.team));
   const kept = readMemory(wt, run.cycleFolder) ?? '';
   const memory = applyFacts(kept, facts);
   const memoryTouched = memory !== kept ? writeMemory(wt, run.cycleFolder, memory) : born;
@@ -1040,6 +1055,29 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   const watch = watchdog(abort, limitsOf(config, d));
   if (clock) clock.watch = watch;
   call.beat = watch.beat;
+  // Using the last turn asks the person instead of failing: the stage's agent and the sub-agents it starts. The clocks stand still while the question waits. Without the store
+  // (a test, a build without screens) the stage stops at its limit as it always did.
+  const asker = d.turnAsks
+    ? (who: AgentDef, own: boolean, thread: string): AgentCall['turnLimit'] => ({
+        own,
+        ask: turnAsker({
+          store: d.turnAsks as TurnAsks,
+          place: { run: run.id, thread, stage: stage.id, ref: run.issue.ref, issue: run.issue.iid },
+          agent: { id: who.id, name: agentLabel(config.agents.team, who.id) },
+          say: (code, params) => {
+            try {
+              d.forum.append(thread, { kind: 'system', author: { type: 'app' }, code, params, stage: stage.id });
+            } catch (e) {
+              console.error('[runner] could not record a turn limit line', run.id, e instanceof Error ? e.message : e);
+            }
+          },
+          pause: watch.pause,
+          signal: abort.signal,
+          isSecretPath: (token) => secretPath(token, wt),
+        }),
+      })
+    : undefined;
+  call.turnLimit = asker?.(agent, true, threadId);
   call.onUsage = procedures ? procedures.wrapUsage(usage) : usage;
   // A move to another model of the pool is said in the thread of the run, with the model that was busy and when it is back.
   call.onPool = (notice) => {
@@ -1130,6 +1168,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
             }
           : undefined,
         abort,
+        // A sub-agent of the called agent that reaches its limit asks too, and the stage's clocks stand still meanwhile (the called agent has none of its own).
+        turnAsks: d.turnAsks,
+        pause: watch.pause,
         chain,
         place,
         // The called agent's own screen, as a mentioned agent's (a docs run has none, as its stages have none).

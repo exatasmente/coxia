@@ -10,7 +10,7 @@ vi.setConfig({ testTimeout: 30_000 });
 describe('a notification about a run opens the run', () => {
   it('says which run in what the desktop does on a click, for a gate and for a failure', async () => {
     const b = await boot();
-    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
+    b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     b.engine.script('planner', () => {
       throw new Error('the model is down');
     });
@@ -32,7 +32,7 @@ describe('a notification about a run opens the run', () => {
 
   it('is refused without the run it is about, and the lists open their screens', () => {
     expect(parseTarget({ to: 'run' })).toBeNull();
-    expect(noticeTarget({ type: 'open', screen: { name: 'run' } })).toEqual({ to: 'today' });
+    expect(noticeTarget({ type: 'open', screen: { name: 'run' } })).toEqual({ to: 'overview' });
     expect(targetToScreen({ to: 'runs' }, false)).toEqual({ name: 'runs' });
     expect(targetToScreen({ to: 'forum' }, false)).toEqual({ name: 'forum' });
     expect(targetToScreen({ to: 'forum', id: 'run-r-mfxk2a-q7z9' }, false)).toEqual({ name: 'forum', thread: 'run-r-mfxk2a-q7z9' });

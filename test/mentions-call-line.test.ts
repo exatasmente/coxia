@@ -43,6 +43,8 @@ function line(id: string): RunActivity & { states: string[]; answers: string[] }
     answer: (text) => void answers.push(text),
     blocked: () => undefined,
     status: (s) => void states.push(s),
+    waiting: () => void states.push('waiting'),
+    continued: () => void states.push('started'),
     child: () => line(`${id}-child`),
     lend: () => made,
   };

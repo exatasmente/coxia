@@ -6,6 +6,7 @@ import { MAX_MENTIONS } from '../../shared/forum';
 import { type RunActivity, beginCallActivity } from '../activity';
 import { runAgent, secretPath } from '../agents';
 import { ceremonyCommands } from '../ceremonyCommands';
+import { turnAsks } from '../turnAsks';
 import { ATAS, HOME } from '../env';
 import { forumStore } from '../forum';
 import { type Module } from '../module';
@@ -15,9 +16,15 @@ import { getConfig, rc } from '../workspaceConfig';
 import { memoryPort } from '../memory/runtime';
 import { procedureOffers, proceduresPort } from '../procedures';
 import { answerMentions, type MentionDeps } from './answer';
-import { placeOfThread } from './place';
+import { type MentionPlace, placeOfThread } from './place';
+import { personaOf } from '../../shared/config/team';
+import { agentThreadId } from '../../shared/forum';
+import { viaOf } from '../rpc';
+import { personaDoor } from '../persona/door';
+import { type AnswerSession, createSession } from '../persona/session';
 import { proposeMention } from './propose';
 import { createSharedMemory } from '../runner/activities';
+import { personaLive, personaScreens, personaStop, personaThreadNow, setAnswerPending } from '../persona/runtime';
 import { handoffService, screenAsks, screenSessions } from '../runner/module';
 
 // Mentions answered outside a run's thread: a squad channel, the channel the squads talk in, a conversation a person opened, and the direct conversation of an agent
@@ -74,10 +81,16 @@ export const mentionsModule: Module = () => {
     },
     env: () => ({ fallbackCwd: rc().projectsRoot ?? ATAS }),
     propose: proposeMention,
+    // A sub-agent of an answer that uses its last turn asks the person, as the runner's do.
+    turnAsks,
     procedures: proceduresPort(),
     memoryPort: memoryPort(),
     // What the message names, for the ranking of the memory's list.
     named: (place, message) => ({ refs: refsInMessage(message), agents: callsOf(message, ownerOfThread(forum.summary(place.thread))) }),
+    // The persona's chat: the live text of its answers, and what its button tool checks a target against.
+    persona: { live: personaLive(), screens: personaScreens(), door: personaDoor },
+    // An answer the persona's Stop ended does not write the line of a stop of one answer: the stop says it.
+    latched: (thread) => held(thread),
     // The last turn of an answer that had trial and error and kept nothing, and the card it may leave (#187).
     offers: procedureOffers(),
     // What the answer is told of the activities of the workspace, read from the record of the running workspace and cut by what the message named.
@@ -93,38 +106,31 @@ export const mentionsModule: Module = () => {
       return rulesAllow(rules, command) ? Promise.resolve({ ok: true }) : ceremonyCommands.ask(def.id, command, signal, cycleText(def.name || def.id, getConfig().language));
     },
   };
-  forum.subscribe((message) => {
-    // A run's thread is the runner's: it is not this module's to answer.
-    if (message.thread.startsWith('run-')) return;
-    const owner = ownerOfThread(forum.summary(message.thread));
-    const calls = callsOf(message, owner);
-    if (!calls.length) return;
-    const place = placeOfThread(forum.summary(message.thread), (id) => runStore().get(id), getConfig(), HOME);
-    if (!place || place.kind === 'run') return;
+  // Whether the thread is the real persona's and the latch is set: its messages wait for Resume. The persona's test copy is never stopped, since it cannot act.
+  const held = (thread: string): boolean => thread === personaThreadNow() && personaStop().stopped();
+  setAnswerPending((thread, seq) => [...callLines.keys()].some((key) => key.startsWith(`${thread}:${seq}:`)));
+
+  /** Chains the answer to a message behind the one going in its thread. A persona's message reached while stopped waits for Resume instead, in the place it holds. */
+  const chain = (message: ForumMessage, place: MentionPlace, calls: string[], door: string, session: AnswerSession | null): void => {
     const prior = inFlight().get(message.thread);
-    // Every agent called gets its line as soon as the message is accepted, as in a run's thread: working, or waiting its turn behind an answer still going in
-    // this conversation or an agent named before it in the same message.
-    const team = getConfig().agents.team;
-    const root = rc().projectsRoot ?? ATAS;
-    let ahead = !!prior;
-    for (const id of calls) {
-      if (!team.some((a) => a.id === id) || callLines.has(lineKey(message.thread, message.seq, id))) continue;
-      const activity = beginCallActivity(id, { jobId: mentionJob(message.thread), call: { agent: id, thread: message.thread, message: message.seq }, node: { type: 'call', label: message.text }, isSecretPath: (p) => secretPath(p, root) });
-      activity.status(ahead ? 'queued' : 'started');
-      callLines.set(lineKey(message.thread, message.seq, id), { activity, queued: ahead });
-      ahead = true;
-    }
     // An agent set to run commands gets a throwaway copy here; the person's own folder is only the fallback.
     const next = (prior ?? Promise.resolve())
       // The owner of a direct conversation answers without an `@`: the calls are the ones this module resolved.
-      .then(() =>
-        answerMentions(place, message, {
+      .then(() => {
+        // The latch is read again at the moment the answer would begin: a message queued behind an answer that was stopped waits as the ones written after it.
+        if (held(message.thread)) {
+          personaStop().hold({ thread: message.thread, seq: message.seq, start: () => chain(message, place, calls, door, session) });
+          return undefined;
+        }
+        return answerMentions(place, message, {
           ...deps,
           calls,
+          door,
+          ...(session ? { session } : {}),
           callOf: (id) => callLines.get(lineKey(message.thread, message.seq, id)) ?? null,
           release: (id) => void callLines.delete(lineKey(message.thread, message.seq, id)),
-        }).then(() => undefined),
-      )
+        }).then(() => undefined);
+      })
       .catch(() => {
         // Whatever ended the chain early, no line of this message may stay on screen.
         for (const id of calls) {
@@ -136,8 +142,46 @@ export const mentionsModule: Module = () => {
     void next.finally(() => {
       if (inFlight().get(message.thread) === next) inFlight().delete(message.thread);
     });
+  };
+
+  forum.subscribe((message) => {
+    // A run's thread is the runner's: it is not this module's to answer.
+    if (message.thread.startsWith('run-')) return;
+    const owner = ownerOfThread(forum.summary(message.thread));
+    const calls = callsOf(message, owner);
+    if (!calls.length) return;
+    const place = placeOfThread(forum.summary(message.thread), (id) => runStore().get(id), getConfig(), HOME);
+    if (!place || place.kind === 'run') return;
+    const prior = inFlight().get(message.thread);
+    const stopped = held(message.thread);
+    // Every agent called gets its line as soon as the message is accepted, as in a run's thread: working, or waiting its turn behind an answer still going in
+    // this conversation or an agent named before it in the same message. A message of a stopped persona waits for Resume, which is waiting its turn.
+    const team = getConfig().agents.team;
+    const root = rc().projectsRoot ?? ATAS;
+    let ahead = !!prior || stopped;
+    // How the message came in, read here: this is inside the call that carried it (the window's or a paired browser's), which the chain that answers it no longer is.
+    const door = viaOf() === 'paired' ? 'paired' : 'window';
+    // The persona's answer keeps a session (what it read, the values it must never write back): made now, so the line of its call shares the mask.
+    const persona = personaOf(team);
+    const session = persona && message.thread === agentThreadId(persona.id) && calls.includes(persona.id) ? createSession({ persona: persona.id, thread: message.thread, seq: message.seq, door }) : null;
+    for (const id of calls) {
+      if (!team.some((a) => a.id === id) || callLines.has(lineKey(message.thread, message.seq, id))) continue;
+      const activity = beginCallActivity(id, { jobId: mentionJob(message.thread), call: { agent: id, thread: message.thread, message: message.seq }, node: { type: 'call', label: message.text }, isSecretPath: (p) => secretPath(p, root), ...(session && id === persona?.id ? { mask: (text: string) => session.maskText(text) } : {}) });
+      activity.status(ahead ? 'queued' : 'started');
+      callLines.set(lineKey(message.thread, message.seq, id), { activity, queued: ahead });
+      ahead = true;
+    }
+    // Written while stopped: nothing begins, and the message is held in its place. Resume starts it through the chain every answer goes through.
+    if (stopped) {
+      personaStop().hold({ thread: message.thread, seq: message.seq, start: () => chain(message, place, calls, door, session) });
+      return;
+    }
+    chain(message, place, calls, door, session);
   });
 };
+
+/** Whether an answer is going, or waiting its turn, in this thread: what stops a conversation from being emptied or its agent deleted under it. */
+export const answerPending = (thread: string): boolean => inFlight().has(thread) || personaStop().holds(thread);
 
 /** Waits for the answers the module started (a test, or a caller that wants the threads settled). */
 export async function mentionsIdle(): Promise<void> {

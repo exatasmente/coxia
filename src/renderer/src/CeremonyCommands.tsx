@@ -4,10 +4,8 @@ import { api, errorText, moduleEvents } from './api';
 import { useT } from './i18n';
 import './ceremonyCommands.css';
 
-// The commands a ceremony agent waits to run, on every screen: the call or the deep panel that asked is waiting for the answer. "Allow always" adds the rule
-// shown to the agent; a command that writes to the code host can only be allowed once.
-export function CeremonyCommands() {
-  const t = useT();
+/** The commands a ceremony agent waits to run, kept fresh: read once, then the whole list on every change. */
+export function useCeremonyCommands(): [CeremonyCommand[], (id: string) => void] {
   const [list, setList] = useState<CeremonyCommand[]>([]);
   useEffect(() => {
     const on = (e: Event) => setList((e as CustomEvent<CeremonyCommand[]>).detail ?? []);
@@ -15,17 +13,12 @@ export function CeremonyCommands() {
     void api.invoke<CeremonyCommand[]>('ceremony:commands').then(setList, () => undefined);
     return () => moduleEvents.removeEventListener(CEREMONY_COMMANDS_EVENT, on);
   }, []);
-  if (!list.length) return null;
-  return (
-    <div className="cc-stack" role="region" aria-label={t('ui.ceremonyCommand.region')}>
-      {list.map((c) => (
-        <Request key={c.id} item={c} onDone={(id) => setList((l) => l.filter((x) => x.id !== id))} />
-      ))}
-    </div>
-  );
+  return [list, (id) => setList((l) => l.filter((x) => x.id !== id))];
 }
 
-function Request({ item, onDone }: { item: CeremonyCommand; onDone: (id: string) => void }) {
+// The card of a command a ceremony agent waits to run, on every screen (in the stack of AskStack): the call or the deep panel that asked is waiting for the answer.
+// "Allow always" adds the rule shown to the agent; a command that writes to the code host can only be allowed once.
+export function CommandCard({ item, onDone }: { item: CeremonyCommand; onDone: (id: string) => void }) {
   const t = useT();
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);

@@ -30,8 +30,8 @@ const withWait = (c: WorkspaceConfig): void => {
 const suggestion = { path: 'src/feature.ts', line: 1, endLine: null, side: 'new', severity: 'suggestion', body: 'Name the constant.', suggestion: null };
 
 function script(b: Boot): void {
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')] }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   b.engine.script('developer', async (_c, tools, n) => {
     await tools.write('src/feature.ts', `export const feature = ${n};\n`);
     return work(`Done ${n}.`, { commit: 'add the feature', artifacts: [doc('3_IMPLEMENTATION.md')] });

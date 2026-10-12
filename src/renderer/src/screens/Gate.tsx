@@ -14,6 +14,7 @@ import { BackIcon, MicIcon } from './icons';
 import { Presence } from './Avatar';
 import { useT, useTv, useVoiceEnabled } from '../i18n';
 import { type Translate, voiceEnabled } from '../../../shared/i18n';
+import { HOME } from '../home';
 
 const LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -157,7 +158,7 @@ export function Gate({
     return (
       <div className="page"><div className="wrap">
         <div className="error">{t('ui.gate.notFound')}</div>
-        <div><button type="button" className="btn" onClick={() => go({ name: 'today' })}>{t('ui.gate.back')}</button></div>
+        <div><button type="button" className="btn" onClick={() => go(HOME)}>{t('ui.gate.back')}</button></div>
       </div></div>
     );
   }
@@ -168,7 +169,7 @@ export function Gate({
     <div className="page">
       <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
         <header className="panel-dark hero" style={HEADER_STYLE}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.gate.back')} onClick={() => go({ name: 'today' })}>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.gate.back')} onClick={() => go(HOME)}>
             <BackIcon />
           </button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
@@ -194,7 +195,7 @@ export function Gate({
             {options?.length === 0 && <p className="small faint">{t('ui.gate.empty')}</p>}
             <div className="row">
               {options?.map((o) => (
-                <button key={o.gate} type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act(`start:${o.gate}`, t('ui.gate.job.start', { gate: o.gate, iid: card.iid }), t('ui.gate.busy.start'), () => api.startGate(card, o.gate))}>
+                <button key={o.file} type="button" className="btn btn-dark" disabled={!!busy} onClick={() => act(`start:${o.file}`, t('ui.gate.job.start', { gate: o.gate, iid: card.iid }), t('ui.gate.busy.start'), () => api.startGate(card, o.gate, o.file))}>
                   {t('ui.gate.pick.option', { gate: o.gate, label: o.label })}
                 </button>
               ))}

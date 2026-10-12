@@ -11,10 +11,12 @@ import { agentFlowComments } from './agentFlowComments';
 // mapped: a run carries its stage, shown beside the card. The engineering cycle below is the same flow without the business roles: what the agent cycle
 // was before they were added, and what a workspace that already had it keeps.
 
+// REQUIREMENTS.md, PROTOTYPE.md and USER_MANUAL.md come from the document types the app ships declarations for: they exist here only because these
+// stages produce them. A workspace that drops one of them from `produces` stops writing that document, and the readers (phase, gates) see nothing of it.
 export const ENGINEERING_FLOW_STAGES: StageDef[] = [
-  { id: 'refine', label: 'cycle.agentFlow.stage.refine', match: ['^Refin'], kind: 'backlog', rank: 1, type: 'work', agentId: 'refiner', produces: ['1_SPEC.md'] },
+  { id: 'refine', label: 'cycle.agentFlow.stage.refine', match: ['^Refin'], kind: 'backlog', rank: 1, type: 'work', agentId: 'refiner', produces: ['1_SPEC.md', 'REQUIREMENTS.md'] },
   { id: 'gate1', label: 'cycle.agentFlow.stage.gate1', match: ['^Gate 1$'], kind: 'backlog', rank: 2, type: 'gate' },
-  { id: 'plan', label: 'cycle.agentFlow.stage.plan', match: ['^Plan'], kind: 'development', rank: 3, type: 'work', agentId: 'planner', produces: ['2_PLAN.md'] },
+  { id: 'plan', label: 'cycle.agentFlow.stage.plan', match: ['^Plan'], kind: 'development', rank: 3, type: 'work', agentId: 'planner', produces: ['2_PLAN.md', 'PROTOTYPE.md'] },
   { id: 'gate2', label: 'cycle.agentFlow.stage.gate2', match: ['^Gate 2$'], kind: 'development', rank: 4, type: 'gate' },
   { id: 'implement', label: 'cycle.agentFlow.stage.implement', match: ['^Implement'], kind: 'development', rank: 5, type: 'work', agentId: 'developer', produces: ['3_IMPLEMENTATION.md'] },
   { id: 'review', label: 'cycle.agentFlow.stage.review', match: ['^Review'], kind: 'review', rank: 6, type: 'work', agentId: 'reviewer', produces: ['4_REVIEW.md'], returnsTo: 'implement', roundLimit: 2 },
@@ -25,16 +27,16 @@ export const ENGINEERING_FLOW_STAGES: StageDef[] = [
 
 export const AGENT_FLOW_STAGES: StageDef[] = [
   { id: 'triage', label: 'cycle.agentFlow.stage.triage', match: ['^Triage'], kind: 'backlog', rank: 1, type: 'work', agentId: 'support', produces: ['0_TRIAGE.md'] },
-  { id: 'refine', label: 'cycle.agentFlow.stage.refine', match: ['^Refin'], kind: 'backlog', rank: 2, type: 'work', agentId: 'product-owner', produces: ['1_SPEC.md'] },
+  { id: 'refine', label: 'cycle.agentFlow.stage.refine', match: ['^Refin'], kind: 'backlog', rank: 2, type: 'work', agentId: 'product-owner', produces: ['1_SPEC.md', 'REQUIREMENTS.md'] },
   { id: 'gate1', label: 'cycle.agentFlow.stage.gate1', match: ['^Gate 1$'], kind: 'backlog', rank: 3, type: 'gate' },
-  { id: 'plan', label: 'cycle.agentFlow.stage.plan', match: ['^Plan'], kind: 'development', rank: 4, type: 'work', agentId: 'tech-lead', produces: ['2_PLAN.md'] },
+  { id: 'plan', label: 'cycle.agentFlow.stage.plan', match: ['^Plan'], kind: 'development', rank: 4, type: 'work', agentId: 'tech-lead', produces: ['2_PLAN.md', 'PROTOTYPE.md'] },
   { id: 'gate2', label: 'cycle.agentFlow.stage.gate2', match: ['^Gate 2$'], kind: 'development', rank: 5, type: 'gate' },
   { id: 'implement', label: 'cycle.agentFlow.stage.implement', match: ['^Implement'], kind: 'development', rank: 6, type: 'work', agentId: 'developer', produces: ['3_IMPLEMENTATION.md'] },
   { id: 'review', label: 'cycle.agentFlow.stage.review', match: ['^Review'], kind: 'review', rank: 7, type: 'work', agentId: 'tech-lead', produces: ['4_REVIEW.md'], returnsTo: 'implement', roundLimit: 2 },
   { id: 'qa', label: 'cycle.agentFlow.stage.qa', match: ['^QA$'], kind: 'qa', rank: 8, type: 'work', agentId: 'qa', produces: ['5_TEST_PLAN.md'], returnsTo: 'implement', roundLimit: 2 },
   // The pull request is merged by a person: the run waits for it, and its stage is where the watcher looks at the pull request.
   { id: 'ready', label: 'cycle.agentFlow.stage.ready', match: ['^Ready$'], kind: 'reviewApproved', rank: 9, type: 'wait', waitsFor: { kind: 'pr-merged' } },
-  { id: 'communicate', label: 'cycle.agentFlow.stage.communicate', match: ['^Communicat'], kind: 'done', rank: 10, type: 'work', agentId: 'customer-success', produces: ['6_RELEASE_NOTE.md'] },
+  { id: 'communicate', label: 'cycle.agentFlow.stage.communicate', match: ['^Communicat'], kind: 'done', rank: 10, type: 'work', agentId: 'customer-success', produces: ['6_RELEASE_NOTE.md', 'USER_MANUAL.md'] },
 ];
 
 // What each role is given besides its files: the Product Owner and the Tech Lead read the tracker, and the roles that check or build run commands in a sandbox

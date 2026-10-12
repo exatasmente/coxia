@@ -244,7 +244,7 @@ export function createPush(deps: PushDeps): PushService {
     return { v: 1, title: t, body: clip(body, MAX_BODY), tag, target, ts: now() };
   }
 
-  const urgencyOf = (t: PushTarget): 'high' | 'normal' => (['deep', 'conflict', 'call'].includes(t.to) ? 'high' : 'normal');
+  const urgencyOf = (t: PushTarget): 'high' | 'normal' => (['deep', 'conflict', 'call', 'chat'].includes(t.to) ? 'high' : 'normal');
 
   async function fanOut(payload: PushPayload, urgency: 'high' | 'normal', ttl: number, only?: string): Promise<number> {
     prune();
@@ -262,7 +262,7 @@ export function createPush(deps: PushDeps): PushService {
     const jobs: Array<() => Promise<number>> = [];
     if (batch.length > BURST) {
       const names = batch.map((n) => n.title).join(' · ');
-      jobs.push(() => fanOut(payloadFor(t('main.push.burst', { count: batch.length }), names, { to: 'today' }), 'normal', 3600));
+      jobs.push(() => fanOut(payloadFor(t('main.push.burst', { count: batch.length }), names, { to: 'overview' }), 'normal', 3600));
     } else {
       for (const n of batch) {
         const target = noticeTarget(n.onClick);

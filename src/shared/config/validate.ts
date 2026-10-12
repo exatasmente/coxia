@@ -15,7 +15,7 @@ import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA, ID } from './schema';
 import { DOCS_COMMENT_EVENTS, DOCS_FLOW_KEY, RELEASE_COMMENT_EVENTS, RELEASE_FLOW_KEY, RUN_KIND_FLOW_KEYS, isRunKindFlowKey } from './squads';
-import { isSystemId } from './team';
+import { isDraft, isPersona, isSystemId } from './team';
 import { ACTIVITIES, COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, TEST_ENV_REF_PREFIX, type LlmProvider, type ModelPool, type ModelRef, type SecretRequirement, type WorkspaceConfig } from './types';
 import { ENV_NAME, SECRET_REF } from '../secrets';
 
@@ -93,13 +93,30 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
   const stageIds = new Set([...c.devCycle.stages, ...Object.values(c.devCycle.flows ?? {}).flat()].map((s) => s.id));
   for (const id of duplicates(team.map((a) => a.id))) errors.push({ path: 'agents.team', message: `duplicate agent id "${id}"` });
   for (const role of LLM_ROLES) if (!team.some((a) => a.id === role && a.system)) errors.push({ path: 'agents.team', message: `the built-in agent "${role}" is missing` });
+  // One persona per workspace, plus at most one test copy of it. Every rule it breaks is reported at `kind` (never at the field itself): the repair drops that one field and
+  // leaves an ordinary agent, where an error at `stages` would reset the whole team to the defaults.
+  const firstOf: Record<'persona' | 'copy', number> = { persona: -1, copy: -1 };
   team.forEach((a, i) => {
     const at = (field: string) => `agents.team[${i}].${field}`;
+    if (isPersona(a)) {
+      const slot = isDraft(a) ? 'copy' : 'persona';
+      if (firstOf[slot] >= 0) errors.push({ path: at('kind'), message: slot === 'copy' ? 'only one test copy of the persona is allowed' : 'only one persona per workspace is allowed' });
+      else firstOf[slot] = i;
+      if (a.stages.length) errors.push({ path: at('kind'), message: 'the persona takes no part in the cycle: it cannot list stages' });
+      if (a.squad) errors.push({ path: at('kind'), message: 'the persona takes no part in the cycle: it cannot belong to a squad' });
+      if (a.turnsTo) errors.push({ path: at('kind'), message: 'the persona takes no part in the cycle: it cannot turn to another agent' });
+      if (a.autonomous) errors.push({ path: at('kind'), message: 'the persona takes no part in the cycle: it cannot be autonomous' });
+      if (a.system) errors.push({ path: at('kind'), message: 'the persona is not a built-in agent' });
+    }
     if (isSystemId(a.id) && !a.system) errors.push({ path: at('system'), message: `the id "${a.id}" belongs to a built-in agent` });
-    if (a.system && !isSystemId(a.id)) errors.push({ path: at('system'), message: 'only the built-in agents are system agents' });
-    a.stages.forEach((s, j) => {
-      if (!stageIds.has(s)) errors.push({ path: at(`stages[${j}]`), message: `unknown stage "${s}"` });
-    });
+    // A persona with the mark is reported at its kind above, where the repair drops one field instead of resetting the team.
+    if (a.system && !isSystemId(a.id) && !isPersona(a)) errors.push({ path: at('system'), message: 'only the built-in agents are system agents' });
+    // A persona that lists stages is reported once, at its kind; an unknown id there would add an error the repair answers by resetting the team.
+    if (!isPersona(a)) {
+      a.stages.forEach((s, j) => {
+        if (!stageIds.has(s)) errors.push({ path: at(`stages[${j}]`), message: `unknown stage "${s}"` });
+      });
+    }
     // Commands run in the real worktree could leave files that the app then commits for an agent that promised only to read; a reader runs them in a sandbox.
     (a.allowedCommands ?? []).forEach((r, j) => {
       if (!validRule(r)) errors.push({ path: at(`allowedCommands[${j}]`), message: 'a rule is one line of at most 200 characters ("prefix:*" or an exact command)' });

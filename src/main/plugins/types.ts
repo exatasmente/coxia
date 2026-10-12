@@ -1,5 +1,5 @@
 import type { PluginAllow, PluginConfig, PluginsConfig } from '../../shared/config/types';
-import type { PluginRequestDecl, PluginSetting, PluginWrite } from '../../shared/plugins/declaration';
+import type { PluginDocumentType, PluginRequestDecl, PluginSetting, PluginWrite } from '../../shared/plugins/declaration';
 
 // The plugins of the workspace, as a service reads them from disk. The declaration itself is handled by shared/plugins
 // (a pure function); this is the reading of the folder plus what the person decided about each plugin.
@@ -16,7 +16,7 @@ export interface PluginRecord {
   /** What the person allowed it always. */
   allow: PluginAllow;
   /** Document types it adds to the cycle folder. */
-  documents: { name: string; label: string }[];
+  documents: PluginDocumentType[];
   /** Events of the fixed catalog it observes. */
   events: string[];
   /** Host names it declares it needs from the network. */

@@ -9,6 +9,8 @@ import gateEn from './ui-gate.en.json';
 import gatePtBR from './ui-gate.pt-BR.json';
 import memoryEn from './ui-memory.en.json';
 import memoryPtBR from './ui-memory.pt-BR.json';
+import personaEn from './ui-persona.en.json';
+import personaPtBR from './ui-persona.pt-BR.json';
 import proceduresEn from './ui-procedures.en.json';
 import proceduresPtBR from './ui-procedures.pt-BR.json';
 import settingsEn from './ui-settings.en.json';
@@ -22,5 +24,5 @@ import todayPtBR from './ui-today.pt-BR.json';
 
 // The renderer's screens: one catalog pair per area (ui-<area>.<lang>.json), keys namespaced `ui.<screen>.*`.
 // They live apart from en.json / pt-BR.json so the areas can be edited in parallel without merge collisions.
-export const UI_PT_BR: Catalog = { ...todayPtBR, ...callPtBR, ...settingsPtBR, ...docsPtBR, ...gatePtBR, ...shellPtBR, ...teamPtBR, ...cyclePtBR, ...proceduresPtBR, ...memoryPtBR };
-export const UI_EN: Catalog = { ...todayEn, ...callEn, ...settingsEn, ...docsEn, ...gateEn, ...shellEn, ...teamEn, ...cycleEn, ...proceduresEn, ...memoryEn };
+export const UI_PT_BR: Catalog = { ...todayPtBR, ...callPtBR, ...settingsPtBR, ...docsPtBR, ...gatePtBR, ...shellPtBR, ...teamPtBR, ...cyclePtBR, ...proceduresPtBR, ...memoryPtBR, ...personaPtBR };
+export const UI_EN: Catalog = { ...todayEn, ...callEn, ...settingsEn, ...docsEn, ...gateEn, ...shellEn, ...teamEn, ...cycleEn, ...proceduresEn, ...memoryEn, ...personaEn };

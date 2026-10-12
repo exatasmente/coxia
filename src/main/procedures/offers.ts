@@ -85,9 +85,9 @@ export interface ProcedureOffers {
   /** The offers still held, oldest first, as the card shows them; one thread's when `thread` is given. */
   list(thread?: string): OfferView[];
   /** Yes: saves it as the person's, reviewed. A refusal leaves the offer where it is and says why. `title` is the one on the card. */
-  keep(offerId: unknown, title?: unknown): ProcedureWrite;
+  keep(offerId: unknown, title?: unknown, persona?: boolean): ProcedureWrite;
   /** No: drops it. */
-  decline(offerId: unknown): OfferDecline;
+  decline(offerId: unknown, persona?: boolean): OfferDecline;
   /** Whether a last turn was already given for this screen at this draft mark; when not, records it. The turn is given once for a mark. */
   turned(screenKey: string, mark: number): boolean;
   /** The screen closed: what it remembers of its turns goes. Offers it raised stay until they are answered or expire. */
@@ -196,14 +196,14 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
       return held.filter((o) => thread === undefined || o.thread === thread).map(view);
     },
 
-    keep(offerId, title) {
+    keep(offerId, title, persona = false) {
       const o = find(offerId);
       if (!o) return GONE;
       const named = typeof title === 'string' && title.trim() ? title : o.title;
       const input = { kind: o.kind, key: o.key, title: named, steps: o.steps, pitfalls: o.pitfalls, waits: o.waits };
       const r = deps.store.save({
         input,
-        writer: { ...o.writer, by: 'person' },
+        writer: { ...o.writer, by: 'person', ...(persona ? { persona: true as const } : {}) },
         createdBy: o.agent,
         repos: deps.config().projects.repos.map((x) => x.id),
         stepsFrom: o.stepsFrom,
@@ -212,7 +212,7 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
       });
       if (!r.ok) {
         // A refusal is audited by its code and the fields it named, never by the text that was refused.
-        audit(o, 'person', { op: 'refused', code: r.code, fields: r.refusals?.map((x) => x.field) ?? [] });
+        audit(o, persona ? 'persona' : 'person', { op: 'refused', code: r.code, fields: r.refusals?.map((x) => x.field) ?? [] });
         return { ok: false, code: r.code, text: r.text, ...(r.refusals ? { refusals: r.refusals } : {}), ...(r.id ? { id: r.id } : {}) };
       }
       // The cost of finding the procedure is the work's, not the person's reading of it.
@@ -220,18 +220,18 @@ export function createProcedureOffers(deps: OffersDeps): ProcedureOffers {
       moveMark(o);
       drop(o);
       const stored = deps.store.get(r.record.id);
-      audit(o, 'person', { op: 'save', record: r.record });
+      audit(o, persona ? 'persona' : 'person', { op: 'save', record: r.record });
       say(o, 'runner.procedures.offerKept', { id: r.record.id, revision: r.record.revision, title: r.record.title });
       changed();
       return { ok: true, record: stored.status === 'ok' ? stored.record : r.record };
     },
 
-    decline(offerId) {
+    decline(offerId, persona = false) {
       const o = find(offerId);
       if (!o) return { ok: false, code: 'gone' };
       moveMark(o);
       drop(o);
-      audit(o, 'person', { op: 'decline', offer: aboutOffer(o) });
+      audit(o, persona ? 'persona' : 'person', { op: 'decline', offer: aboutOffer(o) });
       say(o, 'runner.procedures.offerDeclined', { title: o.title });
       changed();
       return { ok: true };

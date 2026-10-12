@@ -15,7 +15,7 @@ import { ACTIVITY_NODE_MAX } from '../shared/activity';
 import { type RunActivity, beginActivity, bindActivityParent, currentActivity, withActivityParent } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
-import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
+import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, type TextSink, type TurnLimit, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, poolNoticeText } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
 import { isHostWrite, rulesAllow } from '../shared/ceremonyCommands';
 import { budgetText, busyText, clipProviderText } from './engine/budget';
@@ -46,7 +46,7 @@ import { answerCeremonyMentions } from './mentions/ceremony';
 import { VCS_MCP_TOOL_NAME, VCS_READ_TOOL_NAME, vcsMcpServer, vcsReadToolImpl } from './vcs/engineTool';
 import { RELEASE_MCP_TOOL_NAME, RELEASE_TOOL_NAME } from '../shared/release';
 import { keepAlive, releaseMcpServer, releaseToolImpl } from './releaseTool';
-import { CALL_AGENT_TOOL, runnerMcpServer, runnerMcpToolName } from './runner/tools';
+import { CALL_AGENT_TOOL, principalOnlyGuard, principalOnlyMatcher, runnerMcpServer, runnerMcpToolName } from './runner/tools';
 import type { MemberParams, Tuning } from './engine/open/pool';
 import type { ToolImpl } from './engine/open/tools/types';
 import { GLAB_READ, vcsReadPolicy, vcsShellEnv } from './vcs/readPolicy';
@@ -440,6 +440,8 @@ function openSubAgent(parent: RunActivity, req: EngineRequest, s: SubAgentStart)
     },
     within: (fn) => withActivityParent(child.id, fn),
     state: (state) => child.status(state),
+    waiting: (used) => child.waiting(used),
+    continued: () => child.continued(),
     end: (failure) => (failure === undefined ? child.status('finished') : child.status('failed', failure)),
   };
 }
@@ -514,7 +516,8 @@ function sdkOptions(req: EngineRequest): Options {
       ...SECRET_READ_DENY,
     ],
     hooks: req.activity ? reportBlocked(hooks, (call) => req.activity?.blocked(call)) : hooks,
-    outputFormat: { type: 'json_schema', schema: req.schema },
+    // A call with no schema answers in plain text: the SDK is asked for no structured output and the text is the answer.
+    ...(req.schema ? { outputFormat: { type: 'json_schema' as const, schema: req.schema } } : {}),
     maxTurns: 8,
     // An agent of the team reads the documentation the app hands it and none of Claude Code's: no CLAUDE.md or .claude/ of the project or the home, no settings
     // files, no automatic memory (which is the person's, not the project's). What the call needs from them the app passes itself (permissions, hooks, model, env).
@@ -674,7 +677,7 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
   const extraTools = [...(tool ? [vcsReadToolImpl(() => vcsProvider(), workspaceProjects, req.tracker !== undefined)] : []), ...(req.exec ? [shellToolImpl(req.exec)] : []), ...(looks && req.exec ? [viewImageToolImpl(req.exec, req.evidence, req.onLooked)] : []), ...evidence, ...(req.release ? [releaseToolImpl(keepAlive(req.release, req.beat))] : []), ...(req.attachments ? [attachmentToolImpl(req.attachments.thread, req.attachments.refs)] : []), ...(req.runnerTools ?? []), ...procedures, ...memory, ...(req.screen ? screenToolImpls(req.screen) : [])];
   const allowedTools = [...req.allowedTools, ...(tool ? [VCS_READ_TOOL_NAME] : []), ...(req.exec ? [SHELL_TOOL_NAME] : []), ...(looks ? [VIEW_IMAGE_TOOL_NAME] : []), ...(req.evidence ? EVIDENCE_TOOL_NAMES : []), ...(req.release ? [RELEASE_TOOL_NAME] : []), ...(req.attachments ? [ATTACHMENT_TOOL] : []), ...(req.runnerTools ?? []).map((x) => x.name), ...(req.procedures ? procedureToolNames(req.procedures) : []), ...(req.memoryTools ? memoryToolNames(req.memoryTools) : []), ...(req.screen ? screenToolNames(req.screen) : [])];
   try {
-    return await runOpenOnce<T>({
+    const result = await runOpenOnce<T>({
     selection,
     prompt: req.prompt,
     options: { ...sdkOptions({ ...req, allowedTools }), model: req.target.model },
@@ -707,6 +710,8 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
         req.onUsage?.({ promptTokens: u.promptTokens, completionTokens: u.completionTokens, cachedTokens: u.cachedTokens, ...(u.costUsd !== undefined ? { costUsd: u.costUsd, costEstimated: false } : {}), ...(u.estimated ? { estimated: true } : {}) });
       },
       onText: () => req.beat?.(),
+      // The text of the answer as it is written, for the call that asked for it (the principal's own turns: the loop never gives a sub-agent these).
+      ...(req.text ? { onPiece: (text: string) => req.text?.piece(text), onTurnEnd: (toolsFollow: boolean) => (toolsFollow ? req.text?.restart() : undefined), onRestart: () => req.text?.restart() } : {}),
       onReasoning: () => req.beat?.(),
       // A call in the flex tier waits in the server's queue without a word: that is not a stage that stopped.
       onWait: () => req.beat?.(),
@@ -720,7 +725,13 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     },
     makeMaxTurnsError: (id, src) => new MaxTurnsError(id, src),
     incoming: req.incoming,
+    // Read when each sub-agent starts, so a change in Settings applies from the next one.
+    subTurns: () => getConfig().runner.turns,
+    turnLimit: req.turnLimit,
     });
+    // A server that did not stream gave no piece: the sink shows the whole text once, at the end.
+    if (!req.schema) req.text?.settle(typeof result.data === 'string' ? result.data : '');
+    return result;
   } catch (e) {
     // A refusal by budget is a wait, not a failure: it goes up with the provider that refused (a spare of the pool names itself), else the one the role is mapped to.
     if (e instanceof ProviderBudgetError) throw new ProviderBudgetError(e.provider || req.target.providerId, 'open', e.detail);
@@ -808,6 +819,8 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
     ...(mcp ? { mcpServers: mcp as NonNullable<Options['mcpServers']> } : {}),
     // `tools: []` turns off the SDK's built-in tools and leaves the in-process servers; the strict config keeps out every server the person has set up themselves.
     ...(req.procedureOnly ? { tools: [], strictMcpConfig: true } : {}),
+    // Partial messages only for a call whose text is shown as it is written: no other call changes.
+    ...(req.text ? { includePartialMessages: true } : {}),
     model: req.target.model,
     env,
     ...(exe ? { pathToClaudeCodeExecutable: exe } : {}),
@@ -847,6 +860,9 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   }
   // Only the agent whose folder it is writes into it: a call from inside a sub-agent is refused (the SDK's `agent_id` on the hook input).
   if (memory && req.memoryTools?.save) options.hooks = { ...options.hooks, PreToolUse: [...(options.hooks?.PreToolUse ?? []), { matcher: MEMORY_WRITE_TOOLS.map(memoryMcpToolName).join('|'), hooks: [memorySubagentGuard] }] };
+  // The same for every app tool only the principal calls (the persona's, `OpenScreen`): the SDK has no `principalOnly`, so a sub-agent's call is refused here.
+  const principal = runner && req.runnerTools ? principalOnlyMatcher(req.runnerTools) : null;
+  if (principal) options.hooks = { ...options.hooks, PreToolUse: [...(options.hooks?.PreToolUse ?? []), { matcher: principal, hooks: [principalOnlyGuard] }] };
   const q = query({ prompt: stream ?? req.prompt, options });
   const counted = new Set<string>();
   // What the assistant said, kept for the failure a call with no structured output throws: the provider's refusal reaches the person, never only the subtype.
@@ -871,10 +887,31 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   let subscription = req.target.loginOnly === true;
   // The CLI's usage limit, from the SDK's structured event and never from the text: refused, with when it resets (null: it did not say).
   let limit: { until: number | null; kind: string } | null = null;
+  // The text of the call's own turn as the SDK streams it, for a call that shows it: pieces in order; a tool turn, or a new turn after text, is not the answer. Whatever a
+  // sub-agent streams (`parent_tool_use_id` set) is never shown. `written` is whether the sink holds text now.
+  let written = false;
+  const restartText = (): void => {
+    if (!written) return;
+    written = false;
+    req.text?.restart();
+  };
+  const streamed = (event: { type: string; delta?: { type?: string; text?: string }; content_block?: { type?: string } }): void => {
+    if (!req.text) return;
+    if (event.type === 'message_start') restartText();
+    else if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') restartText();
+    else if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta' && event.delta.text) {
+      written = true;
+      req.text.piece(event.delta.text);
+    }
+  };
+  // The last text of the call's own turns: what a plain answer falls back to when the result carries none.
+  let lastText = '';
   try {
     for await (const m of q) {
       req.beat?.();
-      if (m.type !== 'assistant') flushThought();
+      // A partial message lands between the blocks of one turn: it must not cut the thinking being joined into several lines.
+      if (m.type !== 'assistant' && m.type !== 'stream_event') flushThought();
+      if (m.type === 'stream_event' && (m as { parent_tool_use_id?: string | null }).parent_tool_use_id == null) streamed(m.event as Parameters<typeof streamed>[0]);
       if ('session_id' in m) noteSession(m.session_id, req.role, req.prompt, req.resume !== undefined);
       if (m.type === 'system' && m.subtype === 'init') {
         sessionId = m.session_id;
@@ -908,10 +945,18 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
           }
           flushThought();
           if (block.type === 'text') {
-            if (owner === req.activity) assistantText.push(block.text);
+            if (owner === req.activity) {
+              assistantText.push(block.text);
+              if (!parentId) lastText = block.text;
+            }
             owner?.text(block.text);
           }
           if (block.type !== 'tool_use') continue;
+          // The call's own tool use: the text before it was narration and leaves what is being written, at once and not when the next turn starts.
+          if (!parentId) {
+            restartText();
+            lastText = '';
+          }
           if (block.name !== 'StructuredOutput') toolUsed = true;
           const input = block.input as Record<string, unknown>;
           sources.push(source(block.name, input));
@@ -947,7 +992,7 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
         // The turn ended: the door is asked now, whatever the turn produced. A message that is waiting goes into the same session and the stage goes on; with none,
         // the closing call asks for the final answer with what the session already has.
         if (await throughDoor()) continue;
-        if (m.subtype !== 'success' || m.structured_output == null) {
+        if (m.subtype !== 'success' || (req.schema && m.structured_output == null)) {
           // The provider's own error reaches the failure: the assistant text the call already carried, and the SDK's own error when it has one.
           const said = clipProviderText([...assistantText, typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : ''].filter(Boolean).join('\n'));
           // The CLI's own usage limit was reached: a wait until the reset time the event gave.
@@ -962,6 +1007,13 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
           throw new Error(failure);
         }
         stream?.end();
+        if (!req.schema) {
+          // A plain answer: the SDK's own final text, else the last text the call wrote itself.
+          const said = typeof (m as { result?: unknown }).result === 'string' ? (m as { result: string }).result : '';
+          const text = said.trim() ? said : lastText;
+          req.text?.settle(text);
+          return { data: text as T, sessionId, sources };
+        }
         return { data: m.structured_output as T, sessionId, sources };
       }
     }
@@ -1440,7 +1492,10 @@ export interface AgentCall {
    */
   attachments?: { thread: string; refs: readonly AttachmentRef[] };
   prompt: string;
-  schema: Schema;
+  /** JSON Schema of the answer. Absent: the answer is plain text, returned as a string (the persona's chat). */
+  schema?: Schema;
+  /** Where the text of the answer goes as it is written. Only the agent of the call feeds it, never a sub-agent. */
+  text?: TextSink;
   /** The agent's system text: its job, its instructions and the rules of the stage (built by the runner). */
   system: string;
   /** The run's worktree for an agent that writes; where a reader looks at the code too. */
@@ -1463,6 +1518,8 @@ export interface AgentCall {
   resume?: { session: string; engine: ResolvedRole['engine'] };
   /** The mailbox of a stage that talks while it works: where the engine gets a message to deliver between two steps (see EngineRequest.incoming). */
   incoming?: (delivered: (text: string) => void) => Promise<string | null>;
+  /** Reaching the turn limit asks the person instead of failing (see EngineRequest.turnLimit). The call's own node shows the wait; a sub-agent's is the engine's. */
+  turnLimit?: TurnLimit;
   /** The app tools of a stage that talks (`SendMessage`, `CallAgent`) or of a called agent (`AskConversation`); the engine offers each one by its name. */
   runnerTools?: ToolImpl[];
   /** The workspace's procedure tools, from the call's procedure session; absent: the call has none (a ceremony, a call with no session, the switch off). */
@@ -1567,6 +1624,8 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
     const poolMode = resolvePoolMode({ agent: call.agent.poolMode, stage: call.stagePoolMode, workspace: getConfig().llm.poolMode });
     const attempt = async (picked: ResolvedRole): Promise<Run<T>> => {
         target = picked;
+        // A call that starts again on the next model of its pool has not written anything yet: what the first one wrote is not the answer.
+        call.text?.restart();
         // The documentation of the repositories goes in the system text, the same for both engines; a failure to read it never fails the call.
         const docs = call.docs && !only ? await harnessSection(call.docs, call.agent, { cwd: call.cwd, contextWindow: picked.capabilities?.contextWindow }).catch((e: unknown) => {
           console.error('[agent] could not build the documentation section', e instanceof Error ? e.message : e);
@@ -1576,6 +1635,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           role: picked.role,
           prompt: call.prompt,
           schema: call.schema,
+          ...(call.text ? { text: call.text } : {}),
           target: picked,
           system: [call.system, docs].filter(Boolean).join('\n\n'),
           cwd: call.cwd,
@@ -1605,6 +1665,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           poolMode,
           ...(call.background ? { background: true } : {}),
           incoming: only ? undefined : call.incoming,
+          turnLimit: only || !call.turnLimit ? undefined : turnLimitOf(call.turnLimit, activity),
           runnerTools: only ? undefined : underNode(call.runnerTools),
           procedures: call.procedures,
           // The last turn of procedures keeps the procedure tools and nothing else, the memory's included.
@@ -1614,11 +1675,29 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
         };
         // What the engine starts (an agent it calls) hangs under this call's node.
         return withActivityParent(activity.id, async () => {
-          try {
-            return await runnerFor(picked)<T>(request);
-          } catch (e) {
-            if (!call.wrapUp || !(e instanceof MaxTurnsError)) throw e;
-            return wrapUpAnswer<T>(request, e, activity);
+          // The stage's own limit on the Claude engine is asked here: the SDK ends the call with `error_max_turns`, and "continue" resumes the same session with a fresh limit.
+          // An open-engine `MaxTurnsError` has already been through the question inside its loop, so it is not asked again.
+          const asks = request.turnLimit?.own === true && picked.engine === 'claude-sdk';
+          let current = request;
+          let granted = 0;
+          // What the earlier rounds read: each call of the SDK reports only its own.
+          const before: string[] = [];
+          for (;;) {
+            try {
+              const r = await runnerFor(picked)<T>(current);
+              return granted ? { ...r, sources: [...before, ...r.sources] } : r;
+            } catch (e) {
+              if (!(e instanceof MaxTurnsError)) throw e;
+              if (asks && e.sessionId && request.turnLimit && (await anotherRound(request.turnLimit, picked.role, call.maxTurns, granted, call.abort?.signal))) {
+                before.push(...e.sources);
+                granted += 1;
+                current = continueRound(request, e.sessionId, call.maxTurns);
+                continue;
+              }
+              if (!call.wrapUp) throw e;
+              const partial = await wrapUpAnswer<T>(current, e, activity);
+              return granted ? { ...partial, sources: [...before, ...partial.sources] } : partial;
+            }
           }
         });
     };
@@ -1655,6 +1734,39 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
   }
 }
 
+/**
+ * Whether a stage on the Claude engine can go on past `maxTurns`. It resumes the same session by id with a fresh limit and the tools of the stage; checked against the real SDK
+ * (0.3.292) outside the suite on 2026-10-10: the call that ended with `error_max_turns` was resumed, kept the calls it had made, finished with its structured answer, and the
+ * limit counted per invocation and not per session. The question carries it so the card can offer only "finish now" if a later SDK stops doing so.
+ */
+export const CLAUDE_CAN_CONTINUE = true;
+
+// Asks the person once for the stage on the Claude engine; true when they said continue. A cancel or a stop is not an answer, so it ends the stage as the limit does.
+async function anotherRound(limit: TurnLimit, role: string, round: number, granted: number, signal?: AbortSignal): Promise<boolean> {
+  const decision = await limit.ask({ of: 'stage', role, kind: null, name: null, task: '', used: round * (granted + 1), round, granted, canContinue: CLAUDE_CAN_CONTINUE }, signal);
+  return decision === 'continue' && CLAUDE_CAN_CONTINUE && !signal?.aborted;
+}
+
+// The request of the next round: the same session, the same tools and schema, a fresh limit of one round. A stream of messages for the stage's door is built again by the engine.
+// Both `resume` fields are set: the engines read the session from `extra`, and `noteSession` from the request, so the session is not indexed twice.
+function continueRound(request: EngineRequest, sessionId: string, round: number): EngineRequest {
+  return { ...request, prompt: t('main.engine.text.continueRound'), resume: sessionId, extra: { ...request.extra, maxTurns: round, resume: sessionId } };
+}
+
+// The call's question at a turn limit with its own node told: the node of an agent that waits says so, and says it works again when the person lets it go on. A sub-agent
+// of the open engine is a node of its own that the loop tells.
+function turnLimitOf(limit: TurnLimit, activity: RunActivity): TurnLimit {
+  return {
+    own: limit.own,
+    ask: async (stop, signal) => {
+      if (stop.of === 'stage') activity.waiting(stop.used);
+      const decision = await limit.ask(stop, signal);
+      if (stop.of === 'stage' && decision === 'continue' && !signal?.aborted) activity.continued();
+      return decision;
+    },
+  };
+}
+
 // The resume of a call that ran out of turns: same session, same schema, 2 turns and no tool of any kind (no shell session, no code host read, no release step), so
 // it can only answer. Its transcript is the same session, so the cost panel counts it.
 async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activity: RunActivity): Promise<Run<T>> {
@@ -1677,6 +1789,8 @@ async function wrapUpAnswer<T>(request: EngineRequest, e: MaxTurnsError, activit
       procedures: undefined,
       memoryTools: undefined,
       screen: undefined,
+      // Two turns to answer: running out of them must not ask.
+      turnLimit: undefined,
     });
     return { ...r, sources: [...e.sources, ...r.sources], partial: true };
   } catch (again) {

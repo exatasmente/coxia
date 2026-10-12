@@ -1,4 +1,4 @@
-import type { AuditEntry } from '../../shared/auditoria';
+import type { AuditEntry, Through } from '../../shared/auditoria';
 import type { MemorySurface } from '../../shared/memory';
 import { redact } from '../errorlog-core';
 
@@ -10,8 +10,8 @@ export type MemoryOp = 'edit' | 'remove' | 'review' | 'remove-folder' | 'refused
 
 export interface MemoryAuditInput {
   op: MemoryOp;
-  /** Which door the call came through: the desktop window or a paired browser (`callOrigin()`); for an agent's write, the place the call ran in. */
-  via: 'window' | 'paired' | MemorySurface;
+  /** Which door the call came through: the window, a paired browser or the persona (`viaOf()`); for an agent's write, the place the call ran in. */
+  via: Through | MemorySurface;
   /** The agent that wrote or removed, when it was an agent and not the person. */
   by?: string;
   /** The run's issue number, for an agent's write in a stage; absent otherwise. */
@@ -60,6 +60,6 @@ export function memoryAuditEntry(o: MemoryAuditInput): Omit<AuditEntry, 'at'> {
     code: null,
     result: RESULT[o.op],
     origin: { actionId: '', kind: 'memory', key: o.conversation ?? o.ref ?? '', summary: null },
-    by: o.by ?? 'person',
+    by: o.by ?? (o.via === 'persona' ? 'persona' : 'person'),
   };
 }

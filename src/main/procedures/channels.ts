@@ -1,4 +1,4 @@
-import type { AuditEntry } from '../../shared/auditoria';
+import type { AuditEntry, Through } from '../../shared/auditoria';
 import type { WorkspaceConfig } from '../../shared/config/types';
 import { isProcedureId, proceduresOn, type ProcedureRecord } from '../../shared/procedures';
 import { statsOf, summarize, type OfferView, type ProcedureDelete, type ProcedureGet, type ProcedureListView, type ProcedureStatsView, type ProcedureWrite } from '../../shared/proceduresView';
@@ -18,11 +18,15 @@ export interface ChannelDeps {
   now?(): number;
   /** The person's home folder, for the validator; the machine's by default. */
   home?: string;
+  /** Which door the call came through; absent: the window. Under the persona's door a write is the persona's mark on the person's permissions. */
+  via?(): Through;
   /** The offers held in memory; absent in a build that has none, and the channels then answer as if there were none. */
   offers?: ProcedureOffers;
 }
 
 const PERSON: Writer = { by: 'person', surface: 'person' };
+// The persona acts for the person with the person's permissions (it may review and keep); the record and the audit say it was the persona.
+const PERSONA: Writer = { by: 'person', surface: 'person', persona: true };
 const id = (v: unknown): string => (typeof v === 'string' ? v : '');
 const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
@@ -46,10 +50,12 @@ export function createProcedureChannels(deps: ChannelDeps): ProcedureChannels {
   const now = deps.now ?? Date.now;
   const { store } = deps;
   const repos = (): string[] => deps.config().projects.repos.map((r) => r.id);
+  const persona = (): boolean => deps.via?.() === 'persona';
+  const writer = (): Writer => (persona() ? PERSONA : PERSON);
 
   const audit = (input: Omit<ProcedureAuditInput, 'by' | 'surface'>): void => {
     try {
-      deps.audit?.(procedureAuditEntry({ ...input, by: PERSON.by, surface: 'person' }));
+      deps.audit?.(procedureAuditEntry({ ...input, by: persona() ? 'persona' : PERSON.by, surface: 'person' }));
     } catch {
       // The write already happened; a failing log must not turn it into a reported failure.
     }
@@ -99,7 +105,7 @@ export function createProcedureChannels(deps: ChannelDeps): ProcedureChannels {
       // The steps of a draft the agent confirmed stay "recording" until the person rewrites one.
       const steps = (input as { steps?: unknown } | null)?.steps;
       const stepsFrom = old.record.stepsFrom === 'recording' && !sameJson(steps, old.record.steps) ? 'edited' : old.record.stepsFrom;
-      return written('replace', store.save({ input, id: want, revision: rev, writer: PERSON, repos: repos(), stepsFrom, home: deps.home }));
+      return written('replace', store.save({ input, id: want, revision: rev, writer: writer(), repos: repos(), stepsFrom, home: deps.home }));
     },
 
     delete(which) {
@@ -136,7 +142,7 @@ export function createProcedureChannels(deps: ChannelDeps): ProcedureChannels {
       if (!r.previous) return { ok: false, code: 'no-previous', id: want, text: `${want} has no earlier version to restore.` };
       const rev = typeof revision === 'number' && Number.isInteger(revision) ? revision : undefined;
       const input = { kind: r.kind, key: r.key, ...r.previous };
-      return written('restore', store.save({ input, id: want, revision: rev, writer: PERSON, repos: repos(), stepsFrom: r.stepsFrom, home: deps.home }));
+      return written('restore', store.save({ input, id: want, revision: rev, writer: writer(), repos: repos(), stepsFrom: r.stepsFrom, home: deps.home }));
     },
 
     offers(thread) {
@@ -144,11 +150,11 @@ export function createProcedureChannels(deps: ChannelDeps): ProcedureChannels {
     },
 
     offerKeep(offerId, title) {
-      return deps.offers?.keep(offerId, title) ?? { ok: false, code: 'gone', text: 'This offer is no longer there.' };
+      return deps.offers?.keep(offerId, title, persona()) ?? { ok: false, code: 'gone', text: 'This offer is no longer there.' };
     },
 
     offerDecline(offerId) {
-      return deps.offers?.decline(offerId) ?? GONE;
+      return deps.offers?.decline(offerId, persona()) ?? GONE;
     },
   };
 }

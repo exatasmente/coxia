@@ -33,8 +33,13 @@ export interface MentionInput {
   shell?: { host: boolean; network: 'off' | 'registry' | 'open' };
   /** What the agent is told of its screen, its own hosts and the app's browser; absent for an agent with neither the switch nor a host list. */
   screen?: ScreenPrompt;
-  /** The agent may propose writes on the code host (it reads it): the answer gets a `proposals` field. */
+  /** The agent may propose writes on the code host (it reads it): the answer gets a `proposals` field. Never for the persona. */
   proposals?: boolean;
+  /**
+   * The persona answering in its chat: the answer is plain Markdown (no schema, no `proposals`), told in the persona's own words instead of a thread's. `buttons`: the call
+   * has `OpenScreen`, so it is told how to use it (a persona being tested has none). `tools`: it also has the eleven tools of its acts (#248), and is told how to use them.
+   */
+  persona?: { buttons: boolean; tools?: boolean };
   /** The agent is autonomous: a comment and a label change it proposes go out as soon as it answers, and it is told so. */
   autonomous?: boolean;
   /** The conversation the agent was called in and the files the message carries: the call gets the read-only attachment tool, scoped to it. */
@@ -178,8 +183,12 @@ export function attachmentsSection(refs: readonly AttachmentRef[]): string {
 export function mentionCall(i: MentionInput): AgentCall {
   const agents = i.config.agents;
   const system = [
-    cp('runner.mention.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.ref ?? '—', title: i.title ?? '—' }),
-    placeLine(i),
+    i.persona ? cp('runner.mention.persona.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job) }) : cp('runner.mention.system', { agent: cycleWord(i.agent.name), job: cycleWord(i.agent.job), ref: i.ref ?? '—', title: i.title ?? '—' }),
+    i.persona?.buttons ? cp('runner.mention.persona.buttons') : '',
+    // What it can do beyond the button: the eleven tools of its acts, or, where it has none (its test copy), that it changes nothing.
+    i.persona ? (i.persona.tools ? cp('runner.mention.persona.tools') : cp('runner.mention.persona.cannot')) : '',
+    // The persona talks in its own chat, not in a thread of an activity.
+    i.persona ? '' : placeLine(i),
     i.shell ? shellRules(i.shell, i.screen) : '',
     i.shell ? (i.shell.host ? cp('runner.rules.shellReader.host') : cp('runner.rules.shellReader')) : '',
     screenRules(i.screen),
@@ -210,10 +219,17 @@ export function mentionCall(i: MentionInput): AgentCall {
   ].filter(Boolean);
   return {
     agent: i.agent,
-    prompt: cp('runner.mention.main', { who: t('main.runner.author.person'), message: fence(i.message.text), sections: sections.join('\n\n') }),
-    schema: i.proposals
-      ? { type: 'object', properties: { text: { type: 'string' }, proposals: PROPOSALS_SCHEMA }, required: ['text', 'proposals'], additionalProperties: false }
-      : { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
+    prompt: i.persona
+      ? cp('runner.mention.persona.main', { who: t('main.runner.author.person'), message: fence(i.message.text), sections: sections.join('\n\n') })
+      : cp('runner.mention.main', { who: t('main.runner.author.person'), message: fence(i.message.text), sections: sections.join('\n\n') }),
+    // The persona answers in plain text: no schema, so both engines can stream it as it is written. Every other answer is the structured object it always was.
+    ...(i.persona
+      ? {}
+      : {
+          schema: i.proposals
+            ? { type: 'object', properties: { text: { type: 'string' }, proposals: PROPOSALS_SCHEMA }, required: ['text', 'proposals'], additionalProperties: false }
+            : { type: 'object', properties: { text: { type: 'string' } }, required: ['text'], additionalProperties: false },
+        }),
     system,
     cwd: i.cwd,
     label: i.agent.id,

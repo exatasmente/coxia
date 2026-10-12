@@ -16,7 +16,7 @@ import {
 import type { ForumMessage } from '../shared/forum';
 import { ID } from '../shared/config/schema';
 import { squadsOf } from '../shared/config/squads';
-import { isDraft, newAgent, slugOf, uniqueId, workingTeam } from '../shared/config/team';
+import { newAgent, outOfCycle, slugOf, uniqueId, workingTeam } from '../shared/config/team';
 import { AGENT_PERMISSIONS, type AgentDef, type AgentToolsConfig, type WorkspaceConfig } from '../shared/config/types';
 import { prompt as cp, text as word } from './cyclePrompts';
 import { redact } from './errorlog-core';
@@ -94,7 +94,7 @@ function answerText(answer: AssistAnswer | undefined): string {
   return [answer.picked.join('; '), answer.other.trim() ? cp('assist.section.other', { text: answer.other.trim() }) : '', answer.text.trim()].filter(Boolean).join('; ');
 }
 
-function roundsText(rounds: AssistRound[]): string {
+export function roundsText(rounds: AssistRound[]): string {
   return rounds
     .map((round, i) =>
       [
@@ -105,7 +105,7 @@ function roundsText(rounds: AssistRound[]): string {
     .join('\n');
 }
 
-const draftParts = (d: AssistDraft) => ({ name: fence(d.name), job: fence(d.job), instructions: fence(d.instructions) });
+export const draftParts = (d: AssistDraft) => ({ name: fence(d.name), job: fence(d.job), instructions: fence(d.instructions) });
 
 const list = (items: string[]): string => (items.length ? items.join('\n') : cp('assist.section.none'));
 
@@ -218,10 +218,10 @@ export const settingsOf = (a: AgentDef): AssistSettings => ({ permission: a.perm
 /** The texts of an agent as a person reads them (a template agent holds catalog keys for them). */
 export const draftOfAgent = (a: AgentDef): AssistDraft => ({ name: word(a.name), job: word(a.job), instructions: word(a.instructions) });
 
-/** The agent of the stored team that can be adjusted: one the person made. A system agent and a draft are not. */
+/** The agent of the stored team that can be adjusted: one the person made. A system agent, a draft and the persona (it has its own wizard) are not. */
 export const adjustable = (config: WorkspaceConfig, id: string | null): AgentDef | null => {
   const found = id ? config.agents.team.find((a) => a.id === id) : undefined;
-  return found && !found.system && !isDraft(found) ? found : null;
+  return found && !found.system && !outOfCycle(found) ? found : null;
 };
 
 // ---- what the model answers ---------------------------------------------------------------------------------------------------------------------

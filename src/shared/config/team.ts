@@ -73,6 +73,8 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     ...(partial.squad !== undefined ? { squad: partial.squad } : {}),
     // Only a draft carries the mark: every other agent keeps the shape it had before the field existed.
     ...(partial.draft === true ? { draft: true } : {}),
+    // Only the persona has a kind: every other agent keeps the shape it had before the field existed.
+    ...(partial.kind === 'persona' ? { kind: 'persona' as const } : {}),
     // Absent means off and empty: an agent that never had them keeps the shape it had, and `newAgent` never switches one on by itself.
     ...(partial.screen === true ? { screen: true } : {}),
     ...(partial.allowedHosts?.length ? { allowedHosts: [...partial.allowedHosts] } : {}),
@@ -105,8 +107,27 @@ export function uniqueId(base: string, taken: Iterable<string>): string {
 /** Whether the agent is a draft the AI assistant saved to be tested: it takes no part in the cycle. */
 export const isDraft = (a: Pick<AgentDef, 'draft'>): boolean => a.draft === true;
 
-/** The team that takes part in the cycle: without the drafts. Whoever decides who works, is called or is offered reads the team through this. */
-export const workingTeam = (team: AgentDef[]): AgentDef[] => (team.some(isDraft) ? team.filter((a) => !isDraft(a)) : team);
+/** Whether the agent is the persona of the workspace (or its test copy): the person's representative, found by its kind and never by its id. */
+export const isPersona = (a: Pick<AgentDef, 'kind'>): boolean => a.kind === 'persona';
+
+/** Takes no part in the cycle: a draft of the AI assistant, or the persona. */
+export const outOfCycle = (a: Pick<AgentDef, 'draft' | 'kind'>): boolean => isDraft(a) || isPersona(a);
+
+/** The persona of the workspace, or null: the entry of that kind that is not a draft. */
+export const personaOf = (team: readonly AgentDef[]): AgentDef | null => team.find((a) => isPersona(a) && !isDraft(a)) ?? null;
+
+/** The persona being made or adjusted in the wizard (kind persona and a draft), or null. */
+export const personaDraftOf = (team: readonly AgentDef[]): AgentDef | null => team.find((a) => isPersona(a) && isDraft(a)) ?? null;
+
+/** The ids of the persona entries of the team: the authors a record worded as the persona's carries. */
+export const personaIdsOf = (team: readonly AgentDef[]): string[] => team.filter(isPersona).map((a) => a.id);
+
+/** The configuration without any entry of kind persona: what leaves the workspace in an export or a template. */
+export const withoutPersona = (config: WorkspaceConfig): WorkspaceConfig =>
+  config.agents.team.some(isPersona) ? { ...config, agents: { ...config.agents, team: config.agents.team.filter((a) => !isPersona(a)) } } : config;
+
+/** The team that takes part in the cycle: without the drafts and the persona. Whoever decides who works, is called or is offered reads the team through this. */
+export const workingTeam = (team: AgentDef[]): AgentDef[] => (team.some(outOfCycle) ? team.filter((a) => !outOfCycle(a)) : team);
 
 /** The team with whichever system agent is missing added back (seeded from the roles), so a file can never lose one. */
 export function ensureSystemAgents(team: AgentDef[], roles: Partial<Record<LlmRole, RoleSeed>> = {}): AgentDef[] {
@@ -116,13 +137,13 @@ export function ensureSystemAgents(team: AgentDef[], roles: Partial<Record<LlmRo
 
 /**
  * The agent that works a stage: the one the stage names, else the first agent of the team that lists the stage, else none.
- * A gate and a wait never have one, and a draft never works a stage, even when a file lists it.
+ * A gate and a wait never have one, and a draft or the persona never works a stage, even when a file lists it.
  */
 export function stageAgent(team: AgentDef[], stages: StageDef[], stageId: string): AgentDef | null {
   const stage = stages.find((s) => s.id === stageId);
   if (!stage || (stage.type && stage.type !== 'work')) return null;
-  const named = stage.agentId ? team.find((a) => a.id === stage.agentId && !isDraft(a)) : undefined;
-  return named ?? team.find((a) => a.stages.includes(stageId) && !isDraft(a)) ?? null;
+  const named = stage.agentId ? team.find((a) => a.id === stage.agentId && !outOfCycle(a)) : undefined;
+  return named ?? team.find((a) => a.stages.includes(stageId) && !outOfCycle(a)) ?? null;
 }
 
 export type AgentPatch = Partial<Omit<AgentDef, 'id' | 'system'>>;
@@ -216,7 +237,7 @@ export const RECOMMENDED: Record<string, { tracker: AgentTracker; shell: AgentSh
   planner: { tracker: 'read', shell: 'sandbox' },
   reviewer: { tracker: 'read', shell: 'sandbox' },
   'release-manager': { tracker: 'read', shell: 'none' },
-  'docs-writer': { tracker: 'none', shell: 'none' },
+  'docs-writer': { tracker: 'none', shell: 'sandbox' },
 };
 
 export interface Recommendation {

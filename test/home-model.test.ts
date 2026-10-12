@@ -1,0 +1,320 @@
+// The home as plain functions and a scan of the sources: one constant is where the app opens and where every "back" goes, so which screen is the home is decided in one place.
+// No component is rendered (the runner is a node environment), so the scan is how "every back asks for it" is held.
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import type { Run } from '../src/shared/runs';
+import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
+import { needsYou, pendingQuestions } from '../src/renderer/src/dashboard';
+import { type HomeCountsInput, HOME, OVERVIEW, anyCount, blockedCards, ceremonyCard, countTarget, deepBack, homeCounts, homeView, isCurrentRow, navGroups, resolveRow, resumeWizard, rowTitle, snoozeWizard, wizardSnoozed } from '../src/renderer/src/home';
+import { agoraPlan, type AgoraInput } from '../src/renderer/src/dashboard';
+import { waitingRuns } from '../src/shared/runs/view';
+import type { WatcherAlert } from '../src/shared/watchers';
+import { createTranslator, createVoiceTranslator, setLanguage, t } from '../src/shared/i18n';
+
+const ROOT = join(import.meta.dirname, '..');
+const sources = readdirSync(join(ROOT, 'src/renderer/src'), { recursive: true })
+  .map(String)
+  .filter((f) => /\.tsx?$/.test(f))
+  .map((f) => ({ file: f, text: readFileSync(join(ROOT, 'src/renderer/src', f), 'utf8') }));
+
+describe('the home', () => {
+  it('is the chat with the persona, and the Overview is the screen that holds what Today held', () => {
+    expect(HOME).toEqual({ name: 'chat' });
+    expect(OVERVIEW).toEqual({ name: 'overview' });
+  });
+
+  it('is where a deep dive goes back to unless it came from the pre-daily', () => {
+    expect(deepBack('chat')).toBe(HOME);
+    expect(deepBack('call')).toEqual({ name: 'call' });
+  });
+});
+
+describe('the screens that go back to the start', () => {
+  it('ask for the home and never name it, so the day the home changes no screen has to', () => {
+    // The only place that writes the name of the screen that is the Overview: the home itself (the vocabulary of the targets and every screen use its constants).
+    const naming = sources.filter((s) => /name: 'overview'/.test(s.text) && !s.file.endsWith('App.tsx')).map((s) => s.file).sort();
+    expect(naming).toEqual(['home.ts']);
+  });
+
+  it('keep no screen called today: the name is the Overview\'s now', () => {
+    expect(sources.filter((s) => /name: 'today'/.test(s.text)).map((s) => s.file)).toEqual([]);
+    expect(sources.some((s) => s.file.endsWith('screens/Today.tsx'))).toBe(false);
+    expect(sources.some((s) => s.file.endsWith('screens/Overview.tsx'))).toBe(true);
+  });
+
+  it('use the home in every screen that has a back button to the start, and import it', () => {
+    const users = sources.filter((s) => !s.file.endsWith('home.ts') && /go\(HOME\)|back = HOME|\? HOME :|<Screen>\(HOME\)|: HOME;|\bHOME\)/.test(s.text));
+    // the screens that returned to Today (and App, which opens on it): none of them calls a constant it does not import
+    expect(users.length).toBeGreaterThanOrEqual(26);
+    for (const s of users) expect(s.text, s.file).toMatch(/import \{[^}]*\bHOME\b[^}]*\} from '(\.\.\/)*(\.\/)?home'/);
+  });
+});
+
+// ---- the chat that is not the home yet ------------------------------------------------------------------------------------------------------------------
+
+const card = (iid: string, over: Partial<Card> = {}): Card => ({ ref: `g/p#${iid}`, iid, title: `Atividade ${iid}`, stage: 'Doing', spec: null, mrs: [], mrPaths: [], blockers: [], pending: [], changes: [], note: null, url: '', ...over });
+const turn = (ref: string, over: Partial<AgentTurn> = {}): AgentTurn => ({ ref, sessionId: null, speech: '', did: '', next: '', blocker: null, question: null, ...over });
+const action = (id: string, over: Partial<ReleaseAction> = {}): ReleaseAction => ({ id, key: id, kind: 'sync', issue: 1, issueTitle: 'T', state: 'pending', ...over }) as ReleaseAction;
+const run = (ref: string, over: Partial<Run> = {}): Run => ({ id: `run-${ref}`, issue: { ref, title: 'T' }, status: 'working', createdAt: '2026-10-10T10:00:00Z', updatedAt: '2026-10-10T10:00:00Z', ...over }) as unknown as Run;
+const alert = (id: string, over: Partial<WatcherAlert> = {}): WatcherAlert => ({ id, kind: 'rejections', ref: 'g/p#1', iid: '1', title: 'T', message: 'M', detail: null, card: null, since: '2026-10-10T10:00:00Z', ...over });
+
+describe('homeView', () => {
+  const withTeam = (team: Array<{ id: string; kind?: 'persona'; draft?: true }>) => ({ agents: { team } }) as unknown as Parameters<typeof homeView>[0]['config'];
+
+  it('waits for the configuration, opens the chat with a persona and the wizard without one', () => {
+    expect(homeView({ config: null, snoozed: false })).toBe('loading');
+    expect(homeView({ config: withTeam([{ id: 'persona', kind: 'persona' }]), snoozed: false })).toBe('chat');
+    expect(homeView({ config: withTeam([{ id: 'dev' }]), snoozed: false })).toBe('wizard');
+  });
+
+  it('shows the Overview for the session when the person said "Not now", and the chat when there is a persona anyway', () => {
+    expect(homeView({ config: withTeam([]), snoozed: true })).toBe('overview');
+    expect(homeView({ config: withTeam([{ id: 'persona', kind: 'persona' }]), snoozed: true })).toBe('chat');
+  });
+
+  it('counts a persona draft that was never finished as none', () => {
+    expect(homeView({ config: withTeam([{ id: 'persona-draft', kind: 'persona', draft: true }]), snoozed: false })).toBe('wizard');
+  });
+});
+
+describe('the counts of the home', () => {
+  const cards = [card('1', { blockers: ['MR com conflitos'] }), card('2'), card('3'), card('4')];
+  const input: HomeCountsInput = {
+    cards,
+    turns: { [cards[1].ref]: turn(cards[1].ref, { question: 'Which one?' }), [cards[2].ref]: turn(cards[2].ref, { question: 'And this?' }) },
+    answered: { [cards[2].ref]: true },
+    runs: [run(cards[3].ref, { status: 'failed' }), run('g/p#9', { status: 'gate' })],
+    actions: [action('a', { state: 'pending' }), action('b', { state: 'failed' }), action('c', { state: 'done' })],
+    alerts: [alert('w1')],
+  };
+
+  it('counts what is blocked (a blocker, or a run stopped on a failure), what asks, what waits in Actions and what needs the person', () => {
+    const counts = homeCounts(input);
+    expect(counts.blocked).toBe(2);
+    expect(counts.asking).toBe(1);
+    expect(counts.actions).toBe(2);
+    expect(counts.needs).toBeGreaterThan(0);
+  });
+
+  it('is the count of the lists the Overview draws, not a second copy of the formulas', () => {
+    const counts = homeCounts(input);
+    expect(counts.blocked).toBe(blockedCards(cards, input.runs).length);
+    expect(counts.asking).toBe(pendingQuestions(cards, input.turns, input.answered).length);
+    expect(counts.needs).toBe(needsYou({ cards, turns: input.turns, answered: input.answered, actions: input.actions, alerts: input.alerts }).length + waitingRuns(input.runs ?? []).length);
+  });
+
+  it('is all zero for a quiet day and still has the four counts', () => {
+    expect(homeCounts({ cards: [], turns: {}, answered: {}, runs: null, actions: [], alerts: [] })).toEqual({ blocked: 0, asking: 0, actions: 0, needs: 0 });
+  });
+
+  it('opens the Overview at the section a count names, and Actions for the third', () => {
+    expect(countTarget('blocked')).toEqual({ name: 'overview', section: 'blocked' });
+    expect(countTarget('asking')).toEqual({ name: 'overview', section: 'asking' });
+    expect(countTarget('needs')).toEqual({ name: 'overview', section: 'needs' });
+    expect(countTarget('actions')).toEqual({ name: 'actions' });
+  });
+
+  it('says whether anything is counted, for the dot of the phone\'s menu button', () => {
+    expect(anyCount({ blocked: 0, asking: 0, actions: 0, needs: 0 })).toBe(false);
+    expect(anyCount({ blocked: 0, asking: 0, actions: 1, needs: 0 })).toBe(true);
+  });
+
+  it('is read by the navigation and the Overview from this module', () => {
+    const chat = sources.find((s) => s.file.endsWith('screens/persona/HomeNav.tsx'));
+    const overview = sources.find((s) => s.file.endsWith('screens/Overview.tsx'));
+    expect(chat?.text).toMatch(/homeCounts\(/);
+    expect(overview?.text).toMatch(/blockedCards\(/);
+    expect(overview?.text).toMatch(/pendingQuestions\(/);
+  });
+});
+
+describe('the rows that depend on the day', () => {
+  const say = { t: createTranslator('en'), tv: createVoiceTranslator('en', false) };
+  const rows = navGroups(undefined, true).flatMap((g) => g.rows);
+  const rowOf = (id: string) => rows.find((r) => r.id === id) as (typeof rows)[number];
+  const card = { iid: 12, ref: 'group/project#12', stage: 'qa', spec: 'x' } as unknown as Card;
+  const idle = { callHeld: false, hasCards: true };
+
+  it('says "back" while the pre-daily is held, and has no target before the cards load', () => {
+    expect(resolveRow(rowOf('call'), idle, say)).toEqual({ label: say.t('ui.today.preDaily'), screen: { name: 'call' } });
+    expect(resolveRow(rowOf('call'), { callHeld: true, hasCards: true }, say).label).toBe(say.tv('call.back'));
+    expect(resolveRow(rowOf('call'), { ...idle, hasCards: false }, say).screen).toBeNull();
+  });
+
+  it('opens the first blocked card with the unblock, and nothing while there is none', () => {
+    expect(resolveRow(rowOf('deep'), idle, say)).toEqual({ label: say.t('ui.today.deepen'), screen: null });
+    const r = resolveRow(rowOf('deep'), { ...idle, firstBlocked: card }, say);
+    expect(r.label).toBe(say.t('ui.today.deepenIssue', { iid: 12 }));
+    expect(r.screen).toEqual({ name: 'deep', ref: 'group/project#12', back: 'chat' });
+  });
+
+  it('opens the first card the QA hand-off can take, and nothing while there is none', () => {
+    expect(resolveRow(rowOf('qa'), idle, say).screen).toBeNull();
+    expect(resolveRow(rowOf('qa'), { ...idle, firstQa: card }, say).screen).toEqual({ name: 'qa', ref: 'group/project#12', card });
+  });
+
+  it('takes the words and the target of any other row as they are', () => {
+    expect(resolveRow(rowOf('runs'), idle, say)).toEqual({ label: say.t('ui.runs.nav'), screen: { name: 'runs' } });
+    expect(resolveRow(rowOf('blocked'), idle, say).screen).toEqual(countTarget('blocked'));
+  });
+
+  it('marks the screen on show, and in the Overview only its own row, not the rows that open one of its sections', () => {
+    expect(isCurrentRow(rowOf('chat'), 'chat')).toBe(true);
+    expect(isCurrentRow(rowOf('runs'), 'chat')).toBe(false);
+    expect(isCurrentRow(rowOf('overview'), 'overview')).toBe(true);
+    for (const id of ['blocked', 'asking', 'needs']) expect(isCurrentRow(rowOf(id), 'overview'), id).toBe(false);
+    // a row that has no target of its own is never current
+    expect(isCurrentRow(rowOf('deep'), 'deep')).toBe(false);
+  });
+});
+
+describe('the hover text of a row', () => {
+  it('is the detail when the sidebar is open, and the words with the detail when it is folded', () => {
+    expect(rowTitle('Radar', '3 findings', false)).toBe('3 findings');
+    expect(rowTitle('Radar', undefined, false)).toBeUndefined();
+    expect(rowTitle('Radar', '3 findings', true)).toBe('Radar · 3 findings');
+    expect(rowTitle('Runs', undefined, true)).toBe('Runs');
+  });
+});
+
+describe('ceremonyCard', () => {
+  const base: AgoraInput = { hasCards: true, loadingCards: false, startedAt: null, callEnded: false, saved: false, resumed: false, ready: 2, total: 5, decisions: 0, effects: 0, retroDue: false };
+
+  it('shows the Agora card when the pre-daily is ready, in progress or ended', () => {
+    expect(ceremonyCard(agoraPlan(base), { preDaily: true })?.phase).toBe('ready');
+    expect(ceremonyCard(agoraPlan({ ...base, startedAt: 1 }), { preDaily: true })?.phase).toBe('live');
+    expect(ceremonyCard(agoraPlan({ ...base, startedAt: 1, callEnded: true }), { preDaily: true })?.phase).toBe('ended');
+  });
+
+  it('keeps the buttons of the plan, so starting from the card does what the Overview does', () => {
+    const plan = agoraPlan({ ...base, retroDue: true });
+    expect(ceremonyCard(plan, { preDaily: true })).toBe(plan);
+    expect(plan.secondary.map((b) => b.action)).toContain('retro');
+  });
+
+  it('shows nothing for a cycle with no pre-daily, and nothing while the cards load', () => {
+    expect(ceremonyCard(agoraPlan(base), { preDaily: false })).toBeNull();
+    expect(ceremonyCard(agoraPlan({ ...base, hasCards: false }), { preDaily: true })).toBeNull();
+  });
+
+  it('shows the card while the cycle is still unknown', () => {
+    expect(ceremonyCard(agoraPlan(base), undefined)?.phase).toBe('ready');
+  });
+});
+
+describe('the navigation', () => {
+  const ids = (on?: Parameters<typeof navGroups>[0], persona = true) => navGroups(on, persona).flatMap((g) => g.rows.map((r) => r.id));
+  const group = (id: string, on?: Parameters<typeof navGroups>[0]) => navGroups(on, true).find((g) => g.id === id)?.rows.map((r) => r.id);
+
+  it('reaches every screen the menu and the More sheet reached, each once', () => {
+    const all = ids();
+    for (const name of ['chat', 'overview', 'actions', 'history', 'settings', 'runs', 'board', 'forum', 'procedures', 'memory', 'custo', 'radar', 'saude', 'auditoria', 'help']) expect(all).toContain(name);
+    expect(new Set(all).size).toBe(all.length);
+  });
+
+  it('starts with the chat and the Overview, then what needs the person with its counts', () => {
+    expect(navGroups(undefined, true).map((g) => g.id)).toEqual(['home', 'attention', 'ceremonies', 'cycle', 'app']);
+    expect(group('home')).toEqual(['chat', 'overview']);
+    expect(group('attention')).toEqual(['blocked', 'asking', 'actions', 'needs']);
+    expect(navGroups(undefined, true)[0].label).toBeNull();
+  });
+
+  it('leaves the chat out while there is no persona to talk to', () => {
+    expect(ids(undefined, false)).not.toContain('chat');
+    expect(ids(undefined, false)[0]).toBe('overview');
+  });
+
+  it('opens from a count what the count opened', () => {
+    const rows = navGroups(undefined, true).flatMap((g) => g.rows);
+    for (const count of ['blocked', 'asking', 'actions', 'needs'] as const) expect(rows.find((r) => r.id === count)?.screen).toEqual(countTarget(count));
+  });
+
+  it('carries the four ceremonies, and leaves out the one the cycle turned off', () => {
+    expect(group('ceremonies')).toEqual(['call', 'deep', 'qa', 'retro']);
+    expect(group('ceremonies', { retro: false, qaHandoff: false })).toEqual(['call', 'deep']);
+    expect(ids({ preDaily: false })).not.toContain('call');
+    expect(navGroups({ preDaily: false, unblock: false, qaHandoff: false, retro: false }, true).some((g) => g.id === 'ceremonies')).toBe(false);
+  });
+
+  it('leaves to the cards the two ceremonies that work on one', () => {
+    const rows = navGroups(undefined, true).flatMap((g) => g.rows);
+    expect(rows.find((r) => r.id === 'deep')?.screen).toBeNull();
+    expect(rows.find((r) => r.id === 'qa')?.screen).toBeNull();
+    expect(rows.find((r) => r.id === 'call')?.screen).toEqual({ name: 'call' });
+    expect(rows.find((r) => r.id === 'retro')?.screen).toEqual({ name: 'retro' });
+  });
+
+  it('names every group and row in both languages', () => {
+    for (const language of ['en', 'pt-BR'] as const) {
+      setLanguage(language);
+      for (const g of navGroups(undefined, true)) {
+        if (g.label) expect(t(g.label)).not.toBe(g.label);
+        for (const r of g.rows) expect(t(r.label)).not.toBe(r.label);
+      }
+    }
+    setLanguage('en');
+  });
+});
+
+describe('Settings › Persona', () => {
+  it('opens the chat screen and not a panel', () => {
+    const section = sources.find((s) => s.file.endsWith('screens/persona/PersonaSection.tsx'));
+    expect(section?.text).toMatch(/go\(\{ name: 'chat' \}\)/);
+    expect(section?.text).not.toMatch(/ChatThread/);
+  });
+});
+
+describe('Settings, in order', () => {
+  it('draws the Persona section before the long team editor, where the chat\'s menu leads', () => {
+    const text = sources.find((s) => s.file.endsWith('screens/Settings.tsx'))?.text ?? '';
+    const at = (tag: string) => text.indexOf(tag);
+    expect(at('<PersonaSection')).toBeGreaterThan(-1);
+    expect(at('<PersonaSection')).toBeLessThan(at('<ConfigWorkspacesSection'));
+    expect(at('<PersonaSection')).toBeLessThan(at('<TeamSettings'));
+  });
+});
+
+describe('the page\'s save', () => {
+  it('names the page, so it is not read as the persona\'s save that sits under it', () => {
+    const text = sources.find((s) => s.file.endsWith('screens/Settings.tsx'))?.text ?? '';
+    expect(text).toMatch(/\{t\('ui\.settings\.saveAll'\)\}/);
+    expect(text).not.toMatch(/\{t\('ui\.settings\.save'\)\}/);
+    setLanguage('en');
+    expect(t('ui.settings.saveAll')).toBe('Save settings');
+    setLanguage('pt-BR');
+    expect(t('ui.settings.saveAll')).toBe('Salvar configurações');
+    // The persona keeps its own, with its own words.
+    expect(t('ui.persona.section.save')).not.toBe(t('ui.settings.saveAll'));
+    setLanguage('en');
+  });
+});
+
+describe('"Not now" on the wizard', () => {
+  it('is kept for the session in a variable and never stored: the next opening starts without it', () => {
+    expect(wizardSnoozed()).toBe(false);
+    snoozeWizard();
+    expect(wizardSnoozed()).toBe(true);
+    resumeWizard();
+    expect(wizardSnoozed()).toBe(false);
+    const home = sources.find((s) => s.file === 'home.ts')?.text ?? '';
+    expect(home).not.toMatch(/localStorage|sessionStorage|writeFile|api\./);
+  });
+});
+
+describe('the app shell', () => {
+  const app = sources.find((s) => s.file === 'App.tsx')?.text ?? '';
+
+  it('opens on the home and lets homeView decide between the chat, the wizard and the Overview', () => {
+    expect(app).toMatch(/useState<Screen>\(HOME\)/);
+    expect(app).toMatch(/homeView\(/);
+    expect(app).toMatch(/presentation="screen"/);
+  });
+
+  it('prepares every card\'s turn from the app, not from a screen, and counts an answer being written as work an update would cut', () => {
+    expect(app).toMatch(/prepareAll/);
+    expect(sources.find((s) => s.file.endsWith('screens/Overview.tsx'))?.text).not.toMatch(/prepareAll/);
+    expect(app).toMatch(/useAnyLive\(\)/);
+    expect(app).toMatch(/useReportUpdateBusy\([^)]*writing/);
+  });
+});

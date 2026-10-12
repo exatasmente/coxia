@@ -2,6 +2,7 @@ import { loadClaudeSdkModule } from '../claudeSdk';
 import { type ToolImpl, clip } from '../engine/open/tools/types';
 import type { Json } from '../engine/open/types';
 import { PROCEDURES_MCP_SERVER, procedureToolSpecs, type ProcedureAnswer, type ProcedureTools } from './tools';
+import { looseShape } from '../sdkShape';
 
 // The procedure tools in the shapes the two engines take them: ToolImpls for the open engine, one in-process MCP server for the Claude Agent SDK. Both call the same
 // handlers the session gave; a refusal comes back as text for the model, never as a crash.
@@ -30,7 +31,7 @@ export function procedureToolImpls(tools: ProcedureTools): ToolImpl[] {
 
 /**
  * The tools as one in-process MCP server; null when the SDK or zod cannot be loaded (the call goes on with the list in its prompt, and the thread says the tools are not
- * there). The shape of each property is `z.unknown()`: the app validates, so a wrong input is answered in the app's words and not by a schema error.
+ * there). Each property is loose and optional unless required (`looseShape`): the app validates, so a wrong input is answered in the app's words and not by a schema error.
  */
 export async function procedureMcpServer(tools: ProcedureTools): Promise<Record<string, unknown> | null> {
   try {
@@ -38,9 +39,7 @@ export async function procedureMcpServer(tools: ProcedureTools): Promise<Record<
     const { z } = await import('zod');
     const run = handlers(tools);
     const made = procedureToolSpecs(tools).map((spec) => {
-      const props = (spec.schema as { properties: Record<string, { description?: string }> }).properties;
-      const shape = Object.fromEntries(Object.entries(props).map(([name, p]) => [name, p.description ? z.unknown().describe(p.description) : z.unknown()]));
-      return sdk.tool(spec.name, spec.description, shape, async (args: Record<string, unknown>) => ({ content: [{ type: 'text' as const, text: (await run[spec.name](args)).text }] }));
+      return sdk.tool(spec.name, spec.description, looseShape(z, spec.schema), async (args: Record<string, unknown>) => ({ content: [{ type: 'text' as const, text: (await run[spec.name](args)).text }] }));
     });
     return { [PROCEDURES_MCP_SERVER]: sdk.createSdkMcpServer({ name: PROCEDURES_MCP_SERVER, tools: made }) };
   } catch (e) {

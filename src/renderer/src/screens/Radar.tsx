@@ -6,6 +6,7 @@ import { intlLocale, useT } from '../i18n';
 import { BackIcon } from './icons';
 import { jobs, useJobs } from '../useJobs';
 import { describeBranch, refreshHealth, useWorktreeHealth } from './radarSlots';
+import { HOME } from '../home';
 
 const KIND: Record<RadarKind, { label: string; badge: string }> = {
   'same-fix': { label: 'ui.radar.kind.sameFix', badge: 'badge-block' },
@@ -147,7 +148,7 @@ export function Radar({ go }: { go: (s: Screen) => void }) {
       <div className="wrap" style={{ maxWidth: 1100, gap: 18 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.nav.backToday')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 style={{ fontSize: 26, fontWeight: 700 }}>{t('ui.radar.title')}</h1>
           </div>
           <div className="row">

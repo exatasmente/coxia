@@ -9,6 +9,7 @@ import { RunBadge } from './RunBadge';
 import { agentName, squadName } from './names';
 import { type ActivityFrontView, patchRun, runsApi, useRunConfig, useRuns } from './runsApi';
 import './cycle.css';
+import { HOME } from '../../home';
 
 const FILTER_KEY: Record<RunFilter, string> = {
   all: 'ui.runs.filter.all',
@@ -211,7 +212,7 @@ export function RunsScreen({ go }: { go: (s: Screen) => void }) {
       <div className="wrap cy-wrap">
         <header className="row spread cy-top">
           <div className="row cy-top-main">
-            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 className="cy-title">{t('ui.runs.title')}</h1>
           </div>
           <button type="button" className="btn" onClick={() => go({ name: 'forum' })}>{t('ui.runs.forum')}</button>

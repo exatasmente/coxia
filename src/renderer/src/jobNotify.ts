@@ -7,7 +7,7 @@ const SW_WAIT_MS = 3000;
 
 function targetOf(job: Job): PushTarget {
   const p = screenPayload(job.screen as { name: string });
-  return parseTarget({ to: p.name, ref: p.ref, id: p.id, mr: p.mr }) ?? parseTarget({ to: p.name, ref: p.ref, id: p.id }) ?? { to: 'today' };
+  return parseTarget({ to: p.name, ref: p.ref, id: p.id, mr: p.mr }) ?? parseTarget({ to: p.name, ref: p.ref, id: p.id }) ?? { to: 'overview' };
 }
 
 /** Whether the person is looking at the app: the page is visible and the window has focus. */

@@ -15,7 +15,7 @@
   "ui.call.agendaDone": "Agenda done",
   "ui.call.agentFailed": "The agent for #{iid} failed: {error}",
   "ui.call.answered": "Answered: {question}",
-  "ui.call.backToToday": "Back to Today",
+  "ui.call.backToToday": "Back to Home",
   "ui.call.blocker": "Blocker",
   "ui.call.bringIn": "Bring in",
   "ui.call.bringInLabel": "Bring #{iid} into the agenda",

@@ -16,6 +16,7 @@ import { clockOf } from '../../../shared/sameDay';
 import { CATALOGS, getLanguage, voiceEnabled } from '../../../shared/i18n';
 import { useDay } from '../minutesApi';
 import { versionTitle } from './MinutesParts';
+import { HOME } from '../home';
 
 type Phase = 'intro' | 'preparing' | 'speaking' | 'idle' | 'listening' | 'transcribing' | 'thinking' | 'ended';
 
@@ -274,7 +275,7 @@ export function Call({ ceremony: c, player, go }: { ceremony: Ceremony; player: 
       <div className="wrap" style={{ gap: 18 }}>
         <header className="row spread">
           <div className="row" style={{ gap: 14 }}>
-            <button type="button" className="btn icon-btn" aria-label={t('ui.call.backToToday')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.call.backToToday')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 style={{ fontSize: 22, fontWeight: 700 }}>{t('ui.call.title')}</h1>
             {versionN !== null && <span className="pill">{versionTitle(versionN, date)}</span>}
             {c.squad ? <SquadScope squad={c.squad} /> : null}

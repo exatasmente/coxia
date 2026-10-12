@@ -1,0 +1,2 @@
+/* A question at a turn limit reuses the card of the stack (.cc-item) and its buttons (.cc-actions); only the detail lines are its own. */
+.ta-detail { margin: 0; overflow-wrap: anywhere; color: var(--amber-ink); }

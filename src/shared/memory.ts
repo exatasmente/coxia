@@ -45,6 +45,8 @@ export interface NoteState {
   by: string;
   /** The person took it over: an agent can no longer replace or remove it. */
   person: boolean;
+  /** The take-over was the persona's, through its door (#248): the lock is the same, the view says who. Absent: the person's. */
+  persona?: true;
   revision: number;
   /** False while it waits for the person's review: no agent reads it. */
   reviewed: boolean;
@@ -70,6 +72,8 @@ export interface NoteSummary {
   by: string;
   /** The person wrote it, edited it in the app or edited the file outside the app. */
   person: boolean;
+  /** The edit or review was the persona's (the lock is the person's all the same). */
+  persona?: true;
   revision: number;
   /** False while it waits for the person's review. */
   reviewed: boolean;

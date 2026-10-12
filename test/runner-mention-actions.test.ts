@@ -35,8 +35,8 @@ beforeEach(() => {
 const agent = (c: WorkspaceConfig, id: string) => c.agents.team.find((a) => a.id === id)!;
 
 function easy(b: Boot): void {
-  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md')], handoff: 'Plan it.' }));
-  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md')] }));
+  b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
+  b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
 }
 
 async function mention(b: Boot, run: Run, id: string, text: string): Promise<void> {

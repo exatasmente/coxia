@@ -14,7 +14,10 @@ describe('the second main build entry', () => {
   });
 
   it('the CLI imports no electron, directly or through its own folder', () => {
-    for (const file of ['src/main/mcp-state/cli.ts', 'src/main/mcp-state/server.ts', 'src/main/mcp-state/tools.ts', 'src/main/mcp-state/entry.ts']) {
+    // The persona's tools are listed from the persona's own catalog (names, descriptions, schemas, the door's texts), which the CLI pulls in too.
+    const files = ['src/main/mcp-state/cli.ts', 'src/main/mcp-state/server.ts', 'src/main/mcp-state/tools.ts', 'src/main/mcp-state/entry.ts', 'src/main/mcp-state/bridge.ts', 'src/main/mcp-state/actTools.ts'];
+    const catalog = ['src/main/persona/tools.ts', 'src/main/persona/doorTable.ts', 'src/main/persona/args.ts', 'src/main/persona/toolDocs.ts', 'src/main/persona/doorText.ts', 'src/shared/personaTools.ts'];
+    for (const file of [...files, ...catalog]) {
       const text = readFileSync(join(process.cwd(), file), 'utf8');
       expect(text, file).not.toMatch(/from ['"]electron['"]|require\(['"]electron['"]\)/);
     }

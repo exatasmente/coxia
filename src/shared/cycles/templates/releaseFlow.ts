@@ -11,25 +11,30 @@ import { agentFlowComments } from './agentFlowComments';
 // flow, for issues, as it is.
 
 export const RELEASE_MANAGER = 'release-manager';
+/** The agent that keeps the images of the documentation current: it runs the capture scripts in a sandbox and changes `docs/images/`. */
+export const RELEASE_IMAGES = 'release-images';
 
 export const RELEASE_FLOW_STAGES: StageDef[] = [
   { id: 'release-plan', label: 'cycle.releaseFlow.stage.plan', match: ['^Plan'], kind: 'backlog', rank: 1, type: 'work', agentId: RELEASE_MANAGER, produces: ['RELEASE_PLAN.md'] },
   { id: 'release-plan-gate', label: 'cycle.releaseFlow.stage.planGate', match: ['^Approve the plan$'], kind: 'backlog', rank: 2, type: 'gate' },
   { id: 'release-assemble', label: 'cycle.releaseFlow.stage.assemble', match: ['^Assemble'], kind: 'development', rank: 3, type: 'work', agentId: RELEASE_MANAGER },
+  // The images are made before the version is cut: the documentation a release ships shows the screens of what went into it. The stage runs a command and asks for the
+  // display a QA stage gets, so the images come from a workspace of their own and never from the person's screen.
+  { id: 'release-images', label: 'cycle.releaseFlow.stage.images', match: ['^Refresh the images$'], kind: 'development', rank: 4, type: 'work', agentId: RELEASE_IMAGES, display: true },
   // The merges the agent asked for may wait in Actions for a "sim": the beta is cut once every activity of the version is in the branch.
-  { id: 'release-merged', label: 'cycle.releaseFlow.stage.merged', match: ['^Merges'], kind: 'development', rank: 4, type: 'wait', waitsFor: { kind: 'release-approved' } },
-  { id: 'release-beta', label: 'cycle.releaseFlow.stage.beta', match: ['^Cut the beta$'], kind: 'development', rank: 5, type: 'work', agentId: RELEASE_MANAGER },
+  { id: 'release-merged', label: 'cycle.releaseFlow.stage.merged', match: ['^Merges'], kind: 'development', rank: 5, type: 'wait', waitsFor: { kind: 'release-approved' } },
+  { id: 'release-beta', label: 'cycle.releaseFlow.stage.beta', match: ['^Cut the beta$'], kind: 'development', rank: 6, type: 'work', agentId: RELEASE_MANAGER },
   // The steps the agent asked for wait in Actions, and the stage ends when it has asked: the run goes on only once the host shows the beta (its tag on the remote and its
   // pre-release published), never on a cut that stayed in the app's worktree or a push that sent nothing.
-  { id: 'release-beta-out', label: 'cycle.releaseFlow.stage.betaOut', match: ['^Beta on the host$'], kind: 'development', rank: 6, type: 'wait', waitsFor: { kind: 'beta-out' } },
+  { id: 'release-beta-out', label: 'cycle.releaseFlow.stage.betaOut', match: ['^Beta on the host$'], kind: 'development', rank: 7, type: 'wait', waitsFor: { kind: 'beta-out' } },
   // The beta is out when the person published its draft; the run waits for it to be out for a day with nothing labelled `beta-blocker` open.
-  { id: 'release-feedback', label: 'cycle.releaseFlow.stage.feedback', match: ['^Beta feedback$'], kind: 'reviewApproved', rank: 7, type: 'wait', waitsFor: { kind: 'beta-age', minutes: 1440, label: 'beta-blocker' } },
-  { id: 'release-stable-gate', label: 'cycle.releaseFlow.stage.stableGate', match: ['^Approve the stable$'], kind: 'reviewApproved', rank: 8, type: 'gate' },
-  { id: 'release-stable', label: 'cycle.releaseFlow.stage.stable', match: ['^Cut the stable$'], kind: 'development', rank: 9, type: 'work', agentId: RELEASE_MANAGER },
+  { id: 'release-feedback', label: 'cycle.releaseFlow.stage.feedback', match: ['^Beta feedback$'], kind: 'reviewApproved', rank: 8, type: 'wait', waitsFor: { kind: 'beta-age', minutes: 1440, label: 'beta-blocker' } },
+  { id: 'release-stable-gate', label: 'cycle.releaseFlow.stage.stableGate', match: ['^Approve the stable$'], kind: 'reviewApproved', rank: 9, type: 'gate' },
+  { id: 'release-stable', label: 'cycle.releaseFlow.stage.stable', match: ['^Cut the stable$'], kind: 'development', rank: 10, type: 'work', agentId: RELEASE_MANAGER },
   // Likewise the run is not published until the host has the stable: its tag on the remote, on main.
-  { id: 'release-stable-out', label: 'cycle.releaseFlow.stage.stableOut', match: ['^Stable on the host$'], kind: 'development', rank: 10, type: 'wait', waitsFor: { kind: 'stable-out' } },
+  { id: 'release-stable-out', label: 'cycle.releaseFlow.stage.stableOut', match: ['^Stable on the host$'], kind: 'development', rank: 11, type: 'wait', waitsFor: { kind: 'stable-out' } },
   // Where the run ends: nobody works it. The tracking issue is closed by the app when the host shows the stable version published.
-  { id: 'release-published', label: 'cycle.releaseFlow.stage.published', match: ['^Published$'], kind: 'done', rank: 11, type: 'work' },
+  { id: 'release-published', label: 'cycle.releaseFlow.stage.published', match: ['^Published$'], kind: 'done', rank: 12, type: 'work' },
 ];
 
 /** The agent of the release flow: it reads the code host and asks for release steps; it runs no command and changes no file. Autonomous: a push waits for the person anyway. */
@@ -43,6 +48,26 @@ export function releaseManager(): AgentDef {
     permission: 'read',
     tracker: 'read',
     shell: 'none',
+    autonomous: true,
+    turnsTo: null,
+    model: { role: 'deep' },
+  });
+}
+
+/**
+ * The agent that keeps the images of the documentation current. It is not the Release manager: it runs the repository's capture scripts and writes `docs/images/`,
+ * so it runs in a sandbox with `permission: 'worktree'`. Its only stage asks for the display a QA stage gets.
+ */
+export function releaseImages(): AgentDef {
+  return newAgent({
+    id: RELEASE_IMAGES,
+    name: 'cycle.releaseFlow.team.releaseImages.name',
+    job: 'cycle.releaseFlow.team.releaseImages.job',
+    instructions: 'cycle.releaseFlow.team.releaseImages.instructions',
+    stages: [RELEASE_FLOW_STAGES.filter((s) => s.agentId === RELEASE_IMAGES)[0].id],
+    permission: 'worktree',
+    tracker: 'none',
+    shell: 'sandbox',
     autonomous: true,
     turnsTo: null,
     model: { role: 'deep' },
@@ -67,6 +92,7 @@ function template(id: string, sections: number, technicalDetail: boolean): Comme
 export const RELEASE_COMMENT_SHAPE: Record<string, { sections: number; technicalDetail: boolean }> = {
   'release-plan': { sections: 4, technicalDetail: true },
   'release-assemble': { sections: 2, technicalDetail: true },
+  'release-images': { sections: 2, technicalDetail: true },
   'release-beta': { sections: 2, technicalDetail: true },
   'release-stable': { sections: 2, technicalDetail: true },
   activities: { sections: 1, technicalDetail: false },
@@ -90,7 +116,7 @@ export const releaseFlow: CycleTemplate = {
   description: 'cycle.releaseFlow.description',
   needs: ['issueProject'],
   runKind: 'release',
-  team: [releaseManager()],
+  team: [releaseManager(), releaseImages()],
   devCycle: {
     templateId: 'release-flow',
     stages: RELEASE_FLOW_STAGES,

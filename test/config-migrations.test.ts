@@ -14,6 +14,7 @@ import { MARKER_FILE, V1_BACKUP_FILE, bootstrapConfigs, detectExistingInstall, r
 import { TEST_STAGES } from './helpers/config';
 import { ensureWorkspaces, setTestFlag, workspaceDir, createWorkspace } from '../src/main/workspaces-core';
 import { V1_SETTINGS, exampleProfile } from './helpers/config';
+import { applyTemplate, builtInTemplate } from '../src/shared/cycles';
 
 const quiet = { log: () => undefined, now: () => new Date('2026-10-02T12:00:00Z') };
 let root: string;
@@ -231,7 +232,7 @@ describe('migrateConfig', () => {
 
     it('gives the turn caps the runner always had, since a file of schema 8 has none', () => {
       const r = migrateConfig(v8({ stageTimeoutMs: 1_800_000 }), { legacyInstall: false });
-      expect(r.config.runner.turns).toEqual({ read: 30, write: 80 });
+      expect(r.config.runner.turns).toEqual({ read: 30, write: 80, explore: 12, edit: 30, shell: 20, screen: 30, plain: 12 });
       expect(validateConfig(r.config).ok).toBe(true);
     });
 
@@ -928,21 +929,180 @@ describe('migrateConfig', () => {
       expect(twice.changed).toBe(false);
       expect(twice.config).toEqual(once.config);
     });
-
   });
 
-  describe('v28 -> v29: the budget fallback on the signed-in Claude Code CLI', () => {
+  describe('schema 28 to 29: the turns of the sub-agents', () => {
+    const KEYS = ['explore', 'edit', 'shell', 'screen', 'plain'] as const;
+    const DEFAULTS = { explore: 12, edit: 30, shell: 20, screen: 30, plain: 12 };
     const v28 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
       const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
       c.schemaVersion = 28;
+      for (const k of KEYS) delete c.runner.turns[k];
+      change(c);
+      return c;
+    };
+
+    it('writes the defaults of the sub-agents into an existing workspace, keeps read and write, bumps the version, leaves a note and yields a valid file', () => {
+      const r = migrateConfig(v28((c) => (c.runner.turns = { read: 7, write: 11 })), { legacyInstall: false });
+      expect(r.fromVersion).toBe(28);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.runner.turns).toEqual({ read: 7, write: 11, ...DEFAULTS });
+      expect(r.notes.join(' ')).toContain('agents ask you when a stage or a sub-agent reaches its turn limit');
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('writes the defaults even when the file already carries other numbers (it cannot be a stored choice at 28), and raises nothing else', () => {
+      const r = migrateConfig(v28((c) => Object.assign(c.runner.turns, { explore: 99, edit: 98, shell: 97, screen: 96, plain: 95 })), { legacyInstall: false });
+      expect(r.config.runner.turns).toMatchObject(DEFAULTS);
+      expect(r.config.runner.unconfined).toBe(false);
+      expect(r.config.runner.autonomy).toEqual(neutralRunner().autonomy);
+    });
+
+    it('touches nothing else of the file', () => {
+      const before = v28((c) => {
+        c.runner.enabled = true;
+        c.runner.turns.write = 120;
+        c.runner.showReasoning = false;
+      });
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect({ ...r.config, schemaVersion: 28, runner: { ...r.config.runner, turns: { read: r.config.runner.turns.read, write: r.config.runner.turns.write } } }).toEqual(before);
+    });
+
+    it('only bumps a document whose runner or turns is not an object, and the defaults fill it afterwards', () => {
+      for (const change of [(c: Record<string, any>) => (c.runner = 'broken'), (c: Record<string, any>) => (c.runner.turns = 'broken')]) {
+        const r = migrateConfig(v28(change), { legacyInstall: false });
+        expect(r.fromVersion).toBe(28);
+        expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+        expect(r.notes.join(' ')).not.toContain('turn limit');
+      }
+      expect(withConfigDefaults(v28((c) => delete c.runner.turns) as never).runner.turns).toEqual({ read: 30, write: 80, ...DEFAULTS });
+    });
+
+    it('ends with the defaults for a file from the first versions, a legacy install and a new workspace', () => {
+      expect(migrateConfig({ schemaVersion: 3, language: 'en' }, { legacyInstall: false }).config.runner.turns).toEqual({ read: 30, write: 80, ...DEFAULTS });
+      expect(migrateConfig(undefined, { legacyInstall: true }).config.runner.turns).toEqual({ read: 30, write: 80, ...DEFAULTS });
+      expect(migrateConfig(undefined, { legacyInstall: false }).config.runner.turns).toEqual({ read: 30, write: 80, ...DEFAULTS });
+      expect(neutralRunner().turns).toEqual({ read: 30, write: 80, ...DEFAULTS });
+    });
+
+    it('a file already at 29 keeps its choice, and a second start changes nothing', () => {
+      const custom = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      custom.runner.turns.explore = 3;
+      expect(migrateConfig(custom, { legacyInstall: false }).config.runner.turns.explore).toBe(3);
+      const once = migrateConfig(v28(), { legacyInstall: false });
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+  });
+
+  describe('schema 29 to 30: the persona kind', () => {
+    const v29 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 29;
+      change(c);
+      return c;
+    };
+
+    it('changes only the version, leaves no note and yields a valid file', () => {
+      const before = v29();
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect(r.fromVersion).toBe(29);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.notes).toEqual([]);
+      expect({ ...r.config, schemaVersion: 29 }).toEqual(before);
+      expect(r.config.agents.team.some((a) => a.kind !== undefined)).toBe(false);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('is followed by later steps: the chain does not stop at 30', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(30);
+    });
+  });
+
+  describe('schema 30 to 31: the flow grows the documents the app ships declarations for', () => {
+    /** A v30 file whose flow produces exactly what the app delivered before this change. */
+    const v30 = (): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(applyTemplate(neutralConfig(), builtInTemplate('agent-flow')!))) as Record<string, any>;
+      c.schemaVersion = 30;
+      const was: Record<string, string[]> = { refine: ['1_SPEC.md'], plan: ['2_PLAN.md'], communicate: ['6_RELEASE_NOTE.md'] };
+      for (const s of c.devCycle.stages as Record<string, any>[]) if (was[s.id]) s.produces = was[s.id];
+      return c;
+    };
+    const produced = (doc: Record<string, any>, id: string): string[] => (doc.devCycle.stages.find((s: { id: string }) => s.id === id)?.produces ?? []) as string[];
+
+    it('adds the requirements, the prototype and the user manual to the lists that are still the ones the app delivered', () => {
+      const r = migrateConfig(v30(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(30);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(produced(r.config, 'refine')).toEqual(['1_SPEC.md', 'REQUIREMENTS.md']);
+      expect(produced(r.config, 'plan')).toEqual(['2_PLAN.md', 'PROTOTYPE.md']);
+      expect(produced(r.config, 'communicate')).toEqual(['6_RELEASE_NOTE.md', 'USER_MANUAL.md']);
+      expect(produced(r.config, 'implement')).toEqual(['3_IMPLEMENTATION.md']);
+      expect(r.notes.join(' ')).toMatch(/requirements, prototype and user manual/);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('leaves a list the person changed alone, and says so in a note of its own', () => {
+      const doc = v30();
+      doc.devCycle.stages.find((s: { id: string }) => s.id === 'refine').produces = ['1_SPEC.md', 'MY_NOTES.md'];
+      const r = migrateConfig(doc, { legacyInstall: false });
+      expect(produced(r.config, 'refine')).toEqual(['1_SPEC.md', 'MY_NOTES.md']);
+      expect(produced(r.config, 'plan')).toEqual(['2_PLAN.md', 'PROTOTYPE.md']);
+      expect(r.notes.join(' ')).toMatch(/keeps the documents you set/);
+    });
+
+    it('is idempotent: a second pass over the migrated file changes nothing', () => {
+      const once = migrateConfig(v30(), { legacyInstall: false });
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config.devCycle.stages).toEqual(once.config.devCycle.stages);
+    });
+
+    it('says nothing about the documents when the file has no flow to grow', () => {
+      const doc = v30();
+      delete doc.devCycle.stages;
+      const r = migrateConfig(doc, { legacyInstall: false });
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.notes.join(' ')).not.toMatch(/requirements, prototype and user manual/);
+    });
+
+  });
+
+  describe('schema 31 to 32: the state server\'s second switch, the persona\'s tools for a terminal session', () => {
+    it('arrives off, keeps the first switch as it was and says so', () => {
+      for (const enabled of [true, false]) {
+        const r = migrateConfig({ schemaVersion: 31, mcpState: { enabled } }, { legacyInstall: false });
+        expect(r.config.mcpState).toEqual({ enabled, act: false });
+        expect(r.notes.join(' ')).toMatch(/persona's tools to a terminal session \(off/);
+      }
+    });
+
+    it('keeps a choice a later build carried in, and never turns the switch on by itself', () => {
+      expect(migrateConfig({ schemaVersion: 31, mcpState: { enabled: true, act: true } }, { legacyInstall: false }).config.mcpState).toEqual({ enabled: true, act: true });
+      expect(migrateConfig({ schemaVersion: 31, mcpState: { enabled: true, act: 'yes' } }, { legacyInstall: false }).config.mcpState).toEqual({ enabled: true, act: false });
+      expect(migrateConfig({ schemaVersion: 31 }, { legacyInstall: false }).config.mcpState).toEqual({ enabled: false, act: false });
+    });
+
+    it('is followed by later steps: the chain does not stop at 32', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(32);
+    });
+  });
+  describe('schema 32 to 33: the budget fallback on the signed-in Claude Code CLI', () => {
+    const v32 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 32;
       delete c.llm.cliFallback;
       change(c);
       return c;
     };
 
     it('adds the fallback off with no agent, bumps the version, leaves a note and yields a valid file', () => {
-      const r = migrateConfig(v28(), { legacyInstall: false });
-      expect(r.fromVersion).toBe(28);
+      const r = migrateConfig(v32(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(32);
       expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
       expect(r.config.llm.cliFallback).toEqual({ enabled: false, agents: [] });
       expect(r.notes.join(' ')).toContain('the budget fallback on the signed-in Claude Code CLI was added (off; no agent listed)');
@@ -950,24 +1110,24 @@ describe('migrateConfig', () => {
     });
 
     it('keeps a fallback the file already has, touches nothing else and a second start changes nothing', () => {
-      const before = v28((c) => (c.llm.cliFallback = { enabled: true, agents: ['deep'] }));
+      const before = v32((c) => (c.llm.cliFallback = { enabled: true, agents: ['deep'] }));
       const r = migrateConfig(structuredClone(before), { legacyInstall: false });
       expect(r.config.llm.cliFallback).toEqual({ enabled: true, agents: ['deep'] });
-      expect({ ...r.config, schemaVersion: 28 }).toEqual(before);
+      expect({ ...r.config, schemaVersion: 32 }).toEqual(before);
       const twice = migrateConfig(structuredClone(r.config) as unknown as Record<string, any>, { legacyInstall: false });
       expect(twice.changed).toBe(false);
       expect(twice.config).toEqual(r.config);
     });
 
     it('only bumps a document whose llm is not an object', () => {
-      const r = migrateConfig(v28((c) => (c.llm = 'broken')), { legacyInstall: false });
-      expect(r.fromVersion).toBe(28);
+      const r = migrateConfig(v32((c) => (c.llm = 'broken')), { legacyInstall: false });
+      expect(r.fromVersion).toBe(32);
       expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     });
 
-    it('is the newest step: 29 is current and 30 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(29);
-      expect(() => migrateConfig({ schemaVersion: 30 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is the newest step: 33 is current and 34 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(33);
+      expect(() => migrateConfig({ schemaVersion: 34 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

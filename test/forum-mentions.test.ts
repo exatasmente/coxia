@@ -108,6 +108,36 @@ describe('the answer in another thread', () => {
     expect(lines.some((m) => m.code === 'runner.mentionFailed')).toBe(false);
   });
 
+  it('asks the person when a sub-agent of the answer uses its last turn, and keeps the answer\'s own limit as a partial answer', async () => {
+    const { createTurnAsks } = await import('../src/main/turnAsks-core');
+    const turnAsks = createTurnAsks({ changed: () => undefined });
+    const engine = fakeEngine();
+    engine.script('turn', async (call) => {
+      const decision = await call.turnLimit!.ask({ of: 'sub', role: 'turn:explore', kind: 'explore', name: null, task: 'read the logs', used: 12, round: 12, granted: 0, canContinue: true });
+      return { text: `sub-agent: ${decision}` };
+    });
+    const running = answerMentions(place, personMessage('squads', '@turn hi', ['turn']), { forum, config, engine, env: () => ({ fallbackCwd: dir }), turnAsks });
+    for (let i = 0; i < 400 && !turnAsks.list().length; i++) await new Promise((r) => setTimeout(r, 5));
+    // the answer's own 12 turns are not asked: only what it starts is
+    expect(engine.calls[0].turnLimit?.own).toBe(false);
+    expect(turnAsks.list()).toMatchObject([{ of: 'sub', run: null, thread: 'squads', stage: null, agent: 'turn', kind: 'explore', task: 'read the logs' }]);
+    expect(engine.calls[0].wrapUp).toBe(true);
+    turnAsks.answer(turnAsks.list()[0].id, 'continue', 'window');
+    await running;
+    const lines = forum.read('squads', 0, 200)?.messages ?? [];
+    expect(lines.map((m) => m.code).filter((c) => c?.startsWith('runner.turns'))).toEqual(['runner.turns.ask.sub', 'runner.turns.continue.sub']);
+    expect(answered('squads')[0].text).toBe('sub-agent: continue');
+  });
+
+  it('gives no question to an answer when none is wired, and none to a ceremony\'s answer', async () => {
+    const { createTurnAsks } = await import('../src/main/turnAsks-core');
+    const engine = fakeEngine();
+    engine.script('turn', () => ({ text: 'ok' }));
+    await answerMentions(place, personMessage('squads', '@turn hi', ['turn']), { forum, config, engine, env: () => ({ fallbackCwd: dir }) });
+    await answerMentions({ ...place, kind: 'ceremony' }, personMessage('squads', '@turn again', ['turn']), { forum, config, engine, env: () => ({ fallbackCwd: dir }), turnAsks: createTurnAsks({ changed: () => undefined }) });
+    expect(engine.calls.map((c) => c.turnLimit)).toEqual([undefined, undefined]);
+  });
+
   it('says the failure with its reason when the wrap-up fails too, and posts no answer', async () => {
     const engine = fakeEngine();
     engine.script('turn', () => {

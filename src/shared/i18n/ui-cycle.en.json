@@ -511,7 +511,7 @@
   "ui.runs.activities.noStage": "nothing recorded yet",
   "ui.runs.activities.save": "Save",
   "ui.runs.activities.title": "Activities the app knows about",
-  "ui.runs.empty": "There are no runs yet. Start the cycle from an activity on Today.",
+  "ui.runs.empty": "There are no runs yet. Start the cycle from an activity in the Overview.",
   "ui.runs.emptyFilter": "No run in this filter.",
   "ui.runs.filter.all": "All · {count}",
   "ui.runs.filter.failed": "Failed · {count}",

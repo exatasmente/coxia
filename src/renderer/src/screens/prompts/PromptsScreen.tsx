@@ -9,6 +9,7 @@ import { isWeb } from '../../platform';
 import { BackIcon } from '../icons';
 import '../cycle/cycle.css';
 import './prompts.css';
+import { HOME } from '../../home';
 
 // The developer mode: every prompt the app sends an agent, read from the catalogs through config:prompts each time the screen opens (a text added in a later version
 // shows up without a list here), and the change of one text in one language, kept in the workspace's devCycle.promptOverrides. Ctrl+Shift+I opens and closes it,
@@ -26,7 +27,7 @@ export function usePromptsShortcut(current: Screen['name'], go: (s: Screen) => v
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey || e.code !== 'KeyI' || e.repeat) return;
       e.preventDefault();
-      go({ name: current === 'prompts' ? 'today' : 'prompts' });
+      go(current === 'prompts' ? HOME : { name: 'prompts' });
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -133,7 +134,7 @@ export function PromptsScreen({ go }: { go: (s: Screen) => void }) {
       <div className="wrap cy-wrap">
         <header className="row spread cy-top">
           <div className="row cy-top-main">
-            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+            <button type="button" className="btn icon-btn" aria-label={t('ui.cycle.back')} onClick={() => go(HOME)}><BackIcon /></button>
             <h1 className="cy-title">{t('ui.prompts.title')}</h1>
           </div>
           {list && <span className="faint">{t('ui.prompts.shown', { shown: shown.length, total: list.length, changed: changedCount })}</span>}

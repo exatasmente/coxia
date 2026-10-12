@@ -87,6 +87,7 @@ export function RecordBody({ record, team, now = Date.now() }: { record: Procedu
         <p className="small">
           {t('ui.procedures.panel.origin', { revision: record.revision, who: who(o.by), surface: t(SURFACE_LABEL[o.surface]) + (o.stage ? ` (${o.stage})` : ''), date: day(o.at) })}
           {o.createdBy !== o.by && ` ${t('ui.procedures.panel.created', { who: who(o.createdBy) })}`}
+          {o.persona && ` ${t('ui.procedures.panel.viaPersona')}`}
         </p>
         {o.permission && o.shell && <p className="small muted">{t('ui.procedures.panel.power', { permission: t(PERMISSION_LABEL[o.permission]), shell: t(SHELL_LABEL[o.shell]) })}</p>}
         <p className="small">{record.reviewed ? t('ui.procedures.panel.reviewed') : awaitsReview(record) ? t('ui.procedures.panel.awaitsReview') : t('ui.procedures.panel.unreviewed')}</p>

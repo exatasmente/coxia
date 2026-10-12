@@ -12,6 +12,7 @@ import { Bubble } from './Bubble';
 import { Presence } from './Avatar';
 import { useT, useTv, useVoiceEnabled } from '../i18n';
 import type { Translate } from '../../../shared/i18n';
+import { HOME } from '../home';
 
 const HEADER_STYLE: CSSProperties = { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }; // i18n-ignore: CSS value
 const DIVIDER = '1px solid var(--line-2)'; // i18n-ignore: CSS value
@@ -80,14 +81,14 @@ export function QaHandoff({ card, ceremony: c, player, go }: { card: Card | unde
   };
 
   if (!card) {
-    return <div className="page"><div className="wrap"><div className="error">{t('ui.qa.notFound')}</div><div><button type="button" className="btn" onClick={() => go({ name: 'today' })}>{t('ui.qa.back')}</button></div></div></div>;
+    return <div className="page"><div className="wrap"><div className="error">{t('ui.qa.notFound')}</div><div><button type="button" className="btn" onClick={() => go(HOME)}>{t('ui.qa.back')}</button></div></div></div>;
   }
 
   return (
     <div className="page">
       <div className="wrap" style={{ maxWidth: 1180, gap: 18 }}>
         <header className="panel-dark hero" style={HEADER_STYLE}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.qa.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.qa.back')} onClick={() => go(HOME)}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
             <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>{t('ui.qa.header', { iid: card.iid })}{card.stage ? ` · ${card.stage}` : ''}</div>
             <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>

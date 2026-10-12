@@ -13,6 +13,7 @@ import { ContinueInClaude } from './ContinueInClaude';
 import { RichText } from './Diagram';
 import { BackIcon } from './icons';
 import { Presence } from './Avatar';
+import { HOME } from '../home';
 
 const HEADER_STYLE: CSSProperties = { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 16, padding: '16px 20px', borderRadius: 18 }; // i18n-ignore: CSS value
 const SPEAKER = 'discussão'; // i18n-ignore: speaker id
@@ -33,21 +34,49 @@ function when(iso: string): string {
 export function Discussions({
   card,
   initialMr,
+  target,
+  back = HOME,
   ceremony: c,
   player,
   go,
-}: { card: Card | undefined; initialMr: string | undefined; ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
+}: { card: Card | undefined; initialMr: string | undefined; target?: { project: string; number: number }; back?: Screen; ceremony: Ceremony; player: ReturnType<typeof usePlayer>; go: (s: Screen) => void }) {
   const t = useT();
   const mrs = card?.mrPaths ?? [];
+  // A merge request that is not a card of the day: no card, no job, and the list read every time the screen opens.
+  const byMr = !card && !!target;
   const [mr, setMr] = useState<MrPath | null>(mrs.find((m) => m.ref === initialMr) ?? mrs[0] ?? null);
   const [result, setResult] = useState<DiscussionsResult | null>(null);
   const [idx, setIdx] = useState(0);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [reading, setReading] = useState(byMr);
+  const [explainingHere, setExplainingHere] = useState<string | null>(null);
   const tried = useRef(new Set<string>());
   const spoken = useRef(new Set<string>());
   const voice = c.voices?.agents[4] ?? c.voices?.agents[0] ?? null;
+
+  // The route hands a new object on every render of the app: the read hangs on the two values, not on it.
+  const project = target?.project;
+  const number = target?.number;
+  const openByMr = useCallback(() => {
+    if (!project || !number) return;
+    setError(null);
+    setReading(true);
+    feedbackApi
+      .openDiscussions(project, number)
+      .then((r) => {
+        setMr(r.mr);
+        setResult(r);
+        setIdx(0);
+      })
+      .catch((e) => setError(errorText(e)))
+      .finally(() => setReading(false));
+  }, [project, number]);
+
+  useEffect(() => {
+    if (byMr) openByMr();
+  }, [byMr, openByMr]);
 
   const listKey = (target: MrPath) => `discussions:${card?.ref}:${target.ref}:list`;
   const explainKey = (target: MrPath, id: string) => `discussions:${card?.ref}:${target.ref}:explain:${id}`;
@@ -65,8 +94,8 @@ export function Discussions({
 
   // A list read that finished while this screen was closed is shown as it was; otherwise the list is read again.
   useEffect(() => {
-    if (mr && !jobs.get(listKey(mr))) load(mr);
-  }, [mr, load]);
+    if (!byMr && mr && !jobs.get(listKey(mr))) load(mr);
+  }, [byMr, mr, load]);
 
   const patch = (id: string, change: (d: DiscussionView) => DiscussionView) =>
     setResult((r) => (r ? { ...r, discussions: r.discussions.map((d) => (d.id === id ? change(d) : d)) } : r));
@@ -93,16 +122,29 @@ export function Discussions({
     },
     failed: (message) => setError(message),
   });
-  const loading = !!mr && running.some((j) => j.key === listKey(mr));
-  const explaining = mr ? (running.find((j) => j.key.startsWith(explainKey(mr, '')))?.key.slice(explainKey(mr, '').length) ?? null) : null;
+  const loading = byMr ? reading : !!mr && running.some((j) => j.key === listKey(mr));
+  const explaining = byMr ? explainingHere : mr ? (running.find((j) => j.key.startsWith(explainKey(mr, '')))?.key.slice(explainKey(mr, '').length) ?? null) : null;
 
   const list = result?.discussions ?? [];
   const current: DiscussionView | undefined = list[Math.min(idx, list.length - 1)];
 
   const explain = useCallback(
     (d: DiscussionView) => {
-      if (!card || !mr) return;
+      if (!mr) return;
       setError(null);
+      if (!card) {
+        // No card: the explanation is read here, with no job left behind; the prompt names the merge request alone.
+        setExplainingHere(d.id);
+        feedbackApi
+          .explainDiscussion(null, mr, d.id)
+          .then((view) => {
+            patch(view.id, () => view);
+            clearDraft(view.id);
+          })
+          .catch((e) => setError(errorText(e)))
+          .finally(() => setExplainingHere(null));
+        return;
+      }
       jobs.launch(explainKey(mr, d.id), { label: t('ui.discussions.job.explain', { ref: mr.ref }), busy: t('ui.discussions.explaining'), screen: { name: 'discussions', ref: card.ref, mr: mr.ref, card } }, () => feedbackApi.explainDiscussion(card, mr, d.id));
     },
     [card, mr],
@@ -134,8 +176,8 @@ export function Discussions({
     setBusy(null);
   };
 
-  if (!card) {
-    return <div className="page"><div className="wrap"><div className="error">{t('ui.discussions.notFound')}</div><div><button type="button" className="btn" onClick={() => go({ name: 'today' })}>{t('ui.discussions.back')}</button></div></div></div>;
+  if (!card && !byMr) {
+    return <div className="page"><div className="wrap"><div className="error">{t('ui.discussions.notFound')}</div><div><button type="button" className="btn" onClick={() => go(back)}>{t('ui.discussions.back')}</button></div></div></div>;
   }
 
   const body = current ? (drafts[current.id] ?? current.explanation?.draft ?? '') : '';
@@ -146,13 +188,22 @@ export function Discussions({
     <div className="page">
       <div className="wrap" style={{ maxWidth: 940, gap: 18 }}>
         <header className="panel-dark hero" style={HEADER_STYLE}>
-          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.discussions.back')} onClick={() => go({ name: 'today' })}><BackIcon /></button>
+          <button type="button" className="btn icon-btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} aria-label={t('ui.discussions.back')} onClick={() => go(back)}><BackIcon /></button>
           <div style={{ minWidth: 0, flex: '1 1 260px' }}>
-            <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>{t('ui.discussions.header', { mr: mr?.ref ?? t('ui.discussions.noMr'), iid: card.iid })}</div>
-            <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
+            {card ? (
+              <>
+                <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>{t('ui.discussions.header', { mr: mr?.ref ?? t('ui.discussions.noMr'), iid: card.iid })}</div>
+                <div style={{ fontSize: 19, fontWeight: 600 }}>{card.title}</div>
+              </>
+            ) : (
+              <>
+                <div className="small" style={{ color: 'var(--night-violet)', fontWeight: 600 }}>{t('ui.discussions.headerMr')}</div>
+                <div style={{ fontSize: 19, fontWeight: 600, wordBreak: 'break-all' }}>{mr?.ref ?? t('ui.discussions.mrName', { project: project ?? '', number: number ?? '' })}</div>
+              </>
+            )}
           </div>
           <Presence recording={false} thinking={!!busy || loading} on={!!player.speaking} color="var(--night-violet)" small />
-          <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={loading || !mr} onClick={() => mr && load(mr)}>
+          <button type="button" className="btn" style={{ background: 'transparent', color: 'var(--on-night)', borderColor: 'var(--night-line)' }} disabled={loading || (!mr && !byMr)} onClick={() => (byMr ? openByMr() : mr && load(mr))}>
             {loading ? <span className="spinner" /> : null} {t('ui.discussions.refresh')}
           </button>
         </header>
@@ -222,7 +273,9 @@ export function Discussions({
               {!current.explanation && !explaining && <button type="button" className="btn btn-dark" onClick={() => explain(current)}>{t('ui.discussions.explain')}</button>}
             </section>
 
-            {current.explanation && (
+            {/* Replying and resolving become proposals tied to a card: without one, the screen only reads and explains. */}
+            {current.explanation && !card && <p className="faint">{t('ui.discussions.noCard')}</p>}
+            {current.explanation && card && (
               <section className="panel composer-panel" style={{ padding: 20, gap: 10 }}>
                 <h2 className="section-title">{t('ui.discussions.yourReply')}</h2>
                 <textarea

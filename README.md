@@ -4,17 +4,17 @@
 
 **Walk into stand-up already prepared, and leave with the follow-ups done.** Coxia is a desktop app (with a phone companion) that gets a developer through the recurring rituals of a team, by voice or by text: one AI agent per open task reads the repository, the specs and the documentation you point it at before it says a word, helps you unblock the thing you are stuck on, and hands you the minutes. It never changes anything outside your machine without your explicit yes.
 
-> **Status: 0.1, first public version.** It is used daily by its author, but parts are verified only against test servers (see [What is verified](#what-is-verified)). Expect rough edges and read the honest notes below.
+> **Status: 0.11.0 (beta).** It is used daily by its author, but parts are verified only against test servers (see [What is verified](#what-is-verified)). Expect rough edges and read the honest notes below. The same documentation, published as a site: [exatasmente.github.io/coxia](https://exatasmente.github.io/coxia/).
 
-<!-- TODO(screenshots): take these with demo data (a throwaway repository and fictitious tasks), never real company or personal data. See docs/images/README.md. -->
+<!-- Every shot comes from the app itself, over a workspace of fictional data seeded by scripts/seed-docs-workspace.mjs and written by scripts/captures/ (see docs/images/README.md). -->
 
-| Screenshot (TODO) | What it shows |
+| Screenshot | What it shows |
 |---|---|
-| `docs/images/today.png` | The Today screen: cards of your open tasks with their stage |
-| `docs/images/call.png` | A ceremony in progress, by voice or text, with the agent's sources |
-| `docs/images/actions.png` | The actions queue: the exact command, waiting for your confirmation |
-| `docs/images/wizard.png` | The first-run setup wizard |
-| `docs/images/phone.png` | The phone companion (PWA) |
+| ![The day](docs/images/today.png) | The Today screen: cards of your open tasks with their stage |
+| ![A ceremony](docs/images/call.png) | A ceremony in progress, by voice or text, with the agent's sources |
+| ![The actions queue](docs/images/actions.png) | The actions queue: the exact command, waiting for your confirmation |
+| ![The setup wizard](docs/images/wizard.png) | The first-run setup wizard |
+| ![The paired phone](docs/images/phone.png) | The phone companion (PWA) |
 
 ## Contents
 
@@ -33,6 +33,7 @@
 
 ## What it does
 
+- **A persona and a chat that opens the app.** The app opens on a chat with your *persona*, a representative you make in a few minutes with an AI that asks who you are, how you decide, what matters to you and what you never want done. It answers as it writes, shows the work behind each answer, and offers buttons that open a ceremony or a screen. It also acts in the app on your behalf, through eleven tools over what a person does there: every act is in the chat and in the Audit under its name, with its reason and what it had read, and a Stop halts it on the computer and on the phone. See [Persona and chat](docs/persona.md).
 - **Pre-stand-up.** Before the daily, one agent per open task checks the issue, its merge or pull requests, the pipeline, the review threads and the spec, and tells you what changed and what is stuck. You answer by voice or text; the app produces the minutes.
 - **Unblock and deep dive.** Talk a problem through with an agent that has already read the code, the specs and your team's rules, and that can look things up on the code host. It is read-only: it explains and proposes, it does not edit your repository.
 - **Gate quiz.** Before a task moves on, a short quiz generated from the spec checks that you understand what you are about to ship.

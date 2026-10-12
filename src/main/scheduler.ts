@@ -98,16 +98,16 @@ export async function checkStatus(manual: boolean): Promise<string> {
     }
     if (fresh.length > 1) {
       const refs = [...new Set(fresh.map((f) => `#${f.card.iid}`))].join(', ');
-      notify?.({ title: t('main.status.newBlockers', { count: fresh.length }), body: `${refs}\n${t('main.status.clickActivities')}`, onClick: { type: 'navigate', to: 'today' } });
+      notify?.({ title: t('main.status.newBlockers', { count: fresh.length }), body: `${refs}\n${t('main.status.clickActivities')}`, onClick: { type: 'navigate', to: 'overview' } });
       return t('main.status.newBlockersList', { count: fresh.length, refs });
     }
     if (moved.length) {
       const body = moved.map((m) => `#${m.card.iid}: ${m.from ?? t('main.status.noStage')} → ${m.card.stage ?? t('main.status.noStage')}`).join('\n');
-      notify?.({ title: t('main.status.changedTitle'), body, onClick: { type: 'navigate', to: 'today' } });
+      notify?.({ title: t('main.status.changedTitle'), body, onClick: { type: 'navigate', to: 'overview' } });
       return body;
     }
     const summary = firstRun ? t('main.status.registered', { count: result.total }) : since ? t('main.status.unchangedSince', { since }) : t('main.status.unchanged');
-    if (manual) notify?.({ title: t('main.status.title'), body: summary, onClick: { type: 'navigate', to: 'today' } });
+    if (manual) notify?.({ title: t('main.status.title'), body: summary, onClick: { type: 'navigate', to: 'overview' } });
     return summary;
   } finally {
     running = false;
@@ -124,7 +124,7 @@ function tick(): void {
   const pre = minutes(s.schedule.preDaily);
   if (cycleOn('preDaily') && workday && s.notifications && snap.preDailyNotified !== today() && nowMin >= pre && nowMin < pre + PRE_DAILY_WINDOW_MIN) {
     write({ ...snap, preDailyNotified: today() });
-    deps?.notify({ title: t('cycle.notice.preDailyTitle', { ceremony: ceremonyLabel() }), body: tv('notify.preDaily.body'), onClick: { type: 'navigate', to: 'call' } });
+    deps?.notify({ title: t('cycle.notice.preDailyTitle', { ceremony: ceremonyLabel() }), body: tv('notify.preDaily.body', { ceremony: ceremonyLabel() }), onClick: { type: 'navigate', to: 'chat' } });
   }
 
   const retro = minutes(s.schedule.retroTime);
