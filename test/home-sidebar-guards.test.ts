@@ -54,6 +54,13 @@ describe('where the navigation is mounted', () => {
     expect(read('screens/Overview.tsx')).toContain('<HomeShell ');
   });
 
+  it('puts every other screen the navigation opens inside it from the app, with the phone\'s bar, and keeps no bottom bar', () => {
+    const app = read('App.tsx');
+    expect(app).toMatch(/framedScreen\(screen\.name\) \? \(\s*<HomeShell [^>]*\bbar>/);
+    expect(app).not.toContain('BottomNav');
+    expect(read('screens/persona/HomeShell.tsx')).toMatch(/<PhoneMenu /);
+  });
+
   it('gives the phone the same navigation as a sheet of the header, and draws it in no other place', () => {
     expect(read('screens/persona/ChatHeader.tsx')).toContain('<HomeNav ');
     expect(read('screens/persona/HomeShell.tsx')).toContain('<HomeNav ');

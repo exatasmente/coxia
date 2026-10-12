@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CATALOGS, setLanguage, t } from '../src/shared/i18n';
 import { statsOf, summarize } from '../src/shared/proceduresView';
-import { bottomNavActive } from '../src/renderer/src/dashboard';
+import { framedScreen } from '../src/renderer/src/home';
 import type { ProcedureRecord } from '../src/shared/procedures';
 import type { StageUsage } from '../src/shared/runs/types';
 import { procedureRecord } from './helpers/procedures';
@@ -217,8 +217,8 @@ describe('the summary', () => {
 });
 
 describe('the screen', () => {
-  it('is reached from the More sheet, so the bottom bar keeps More lit while it is open', () => {
-    expect(bottomNavActive('procedures')).toBe('more');
+  it('is drawn inside the navigation\'s frame, so the menu stays one tap away while it is open', () => {
+    expect(framedScreen('procedures')).toBe(true);
   });
 
   it('starts with a spinner and no list, and says it reads only in a paired browser', () => {

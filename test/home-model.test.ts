@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import type { Run } from '../src/shared/runs';
 import type { AgentTurn, Card, ReleaseAction } from '../src/shared/types';
 import { needsYou, pendingQuestions } from '../src/renderer/src/dashboard';
-import { type HomeCountsInput, HOME, OVERVIEW, anyCount, blockedCards, ceremonyCard, countTarget, deepBack, homeCounts, homeView, isCurrentRow, navGroups, resolveRow, resumeWizard, rowTitle, snoozeWizard, wizardSnoozed } from '../src/renderer/src/home';
+import { type HomeCountsInput, HOME, OVERVIEW, anyCount, blockedCards, ceremonyCard, countTarget, deepBack, framedScreen, homeCounts, homeView, isCurrentRow, navGroups, resolveRow, resumeWizard, rowTitle, snoozeWizard, wizardSnoozed } from '../src/renderer/src/home';
 import { agoraPlan, type AgoraInput } from '../src/renderer/src/dashboard';
 import { waitingRuns } from '../src/shared/runs/view';
 import type { WatcherAlert } from '../src/shared/watchers';
@@ -254,6 +254,15 @@ describe('the navigation', () => {
       }
     }
     setLanguage('en');
+  });
+
+  it('frames every screen it opens, so the menu does not vanish one tap from the home', () => {
+    const rows = navGroups(undefined, true).flatMap((g) => g.rows);
+    // the chat and the Overview draw the frame themselves; the ceremonies are conversations and keep the whole screen
+    const pages = rows.filter((r) => r.screen && !['chat', 'overview'].includes(r.screen.name) && !['call', 'retro'].includes(r.id)).map((r) => r.screen!.name);
+    expect(pages.length).toBeGreaterThan(10);
+    for (const name of pages) expect(framedScreen(name), name).toBe(true);
+    for (const name of ['chat', 'overview', 'call', 'deep', 'gate', 'qa', 'retro', 'reentry', 'conflict', 'wizard'] as const) expect(framedScreen(name), name).toBe(false);
   });
 });
 

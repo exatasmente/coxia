@@ -198,6 +198,15 @@ export function rowTitle(label: string, detail: string | undefined, folded: bool
   return detail ? `${label} · ${detail}` : label;
 }
 
+// The screens the navigation opens are drawn inside its frame (HomeShell), the sidebar on the computer and the menu button on the phone, so the menu does not vanish one tap
+// away from the home. The chat and the Overview draw the frame themselves, since their header carries the phone's menu; the conversations (call, deep dive, gate, QA...) and
+// the wizards keep the whole screen.
+const FRAMED: ReadonlySet<Screen['name']> = new Set<Screen['name']>([
+  'actions', 'history', 'settings', 'custo', 'radar', 'saude', 'schedules', 'auditoria', 'help', 'glossario', 'run', 'runs', 'board', 'forum', 'procedures', 'memory', 'prompts',
+]);
+
+export const framedScreen = (name: Screen['name']): boolean => FRAMED.has(name);
+
 /** The cards the QA hand-off may take, the ones ready for QA first (the Overview's list, and the first of it is what the menu opens). */
 export function qaCandidates(cards: readonly Card[], cycle: CycleView | null | undefined): { ready: Card[]; all: Card[] } {
   const ready = cycle ? cards.filter((card) => isReadyForQa(cycle, card.stage, !!card.spec)) : [];
