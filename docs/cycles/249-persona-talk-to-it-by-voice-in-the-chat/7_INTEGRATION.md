@@ -1,24 +1,20 @@
-# Integração: conferência antes do pull request (tentativa 3)
+# 7 Integração (#
 
-## Veredito
-**Devolver ao implement**: a base ainda não foi trazida. A branch está 13 commits à frente e 11 atrás de `origin/release/0.11.0`; `git merge-tree` acusa conflito só em `CHANGELOG.md` (os demais arquivos mesclam sozinhos). Trazer a base pela ferramenta de conflito do app, mantendo o `CHANGELOG.md` da branch. Nada foi mesclado, rebaseado nem commitado pelo shell.
+| # | Item | Resultado | Evidência |
+|---|------|-----------|-----------|
+| 1 | CHANGELOG | OK: entrada em `### Added` de [Unreleased] sobre voz no chat e voice mode | ev-13 |
+| 2 | Esquema de configuração | não reverificado nesta tentativa | ev-6, ev-8, ev-12 (tentativas anteriores) |
+| 3 | Base atrás da release | não reverificado nesta tentativa | ev-6, ev-8 (tentativas anteriores) |
+| 4a | theme-audit, i18n:lint, public-audit | OK, os três com exit 0 (i18n: 6301 chaves nos dois idiomas, 0 pendências; public-audit: 2013 arquivos sem nada indevido) | ev-14 |
+| 4b | tsc, vitest, electron-vite build | não rodados nesta tentativa | ev-12 (tentativa anterior) |
+| 5 | Nomes de módulo | OK: nenhuma colisão por maiúscula ou extensão em src, test e scripts | ev-15 |
+| 6 | Base do PR | deve ser a release aberta, não a main | não verificado aqui |
 
-## Itens
-1. **CHANGELOG: ok.** `grep -c "Talk to the persona by voice" CHANGELOG.md` = 1 (em `[Unreleased]` > Added, lido nas etapas anteriores).
-2. **Esquema: ok.** `CONFIG_SCHEMA_VERSION = 34` na branch e em `origin/release/0.11.0`; o diff da branch contra a release não toca arquivos de config. Pull requests abertos para a release: não verificado.
-3. **Base: bloqueante.** `git rev-list --left-right --count HEAD...origin/release/0.11.0` = 13 / 11; conflito em `CHANGELOG.md` (ev-8).
-4. **Gates** (observados nesta etapa pelo app): `npm run typecheck` exit 0; `npm test`: 4 arquivos falham, todos do navegador, por falta de `@playwright/mcp` (ambiente); 551 arquivos passam. Não rodados por mim nesta tentativa: theme-audit, i18n:lint, public-audit, electron-vite build (relatos anteriores, não verificados agora e não repetidos depois da mesclagem).
-5. **Nomes de módulo: ok.** Nenhum par de arquivos novos na mesma pasta difere só por maiúscula ou extensão (comando rodado, sem saída).
-6. **Base do pull request:** deve ser `release/0.11.0`; o PR ainda não existe.
-
-## Não verificado
-App com voz instalada, latência, celular, o modelo seguindo o prompt de voz, gates depois da mesclagem, pull requests abertos na release.
-
-Comprovação: ev-8.
+Veredito: nenhum item bloqueante nos itens verificados nesta tentativa. Os itens 2, 3, 4b e 6 dependem das comprovações anteriores e não foram reverificados.
 
 ## Resultado dos cenários
 
-- Base atualizada com a release aberta: falhou (executado na sandbox) — 13 à frente e 11 atrás de origin/release/0.11.0; merge-tree acusa conflito só em CHANGELOG.md.
-- Esquema de configuração sem colisão: passou (executado na sandbox) — CONFIG_SCHEMA_VERSION 34 na branch (lido em src/shared/config/types.ts) e na release; diff não toca config. PRs abertos não listados.
-- Nomes de módulo sem colisão: passou (executado na sandbox) — Nenhum par de arquivos novos difere só por caixa ou extensão.
-- Fluxo de voz no app, latência, celular: não rodou (lido) — Sem voz instalada nem aparelho; app não aberto; sem comprovação.
+- CHANGELOG com linha em [Unreleased]: passou (executado na sandbox) — A seção Added de [Unreleased] tem a entrada sobre falar com a persona por voz, no chat e no modo de voz.
+- Gates theme-audit, i18n:lint e public-audit: passou (executado na sandbox) — Os três terminaram com exit 0. O i18n:lint achou 0 pendências em 6301 chaves, e o public-audit não achou nada indevido em 2013 arquivos.
+- Nomes de módulo sem colisão: passou (executado na sandbox) — Varredura de src, test e scripts (1487 arquivos) sem nenhum par que só difira por maiúscula ou extensão.
+- Esquema de configuração, base, tsc, vitest e build: não rodou (lido) — Não rodei estes itens de novo nesta tentativa. Os resultados deles estão nas comprovações das tentativas anteriores (ev-6, ev-8, ev-12), que não reli aqui.
