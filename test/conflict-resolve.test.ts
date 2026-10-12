@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import { join } from 'node:path';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReleaseAction } from '../src/shared/types';
+import { writesOf } from './helpers/audit';
 import { type Fixture, IDENTITY, MACHINE, cloneSnapshot, git, makeFixture, originSha, withMachineIdentity } from './helpers/conflictRepos';
 
 const proposeSpy = vi.hoisted(() => vi.fn());
@@ -399,7 +400,7 @@ describe('publish', () => {
     expect(qa).toHaveBeenCalledTimes(1);
     expect(qa.mock.calls[0][0]).toMatchObject({ issue: 15526, retest: true, stage: 'STAGE:: Test OK' });
 
-    const audit = readFileSync(AUDIT, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const audit = writesOf(readFileSync(AUDIT, 'utf8').trim().split('\n').map((l) => JSON.parse(l)));
     expect(audit).toHaveLength(1);
     expect(audit[0]).toMatchObject({ kind: 'push', ok: true, via: 'git', target: `git push origin HEAD:refs/heads/${f.branch}`, issue: 15526 });
     expect(audit[0].fields).toMatchObject({ branch: f.branch, commit: r?.commit });
@@ -441,7 +442,7 @@ describe('publish', () => {
     const done = await approveAction(push.id);
     expect(done.state).toBe('failed');
     expect(done.output).toContain('refused');
-    const audit = readFileSync(AUDIT, 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    const audit = writesOf(readFileSync(AUDIT, 'utf8').trim().split('\n').map((l) => JSON.parse(l)));
     expect(audit[0]).toMatchObject({ kind: 'push', ok: false });
     expect(get(id).state).toBe('pending');
     expect(get(id).resolve?.publishedAt).toBeNull();

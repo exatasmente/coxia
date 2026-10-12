@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { autonomyOf, boardAutonomous, choiceOn, flowKeyOf, newFlowAutonomy, onChoices, RELEASE_AUTONOMY_KEY, type EffectiveAutonomy } from '../src/shared/config/autonomy';
+import { auditPolicyOf, autonomyOf, boardAutonomous, levelOf, choiceOn, flowKeyOf, newFlowAutonomy, onChoices, RELEASE_AUTONOMY_KEY, type EffectiveAutonomy } from '../src/shared/config/autonomy';
 import { neutralConfig } from '../src/shared/config/index';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 
@@ -79,5 +79,25 @@ describe('the autonomy resolver', () => {
     expect(a.from).toBe('flow');
     expect(a.flow).toBe('');
     expect(onChoices(a)).toEqual(['gates']);
+  });
+});
+
+describe('the policy the audit log keeps', () => {
+  it('names the level the policy came from: the workspace, or the flow that decided', () => {
+    expect(levelOf('workspace')).toBe('workspace');
+    expect(levelOf('flow')).toBe('flow');
+  });
+
+  it('keeps the five choices, the level and the flow of a run, without the board', () => {
+    const c = withWorkspace({ ...ON, board: true });
+    expect(auditPolicyOf(c, 'platform')).toEqual({ ...ON, level: 'workspace', flow: 'platform' });
+    const own = withFlow('platform', { useWorkspace: false, cycle: true, push: true }, c);
+    expect(auditPolicyOf(own, 'platform')).toEqual({ cycle: true, hostCommands: false, gates: false, push: true, pullRequest: false, level: 'flow', flow: 'platform' });
+    expect(auditPolicyOf(withFlow(RELEASE_AUTONOMY_KEY, { useWorkspace: false, cycle: true }, c), RELEASE_AUTONOMY_KEY)).toMatchObject({ level: 'flow', flow: 'release' });
+  });
+
+  it('adds the workspace\'s board choice only for a write of the board', () => {
+    expect(auditPolicyOf(withWorkspace({ board: true }), '', { board: true })).toMatchObject({ board: true, level: 'workspace', flow: '' });
+    expect(auditPolicyOf(withWorkspace({ board: false }), '', { board: true })).toMatchObject({ board: false });
   });
 });

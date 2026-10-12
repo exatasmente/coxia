@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { AuditEntry } from '../../../shared/auditoria';
+import type { AuditEntry, AuditPolicy } from '../../../shared/auditoria';
 import type { Screen } from '../App';
 import { api, errorText } from '../api';
 import { intlLocale, useT } from '../i18n';
@@ -39,9 +39,28 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   secret: { key: 'ui.audit.kind.secret' },
   'plugin-decision': { key: 'ui.audit.kind.pluginDecision' },
   act: { key: 'ui.audit.kind.act' },
+  'auto-step': { key: 'ui.audit.kind.autoStep' },
+  decision: { key: 'ui.audit.kind.decision' },
+  'policy-change': { key: 'ui.audit.kind.policyChange' },
 };
 
 const WHO_LABEL: Record<WhoFilter, string> = { all: 'ui.audit.who.all', person: 'ui.audit.who.person', persona: 'ui.audit.who.persona', agent: 'ui.audit.who.agent' };
+
+const CHOICES = {
+  cycle: 'ui.audit.choice.cycle',
+  hostCommands: 'ui.audit.choice.hostCommands',
+  gates: 'ui.audit.choice.gates',
+  push: 'ui.audit.choice.push',
+  pullRequest: 'ui.audit.choice.pullRequest',
+  board: 'ui.audit.choice.board',
+} as const;
+
+/** The policy a step went out under, in words: the choices that were on and the level they came from. */
+function policyText(p: AuditPolicy, t: ReturnType<typeof useT>): string {
+  const on = (Object.keys(CHOICES) as (keyof typeof CHOICES)[]).filter((c) => p[c] === true).map((c) => t(CHOICES[c]));
+  const level = p.level === 'flow' ? t('ui.audit.level.flow', { flow: p.flow || t('ui.audit.flowMain') }) : t('ui.audit.level.workspace');
+  return t('ui.audit.policy', { choices: on.length ? on.join(', ') : t('ui.audit.policyNone'), level });
+}
 
 function Row({ e, focused }: { e: AuditEntry; focused: boolean }) {
   const t = useT();
@@ -59,12 +78,15 @@ function Row({ e, focused }: { e: AuditEntry; focused: boolean }) {
       <div className="row" style={{ gap: 10 }}>
         <span className={`badge ${e.ok ? 'badge-now' : 'badge-block'}`}>{e.ok ? t('ui.audit.ok') : t('ui.audit.error')}{e.code ? ` ${e.code}` : ''}</span>
         <span className="badge badge-quiet">{typeof kind === 'string' ? kind : t(kind.key)}</span>
+        {e.tampered && <span className="badge badge-block">{t('ui.audit.tampered')}</span>}
         {whoOf(e) === 'persona' && <span className="badge badge-now">{t('ui.audit.badge.persona')}</span>}
         {e.issue > 0 && <span className="mono small">#{e.issue}</span>}
         <span className="faint">{new Date(e.at).toLocaleString(intlLocale())}</span>
+        {e.by && <span className="faint">{t('ui.audit.by', { agent: e.by })}</span>}
         <span className="faint" style={{ marginLeft: 'auto' }}>{e.origin.kind}{e.origin.summary ? ` · ${e.origin.summary}` : ''}</span>
       </div>
       <div className="mono small" style={{ wordBreak: 'break-all' }}>{e.target} <span className="faint">{t('ui.audit.via', { via: e.via })}</span></div>
+      {e.policy && <div className="small muted">{policyText(e.policy, t)}</div>}
       {fields.length > 0 && (
         <div className="mono small muted" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
           {fields.map(([k, v]) => `${k} = ${v}`).join('\n')}

@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
-import { autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
+import type { AuditPolicy } from '../../shared/auditoria';
+import { auditPolicyOf, autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
 import { autonomousOf } from '../../shared/config/squads';
 import type { AgentDef, CommentTemplate, WorkspaceConfig } from '../../shared/config/types';
 import { cycleText } from '../../shared/cycles/text';
@@ -86,6 +87,8 @@ export interface PostMeta {
   summary: string;
   by: string;
   bodyHash?: string;
+  /** The autonomy policy that let it out, when that is what decided (the pull request). */
+  policy?: AuditPolicy;
 }
 
 /** A proposal that waits in Actions. `commands` run in order under one "sim". */
@@ -125,6 +128,8 @@ export interface PushMeta {
   runId: string;
   branch: string;
   notify?: { title: string; body: string };
+  /** The autonomy policy that let the push out by itself; absent on a push that waits for a "sim". */
+  policy?: AuditPolicy;
 }
 
 /** The only way out of the runner (door.ts). */
@@ -928,7 +933,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
         say(run, 'runner.push.refused', { reason: refusal }, end.stage.id);
       } else {
         try {
-          await door.push(meta, end.agent.id);
+          await door.push({ ...meta, policy: auditPolicyOf(deps.config(), flowKeyOf(run.squad)) }, end.agent.id);
           say(run, 'runner.push.pushed', { branch: run.branch }, end.stage.id);
         } catch (e) {
           say(run, 'runner.push.failed', { reason: message(e) }, end.stage.id);
@@ -944,7 +949,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
    * Opens the pull request now, audited, with the description already drafted: the images it cites go up first and follow with their addresses. It is
    * the autonomous branch of the end-of-push flow and the person's own retry (the click is the approval). Throws what the host refused.
    */
-  async function openPrNow(runId: string, run: Run, provider: VcsProvider): Promise<void> {
+  async function openPrNow(runId: string, run: Run, provider: VcsProvider, policy?: AuditPolicy): Promise<void> {
     const draft = run.comments.pr;
     const { repo } = projects(run);
     const title = pullRequestTitle(deps.config().runner.prTitle, draft?.title?.trim() || run.issue.title, run.issue.iid);
@@ -972,7 +977,8 @@ export function createPublisher(deps: PublisherDeps): Publisher {
     const target = run.baseBranch ?? (await provider.getRepo(repo)).defaultBranch;
     const createMr = (body: string): Promise<VcsCommand[]> => provider.planWrite({ op: 'createMr', project: repo, title, body, sourceBranch: run.branch, targetBranch: target });
     // Nothing here is a group the person approved, so the upload and the pull request are two calls of one run: the audit log gets a line for each.
-    const meta = { key: `pr:${run.id}`, issue: run.issue.iid, summary: title, by: 'app' };
+    // The policy rides only on the autonomous branch: the person's retry is their own approval.
+    const meta = { key: `pr:${run.id}`, issue: run.issue.iid, summary: title, by: 'app', ...(policy ? { policy } : {}) };
     try {
       const uploaded = await postUploads(run, meta, uploads);
       // The pieces no command carried were counted already; one the host took no address from is counted too instead of disappearing.
@@ -1069,7 +1075,7 @@ export function createPublisher(deps: PublisherDeps): Publisher {
           return;
         }
         try {
-          await openPrNow(runId, run, provider);
+          await openPrNow(runId, run, provider, auditPolicyOf(deps.config(), flowKeyOf(run.squad)));
         } catch (e) {
           await failPr(runId, e);
         }

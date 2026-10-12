@@ -92,7 +92,8 @@ import {
 import type { AppEvent } from '../../shared/types';
 import type { PluginEvent } from '../../shared/plugins/events';
 import { autonomousOf, docsFlowOf, effectiveTeam, membersOf, releaseFlowOf, removeSquad as removeSquadConfig, runKindFlowOf, squadOf, squadView, squadsOf, updateSquad } from '../../shared/config/squads';
-import { autonomyOf, choiceOn, flowKeyOf, type EffectiveAutonomy } from '../../shared/config/autonomy';
+import type { AuditEntry, AuditPolicy } from '../../shared/auditoria';
+import { auditPolicyOf, autonomyOf, choiceOn, flowKeyOf, type EffectiveAutonomy } from '../../shared/config/autonomy';
 import { type RunAgentCommands, countCommands, groupCommands } from '../../shared/runCommands';
 import { RELEASE_FROM, RELEASE_VERSION } from '../../shared/release';
 import { cycleText } from '../../shared/cycles/text';
@@ -102,6 +103,7 @@ import { beginCallActivity, type RunActivity, withActivityContext } from '../act
 import { type AgentCall, secretPath } from '../agents';
 import { findClone, git } from '../conflictGit';
 import { ensureDependencies } from './dependencies';
+import { recordWrite } from '../auditoria';
 import { redact } from '../errorlog-core';
 import type { ResolvedRepo } from '../config-resolve';
 import type { ForumStore } from '../forum-core';
@@ -517,7 +519,15 @@ export function createRunner(deps: RunnerDeps): Runner {
         resolve(a);
       };
       const stopped = (): void => finish({ decision: 'deny' });
-      commands.set(ask.run, { pending, answer: finish });
+      // Only the person's answer is a decision on the held command; the stage ending under it is not.
+      const answered = (a: { decision: CommandDecision; note?: string }): void => {
+        const run = deps.runs.get(ask.run);
+        if (run && commands.get(ask.run)?.pending.id === pending.id) {
+          audit(run, { kind: 'decision', target: redact(ask.command.replace(/\s+/g, ' ')).slice(0, 300), fields: { step: 'host-command', decision: a.decision === 'deny' ? 'refused' : 'approved', scope: a.decision, stage: ask.stage, agent: ask.agent }, by: 'person' });
+        }
+        finish(a);
+      };
+      commands.set(ask.run, { pending, answer: answered });
       signal.addEventListener('abort', stopped, { once: true });
       // The thread is what the screens follow: this message brings the question to the run's screen and to the list of what waits for the person.
       deps.forum.append(runThreadId(ask.run), { kind: 'system', author: { type: 'app' }, code: 'runner.command.ask', params: { agent: ask.agent, command: redact(ask.command.replace(/\s+/g, ' ')).slice(0, 300) }, stage: ask.stage });
@@ -603,6 +613,14 @@ export function createRunner(deps: RunnerDeps): Runner {
         publish(run.id, (p) => p.stageEntered(run.id, { stage: entered, previous, autonomous }));
       }
     }
+    // A stage entered and already working started with no "yes": the person's own start (`startStage`) keeps the stage, and one the person sent the run into
+    // would have waited at `to-start` unless its agent runs by itself, so only that case is here.
+    if ((!prior || prior.stage !== run.stage) && run.status === 'working') {
+      const started = flowFor(run).find((s) => s.id === run.stage);
+      if (started?.type === 'work' && started.agent && started.autonomous) {
+        audit(run, { kind: 'auto-step', target: `stage-start ${run.stage}`, fields: { step: 'stage-start', stage: run.stage, agent: started.agent }, by: started.agent, policy: policyOf(run) });
+      }
+    }
     // A run entered a stage: the plugins that observe `stage-entered` are called. A run that ends or is cancelled is said once, on the way in.
     if (!prior || prior.stage !== run.stage) void pluginDone('stage-entered', run);
     if (isTerminal(run) && (!prior || !isTerminal(prior))) void pluginDone('run-finished', run);
@@ -669,6 +687,17 @@ export function createRunner(deps: RunnerDeps): Runner {
       // A step that moved nothing (a stage the person has to start, a failure, a question) leaves the run where it is: there is nothing more to drive.
       if (deps.runs.get(id)?.rev === run.rev) return;
     }
+  }
+
+  /** The policy in effect for a run, as the audit log keeps it. */
+  function policyOf(run: Run): AuditPolicy {
+    return auditPolicyOf(deps.config(), flowKeyOf(run.squad));
+  }
+
+  /** One line of the audit log for a step of a run: a step the policy took (`auto-step`) or the person's decision on one that waited (`decision`). */
+  function audit(run: Run, e: { kind: 'auto-step' | 'decision'; target: string; fields: Record<string, string>; by: string; policy?: AuditPolicy; result?: string }): void {
+    const entry: Omit<AuditEntry, 'at'> = { kind: e.kind, issue: run.issue.iid, target: e.target, via: 'runner', fields: { run: run.id, ...e.fields }, ok: true, code: null, result: e.result ?? '', origin: { actionId: '', kind: 'run', key: run.id, summary: null }, by: e.by };
+    recordWrite(e.policy ? { ...entry, policy: e.policy } : entry);
   }
 
   /** The reason recorded on a gate the app approved by itself: in the app's words, saying what decided it and where that decision came from. */
@@ -1180,6 +1209,11 @@ export function createRunner(deps: RunnerDeps): Runner {
     const judged = gateStage ? (flow.find((s) => s.id === gateStage.returnsTo) ?? null) : null;
     const autonomous = judged ? (before.stages.find((s) => s.stage === judged.id)?.autonomous ?? false) : false;
     const decided = (run: Run): Run => {
+      // The app's approval is a step the policy took; the person's decision on the gate that held the run is a decision on a held step.
+      if (gateStage?.type === 'gate') {
+        const fields = { stage: gateStage.id, judged: judged?.id ?? '', ...(by === 'app' ? { step: 'gate' } : { decision: action === 'reject' ? 'refused' : 'approved', step: 'gate', action }) };
+        audit(before, by === 'app' ? { kind: 'auto-step', target: `gate ${gateStage.id}`, fields, by: judged?.agent ?? 'app', policy: policyOf(before), result: reason } : { kind: 'decision', target: `gate ${gateStage.id}`, fields, by: who.by, result: reason });
+      }
       if (gateStage?.type === 'gate') publish(id, (p) => p.gateDecided(id, { stage: gateStage, action, reason, autonomous }));
       // A gate was decided: the plugins that observe `gate-decided` are called, whatever the decision was.
       if (gateStage?.type === 'gate') void pluginDone('gate-decided', run);

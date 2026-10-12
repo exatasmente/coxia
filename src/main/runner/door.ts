@@ -24,7 +24,7 @@ export const realDoor: Door = {
   propose: (meta, commands) => proposeVcsGroup({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, detail: meta.detail, unit: meta.unit, evidence: meta.evidence, notify: meta.notify }, commands) !== null,
   proposePush: (meta) => proposeRunPush({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, runId: meta.runId, branch: meta.branch, notify: meta.notify }) !== null,
   push: async (meta, by) => {
-    await pushRunBranchAuto({ issue: meta.issue, key: meta.key, summary: meta.summary, by }, meta.runId, meta.branch);
+    await pushRunBranchAuto({ issue: meta.issue, key: meta.key, summary: meta.summary, by, policy: meta.policy }, meta.runId, meta.branch);
   },
   proposeRelease: (meta) => proposeRelease({ key: meta.key, issue: meta.issue, issueTitle: meta.issueTitle, summary: meta.summary, unit: meta.unit, group: meta.group, notify: meta.notify }) !== null,
   release: (meta, unit) => runReleaseAuto(meta, unit),

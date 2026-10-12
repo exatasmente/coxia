@@ -17,7 +17,10 @@ const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
 const { writeRegistry } = await import('../src/main/workspaces-core');
 const actions = await import('../src/main/actions');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
-const { listAudit } = await import('../src/main/auditoria');
+const { listAudit: allAudit } = await import('../src/main/auditoria');
+// The writes themselves: the lines the autonomy policy adds beside them are read through allAudit.
+const listAudit = () => writesOf(allAudit());
+const { writesOf } = await import('./helpers/audit');
 const { runStore } = await import('../src/main/runs');
 const { getConfig, updateConfig } = await import('../src/main/workspaceConfig');
 
