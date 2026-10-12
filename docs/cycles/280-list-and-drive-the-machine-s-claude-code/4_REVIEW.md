@@ -1,28 +1,37 @@
-# Revisão: nada foi implementado ainda
+# Revisão: sessões do Claude Code no app, rodada 2
 
 ## Veredito
 
-Mudanças pedidas. Não há código de produto para aprovar.
+Aprovado. O bloqueante da rodada 1 (nenhum código nem teste) foi tratado: os passos 1 a 7 do plano estão na branch, com testes.
 
 ## O que foi conferido
 
-- Lidos: a issue, a especificação (16 regras, 12 critérios), o plano, a nota de implementação e a memória do ciclo.
-- O resumo do que a branch alterou, fornecido pelo app, diz que não há alteração fora da pasta do ciclo. Não foi rodado nenhum comando próprio de diff; isto vem desse resumo.
-- Nenhum portão foi rodado (tipos, testes, auditoria de tema, i18n, auditoria pública), porque não há código novo. Não verificado.
+- Lidos por inteiro: `source.ts`, `module.ts` e `service.ts` do núcleo, a nota de implementação, a especificação e o plano. O resto do diff foi visto só pelo resumo do app; arquivos de tela, catálogos e documentação não foram relidos linha a linha (não verificado em detalhe).
+- Rodado nesta etapa: os sete arquivos de teste ligados ao recurso (fontes, permissões, serviço, módulo, tela, migração de configuração, tabela da porta da persona, política do celular): 191 testes passaram.
+- Não rodados nesta etapa: `tsc`, suíte completa, theme-audit, i18n:lint, public-audit, build. Os resultados vêm da nota de implementação (não verificado aqui). A nota registra 2 testes que estouraram 5 s com a máquina carregada e passaram sozinhos.
+- Não verificado: nada contra o Claude Code real; a tela não foi aberta num app em execução.
+
+## Contra a especificação
+
+- Desligado por padrão e só na janela: `claudeSessions.enabled`, canais recusam desligado ou fora da janela. O desvio (canais sempre registrados, recusando) atende a regra 1 sem exigir reinício; aceito.
+- Leitura de disco: `guardedRead` só aceita `<dígitos>.json` direto na pasta, como arquivo regular, recusa `.key` e credenciais e devolve só os campos permitidos. Leitura do código confere.
+- Eventos só pela janela (`emitWindow`), sem `emit`; três camadas contra celular e persona (prefixo negado, `EXCLUDED`, checagem de porta).
+- `test:true` recusa `send` e `start` antes de criar o `query`; listar e ler seguem.
+- Redação aplicada a transcrições, títulos, pastas, entrada da permissão e erros do SDK.
+- Auditoria `claude-session` com sessão citada e só o tamanho do texto.
 
 ## Achados
 
-### Bloqueante
+### Bloqueantes
 
-1. **Critérios de aceite não atendidos (todos os 12).** A nota de implementação confirma que só o passo 0 (sondagem do SDK) foi feito. Faltam: chave `claudeSessions.enabled` com migração v35 e os três arquivos de configuração; prefixo negado `claudeSessions:` no `webPolicy.ts`; canais em `EXCLUDED` com motivo `machine`; emissor só da janela; núcleo (`source`, `asks`, `owned`, `service`, `module`); tipo de auditoria `claude-session`; tela; documentação e `CHANGELOG.md`.
-2. **Testes que faltam** para todo comportamento novo listado na tabela do plano (módulo desligado, `guardedRead`, redação, resume/bifurcação, fila de permissões e recusa por `viaOf`, parar/encerrar, `test:true`, auditoria, celular, persona, migração, tela).
+Nenhum.
 
-### Sugestões (para a próxima tentativa)
+### Sugestões
 
-- A sondagem confirmou a fonte limpa das sessões em execução (`sessions/<pid>.json`, só os campos pid, sessionId, cwd, kind, status, updatedAt). Manter `guardedRead` como único ponto de disco e testá-lo com arquivos sintéticos em pasta temporária, nunca com a pasta real.
-- Localizar a função de redação (pergunta aberta da memória) antes do `service.ts`.
-- Entregar em ordem 1 a 7 e rodar os cinco portões ao final; reportar o que não rodar.
+1. `service.ts` (`send`, `start`, `stop`): a linha de auditoria só é gravada depois do sucesso. Se o texto já foi entregue ao SDK e falha, ou `interrupt` lança, não há linha. Já registrado como lacuna conhecida; considerar gravar a tentativa com resultado de falha.
+2. `service.ts` (`follow`): o intervalo de 2 s só para por `follow(null)`; depende de a tela chamá-lo ao fechar. Conferir na QA que sair da tela encerra o acompanhamento.
+3. `module.ts` (`sdkQuery`): `settingSources` inclui `user`, `project` e `local`; isso é coerente com usar o `claude` da pessoa, mas vale uma linha de documentação dizendo que as configurações dela se aplicam.
 
 ## Segurança, regras do repositório e repositório público
 
-Sem código, nada a julgar. Não verificado. Os pontos de atenção do plano seguem válidos: `emit` atual faz broadcast ao celular (usar só `emitWindow`), resposta de permissão só pela janela, nenhum arquivo de credencial ou chave aberto.
+Nada bloqueante na leitura: fixtures sintéticas segundo a nota, nenhum caminho de escrita fora da porta no código lido. O repositório público foi conferido pela nota (public-audit), não por esta etapa.
