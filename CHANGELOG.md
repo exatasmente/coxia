@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.11.0-beta.7] - 2026-10-12
+
 ### Added
 
 - **Schedules can act directly, skip a missed time, and sit beside the app's own routines.** A schedule can now call an agent of the team with a prompt, start a run for an issue or card, or run the retro, besides waking the persona. The direct actions call no model to decide what to do, so they still fire when the persona's provider is down; each goes through the persona's own door by the `schedule` door, with the same policy and audit, and its result, its failure or its wait for approval in Actions is said in the schedule's conversation. A failure does not pause the schedule, and while an action waits for approval the next time opens no second one. Each schedule also says what happens to a time missed while the app was closed or the scheduler off: run once, marked late (as before, and what existing schedules keep), or skip, with a line in the conversation naming the missed time. Every firing, direct or the persona's, shows in the activity tree with its schedule (done, failed, skipped or waiting for approval). The Schedules screen lists the pre-daily reminder, the retro day and the work window read-only, with a button to Settings, and the persona can read them too.
@@ -487,7 +489,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.6...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.7...HEAD
+[0.11.0-beta.7]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.6...v0.11.0-beta.7
 [0.11.0-beta.6]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.5...v0.11.0-beta.6
 [0.11.0-beta.5]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.4...v0.11.0-beta.5
 [0.11.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.3...v0.11.0-beta.4
