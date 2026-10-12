@@ -1087,9 +1087,50 @@ describe('migrateConfig', () => {
       expect(migrateConfig({ schemaVersion: 31 }, { legacyInstall: false }).config.mcpState).toEqual({ enabled: false, act: false });
     });
 
-    it('is the newest step: 32 is current and 33 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(32);
-      expect(() => migrateConfig({ schemaVersion: 33 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is followed by later steps: the chain does not stop at 32', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(32);
+    });
+  });
+
+  describe('schema 32 to 33: the screen step approvals', () => {
+    const v32 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 32;
+      delete c.runner.screenPolicy;
+      change(c);
+      return c;
+    };
+
+    it('writes an empty policy (every kind asks, as before), bumps the version and yields a valid file', () => {
+      const r = migrateConfig(v32(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(32);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.runner.screenPolicy).toEqual({});
+      expect(r.notes).toEqual([]);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('touches nothing else of the file, and only bumps a document whose runner is not an object', () => {
+      const before = v32((c) => (c.runner.enabled = true));
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect({ ...r.config, schemaVersion: 32, runner: { ...r.config.runner, screenPolicy: undefined } }).toEqual({ ...before, runner: { ...before.runner, screenPolicy: undefined } });
+      expect(migrateConfig(v32((c) => (c.runner = 'broken')), { legacyInstall: false }).config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+    });
+
+    it('a workspace from before the approvals existed (v28) reaches 33 with every step held', () => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 28;
+      delete c.runner.screenPolicy;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.schemaVersion).toBe(33);
+      expect(r.config.runner.screenPolicy).toEqual({});
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('is the newest step: 33 is current and 34 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(33);
+      expect(() => migrateConfig({ schemaVersion: 34 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

@@ -12,6 +12,8 @@ import { draftOfRunner, MAX_CAP_MINUTES, MAX_IDLE_MINUTES, MAX_TURNS, MIN_CAP_MI
 import { ChipsInput, Labeled, Problems, Toggle, type Problem, type SectionProps } from './ui';
 import { SANDBOX_BROWSERS_LABEL, SANDBOX_DISPLAY_LABEL, SANDBOX_NETWORK_LABEL, SANDBOX_REASON_LABEL } from './labels';
 import { AutonomyFields } from './AutonomyFields';
+import { ScreenPolicyFields } from './ScreenPolicyFields';
+import { resolveLevels } from '../../../../shared/config/screenPolicy';
 import { useSandboxStatus } from './sandboxStatus';
 
 const SUB_TURN_FIELDS = [
@@ -168,6 +170,8 @@ export function RunnerSection({ config, save }: SectionProps) {
       )}
 
       <AutonomyBlock draft={draft} set={set} stored={config.runner} web={web} />
+      {/* Only the computer changes the workspace's screen step approvals: a paired browser keeps the stored ones (runnerOfWeb). */}
+      {!web && <ScreenPolicyFields level="workspace" value={draft.screenPolicy} onChange={(screenPolicy) => set({ screenPolicy })} effective={resolveLevels({ workspace: draft.screenPolicy })} />}
 
       <Labeled label={t('ui.runner.commit')} hint={t('ui.runner.commitHint')} error={at('commitMessage')}>
         {(id) => <input id={id} className="text-input mono" spellCheck={false} maxLength={200} value={draft.commitMessage} onChange={(e) => set({ commitMessage: e.target.value })} />}

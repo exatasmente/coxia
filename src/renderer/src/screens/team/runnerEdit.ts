@@ -1,4 +1,5 @@
 import type { RunnerConfig, RunnerConversations, RunnerEvidence, RunnerSandbox, WorkspaceAutonomy } from '../../../../shared/config/types';
+import type { ScreenPolicy } from '../../../../shared/config/screenPolicy';
 import { proceduresOn } from '../../../../shared/procedures';
 import { soleMaintainerOf } from '../../../../shared/release';
 import { memoryOn } from '../../../../shared/memory';
@@ -42,6 +43,8 @@ export interface RunnerDraft {
   evidence: RunnerEvidence;
   /** The autonomy block of the workspace (desktop only: a paired browser cannot raise it). */
   autonomy: WorkspaceAutonomy;
+  /** The workspace's screen step approvals (desktop only: a paired browser keeps the stored ones). */
+  screenPolicy: ScreenPolicy;
   linkDependencies: boolean;
   /** Agents keep what they learned as procedures and read them (desktop only: it gives every agent a write into a store other agents' prompts read). */
   procedures: boolean;
@@ -83,6 +86,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     sandbox: structuredClone(r.sandbox),
     evidence: r.evidence ?? 'app',
     autonomy: structuredClone(r.autonomy),
+    screenPolicy: { ...(r.screenPolicy ?? {}) },
     linkDependencies: r.linkDependencies !== false,
     procedures: proceduresOn({ runner: r }),
     flex: r.flex !== false,
@@ -107,6 +111,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     identity: { name: d.identityName.trim(), email: d.identityEmail.trim() },
     sandbox: { ...d.sandbox, registryHosts: d.sandbox.registryHosts.map((h) => h.trim().toLowerCase()), readOnlyPaths: d.sandbox.readOnlyPaths.map((p) => p.trim()), browsersPath: d.sandbox.browsersPath?.trim() || null, display: d.sandbox.display === true },
     autonomy: structuredClone(d.autonomy),
+    screenPolicy: { ...d.screenPolicy },
     evidence: d.evidence,
     commitMessage: d.commitMessage,
     prTitle: d.prTitle,
@@ -126,7 +131,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
  * whether the person's yes stands for a review are the stored ones whatever the draft says, because only the computer changes them (the save is refused otherwise).
  */
 export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig {
-  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', procedures: stored.procedures, flex: stored.flex, unconfined: stored.unconfined, release: stored.release && { ...stored.release }, conversations: { ...stored.conversations } };
+  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', screenPolicy: { ...(stored.screenPolicy ?? {}) }, procedures: stored.procedures, flex: stored.flex, unconfined: stored.unconfined, release: stored.release && { ...stored.release }, conversations: { ...stored.conversations } };
 }
 
 export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'subTurns' | 'identity' | 'commitMessage' | 'prTitle' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxBrowsers' | 'sandboxLimits';

@@ -13,6 +13,7 @@ import { mentionCall } from '../src/main/mentions/call';
 import { type StageInput, systemText } from '../src/main/runner/prompt';
 import { type ScreenPrompt, refusalText, screenPromptOf } from '../src/main/runner/screenPrompt';
 import { updateConfig } from '../src/main/workspaceConfig';
+import { HELD_POLICY, type ResolvedScreenPolicy } from '../src/shared/config/screenPolicy';
 import { agentFlowConfig, agentFlowStages, at, startInput } from './helpers/runs';
 
 const GOLDEN = join(import.meta.dirname, 'golden', 'screen-off-prompts.json');
@@ -303,5 +304,39 @@ describe('the catalogs', () => {
       expect(CATALOGS['pt-BR'][k], k).toBeTruthy();
       expect(holes(CATALOGS['pt-BR'][k]), k).toEqual(holes(CATALOGS.en[k]));
     }
+  });
+});
+
+describe('the screen step approvals in the prompt (#269)', () => {
+  const releasing = (...kinds: (keyof ResolvedScreenPolicy)[]): ResolvedScreenPolicy => ({ ...HELD_POLICY, ...Object.fromEntries(kinds.map((k) => [k, { mode: 'autonomous', source: 'squad' }])) });
+  const textOf = (language: 'en' | 'pt-BR', policy?: ResolvedScreenPolicy, confirm = true) => {
+    const config = configFor(language);
+    updateConfig(() => config);
+    const agent = agentWith(config, { screen: true, shell: 'sandbox' });
+    const screen = screenPromptOf({ agent, workspace: config.runner.sandbox, allowedHosts: [], browser: lease(), display: false, confirm, handoff: true, ...(policy ? { policy } : {}) }) as ScreenPrompt;
+    return systemText(stageInput(config, agent, { screen }));
+  };
+
+  it('is the prompt of today, word for word, when every kind is held', () => {
+    for (const language of ['en', 'pt-BR'] as const) expect(textOf(language, HELD_POLICY)).toBe(textOf(language));
+  });
+
+  it('says which kinds run without asking, and that the four categories still ask, from the policy the app decides with', () => {
+    const text = textOf('en', releasing('name', 'agent'));
+    expect(text).toContain('Exception to the holds above');
+    expect(text).toContain('a control named like an act that cannot be undone, a step you ask to confirm with screen_confirm run without asking');
+    expect(text).toContain('A payment, a sending to people, a secret or card data still asks every time');
+    expect(textOf('pt-BR', releasing('submit'))).toContain('Exceção aos passos segurados acima, definida pela pessoa para você: enviar um formulário rodam sem perguntar');
+  });
+
+  it('names only the kinds the call can take: no confirmation without the tool', () => {
+    expect(textOf('en', releasing('agent'), false)).not.toContain('Exception to the holds above');
+  });
+
+  it('leaves the hand-off words as they were', () => {
+    const plain = textOf('en');
+    const released = textOf('en', releasing('submit'));
+    const handoff = (t: string) => t.slice(t.indexOf('You can hand your screen'));
+    expect(handoff(released)).toBe(handoff(plain));
   });
 });

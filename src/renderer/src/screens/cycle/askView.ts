@@ -1,4 +1,4 @@
-import { type AskDecision, type ConfirmKind, type OpenScreenInfo, type PendingAsk } from '../../../../shared/browser';
+import { type AskDecision, type ConfirmKind, type OpenScreenInfo, type PendingAsk, type SensitiveCategory } from '../../../../shared/browser';
 
 // What the card of a question shows and offers, without a DOM. One table row per kind of question, so a kind added later adds a row and not a branch in the card.
 
@@ -10,6 +10,14 @@ export const WHY_KEY: Record<PendingAsk['why'], string> = {
   dialog: 'main.browser.why.dialog',
   unclassified: 'main.browser.why.unclassified',
   agent: 'main.browser.why.agent',
+};
+
+/** Why a step the screen step approvals would let run asks anyway: it is about a category that always asks. */
+export const SENSITIVE_KEY: Record<SensitiveCategory, string> = {
+  payment: 'main.browser.ask.sensitive.payment',
+  people: 'main.browser.ask.sensitive.people',
+  secret: 'main.browser.ask.sensitive.secret',
+  card: 'main.browser.ask.sensitive.card',
 };
 
 /** What an agent says it wants confirmed, as a verb. */

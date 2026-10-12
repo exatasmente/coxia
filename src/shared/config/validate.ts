@@ -13,6 +13,7 @@ import { catalogUrlProblem } from './offer';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA, ID } from './schema';
+import { isSensitiveKey, sanitizePolicy } from './screenPolicy';
 import { DOCS_COMMENT_EVENTS, DOCS_FLOW_KEY, RELEASE_COMMENT_EVENTS, RELEASE_FLOW_KEY, RUN_KIND_FLOW_KEYS, isRunKindFlowKey } from './squads';
 import { isDraft, isPersona, isSystemId } from './team';
 import { ACTIVITIES, COMMENT_EVENT_KEYS, CONFIG_SCHEMA_VERSION, LLM_ROLES, TEST_ENV_REF_PREFIX, type LlmProvider, type ModelPool, type ModelRef, type SecretRequirement, type WorkspaceConfig } from './types';
@@ -396,6 +397,37 @@ function semantic(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIss
   if (c.externalTools.cardSource.enabled && !c.externalTools.cardSource.reportArgs.length) warnings.push({ path: 'externalTools.cardSource.reportArgs', message: 'is empty: the command runs with no arguments' });
 }
 
+/**
+ * The screen step approvals (#269) of a file as the app keeps them: a key that is not a kind of step, a mode the app does not know, and above all a key that tries to let a
+ * payment, a sending to people, a secret or card data run without asking, is dropped with a warning instead of failing the whole file. Nothing is let through by it.
+ */
+function withoutStrayPolicyKeys(raw: Record<string, unknown>, warnings: ConfigIssue[]): Record<string, unknown> {
+  const clean = (value: unknown, path: string): unknown => {
+    if (value === undefined) return value;
+    const { policy, dropped } = sanitizePolicy(value);
+    for (const key of dropped) {
+      warnings.push({ path: `${path}.${key}`, message: isSensitiveKey(key) ? 'ignored: a payment, a sending to people, a secret or card data always asks the person' : 'ignored: not a kind of step with a mode of held or autonomous' });
+    }
+    return policy;
+  };
+  const out = { ...raw };
+  const runner = raw.runner;
+  if (runner && typeof runner === 'object' && !Array.isArray(runner) && 'screenPolicy' in runner) {
+    out.runner = { ...runner, screenPolicy: clean((runner as Record<string, unknown>).screenPolicy, 'runner.screenPolicy') };
+  }
+  const agents = raw.agents as { team?: unknown } | undefined;
+  if (agents && typeof agents === 'object' && Array.isArray(agents.team)) {
+    out.agents = {
+      ...agents,
+      team: agents.team.map((a: unknown, i) => (a && typeof a === 'object' && 'screenPolicy' in a ? { ...a, screenPolicy: clean((a as Record<string, unknown>).screenPolicy, `agents.team[${i}].screenPolicy`) } : a)),
+    };
+  }
+  if (Array.isArray(raw.squads)) {
+    out.squads = raw.squads.map((s: unknown, i) => (s && typeof s === 'object' && 'screenPolicy' in s ? { ...s, screenPolicy: clean((s as Record<string, unknown>).screenPolicy, `squads[${i}].screenPolicy`) } : s));
+  }
+  return out;
+}
+
 /** Validates a current-schema document: schema first, then the cross references the schema cannot express. Does not migrate (see migrations.ts). */
 export function validateConfig(raw: unknown, options: { tolerateFlow?: boolean } = {}): ValidationResult {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { ok: false, errors: [{ path: '', message: 'expected an object' }], warnings: [], config: null };
@@ -403,10 +435,11 @@ export function validateConfig(raw: unknown, options: { tolerateFlow?: boolean }
   if (typeof version === 'number' && version > CONFIG_SCHEMA_VERSION) {
     return { ok: false, errors: [{ path: 'schemaVersion', message: `written by a newer app (schema ${version}); this app understands up to ${CONFIG_SCHEMA_VERSION}` }], warnings: [], config: null };
   }
-  const errors: ConfigIssue[] = validateSchema(raw, CONFIG_SCHEMA);
   const warnings: ConfigIssue[] = [];
+  const cleaned = withoutStrayPolicyKeys(raw as Record<string, unknown>, warnings);
+  const errors: ConfigIssue[] = validateSchema(cleaned, CONFIG_SCHEMA);
   if (errors.length) return { ok: false, errors, warnings, config: null };
-  const config = withConfigDefaults(raw as Record<string, unknown>);
+  const config = withConfigDefaults(cleaned);
   semantic(config, errors, warnings, !!options.tolerateFlow);
   return errors.length ? { ok: false, errors, warnings, config: null } : { ok: true, errors, warnings, config };
 }

@@ -13,6 +13,7 @@ import { ATAS, DATA_ROOT, EXISTING_INSTALL, HOME, WORKSPACE_ID } from './env';
 import { loadLegacyProfile } from './legacy-profile';
 import { moveVerifyCommands } from './verify-move';
 import { secrets, seedLegacySecrets } from './secrets';
+import { auditPolicyChanges as auditScreenPolicyChanges } from './browser/audit';
 
 // The loaded config of the running workspace, and the getters that replaced the constants env.ts used to hold.
 // Modules read `rc()` at call time, never at import time: the config can change while the app runs (Settings, import, the wizard).
@@ -124,6 +125,8 @@ export function saveConfig(next: unknown, by = 'person'): WorkspaceConfig {
   const before = state?.config;
   writeConfigFile(ATAS, config);
   auditPolicyChanges(before, config, by);
+  // A change of the screen step approvals is recorded here, the one door every save goes through; the first load of a workspace has nothing to compare with.
+  if (before) auditScreenPolicyChanges(before, config);
   state = { config, resolved: resolveConfig(config, context()), degraded: false };
   setLanguage(config.language);
   setTerms(termsFor(config, config.language));

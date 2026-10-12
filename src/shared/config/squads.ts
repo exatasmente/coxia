@@ -27,6 +27,8 @@ export function newSquad(partial: Pick<SquadDef, 'id'> & Partial<Omit<SquadDef, 
     liaison: partial.liaison ?? null,
     autonomy: partial.autonomy ?? true,
     label: partial.label ?? null,
+    // Absent means "the workspace's": only a squad that said something about a kind carries the policy.
+    ...(partial.screenPolicy && Object.keys(partial.screenPolicy).length ? { screenPolicy: { ...partial.screenPolicy } } : {}),
   };
 }
 

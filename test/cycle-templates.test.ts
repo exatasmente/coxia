@@ -820,3 +820,19 @@ describe('the docs-flow template', () => {
     expect(applyTemplate(issueFlow, check.template!).devCycle.flows?.docs).toEqual(applied().devCycle.flows?.docs);
   });
 });
+
+describe('the screen step approvals in a template (#269)', () => {
+  it('keeps only the holds: not when applied, not when exported, and the file is told so', () => {
+    const scout = newAgent({ id: 'scout', name: 'Scout', screenPolicy: { name: 'autonomous', submit: 'held' } });
+    const merged = mergeTemplateTeam(neutralConfig().agents.team, [scout], cycleOf(sdd));
+    expect(merged.find((a) => a.id === 'scout')?.screenPolicy).toEqual({ submit: 'held' });
+    expect(parseTemplate({ id: 'mine', name: 'Mine', devCycle: {}, team: [scout] }).warnings.map((w) => w.path)).toContain('template.team[scout].screenPolicy');
+    const source = neutralConfig();
+    source.agents.team.push(scout, newAgent({ id: 'other', name: 'Other', screenPolicy: { dialog: 'autonomous' } }));
+    const exported = templateFromConfig(source, { id: 'mine', name: 'Mine', description: '' });
+    expect(exported.team?.find((a) => a.id === 'scout')?.screenPolicy).toEqual({ submit: 'held' });
+    const other = exported.team?.find((a) => a.id === 'other');
+    expect(other).toBeDefined();
+    expect(other && 'screenPolicy' in other).toBe(false);
+  });
+});

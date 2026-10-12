@@ -120,6 +120,7 @@ describe('the log', () => {
     auditScreen.held({ ...who, why: 'submit', step: 'click Send with Authorization: Bearer abcdefghijklmnop1234', site: 'app.example.com', answer: 'yes', through: 'window' });
     auditScreen.confirmed({ ...who, kind: 'other', words: 'do it', answer: 'yes', through: 'window' });
     auditScreen.used({ ...who, from: '2026-10-09T10:00:00.000Z', to: '2026-10-09T10:01:00.000Z' });
+    auditScreen.autonomous({ ...who, why: 'name', step: 'click Save draft', site: 'app.example.com', level: 'workspace' });
     auditScreen.handedOver({ ...who, mode: 'sandbox', what: 'log in', outcome: 'done', from: '2026-10-09T10:00:00.000Z', to: '2026-10-09T10:01:00.000Z' });
     const rows = listAudit().filter((r) => r.origin.kind === 'screen');
     expect(rows.map((r) => r.kind).sort()).toEqual([...SCREEN_AUDIT_KINDS].sort());
@@ -143,5 +144,22 @@ describe('the audit screen', () => {
       expect(source, kind).toContain(`'${kind}': { key: '${keyOf(kind)}' }`);
       for (const lang of ['pt-BR', 'en'] as const) expect(CATALOGS[lang][keyOf(kind)], `${lang} ${kind}`).toBeTruthy();
     }
+  });
+});
+
+describe('a change of the screen step approvals (#269)', () => {
+  it('is one line per kind that changed, with the level, the owner, before and after, and nothing for a save that changed none', async () => {
+    const { auditPolicyChanges } = await import('../src/main/browser/audit');
+    const { neutralConfig } = await import('../src/shared/config');
+    const seen: Omit<AuditEntry, 'at'>[] = [];
+    const before = neutralConfig();
+    const after = { ...before, runner: { ...before.runner, screenPolicy: { name: 'autonomous' as const, dialog: 'held' as const } } };
+    auditPolicyChanges(before, after, (e) => seen.push(e));
+    expect(seen.map((e) => [e.kind, e.target, e.fields.stepKind, e.fields.before, e.fields.after])).toEqual([
+      ['screen-policy', 'screen-policy:workspace', 'name', 'inherit', 'autonomous'],
+      ['screen-policy', 'screen-policy:workspace', 'dialog', 'inherit', 'held'],
+    ]);
+    auditPolicyChanges(after, after, (e) => seen.push(e));
+    expect(seen).toHaveLength(2);
   });
 });
