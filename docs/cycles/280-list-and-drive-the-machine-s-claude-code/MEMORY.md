@@ -7,9 +7,9 @@
 - Plano (2_PLAN.md): chave `claudeSessions.enabled` (v35), prefixo negado `claudeSessions:`, EXCLUDED `machine`, auditoria `claude-session`, `emitWindow`, fila de permissões própria, `test:true` recusa send/start antes do SDK, registro `owned` compartilhado com #282.
 - Passo 0: sessões em execução e em segundo plano vêm de `~/.claude/sessions/<pid>.json` (só pid, sessionId, cwd, kind, status, updatedAt; vivo = process.kill(pid,0)). Nota m-7d7da8eb.
 - Implementação: passos 1 a 7 feitos. Desvio aceito: os 12 canais ficam sempre registrados; desligado, todos menos `enabled` e `set-enabled` recusam. Todo handler recusa porta que não seja a janela. Sessões conduzidas usam `query` em entrada contínua. Redação reusa `redact` de errorlog-core. Nota m-dfa8dee2.
-- Revisão rodada 2: aprovado, sem bloqueantes.
+- Revisão rodadas 2 e 3: aprovado, sem bloqueantes (rodada 3 sem mudança de código).
 - QA: 7 arquivos de teste do recurso (191) passaram e o build electron-vite passou (ev-2, ev-3); a tela chama follow(null) ao sair (lido, ev-4).
-- Ordem de entrada: a pessoa decidiu "280 primeiro" <!-- answer:145 -->. Esta branch mantém o esquema 35 / `v34ToV35`; a #282 renumera para v36. Na tentativa 3 o código não mudou. ev-7 mostra esquema 35 aqui, 35 também em d434be69 (#282) e 34 em origin/release/0.11.0.
+- Ordem de entrada: a pessoa decidiu "280 primeiro" <!-- answer:145 -->. Esta branch mantém o esquema 35 / `v34ToV35`; a #282 renumera para v36. ev-7: esquema 35 aqui, 35 também em d434be69 (#282) e 34 em origin/release/0.11.0.
 
 ## Restrições
 
@@ -28,13 +28,14 @@
 ## Perguntas abertas
 
 - Permissão só existe para sessão conduzida pelo app; sessão em terminal pergunta no terminal (documentado).
-- Sem auditoria quando envio/início falha após entregar o texto ao SDK, ou quando `interrupt` lança (sugestão da revisão, não tratada).
+- Sem auditoria quando envio/início falha após entregar o texto ao SDK, ou quando `interrupt` lança (sugestão, não tratada).
+- Documentar que as configurações do Claude Code da pessoa se aplicam (sugestão).
 - A #282 precisa renumerar seu passo para v35→v36 antes de entrar (fora deste ciclo).
 
 ## Onde o trabalho está
 
-- Código, testes e documentação na branch; revisão aprovada; QA automática passou (5_TEST_PLAN.md); integração devolveu só pelo esquema, resolvido pela ordem de entrada.
-- Gates (tsc, vitest, theme-audit, i18n:lint, public-audit) rodados na tentativa 2 e pela integração (ev-5, ev-6); não repetidos na tentativa 3 (sem mudança de código).
+- Código, testes e documentação na branch; revisão aprovada (rodada 3); QA automática passou (5_TEST_PLAN.md); integração devolveu só pelo esquema, resolvido pela ordem de entrada.
+- Gates rodados na tentativa 2 e pela integração (ev-5, ev-6); não repetidos desde, sem mudança de código.
 - Não verificado: nada contra o Claude Code real; a tela não foi aberta num app em execução; PRs abertos não consultados.
 - Próximo: integração reconfere e abre o PR contra release/0.11.0; verificação manual dos critérios 2 a 6 e 8 por uma pessoa com o claude instalado e logado.
 - Relacionadas: #262 (entrega 3), #274 (entregue), #282 (consome `owned.ts`, renumera para v36), #281.
@@ -47,3 +48,4 @@
 - Passagem revisor-plataforma → qa-plataforma-2: QA: verificar contra o Claude Code real os critérios 2 a 6 e 8 (listar, ao vivo, enviar, cópia, permissão, parar/encerrar), que sair da tela encerra o acompanhamento e que o build electron-vite passa. <!-- handoff:102 -->
 - Passagem qa-plataforma-2 → integrator: QA concluída sem falhas nos testes automáticos e no build. A verificação contra o Claude Code real e com a tela aberta não foi feita; precisa de uma pessoa com o claude instalado e logado. <!-- handoff:120 -->
 - Passagem integrator → developer: Veredito: devolver ao implement. O item 2 é bloqueante: o passo v34→v35 desta branch (CONFIG_SCHEMA_VERSION 35) colide com o da #282. Nesta rodada confirmei só o lado desta branch (ev-6). O lado da #282 e da release veio da execução anterior; o sandbox desta rodada não é um repositório git e não consegui reproduzi-lo. CHANGELOG, base, nomes de módulo e gates passaram. A base do PR (item 6) não foi verificada, porque o PR ainda não existe. Cenário que falhou: Esquema: sem colisão com a #282 após a decisão 280 primeiro. Esta branch tem CONFIG_SCHEMA_VERSION 35 e v34ToV35 (ev-6, executado). A bra… <!-- handoff:161 -->
+- Passagem developer → revisor-plataforma: Integração: com a decisão "280 primeiro", esta branch mantém o esquema 35 (`v34ToV35`) e o código não mudou nesta tentativa. A release/0.11.0 está no esquema 34, e a #282 (d434be69) também usa `v34ToV35`; isso foi conferido com git grep (ev-7). A #282 precisa renumerar para v36 (`CONFIG_SCHEMA_VERSION` 36, `v35ToV36`, types.ts, histórico em migrations.ts, docs/configuration.md, test/config-migrations.test.ts) antes de entrar. O PR desta branch deve usar a base release/0.11.0. <!-- handoff:177 -->

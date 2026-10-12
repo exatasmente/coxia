@@ -1,37 +1,28 @@
-# Revisão: sessões do Claude Code no app, rodada 2
+# Revisão: sessões do Claude Code no app, rodada 3
 
 ## Veredito
 
-Aprovado. O bloqueante da rodada 1 (nenhum código nem teste) foi tratado: os passos 1 a 7 do plano estão na branch, com testes.
+Aprovado. Nenhum bloqueante.
+
+## Bloqueantes anteriores
+
+- Rodada 1 (código e testes ausentes): tratado na rodada 2; segue tratado.
+- Rodada 2: nenhum bloqueante.
+- A devolução da integração (passo `v34ToV35` igual ao da outra issue) foi resolvida pela decisão da pessoa: esta branch entra primeiro e mantém o esquema 35; a outra renumera para v36. A release está no esquema 34, então 35 é o número certo aqui.
 
 ## O que foi conferido
 
-- Lidos por inteiro: `source.ts`, `module.ts` e `service.ts` do núcleo, a nota de implementação, a especificação e o plano. O resto do diff foi visto só pelo resumo do app; arquivos de tela, catálogos e documentação não foram relidos linha a linha (não verificado em detalhe).
-- Rodado nesta etapa: os sete arquivos de teste ligados ao recurso (fontes, permissões, serviço, módulo, tela, migração de configuração, tabela da porta da persona, política do celular): 191 testes passaram.
-- Não rodados nesta etapa: `tsc`, suíte completa, theme-audit, i18n:lint, public-audit, build. Os resultados vêm da nota de implementação (não verificado aqui). A nota registra 2 testes que estouraram 5 s com a máquina carregada e passaram sozinhos.
-- Não verificado: nada contra o Claude Code real; a tela não foi aberta num app em execução.
+- Lidos: a especificação, o plano, a nota de implementação, a memória do ciclo e o recado do desenvolvedor.
+- O recado diz que o código não mudou nesta tentativa; não há fato novo no diff que justifique reabrir o que foi aceito.
+- Não rodado nesta etapa: testes, tsc, auditorias e build (resultados vêm das etapas anteriores, não reverificados aqui).
+- Não verificado: nada contra o Claude Code real; a tela não foi aberta num app em execução; o diff não foi relido linha a linha nesta rodada.
 
-## Contra a especificação
+## Sugestões (não bloqueantes, já registradas)
 
-- Desligado por padrão e só na janela: `claudeSessions.enabled`, canais recusam desligado ou fora da janela. O desvio (canais sempre registrados, recusando) atende a regra 1 sem exigir reinício; aceito.
-- Leitura de disco: `guardedRead` só aceita `<dígitos>.json` direto na pasta, como arquivo regular, recusa `.key` e credenciais e devolve só os campos permitidos. Leitura do código confere.
-- Eventos só pela janela (`emitWindow`), sem `emit`; três camadas contra celular e persona (prefixo negado, `EXCLUDED`, checagem de porta).
-- `test:true` recusa `send` e `start` antes de criar o `query`; listar e ler seguem.
-- Redação aplicada a transcrições, títulos, pastas, entrada da permissão e erros do SDK.
-- Auditoria `claude-session` com sessão citada e só o tamanho do texto.
+1. `service.ts` (`send`, `start`, `stop`): sem linha de auditoria quando o envio ou o início falha depois de entregar o texto ao SDK, ou quando `interrupt` lança.
+2. `module.ts` (`sdkQuery`): documentar que as configurações do Claude Code da pessoa (usuário, projeto, local) se aplicam.
 
-## Achados
+## Para a integração
 
-### Bloqueantes
-
-Nenhum.
-
-### Sugestões
-
-1. `service.ts` (`send`, `start`, `stop`): a linha de auditoria só é gravada depois do sucesso. Se o texto já foi entregue ao SDK e falha, ou `interrupt` lança, não há linha. Já registrado como lacuna conhecida; considerar gravar a tentativa com resultado de falha.
-2. `service.ts` (`follow`): o intervalo de 2 s só para por `follow(null)`; depende de a tela chamá-lo ao fechar. Conferir na QA que sair da tela encerra o acompanhamento.
-3. `module.ts` (`sdkQuery`): `settingSources` inclui `user`, `project` e `local`; isso é coerente com usar o `claude` da pessoa, mas vale uma linha de documentação dizendo que as configurações dela se aplicam.
-
-## Segurança, regras do repositório e repositório público
-
-Nada bloqueante na leitura: fixtures sintéticas segundo a nota, nenhum caminho de escrita fora da porta no código lido. O repositório público foi conferido pela nota (public-audit), não por esta etapa.
+- O PR deve ter base `release/0.11.0`.
+- A outra issue precisa renumerar seu passo para v36 antes de entrar (fora deste ciclo).
