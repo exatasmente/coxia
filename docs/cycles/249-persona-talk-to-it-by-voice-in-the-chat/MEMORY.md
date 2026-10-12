@@ -1,15 +1,29 @@
 # Memória do ciclo
 
 ## Decisões
+
+- Resposta da pessoa: volta e pede correção.
+- Base do PR: release/0.11.0. Resolução do conflito: manter o CHANGELOG.md da branch.
 - Resposta: volta e pedo correção <!-- answer:161 -->
 
 ## Restrições
 
+- Merge, rebase e commit só pela ferramenta de conflito do app, nunca pelo shell.
+- Esquema de configuração 34, igual ao da release; sem passo de migração novo.
+
 ## Tentado e descartado
+
+- Alinhar o CHANGELOG da branch com a release para facilitar a mesclagem: o conflito persiste (os dois lados escrevem logo abaixo de [Unreleased]).
 
 ## Perguntas abertas
 
+- Nenhuma.
+
 ## Onde o trabalho está
+
+- Código das cinco entregas, testes e docs prontos. Integração tentativa 3: branch 13 à frente e 11 atrás de origin/release/0.11.0, conflito só em CHANGELOG.md. tsc exit 0; npm test só falha nos 4 arquivos do navegador (@playwright/mcp ausente).
+- Falta: trazer a base pela ferramenta do app, repetir tsc e testes de voz, abrir o PR.
+- Não verificado: app com voz, latência (meta 3 s), celular, modelo seguindo o prompt de voz, theme-audit/i18n:lint/public-audit/build depois da mesclagem, PRs abertos na release.
 - Passagem support → product-owner: Refinamento: decidir as três perguntas abertas (sim falado, meta de latência, tela bloqueada/foco), propor prioridade e avaliar dividir a entrega (extração do áudio compartilhado, voz no chat, modo de voz, celular). <!-- handoff:11 -->
 - Passagem product-owner → pessoa: Planejamento: desenhar as quatro fatias (áudio compartilhado, voz no chat, modo de voz, celular), a origem "voz" no turno da persona e a fala por frase sobre o texto ao vivo; confirmar no código o comportamento de hoje, que veio só da triagem. Tratar as regras 11, 12 e 13 como propostas a confirmar. <!-- handoff:20 -->
 - Passagem tl-experiencia → pessoa: Implementação: seguir 2_PLAN.md na ordem das entregas 1 a 5, um commit por entrega, todos passando em tsc, vitest, theme-audit, i18n:lint e public-audit. Começar pela Entrega 1 (dividir audio.ts em voice/ com reexport, callback de silêncio com motivo e heard) e provar que as cerimônias não mudaram. Na Entrega 2, conferir antes de tudo que o campo origin sobrevive ao armazenamento do fórum. Toda lógica nova em funções puras, porque o vitest roda em ambiente node, sem jsdom. Verificar na hora: onde abrir as configurações de voz (seção/âncora), o canal de log do renderer para a linha de latência … <!-- handoff:33 -->
@@ -20,3 +34,4 @@
 - Passagem revisor-experiencia → qa-experiencia: Integração: trazer origin/release/0.11.0 pela ferramenta de conflito do app (conflito só em CHANGELOG.md; manter o arquivo da branch), rodar de novo tsc e os testes de voz, conferir esquema 34 e abrir o PR com base release/0.11.0, ressalvando que app com voz, latência e celular não foram verificados. <!-- handoff:133 -->
 - Passagem qa-experiencia → integrator: Integração: trazer origin/release/0.11.0 pela ferramenta de conflito do app (só CHANGELOG.md conflita; manter o arquivo da branch), repetir tsc e testes de voz, e abrir o PR com base release/0.11.0 ressalvando app com voz, latência e celular não verificados. <!-- handoff:145 -->
 - Passagem pessoa → qa-experiencia: volta e pedo correção <!-- handoff:162 -->
+- Passagem qa-experiencia → integrator: Integração: trazer origin/release/0.11.0 pela ferramenta de conflito do app (só CHANGELOG.md conflita; manter o arquivo da branch), repetir tsc e testes de voz, abrir o PR com base release/0.11.0 ressalvando app com voz, latência e celular não verificados. <!-- handoff:174 -->
