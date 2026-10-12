@@ -57,7 +57,7 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //       started with.
 //   v32 `mcpState.act`: the persona's tools offered to a terminal session through the state server, off for every workspace. Nothing else moves.
 //   v33 `runner.screenPolicy`: the workspace's screen step approvals, empty (every kind asks, as before); the agent's and the squad's are optional. Nothing else moves.
-//   v35 `runner.claudeCodeTasks`: stages may hand their task to a Claude Code session, off for every workspace; a stage's `executor` is optional. Nothing else moves.
+//   v37 `runner.claudeCodeTasks`: stages may hand their task to a Claude Code session, off for every workspace; a stage's `executor` is optional. Nothing else moves.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -496,12 +496,12 @@ function v33ToV34(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
 
 // The runs gain a switch that lets a stage hand its task to a Claude Code session; every workspace that existed has it off, as a new one does. No stage is touched:
 // an absent `executor` is the app's agent.
-function v34ToV35(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
-  if (!isObject(old.runner)) return { ...old, schemaVersion: 35 };
-  return { ...old, schemaVersion: 35, runner: { ...old.runner, claudeCodeTasks: false } };
+function v36ToV37(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
+  if (!isObject(old.runner)) return { ...old, schemaVersion: 37 };
+  return { ...old, schemaVersion: 37, runner: { ...old.runner, claudeCodeTasks: false } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29, 29: v29ToV30, 30: v30ToV31, 31: v31ToV32, 32: v32ToV33, 33: v33ToV34, 34: v34ToV35 };
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29, 29: v29ToV30, 30: v30ToV31, 31: v31ToV32, 32: v32ToV33, 33: v33ToV34, 36: v36ToV37 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

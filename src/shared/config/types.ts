@@ -1,10 +1,10 @@
-// WorkspaceConfig (schema 35): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 37): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
 import type { ScreenPolicy } from './screenPolicy';
 
-export const CONFIG_SCHEMA_VERSION = 35;
+export const CONFIG_SCHEMA_VERSION = 37;
 
 /** The local state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
