@@ -51,6 +51,10 @@ import { realEncoderEnv } from '../screen/encoderWindow';
 import { type HandoffService, createHandoffService } from '../screen/handoff';
 import { turnAsks } from '../turnAsks';
 import { type ScreenHub, createScreenHub } from '../screen/hub';
+import { claudeExecutable, loadClaudeQuery } from '../claudeSdk';
+import { claudeSdkEnv } from '../llm';
+import { isTestWorkspace } from '../workspace';
+import { type ClaudeCodeDeps, runClaudeCodeTask } from './claudeCodeTask';
 import { type GateAction, type IssueSource, type Runner, RunnerError, createRunner } from './service';
 
 // The runner of the running workspace, and its channels. What a paired browser may call is decided in webPolicy.ts: reading runs and answering a
@@ -266,6 +270,11 @@ export const runsModule: Module = (ctx) => {
     env: () => ({ repos: rc().repos, issues: rc().issues, cloneRoots: rc().cloneRoots, host: rc().vcsHost, home: HOME, dataDir: ATAS, fallbackCwd: rc().projectsRoot }),
     issues: source,
     engine: (call, commands) => runAgent(call, commands),
+    // A stage whose executor is a Claude Code session: the SDK the app ships, the provider's environment of the agent's model, and never a test workspace.
+    claudeCode: {
+      test: isTestWorkspace,
+      run: (input) => runClaudeCodeTask({ query: loadClaudeQuery as ClaudeCodeDeps['query'], env: (call) => claudeSdkEnv(rc().agentModel(call.agent.model)), executable: claudeExecutable }, input),
+    },
     publisher: createPublisher({
       runs: runStore(),
       forum: forumStore(),

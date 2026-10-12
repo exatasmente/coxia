@@ -18,7 +18,8 @@ import { secretAuditEntry, type SecretOp } from './decisionAudit';
 import { viaOf } from './rpc';
 import { secrets, testEnvLedger } from './secrets';
 import { readRegistry } from './workspaces-core';
-import { keepStoredTurns, refusedPaths } from './configScope';
+import { claudeCodeRaised, keepStoredTurns, refusedPaths } from './configScope';
+import { byPersona } from './persona/who';
 import { checkConfig, getConfig, reloadConfig, saveConfig, updateConfig } from './workspaceConfig';
 import { t } from '../shared/i18n';
 
@@ -88,6 +89,9 @@ export const configModule: Module = (ctx) => {
     return { ok: r.ok, errors: r.errors, warnings: r.warnings };
   });
   ctx.handle('config:save', (next: WorkspaceConfig) => {
+    // The persona reaches this door on the desktop: handing tasks to Claude Code is the person's switch, never its own.
+    const raised = byPersona() ? claudeCodeRaised(getConfig(), next) : [];
+    if (raised.length) throw new Error(t('main.config.webScope', { paths: raised.slice(0, 4).join(', ') }));
     recordedConfig('save', () => saveConfig(keepStoredTurns(next, getConfig())));
     return announce();
   });

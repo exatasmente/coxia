@@ -1,3 +1,4 @@
+import { claudeCodeTasksOf } from '../shared/claudeCode';
 import { screenPolicyChanges } from '../shared/config/screenPolicy';
 import { shellRaised, trackerRaised } from '../shared/config/team';
 import { ACTIVITIES, type AgentDef, type ModelRef, type WorkspaceConfig } from '../shared/config/types';
@@ -136,6 +137,14 @@ export function poolRaised(before: WorkspaceConfig, after: WorkspaceConfig): str
 /** The changed paths a paired browser may not change (empty: the change is allowed). */
 export function refusedPaths(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
   return [...changedPaths(before, after).filter((p) => !covered(p)), ...raisedPermissions(before, after), ...poolRaised(before, after), ...raisedAutonomy(before, after), ...screenPolicyRaised(before, after), ...executorRaised(before, after)];
+}
+
+/**
+ * What the persona may not do in any door, desktop included: turn on "Hand tasks to Claude Code" or make a stage's executor a Claude Code session. Only the person at
+ * the window raises either; lowering is allowed.
+ */
+export function claudeCodeRaised(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
+  return [...(claudeCodeTasksOf(after.runner) && !claudeCodeTasksOf(before.runner) ? ['runner.claudeCodeTasks'] : []), ...executorRaised(before, after)];
 }
 
 /**

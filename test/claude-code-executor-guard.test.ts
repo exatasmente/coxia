@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { executorRaised, refusedPaths } from '../src/main/configScope';
+import { claudeCodeRaised, executorRaised, refusedPaths } from '../src/main/configScope';
 import { StageError, guardExecutor } from '../src/main/runner/executor';
 import { neutralConfig } from '../src/shared/config/defaults';
 import { flowHash, flowOf } from '../src/shared/runs/flow';
 import { TEST_STAGES } from './helpers/config';
 
-const withExecutor = (executor: 'claude-code' | 'agent' | undefined) => {
+const port = (test: boolean) => ({ test: () => test, run: async () => Promise.reject(new Error('no session in a guard test')) });
+
+const withExecutor =(executor: 'claude-code' | 'agent' | undefined) => {
   const c = structuredClone(neutralConfig());
   c.devCycle.stages = [{ ...structuredClone(TEST_STAGES[0]), executor }];
   return c;
@@ -19,15 +21,15 @@ describe('the guard of a stage that hands its task to a Claude Code session', ()
   });
 
   it('refuses with the option off and never reaches a session', () => {
-    expect(() => guardExecutor(stage, neutralConfig(), { claudeCode: { test: () => false } })).toThrow(expect.objectContaining({ code: 'claude-code-off' }));
+    expect(() => guardExecutor(stage, neutralConfig(), { claudeCode: port(false) })).toThrow(expect.objectContaining({ code: 'claude-code-off' }));
     expect(() => guardExecutor(stage, neutralConfig(), {})).toThrow(StageError);
   });
 
   it('refuses a test workspace even with the option on', () => {
     const c = structuredClone(neutralConfig());
     c.runner.claudeCodeTasks = true;
-    expect(() => guardExecutor(stage, c, { claudeCode: { test: () => true } })).toThrow(expect.objectContaining({ code: 'claude-code-test' }));
-    expect(() => guardExecutor(stage, c, { claudeCode: { test: () => false } })).not.toThrow();
+    expect(() => guardExecutor(stage, c, { claudeCode: port(true) })).toThrow(expect.objectContaining({ code: 'claude-code-test' }));
+    expect(() => guardExecutor(stage, c, { claudeCode: port(false) })).not.toThrow();
   });
 });
 
@@ -54,6 +56,16 @@ describe('what a paired browser may do with the executor', () => {
     expect(executorRaised(before, after)).toHaveLength(2);
     expect(executorRaised(after, before)).toEqual([]);
     expect(executorRaised(after, after)).toEqual([]);
+  });
+
+  it('refuses the persona turning the option on or choosing the executor, and lets it lower both', () => {
+    const before = neutralConfig();
+    const on = structuredClone(before);
+    on.runner.claudeCodeTasks = true;
+    expect(claudeCodeRaised(before, on)).toEqual(['runner.claudeCodeTasks']);
+    expect(claudeCodeRaised(on, before)).toEqual([]);
+    expect(claudeCodeRaised(withExecutor(undefined), withExecutor('claude-code'))).toHaveLength(1);
+    expect(claudeCodeRaised(withExecutor('claude-code'), withExecutor(undefined))).toEqual([]);
   });
 
   it('refuses the option itself: it is not an editable path', () => {

@@ -1,7 +1,8 @@
 import { claudeCodeTasksOf } from '../../shared/claudeCode';
 import { unconfinedOf } from '../../shared/unconfined';
 import { offersViewImage } from '../sandbox/tool';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import type { ClaudeCodeInput, ClaudeCodeResult } from './claudeCodeTask';
 import { basename, join } from 'node:path';
 import { docsFlowOf, flowStagesOf, releaseFlowOf, squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import { auditPolicyOf, autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
@@ -151,7 +152,7 @@ export interface ExecutorDeps {
   /** The hand-off of a stage's screen to the person (#178); absent: no stage is offered the tool. */
   handoff?: HandoffService | null;
   /** How a stage reaches a Claude Code session; absent: no stage with that executor runs (it is refused, never run by the app's agent). */
-  claudeCode?: { test(): boolean };
+  claudeCode?: { test(): boolean; run(input: ClaudeCodeInput): Promise<ClaudeCodeResult> };
 }
 
 export interface StageRun {
@@ -1232,9 +1233,28 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // The session the last answer was given in, and the engine that holds it: what a repair round continues from.
   let answered: Answered = { sessionId: null, engine: 'claude-sdk' };
   try {
-    // The session module is not wired yet: until it is, a claude-code stage stops here instead of reaching the app's agent.
-    if (stage.executor === 'claude-code') throw new StageError('claude-code-off');
-    const firstRun = await watch.guard(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)));
+    // A claude-code stage never reaches `d.engine`: `guardExecutor` made sure the port exists. The repair rounds below ask the app's own engine, so they are skipped for it.
+    const own = stage.executor !== 'claude-code';
+    const firstRun = await watch.guard(
+      withActivityContext(`run:${run.id}`, async () => {
+        if (own) return d.engine(call, commands);
+        const port = d.claudeCode;
+        if (!port) throw new StageError('claude-code-off');
+        const asked = (question: string, signal: AbortSignal) => d.askCommand?.({ run: run.id, stage: stage.id, agent: agent.id, command: question }, signal).then((a) => ({ ok: a.decision !== 'deny', note: a.note })) ?? Promise.resolve({ ok: false });
+        const r = await port.run({ call, ask: asked, pause: watch.pause, signal: abort.signal });
+        // The record of the session stays with the stage and out of its answer; the thread says where.
+        try {
+          const folder = join(d.dataDir(), 'claude-code');
+          mkdirSync(folder, { recursive: true });
+          const file = join(folder, `${run.id}-${stage.id}.txt`);
+          writeFileSync(file, r.transcript, 'utf8');
+          d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.claudeCode.transcript', params: { agent: agent.id, file: basename(file) }, stage: stage.id });
+        } catch (e) {
+          console.error('[runner] could not keep the transcript of a Claude Code session', e instanceof Error ? e.message : e);
+        }
+        return r;
+      }),
+    );
     data = firstRun.data;
     // Which engine answered, so the round that continues it is asked of the same one: a session of one engine is not one the other knows. With a pool of models
     // it is the engine of the model that was picked to start the call, which the engine reports; the agent's own model is the answer of a call that did not.
@@ -1244,7 +1264,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     // goes away. The two model calls of the attempt run inside the same guarded work above, so the stage's clock counts the attempt once.
     const first = readOutput(data, kind);
     const judged = judgeScenarios(first, kind, session, ran);
-    if (checked(kind) && session && judged.some((s) => s.unbacked)) {
+    if (own && checked(kind) && session && judged.some((s) => s.unbacked)) {
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.repair', params: { agent: agent.id, names: judged.filter((s) => s.unbacked).map((s) => s.name).join('; ') }, stage: stage.id });
       const repaired = await repairRound(d, call, commands, watch, session, ran, judged.filter((s) => s.unbacked), answered);
       if (repaired !== null) {
@@ -1261,7 +1281,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     // A QA answer with a scenario that cites no evidence the stage kept (no id, or an id SaveEvidence never handed back) is asked once to keep it, before the
     // stage fails for it: the output folder is still there, so what the agent ran can still be saved. It comes before the round for documents, which takes only
     // the documents from its answer: this one takes the answer whole.
-    const lacking = checked(kind) && evidence ? unevidenced(readOutput(data, kind).scenarios) : [];
+    const lacking = own && checked(kind) && evidence ? unevidenced(readOutput(data, kind).scenarios) : [];
     if (lacking.length) {
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.qa.evidenceRepair', params: { agent: agent.id, names: lacking.map((s) => s.name).join('; ') }, stage: stage.id });
       const repaired = await evidenceRound(d, call, commands, watch, lacking, backingRecords(), answered);
@@ -1274,7 +1294,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     // document somewhere else, or said it was in the answer and left it out. Only the documents that were missing are taken from the round; the rest of the
     // answer stays as it was, already checked.
     const missing = missingDocuments(readOutput(data, kind), stage, join(wt, run.cycleFolder));
-    if (missing.length) {
+    if (own && missing.length) {
       d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.artifacts.repair', params: { agent: agent.id, names: missing.join(', ') }, stage: stage.id });
       const again = await askAgain(d, call, commands, watch, cp('runner.repair.missingArtifacts', { names: missing.join(', '), folder: run.cycleFolder }), answered);
       const found = again ? readOutput(again.data, kind).artifacts.filter((a) => missing.includes(a.name)) : [];
