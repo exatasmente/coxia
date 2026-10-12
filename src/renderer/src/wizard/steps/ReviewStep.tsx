@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { CEREMONY_IDS, LLM_ROLES } from '../../../../shared/config/types';
 import { collectSecretRequirements } from '../../../../shared/config/validate';
+import { isSignedIn } from '../../../../shared/config/signedIn';
 import { DOCS_KEYS, type WizardStepId, needsSdk, visibleSteps } from '../../../../shared/wizard';
 import { useT } from '../../i18n';
 import type { StepProps } from '../SetupWizard';
@@ -54,7 +55,7 @@ export function ReviewStep({ cfg, view, goTo, finish }: StepProps) {
           {t(`settings.language.${cfg.language}`)} · {cfg.userName || t('wizard.review.noName')}
         </Row>
         <Row step="models" status={cfg.llm.providers.every((p) => keyOf(p.secretRef)) ? 'ok' : 'warn'} onEdit={goTo}>
-          <div>{t('wizard.review.providers', { list: cfg.llm.providers.map((p) => `${p.id}${keyOf(p.secretRef) ? '' : ' (' + t('wizard.models.keyMissing') + ')'}`).join(', ') })}</div>
+          <div>{t('wizard.review.providers', { list: cfg.llm.providers.map((p) => `${p.id}${isSignedIn(p) ? ' (' + t('wizard.kind.anthropic.signedIn') + ')' : keyOf(p.secretRef) ? '' : ' (' + t('wizard.models.keyMissing') + ')'}`).join(', ') })}</div>
           <ul className="wz-list">{LLM_ROLES.map((r) => <li key={r} className="mono">{t(`wizard.role.${r}`)}: {cfg.llm.roles[r].provider}/{cfg.llm.roles[r].model}</li>)}</ul>
         </Row>
         {steps.includes('sdk') && (

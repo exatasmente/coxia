@@ -19,7 +19,7 @@ export function providerSecret(secretRef: string | null): string | null {
 
 /** The environment of a Claude Agent SDK child for the provider that serves this role. */
 export function claudeSdkEnv(target: ResolvedRole): Record<string, string> {
-  return sdkEnv({ target, base: process.env, secret: providerSecret(target.secretRef), profile: readProfileEnv(target.envFile), vcsHost: rc().primaryVcs?.kind === 'gitlab' ? rc().vcsHost : null, extraEnv: rc().primaryVcs?.kind === 'github' ? vcsShellEnv() : undefined });
+  return sdkEnv({ target, base: process.env, secret: providerSecret(target.secretRef), profile: readProfileEnv(target.envFile), vcsHost: rc().primaryVcs?.kind === 'gitlab' ? rc().vcsHost : null, extraEnv: rc().primaryVcs?.kind === 'github' ? vcsShellEnv() : undefined, ...(target.loginOnly ? { loginOnly: true } : {}) });
 }
 
 const isOpenRouter = (baseUrl: string): boolean => {

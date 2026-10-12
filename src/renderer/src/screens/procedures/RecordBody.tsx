@@ -23,7 +23,8 @@ export function useWho(team: readonly AgentDef[] | undefined): (by: string) => s
 function usageLine(t: ReturnType<typeof useT>, usage: StageUsage): string {
   const p = usageParams(usage, intlLocale());
   const key = p.cost === null ? 'ui.cycle.stage.usage' : p.estimated ? 'ui.cycle.stage.usageCostEstimated' : 'ui.cycle.stage.usageCost';
-  return t(key, { calls: p.calls, prompt: p.prompt, cached: p.cached, completion: p.completion, cost: p.cost ?? '' });
+  const line = t(key, { calls: p.calls, prompt: p.prompt, cached: p.cached, completion: p.completion, cost: p.cost ?? '' });
+  return p.subscription === null ? line : `${line} · ${t('ui.cycle.stage.usageSubscription', { calls: p.subscription })}`;
 }
 
 /** What finding the procedure cost next to what its uses cost, with the label that says it is a comparison and not a measurement. */

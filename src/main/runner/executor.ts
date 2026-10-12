@@ -16,7 +16,7 @@ import { currentActivity, withActivityContext } from '../activity';
 import type { ResolvedRole } from '../config-resolve';
 import { rc } from '../workspaceConfig';
 import { type AgentCall, extraReadRoots, secretPath } from '../agents';
-import { MaxTurnsError, ProviderBudgetError, ProviderBusyError, type ReadConfinement, poolBusyParams, poolNoticeLine } from '../engine/contract';
+import { MaxTurnsError, ProviderBudgetError, ProviderBusyError, type ReadConfinement, budgetResetText, poolBusyParams, poolNoticeLine } from '../engine/contract';
 import { writableLabels } from '../../shared/priority';
 import type { ForumStore } from '../forum-core';
 import { ISSUE_FILE, MEMORY_FILE, ensureMemory, readFolder, readMemory, tidyArtifact, writeArtifact, writeMemory } from './cycleFolder';
@@ -1277,7 +1277,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     called = true;
   } catch (e) {
     if (e instanceof MaxTurnsError) throw new StageError('turns');
-    if (e instanceof ProviderBudgetError) throw new StageError('budget', { provider: e.provider, engine: e.engine, detail: e.detail });
+    // A limit that says when it resets (the signed-in CLI's) puts the time in the reason, and the sweep does not ask before it.
+    if (e instanceof ProviderBudgetError) throw new StageError('budget', { provider: e.provider, engine: e.engine, detail: e.until === null ? e.detail : `${budgetResetText(e.until)} ${e.detail}`.trim(), ...(e.until === null ? {} : { until: e.until }) });
     // Every model of the pool was busy: a failure like any other, retried by the person, that names the pool instead of one model.
     if (e instanceof ProviderBusyError) throw new StageError('pool-busy', poolBusyParams(e));
     throw e;

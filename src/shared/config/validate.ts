@@ -10,6 +10,7 @@ import { effectiveCardScope } from '../cardScope';
 import { isVerifyProject } from '../verifyCommands';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../sandboxPaths';
 import { catalogUrlProblem } from './offer';
+import { signedInProvider } from './signedIn';
 import { withConfigDefaults } from './defaults';
 import { validateSchema } from './jsonSchema';
 import { CONFIG_SCHEMA, ID } from './schema';
@@ -56,7 +57,8 @@ function providerRules(p: LlmProvider, errors: ConfigIssue[], warnings: ConfigIs
     else if (why === 'origin') errors.push({ path: at('features.catalogUrl'), message: 'must have the same origin as the provider\'s baseUrl: the key is never sent anywhere else' });
   }
   if (f && p.engine === 'claude-sdk' && (f.serviceTier || f.failFast || f.reasoningEffort)) warnings.push({ path: at('features'), message: 'only the open engine sends these parameters; the Claude Agent SDK ignores them' });
-  if (p.kind === 'anthropic' && !p.secretRef) warnings.push({ path: at('secretRef'), message: 'no API key configured for the anthropic provider' });
+  // Informative, never an error: a keyless anthropic provider is a supported mode, not a missing setting.
+  if (p.kind === 'anthropic' && !p.secretRef) warnings.push({ path: at('secretRef'), message: 'uses the signed-in Claude Code CLI of this machine (its own login; the app reads no credential)' });
   if (p.kind === 'bedrock' && !p.options.region) warnings.push({ path: at('options.region'), message: 'no AWS region set' });
   if (p.kind === 'vertex' && !(p.options.project && p.options.region)) warnings.push({ path: at('options'), message: 'vertex needs project and region' });
   if (p.kind === 'foundry' && !(p.options.resource || p.baseUrl.trim())) warnings.push({ path: at('options.resource'), message: 'foundry needs a resource name or a base URL' });
@@ -139,6 +141,13 @@ function teamRules(c: WorkspaceConfig, errors: ConfigIssue[], warnings: ConfigIs
   c.devCycle.stages.forEach((s, i) => {
     if (s.agentId && agentIds.has(s.agentId) && (s.type ?? 'work') === 'work' && !team.find((a) => a.id === s.agentId)?.stages.includes(s.id)) warnings.push({ path: `devCycle.stages[${i}].agentId`, message: `agent "${s.agentId}" does not list the stage "${s.id}"` });
   });
+  const fb = c.llm.cliFallback;
+  if (fb) {
+    fb.agents.forEach((id, i) => {
+      if (!agentIds.has(id)) warnings.push({ path: `llm.cliFallback.agents[${i}]`, message: `unknown agent "${id}"` });
+    });
+    if (fb.enabled && !signedInProvider(c.llm)) warnings.push({ path: 'llm.cliFallback', message: 'no anthropic provider without a key (signed-in Claude Code CLI) is registered: the fallback stays inactive' });
+  }
 }
 
 // The flow of the cycle and the chain of who turns to whom: one check, shared with the editor and the runner (runs/flowCheck.ts).

@@ -19,6 +19,13 @@ export interface WaitingProvider {
   reason: string;
   /** Since when the provider has been out. */
   since: string;
+  /** When its limit resets (epoch ms), when the refusal said so: the sweep does not ask before it. */
+  until?: number;
+}
+
+/** A provider whose limit said when it resets is not asked before that time; one that said nothing is asked at every sweep, as before. */
+export function dueForProbe(state: WaitingProvider, nowMs: number): boolean {
+  return state.until === undefined || nowMs >= state.until;
 }
 
 /** Runs one small call against the provider and tells whether it answers. The caller gives the engine and the role resolution. */

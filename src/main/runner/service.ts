@@ -132,7 +132,7 @@ import { type ActivityFront, createSharedMemory, sortedFronts } from './activiti
 import { inboxOf } from './inbox';
 import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree, workBase } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
-import { type BudgetProbeFn, type WaitingProvider, probeStateOf } from './budget';
+import { type BudgetProbeFn, type WaitingProvider, dueForProbe, probeStateOf } from './budget';
 import { type ChainRequest, chainCall, readChain } from './chain';
 import { type RequestAnswer, readRequestAnswer, requestCall } from './request';
 import { answerMentions } from '../mentions/answer';
@@ -760,7 +760,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (e instanceof StageError && e.code === 'budget') {
       const provider = String(e.params.provider ?? '');
       const reason = e.message;
-      budget.set(provider, { engine: String(e.params.engine ?? ''), reason, since: now() });
+      const until = typeof e.params.until === 'number' ? e.params.until : undefined;
+      budget.set(provider, { engine: String(e.params.engine ?? ''), reason, since: now(), ...(until === undefined ? {} : { until }) });
       tell(run, moveRun(d, run.id, (r) => stageWaitingOnBudget(r, { provider, engine: String(e.params.engine ?? ''), detail: reason }, now())));
       return;
     }
@@ -1893,6 +1894,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (!probe || !budget.size) return [];
     const sent: Run[] = [];
     for (const [provider, state] of [...budget]) {
+      if (!dueForProbe(state, Date.parse(now()))) continue;
       let result: Awaited<ReturnType<BudgetProbeFn>>;
       try {
         result = await probe(provider);

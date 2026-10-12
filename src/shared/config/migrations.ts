@@ -484,7 +484,16 @@ function v32ToV33(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
   return { ...old, schemaVersion: 33, runner: { ...old.runner, screenPolicy: {} } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29, 29: v29ToV30, 30: v30ToV31, 31: v31ToV32, 32: v32ToV33 };
+// The llm block gains the budget fallback on the signed-in Claude Code CLI. It is off and lists no agent for every workspace that existed, as for a new one:
+// a v33 file cannot carry a stored choice, and an `llm.cliFallback` already there (a later build's file) survives untouched. It raises no permission.
+function v33ToV34(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  if (!isObject(old.llm)) return { ...old, schemaVersion: 34 };
+  if (isObject(old.llm.cliFallback)) return { ...old, schemaVersion: 34 };
+  notes.push('the budget fallback on the signed-in Claude Code CLI was added (off; no agent listed)');
+  return { ...old, schemaVersion: 34, llm: { ...old.llm, cliFallback: { enabled: false, agents: [] } } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29, 29: v29ToV30, 30: v30ToV31, 31: v31ToV32, 32: v32ToV33, 33: v33ToV34 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

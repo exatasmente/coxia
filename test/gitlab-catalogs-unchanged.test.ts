@@ -204,6 +204,7 @@ const INTENDED: Record<string, Intended> = {
   'notify.preDaily.body': { reason: 'the notice opens the chat with the ceremony card, so it says open and names the ceremony instead of joining the call or the chat', language: 'both' },
   // The wizard note no longer calls the open engine read-only: it writes inside the run's worktree and runs commands.
   'wizard.models.openEngineNote': { reason: 'the open engine writes inside the run\'s worktree and runs commands, so the wizard note no longer says read-only', language: 'both' },
+  'wizard.models.noSubscription': { reason: 'a keyless Anthropic provider is named the signed-in Claude Code CLI: the app still offers no login, but uses the one the CLI already has (#262)', language: 'both' },
 };
 const applyIntended = (key: string, was: string): string => (INTENDED[key].replace ?? []).reduce((text, [from, to]) => text.split(from).join(to), was);
 
