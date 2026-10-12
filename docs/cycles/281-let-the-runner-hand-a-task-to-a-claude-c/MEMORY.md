@@ -4,9 +4,10 @@
 
 - Executor por etapa: campo "Executor" (Agente do Coxia padrão | Sessão do Claude Code), visível/escolhível só com a opção global "Entregar tarefas ao Claude Code" (`runner.claudeCodeTasks`, desligada, só desktop). Opção desligada ou workspace test: true: a etapa recusa (`claude-code-off`/`claude-code-test`), nunca cai no agente do Coxia. Celular e persona não ligam a opção nem escolhem o executor.
 - Mecanismo: Agent SDK já embarcado (não ACP). Resultado substitui a resposta; transcrição em arquivo na pasta de dados + linha na thread; sem Bash nativo; permissões viram item pendente de comando; escrita confinada à worktree.
-- Sem link da transcrição na timeline, sem `PendingCommand.tool`, sem flow-check de executor sem agente: aceito.
+- Sem link da transcrição na timeline, sem `PendingCommand.tool`, sem flow-check de executor sem agente, sem teste de componente do StagePanel: aceito.
 - Resposta: (1) Como a etapa é configurada: um campo na própria etapa do fluxo, "Executor", com duas opções: "Agente do Coxia" (padrão, o que existe hoje) e "Sessão do Claude Code". Quem não mexe no campo não vê mudança. O campo só aparece e só pode ser escolhido com a opção global "Entregar tarefas ao Claude Code" ligada (desligada por padrão, só desktop). Com a opção desligada, ou em workspace test: true, a etapa não alcança nenhuma sessão: a execução recusa com mensagem clara, sem cair silenciosamente no agente normal. Celular pareado e persona não podem ligar a opção nem escolher o executor. (2) Resul… <!-- answer:22 -->
 - Resposta: Volta e pede as correções <!-- answer:132 -->
+- Resposta: O que continua em aberto: - 7 Celular e persona — Recusas passam; o terceiro teste da persona falha ao salvar config com `executor: undefined` explícito (expected string, got undefined). Suposição do teste; portão vermelho. - Suíte vitest completa — 1 falha, 9025 passaram, 4 ignoradas. <!-- answer:239 -->
 
 ## Restrições
 
@@ -23,9 +24,10 @@
 
 ## Onde o trabalho está
 
-- QA rodada 2 (rodou de verdade): tsc, theme-audit, i18n:lint, public-audit saída 0. vitest completo: 1 falha em 9030 (de 12 antes). Falha: test/config-claude-code-persona.test.ts, 3º teste; o teste grava `executor: undefined` explícito e saveConfig recusa ("expected string, got undefined"). Correção provável no teste (remover a chave). Todo o resto, incluindo ponta a ponta do runner com sessão simulada, passa.
+- QA rodada 2 (rodou de verdade): tsc, theme-audit, i18n:lint, public-audit saída 0; vitest 1 falha em 9030: test/config-claude-code-persona.test.ts, 3º teste.
+- Revisão rodada 6 (só leitura): a falha continua; linha 58 do teste ainda atribui `executor: undefined`, que saveConfig recusa. Correção: remover a chave. Veredito: mudanças.
 - Não verificado: interface, SDK real, respeito real a deny.
-- Próximo: developer corrige o teste e roda a suíte; depois integração renumera v34→v35 com a #280.
+- Próximo: developer corrige o teste e roda a suíte e os portões; depois integração renumera v34→v35 com a #280.
 - Passagem support → product-owner: Planejar: escolher ACP vs. Agent SDK (SDK já embarcado), como impor o limite de escrita ao worktree, o campo "Executor" no esquema do fluxo (qualquer etapa) e o encaixe com os canais de sessões da #280 (recusa quando desligado, persona/celular negados). <!-- handoff:35 -->
 - Passagem product-owner → pessoa: Planejar: escolher ACP vs. Agent SDK (SDK já embarcado em src/main/claudeSdk.ts), como impor o limite de escrita ao worktree, o campo "Executor" em FlowStage (src/shared/runs/types.ts) e o encaixe com a #280, cujo módulo de sessões não foi achado nesta worktree (conferir se a base já a inclui). <!-- handoff:45 -->
 - Passagem tl-plataforma → pessoa: Implementar 2_PLAN.md: (1) esquema/migração (StageDef.executor, runner.claudeCodeTasks, passo v34→v35, hash do fluxo estável); (2) fronteira em configScope/persona; (3) src/main/runner/claudeCodeTask.ts com Agent SDK; (4) guarda e ramo em executor.ts; (5) UI e i18n; (6) testes com sessão simulada. Antes de codar: confirmar o formato de readOutput, o destino da transcrição e o ponto de recusa da persona. <!-- handoff:59 -->
@@ -40,3 +42,4 @@
 - Passagem qa-plataforma-2 → developer: QA rodou os portões: tsc, theme-audit, i18n:lint e public-audit passaram; vitest falhou (12 testes em 7 arquivos na suíte completa). Causa principal e bloqueante: o esquema do arquivo da execução (src/shared/runs/schema.ts) não conhece FlowStage.executor, então toda execução com etapa claude-code é rejeitada ao criar. Os critérios 1, 2, 5, 6 e 8 não puderam ser demonstrados. Outras falhas: teste da persona com suposição errada, e testes/catálogos/docs que não acompanharam o campo novo. O trabalho volta. Cenário que falhou: 1/2/8 Resultado, transcrição e falha de ponta a ponta. A criação da exe… <!-- handoff:189 -->
 - Passagem developer → revisor-plataforma: QA: rodar `npx tsc --noEmit`, `npx vitest run` completo e os quatro portões restantes. Conferir primeiro runner-claude-code-stage, config-claude-code-persona (a etapa `build` precisa passar em saveConfig), runner-config, team-runner-edit, docs-schema-version, ui-i18n e runs-policy. Na integração, renumerar o passo v34→v35 com a #280. <!-- handoff:206 -->
 - Passagem revisor-plataforma → qa-plataforma-2: QA: rodar `npx tsc --noEmit`, `npx vitest run` completo e os quatro portões restantes; conferir primeiro runner-claude-code-stage, config-claude-code-persona (a etapa `build` precisa passar em saveConfig), runner-config, team-runner-edit, docs-schema-version, ui-i18n e runs-policy. Na integração, renumerar o passo v34→v35 com a #280. <!-- handoff:213 -->
+- Passagem pessoa → revisor-plataforma: O que continua em aberto: - 7 Celular e persona — Recusas passam; o terceiro teste da persona falha ao salvar config com `executor: undefined` explícito (expected string, got undefined). Suposição do teste; portão vermelho. - Suíte vitest completa — 1 falha, 9025 passaram, 4 ignoradas. <!-- handoff:240 -->
