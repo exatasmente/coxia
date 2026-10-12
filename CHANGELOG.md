@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Schedules that wake the persona, kept by the app.** A new Schedules screen (in the navigation's app group) lists the schedules of the workspace: a prompt for the persona, a rhythm (every N minutes, a time of day on chosen weekdays, or once at a date and time), optionally only on working days, and the conversation the answer goes to. The persona manages the same list with new operations of its Conversations tool, and each schedule shows who made it and when it last changed. Schedules are kept in the workspace's own data (`schedules.json`, no configuration change) and survive a restart; they depend on no model session. When the app opens with an active schedule, it asks whether to run the scheduler in this session; until the person says yes (there or with the screen's switch) nothing fires. A firing posts the prompt in its conversation as a line marked as a schedule and the persona answers it like any message, with the same tools, Actions and audit (the audit names the `schedule` door); a failed turn is said in the conversation and the schedule stays active. A schedule whose time passed while the app was closed fires once when the scheduler is turned on, marked late. A turn a schedule started cannot create or change schedules, the same schedule never runs twice at once, and only the person can switch the scheduler on.
+
 ## [0.11.0-beta.3] - 2026-10-11
 
 ### Fixed

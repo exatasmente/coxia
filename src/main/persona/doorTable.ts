@@ -123,6 +123,11 @@ export const OPS: readonly Op[] = [
   act('Conversations', 'post', 'forum:post', ['thread:s@!', 'text:t!']),
   act('Conversations', 'create', 'forum:create', ['title:t!']),
   act('Conversations', 'attachmentDelete', 'forum:attachment-delete', ['thread:s@!', 'seq:i!']),
+  // The schedules that wake the persona (#275), which post in a conversation.
+  read('Conversations', 'schedules', 'schedules:list'),
+  act('Conversations', 'scheduleCreate', 'schedules:create', ['prompt:t!', 'recurrence:j!', 'thread:s', 'workdaysOnly:b', 'paused:b']),
+  act('Conversations', 'scheduleUpdate', 'schedules:update', ['schedule:s@!', 'patch:j!']),
+  act('Conversations', 'scheduleRemove', 'schedules:remove', ['schedule:s@!']),
 
   // ---- Memory: the shared memory and the learned procedures ------------------------------------------------------------------------------------------------------------
   read('Memory', 'list', 'memory:list'),
@@ -266,6 +271,7 @@ export const EXCLUSION_REASONS = {
   guard: "the test workspace's flag and the confirmations of the test environment's secrets: the guard that lets an agent be tried without writing anywhere",
   scope: "the phone's scoped save: the persona's configuration changes go through the whole-document save, with its own audit",
   own: "the persona's own wizard, editor, clear, delete and stop: the stop is the person's control of the persona, and one the controlled party could release is not a control",
+  scheduler: "the scheduler's switch: letting schedules wake the persona unattended is the person's yes, asked when the app opens",
 } as const;
 export type ExclusionReason = keyof typeof EXCLUSION_REASONS;
 
@@ -290,6 +296,7 @@ export const EXCLUDED: Readonly<Record<string, ExclusionReason>> = Object.fromEn
   ...group('workspace', ['workspace:switch', 'workspace:delete']),
   ...group('guard', ['workspace:test', 'config:testenv-confirm', 'config:testenv-revoke']),
   ...group('scope', ['config:cycle-save']),
+  ...group('scheduler', ['schedules:setEnabled']),
   ...group('own', ['persona:round', 'persona:review', 'persona:saveDraft', 'persona:conclude', 'persona:discard', 'persona:finish', 'persona:save', 'persona:clear', 'persona:delete', 'persona:stop', 'persona:resume', 'persona:state']),
 ]);
 

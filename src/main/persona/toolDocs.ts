@@ -9,7 +9,7 @@ export const TOOL_DOCS: Record<string, string> = {
   Runs: 'The agents\' runs of the development cycle: look at them, start one, and decide what waits for the person in one (accept or return a stage, approve or reject a gate, answer a question, send a run back, cancel it), and the switches of autonomy of the team and the squads.',
   Actions: 'The proposals that wait in Actions for a "yes" (writes to the code host, pushes, comments), and the conflict-resolution flow: approve, skip and preview them.',
   Board: 'The workspace\'s own board of cards: create, change, send to the code host, comment, close and reopen, and propose a change of priority on a tracker card.',
-  Conversations: 'The app\'s conversations: read them, start one, post in one as yourself (a post of yours never calls another agent) and delete a message\'s attachments.',
+  Conversations: 'The app\'s conversations: read them, start one, post in one as yourself (a post of yours never calls another agent), delete a message\'s attachments, and the schedules that wake you in one.',
   Memory: 'What the agents kept (the shared memory\'s notes) and the learned procedures: read them, and edit, review, restore, delete or keep what is there.',
   Settings: 'The configuration, the app\'s settings and the workspaces: read a path of the configuration, change one path at a time (the team, autonomy and your own permissions included), the prompts, the cycle templates, the glossary and the retention.',
   Secrets: 'The secrets the app holds, by name: list them, check one, set, remove, and read a value (the one operation that gives you a secret\'s value; you never write it in an answer).',
@@ -115,6 +115,10 @@ export const OP_DOCS: Record<string, string> = {
   'Conversations.post': 'Posts in a conversation as yourself. It never calls an agent, even if it names one.',
   'Conversations.create': 'Starts a general conversation with a title.',
   'Conversations.attachmentDelete': 'Deletes a message and its attachments.',
+  'Conversations.schedules': 'The schedules that wake you with a prompt in a conversation, and whether the scheduler runs now.',
+  'Conversations.scheduleCreate': 'Schedules a prompt for you: recurrence {kind:"every",minutes} | {kind:"daily",time:"HH:MM",days:[0-6]} | {kind:"once",at:ISO}. Answers in this conversation unless thread says another. Not from a scheduled turn.',
+  'Conversations.scheduleUpdate': 'Changes a schedule: patch with prompt, recurrence, workdaysOnly, thread or paused. Not from a scheduled turn.',
+  'Conversations.scheduleRemove': 'Removes a schedule.',
 
   // ---- Memory
   'Memory.list': 'Every note the agents kept, by conversation and agent.',

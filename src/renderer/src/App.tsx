@@ -32,6 +32,8 @@ import { Reentry } from './screens/Reentry';
 import { Radar } from './screens/Radar';
 import { RetroScreen } from './screens/RetroScreen';
 import { Saude } from './screens/Saude';
+import { SchedulesScreen } from './screens/Schedules';
+import { SchedulerAsk } from './SchedulerAsk';
 import { SettingsScreen } from './screens/Settings';
 import { BottomNav } from './screens/BottomNav';
 import { Overview } from './screens/Overview';
@@ -83,6 +85,7 @@ export type Screen =
   | { name: 'procedures' }
   | { name: 'memory' }
   | { name: 'prompts' }
+  | { name: 'schedules' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -277,6 +280,8 @@ export function App() {
       return <MemoryScreen go={go} />;
     case 'prompts':
       return <PromptsScreen go={go} />;
+    case 'schedules':
+      return <SchedulesScreen go={go} />;
     case 'run':
       return <RunScreen id={screen.id} go={go} ceremony={ceremony} actions={actions} tab={screen.tab} back={screen.from === 'runs' ? { name: 'runs' } : undefined} />;
     case 'auditoria':
@@ -305,6 +310,7 @@ export function App() {
       <JobsDock screen={screen} go={go} />
       <UpdateToast />
       <UpdatePrompt hidden={screen.name === 'settings'} />
+      <SchedulerAsk />
     </>
   );
 }

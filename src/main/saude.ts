@@ -21,7 +21,7 @@ const FILE = join(DATA_ROOT, 'saude.json');
 const DEPS_EVERY_MIN = 30;
 const STREAK_ALERT = 3;
 
-const TASK_LABELS = ['status', 'release', 'watchers', 'efeitos', 'retention', 'feedback', 'radar', 'gitlab-quick', 'tempo-export', 'saude-deps'];
+const TASK_LABELS = ['status', 'release', 'watchers', 'efeitos', 'retention', 'feedback', 'radar', 'gitlab-quick', 'tempo-export', 'saude-deps', 'schedules'];
 const DEP_IDS: DepId[] = ['vcs', 'llm-key', 'card-source', 'voice', 'model'];
 
 // Labels follow the language of the moment, so they are looked up when shown and never stored.

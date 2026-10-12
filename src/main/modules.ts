@@ -30,6 +30,7 @@ import { retention } from './retention';
 import { runsModule } from './runner/module';
 import { suggestionsModule } from './suggestionsModule';
 import { saude } from './saude';
+import { schedulesModule } from './schedules/module';
 import { screenModule } from './screen/module';
 import { register as turnAsks } from './turnAsks';
 import { update } from './update';
@@ -72,6 +73,7 @@ const ALL: Module[] = [
   retention,
   runsModule,
   saude,
+  schedulesModule,
   screenModule,
   suggestionsModule,
   turnAsks,

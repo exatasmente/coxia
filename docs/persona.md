@@ -72,7 +72,7 @@ A persona tem **onze ferramentas**, as mesmas nos dois motores (Claude e aberto)
 | `Runs` | execuções, atividades, documentos, evidências, telas | iniciar, aceitar, devolver, aprovar ou recusar um gate, responder, cancelar, mandar de volta, squads e autonomia |
 | `Actions` | as propostas, a simulação de uma | aprovar, pular, o fluxo de conflito |
 | `Board` | o quadro | criar, mudar (a prioridade também), enviar, comentar, fechar, propor a prioridade de um cartão do tracker |
-| `Conversations` | conversas, mensagens | postar (como a persona), criar, apagar uma mensagem |
+| `Conversations` | conversas, mensagens, agendamentos | postar (como a persona), criar, apagar uma mensagem; criar, alterar e remover agendamentos (não num turno que um agendamento iniciou) |
 | `Memory` | notas e procedimentos | editar, revisar, apagar, restaurar, guardar ou recusar uma oferta |
 | `Settings` | configuração (um caminho de cada vez), ajustes do app, prompts, modelos de ciclo | mudar um caminho, prompts, modelos, glossário, retenção, workspaces |
 | `Secrets` | nomes e fontes, a checagem, um valor | definir, remover, ler um valor |
@@ -204,7 +204,7 @@ The persona has **eleven tools**, the same on both engines (Claude and open) and
 | `Runs` | runs, activities, documents, evidence, screens | start, accept, return, approve or reject a gate, answer, cancel, send back, squads and autonomy |
 | `Actions` | the proposals, the preview of one | approve, skip, the conflict flow |
 | `Board` | the board | create, change (priority too), send, comment, close, propose a tracker card's priority |
-| `Conversations` | conversations, messages | post (as the persona), create, delete a message |
+| `Conversations` | conversations, messages, schedules | post (as the persona), create, delete a message; create, change and remove schedules (not in a turn a schedule started) |
 | `Memory` | notes and procedures | edit, review, delete, restore, keep or decline an offer |
 | `Settings` | the configuration (one path at a time), the app's settings, prompts, cycle templates | change one path, prompts, templates, glossary, retention, workspaces |
 | `Secrets` | names and sources, the check, a value | set, remove, read a value |
