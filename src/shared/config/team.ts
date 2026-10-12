@@ -83,6 +83,8 @@ export function newAgent(partial: Pick<AgentDef, 'id'> & Partial<Omit<AgentDef, 
     ...(partial.screenPolicy && Object.keys(partial.screenPolicy).length ? { screenPolicy: { ...partial.screenPolicy } } : {}),
     // Absent means "the stage's, then the workspace's": only an agent that chose a mode carries it.
     ...(partial.poolMode ? { poolMode: partial.poolMode } : {}),
+    // Absent means off: only an agent the person turned it on for carries it.
+    ...(partial.remoteControl && partial.remoteControl !== 'off' ? { remoteControl: partial.remoteControl } : {}),
     instructions: partial.instructions ?? '',
     system: partial.system ?? false,
   };

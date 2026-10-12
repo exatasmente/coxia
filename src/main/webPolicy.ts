@@ -121,8 +121,12 @@ const MCP_STATE_ADMIN = /^mcpstate:/;
 // list, so a channel added under `claudeSessions:` later is closed from the day it exists. Its events go to the window only (ModuleContext.emitWindow), never through broadcast.
 const CLAUDE_SESSIONS = /^claudeSessions:/;
 
+// Remote Control (#282) hands a session to claude.ai/code, outside the paired-phone rules: any channel of it is desktop-only, a door added later included. The agent's
+// own switch travels in config:cycle-save, where configScope refuses a raise from the phone.
+const REMOTE_CONTROL_ADMIN = /^remoteControl:/;
+
 export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MEMORY_UNLISTED.test(channel) || TURN_ASKS_UNLISTED.test(channel) || PERSONA_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel) || CLAUDE_SESSIONS.test(channel)) return 'deny';
+  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MEMORY_UNLISTED.test(channel) || TURN_ASKS_UNLISTED.test(channel) || PERSONA_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel) || CLAUDE_SESSIONS.test(channel) || REMOTE_CONTROL_ADMIN.test(channel)) return 'deny';
   if (MEMORY_CHANNELS.has(channel) || TURN_ASK_CHANNELS.has(channel) || PERSONA_CHANNELS.has(channel)) return 'allow';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';

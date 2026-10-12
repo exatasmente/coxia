@@ -368,6 +368,11 @@ export interface EngineRequest {
   memoryTools?: import('../memory/tools').MemoryTools;
   /** The agent's screen: the app's browser tools and the confirmation tool, offered by both engines by their names. Absent: the call has none. */
   screen?: ScreenToolset;
+  /**
+   * Where the session is shown in claude.ai/code (#282), opened by the main process after the policy let it: the Claude SDK hands it every message of the session. Its own
+   * field and never `extra`, so no caller opens the bridge around the policy. The open engine has no session there and ignores it. Absent: nothing is shown.
+   */
+  mirror?: import('../remoteBridge').SessionMirror;
 }
 
 export type EngineRunner = <T>(request: EngineRequest) => Promise<Run<T>>;

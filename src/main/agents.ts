@@ -14,6 +14,7 @@ import { getLanguage, t } from '../shared/i18n';
 import { ACTIVITY_NODE_MAX } from '../shared/activity';
 import { type RunActivity, beginActivity, bindActivityParent, currentActivity, withActivityParent } from './activity';
 import { claudeExecutable, loadClaudeQuery } from './claudeSdk';
+import type { SessionMirror } from './remoteBridge';
 import type { ResolvedDocs, ResolvedRole } from './config-resolve';
 import { type CommandAsk, type Confinement, type EngineRequest, type PoolNotice, type ReadConfinement, type Run, type Schema, type ShellPolicy, type TextSink, type TurnLimit, EngineBusyError, MaxTurnsError, ProviderBudgetError, ProviderBusyError, SessionGoneError, poolNoticeText } from './engine/contract';
 import { ceremonyCommands } from './ceremonyCommands';
@@ -912,6 +913,9 @@ async function runClaudeSdk<T>(req: EngineRequest): Promise<Run<T>> {
   try {
     for await (const m of q) {
       req.beat?.();
+      // What the session does is shown in claude.ai/code as it happens; the mirror filters and never throws.
+      req.mirror?.write(m);
+      if (m.type === 'result') req.mirror?.turnEnd();
       // A partial message lands between the blocks of one turn: it must not cut the thinking being joined into several lines.
       if (m.type !== 'assistant' && m.type !== 'stream_event') flushThought();
       if (m.type === 'stream_event' && (m as { parent_tool_use_id?: string | null }).parent_tool_use_id == null) streamed(m.event as Parameters<typeof streamed>[0]);
@@ -1574,6 +1578,8 @@ export interface AgentCall {
   stagePoolMode?: PoolMode;
   /** Nobody waits for the answer (a stage, a question between agents, the last turn of procedures): the engine may use the cheaper tier. Absent: someone does. */
   background?: boolean;
+  /** The stage's session as shown in claude.ai/code, when the agent's Remote Control opened one (#282). Absent: nothing is shown. */
+  mirror?: SessionMirror;
 }
 
 // What a reader of a run may use: the tools the agent uses (its own when it names them, else the workspace's), as the ceremonies get them, and no shell beyond the
@@ -1693,6 +1699,7 @@ export async function runAgent<T>(call: AgentCall, commands: string[] = []): Pro
           memoryTools: only ? undefined : call.memoryTools,
           screen: only ? undefined : call.screen,
           ...(only ? { procedureOnly: true } : {}),
+          ...(call.mirror ? { mirror: call.mirror } : {}),
         };
         // What the engine starts (an agent it calls) hangs under this call's node.
         return withActivityParent(activity.id, async () => {

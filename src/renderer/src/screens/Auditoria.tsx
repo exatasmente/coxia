@@ -33,6 +33,7 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   'screen-handoff': { key: 'ui.audit.kind.screenHandoff' },
   'screen-autonomous': { key: 'ui.audit.kind.screenAutonomous' },
   'screen-policy': { key: 'ui.audit.kind.screenPolicy' },
+  'remote-control': { key: 'ui.audit.kind.remoteControl' },
   'test-env': { key: 'ui.audit.kind.testEnv' },
   memory: { key: 'ui.audit.kind.memory' },
   'turn-limit': { key: 'ui.audit.kind.turnLimit' },

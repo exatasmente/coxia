@@ -125,6 +125,7 @@ import type { TurnAsks } from '../turnAsks-core';
 import type { RecordingOutcome } from '../screen/recorder';
 import type { ScreenSessions } from '../browser/sessions';
 import type { HandoffService } from '../screen/handoff';
+import type { RemoteControlPort } from '../remoteBridge';
 import { type EvidenceRecord, type EvidenceView, evidenceViewOf } from '../../shared/evidence';
 import { dropEvidence, readEvidence } from '../evidence/store';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, keepScreenRecording, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
@@ -245,6 +246,8 @@ export interface RunnerDeps {
   turnAsks?: TurnAsks;
   /** The hand-off of an agent's screen to the person (#178); without it no agent is offered the tool. */
   handoff?: HandoffService | null;
+  /** Shows a stage's session in claude.ai/code when its agent's Remote Control says so (#282); without it no stage is shown there. */
+  remoteControl?: RemoteControlPort;
   /** Makes one small call to a provider to find out whether its key has budget again. Without it the runs that hit the refusal keep waiting. */
   probeBudget?: BudgetProbeFn;
   /** Replaces `runner.stageIdleMs` and `runner.stageMaxMs` (tests). */
@@ -452,7 +455,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   const notices = deps.memoryWrites ? createNoticeHub({ runs: deps.runs, forum: deps.forum, config: deps.config, workingAgent: (run) => workingAgent(run), ...(deps.noticeMergeMs !== undefined ? { mergeMs: deps.noticeMergeMs } : {}) }) : null;
   deps.memoryWrites?.((write) => notices?.noteWritten(write));
 
-  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, turnAsks: deps.turnAsks, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run, narrow) => sharedTextOf(run.issue.ref, [], [], narrow), procedures: deps.procedures, memoryPort: deps.memoryPort, documentsWritten: (run, agent, names) => notices?.documentsWritten(run, agent, names), offers: deps.offers, procedureTurnMs: deps.procedureTurnMs, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
+  const exec: ExecutorDeps = { pluginNotes: deps.pluginNotes, engine: deps.engine, config: deps.config, forum: deps.forum, identity: deps.identity, timeoutMs: deps.timeoutMs, limits: deps.limits, commandRunner: deps.commandRunner, sandbox: deps.sandbox, screens: deps.screens, sessions: deps.sessions, asks: deps.asks, handoff: deps.handoff, remoteControl: deps.remoteControl, turnAsks: deps.turnAsks, askCommand: (ask, signal) => askCommand(ask, signal), release: deps.publisher ? (runId, input, who) => (deps.publisher as Publisher).releaseStep(runId, input, who) : undefined, dataDir: () => deps.env().dataDir, keepEvidence: keepEvidence, updateEvidence: updateEvidence, sharedMemory: (run, narrow) => sharedTextOf(run.issue.ref, [], [], narrow), procedures: deps.procedures, memoryPort: deps.memoryPort, documentsWritten: (run, agent, names) => notices?.documentsWritten(run, agent, names), offers: deps.offers, procedureTurnMs: deps.procedureTurnMs, procedureUses: (runId, stage, uses) => void moveRun(d, runId, (r) => recordProcedures(r, stage, uses, now())) };
 
   /** The record of the activities as a call reads it: the front named whole, the others in short. Never a model call, never the file. */
   function sharedTextOf(ref: string, agents: readonly string[] = [], refs: readonly string[] = [], narrow = false): string {

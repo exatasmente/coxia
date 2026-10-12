@@ -1,10 +1,10 @@
-// WorkspaceConfig (schema 35): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 36): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
 import type { ScreenPolicy } from './screenPolicy';
 
-export const CONFIG_SCHEMA_VERSION = 35;
+export const CONFIG_SCHEMA_VERSION = 36;
 
 /** The machine's Claude Code sessions in the app (desktop only): off unless the person turned it on. */
 export interface ClaudeSessionsConfig {
@@ -649,6 +649,13 @@ export interface AgentModel extends ModelPool, Pick<ModelRef, 'images' | 'contex
 export const AGENT_KINDS = ['persona'] as const;
 export type AgentKind = (typeof AGENT_KINDS)[number];
 
+/**
+ * How a session of the agent is shown in claude.ai/code, lowest first. There is no level that takes input from there: what is typed there would reach the session outside the
+ * paired-phone rules, the sandbox and the approvals, and the app has no way yet to hold it to them.
+ */
+export const REMOTE_CONTROL_MODES = ['off', 'mirror'] as const;
+export type RemoteControlMode = (typeof REMOTE_CONTROL_MODES)[number];
+
 /** A member of the agent team: who works which stages of a run, with which model and which permission. */
 export interface AgentDef {
   /** Lowercase letters, digits, "-" and "_"; also the name an @mention uses. */
@@ -720,6 +727,11 @@ export interface AgentDef {
   screenPolicy?: ScreenPolicy;
   /** How the agent's model pool is used. Absent: the stage's, then the workspace's `llm.poolMode`. */
   poolMode?: PoolMode;
+  /**
+   * Whether the stages of this agent show up in claude.ai/code and the Claude app (#282): `mirror` sends what the session does there, and nothing typed there reaches it.
+   * Absent: off. Only the person at the computer turns it on: a paired browser and the persona may lower it, never raise it, and a template never carries it.
+   */
+  remoteControl?: RemoteControlMode;
   /** Appended to the agent's system prompt. A catalog key or a literal. */
   instructions: string;
   /** One of the five built-in agents (the ids of the LLM roles): they can be edited, never removed. */
