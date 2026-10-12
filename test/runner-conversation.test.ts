@@ -246,7 +246,8 @@ describe('a conversation between two agents', () => {
     it('returns at once to a called writer that asks while the caller waits for the conversation, so it cannot hang', async () => {
       let asked = '';
       const engine = async (call: AgentCall) => {
-        asked = await call.runnerTools!.find((x) => x.name === ASK_CONVERSATION_TOOL)!.run({ text: 'which scenario?' } as never, {} as never) as string;
+        const result = (await call.runnerTools!.find((x) => x.name === ASK_CONVERSATION_TOOL)!.run({ text: 'which scenario?' } as never, {} as never)) as unknown as { response: string };
+        asked = result.response;
         return { data: { texto: 'my answer' } };
       };
       const ex = exchange(['first'], true);
