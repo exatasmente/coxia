@@ -6,7 +6,7 @@ import { stepText } from './activity';
 
 export { stepText };
 
-export type NodeState = 'queued' | 'waiting' | 'working' | 'finished' | 'failed';
+export type NodeState = 'queued' | 'waiting' | 'working' | 'finished' | 'failed' | 'skipped';
 export type TreeItem = { type: 'line'; entry: ActivityEntry } | { type: 'node'; node: TreeNode };
 
 /** An activity run: an agent's own, a sub-agent it started (`sub`) or an agent it called (`call`). */
@@ -14,10 +14,12 @@ export interface TreeNode {
   id: string;
   /** The run id it hangs under; null for a root. */
   parent: string | null;
-  type: 'agent' | 'sub' | 'call';
+  type: 'agent' | 'sub' | 'call' | 'schedule';
   role: string;
   /** The words that head a sub-agent or a call (its kind and task, the topic); empty for an agent's own run. */
   label: string;
+  /** The schedule whose firing this node is, when it is one. */
+  schedule?: string;
   call: ActivityCall | null;
   state: NodeState;
   since: number;
@@ -52,7 +54,7 @@ function stateOf(lines: readonly ActivityEntry[]): NodeState {
   if (last.state === 'queued') return 'queued';
   // Its turn limit was reached and the person is asked: alive, and not the same as waiting its turn behind another sub-agent.
   if (last.state === 'waiting') return 'waiting';
-  if (last.state === 'finished' || last.state === 'failed') return last.state;
+  if (last.state === 'finished' || last.state === 'failed' || last.state === 'skipped') return last.state;
   return 'working';
 }
 
@@ -76,6 +78,7 @@ export function buildTree(entries: readonly ActivityEntry[]): TreeNode[] {
       type: first.node?.type ?? 'agent',
       role: first.role,
       label: first.node?.label ?? '',
+      ...(first.node?.schedule ? { schedule: first.node.schedule } : {}),
       call: first.call ?? null,
       state: stateOf(lines),
       since: first.at,
@@ -199,6 +202,8 @@ export function workingRoles(entry: TopEntry): string[] {
 export function nodeTitle(node: Pick<TreeNode, 'type' | 'role' | 'label'>, nameOf: (role: string) => string): string {
   if (node.type === 'agent') return nameOf(node.role);
   if (node.type === 'sub') return node.label || nameOf(node.role);
+  // A schedule's direct action is no agent's work: the main process words the whole head (which schedule, which action).
+  if (node.type === 'schedule') return node.label || nameOf(node.role);
   return node.label ? `${nameOf(node.role)}: ${node.label}` : nameOf(node.role);
 }
 

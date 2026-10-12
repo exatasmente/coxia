@@ -125,7 +125,9 @@ export const OPS: readonly Op[] = [
   act('Conversations', 'attachmentDelete', 'forum:attachment-delete', ['thread:s@!', 'seq:i!']),
   // The schedules that wake the persona (#275), which post in a conversation.
   read('Conversations', 'schedules', 'schedules:list'),
-  act('Conversations', 'scheduleCreate', 'schedules:create', ['prompt:t!', 'recurrence:j!', 'thread:s', 'workdaysOnly:b', 'paused:b']),
+  // The app's own timed jobs (#250), read-only: they are set in Settings, not here.
+  read('Conversations', 'routines', 'schedules:routines'),
+  act('Conversations', 'scheduleCreate', 'schedules:create', ['prompt:t', 'action:j', 'missed:e[run,skip]', 'recurrence:j!', 'thread:s', 'workdaysOnly:b', 'paused:b']),
   act('Conversations', 'scheduleUpdate', 'schedules:update', ['schedule:s@!', 'patch:j!']),
   act('Conversations', 'scheduleRemove', 'schedules:remove', ['schedule:s@!']),
 

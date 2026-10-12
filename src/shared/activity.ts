@@ -4,7 +4,10 @@ export type ActivityKind = 'tool' | 'text' | 'thought' | 'answer' | 'status';
  * `queued` is a call that was accepted while another one of the same run still runs: it is alive, and it has not started. `waiting` is work that reached its turn limit and
  * waits for the person to let it go on or finish it: alive too, and not the same as waiting its turn.
  */
-export type ActivityState = 'queued' | 'waiting' | 'started' | 'resumed' | 'finished' | 'failed' | 'blocked';
+export type ActivityState = 'queued' | 'waiting' | 'started' | 'resumed' | 'finished' | 'failed' | 'blocked' | 'skipped';
+
+/** The states after which a run does nothing more: `skipped` is a schedule's firing its missed-firing rule passed over (#250). */
+export const isEndState = (state: ActivityState | undefined): boolean => state === 'finished' || state === 'failed' || state === 'skipped';
 
 /** The `@` call a run belongs to: which agent answers, in which thread, for which message. */
 /** The activity job of a conversation outside a run (a channel, a general conversation, an agent's direct one): what its calls and their steps are kept under. */
@@ -19,12 +22,14 @@ export interface ActivityCall {
   message: number;
 }
 
-/** What heads a node that is not an agent's own run: a sub-agent an agent started, or an agent it called. */
-export type ActivityNodeType = 'sub' | 'call';
+/** What heads a node that is not an agent's own run: a sub-agent an agent started, an agent it called, or a schedule's direct action (#250). */
+export type ActivityNodeType = 'sub' | 'call' | 'schedule';
 /** Type and the words that head the node (the kind and task of a sub-agent, the topic of a call); masked and cut in the main process. */
 export interface ActivityNode {
   type: ActivityNodeType;
   label: string;
+  /** The id of the schedule whose firing this node is (#250): a direct action's node, or the call of the persona or agent it woke. */
+  schedule?: string;
 }
 
 export interface ActivityEntry {
@@ -85,5 +90,5 @@ export function takeContext(args: unknown[]): { args: unknown[]; jobId: string |
 /** Whether a run still has work going on, from its last status line: a queued call counts as alive, it is waiting its turn. */
 export function runActive(entries: ActivityEntry[], runId: string): boolean {
   const last = [...entries].reverse().find((e) => e.runId === runId && e.kind === 'status' && e.state !== 'blocked');
-  return !!last && last.state !== 'finished' && last.state !== 'failed';
+  return !!last && !isEndState(last.state);
 }

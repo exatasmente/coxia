@@ -92,6 +92,42 @@ describe('the schedules of the persona and the person', () => {
     expect(refused[0]).toMatchObject({ door: 'schedule' });
   });
 
+  it('lets the persona make a direct-action schedule set to skip missed times, and the person sees the same (#250)', async () => {
+    const done = await personaDoor.run(session(), 'Conversations', { op: 'scheduleCreate', action: { kind: 'run', ref: '12' }, missed: 'skip', recurrence: { kind: 'every', minutes: 30 }, why });
+    expect(done).toMatch(/^Done/);
+    const [mine] = await listed();
+    expect(mine).toMatchObject({ action: { kind: 'run', ref: '12' }, missed: 'skip', prompt: '', waiting: null, createdBy: 'me' });
+    const view = await asPerson<SchedulesView>('schedules:list');
+    expect(view.schedules.find((s) => s.id === mine.id)).toMatchObject({ action: { kind: 'run', ref: '12' }, missed: 'skip' });
+    // A turn a schedule started cannot change it into another action either.
+    const e = await personaDoor.run(session('schedule'), 'Conversations', { op: 'scheduleUpdate', schedule: mine.id, patch: { missed: 'run' }, why }).catch((x: Error) => x);
+    expect((e as Error).message).toMatch(/cannot create or change schedules/);
+    await asPerson('schedules:remove', mine.id);
+  });
+
+  it('refuses the persona as the agent of an agent schedule', async () => {
+    const e = await personaDoor.run(session(), 'Conversations', { op: 'scheduleCreate', action: { kind: 'agent', agent: 'me', prompt: 'x' }, recurrence: { kind: 'every', minutes: 30 }, why }).catch((x: Error) => x);
+    expect((e as Error).message).toMatch(/not in the team, or is the persona/);
+    expect(await listed()).toEqual([]);
+  });
+
+  it('takes a direct action through the persona door by the schedule door, and the audit records the door (#250)', async () => {
+    const { createDirectRunner } = await import('../src/main/schedules/direct');
+    const runner = createDirectRunner({ call: (s, m, tool, input) => personaDoor.run(createSession({ persona: s.persona, thread: s.thread, seq: m.seq, door: 'schedule' }), tool, input), ceremonies: () => [] });
+    const s = { id: 's-direct', persona: 'me', thread: THREAD, action: { kind: 'run', ref: '12' } } as unknown as Schedule;
+    // No runner is registered in this test: the operation is refused, and the refusal is audited as the schedule's.
+    await expect(runner.run(s, { thread: THREAD, seq: 5 } as never)).rejects.toThrow();
+    expect(listAudit().find((x) => x.target === 'Runs.start')).toMatchObject({ door: 'schedule', ok: false });
+  });
+
+  it('reads the app\'s own routines, read-only, from the persona and the screen', async () => {
+    expect(findOp('Conversations', 'routines')).toMatchObject({ write: false, channel: 'schedules:routines' });
+    const text = await personaDoor.run(session(), 'Conversations', { op: 'routines' });
+    expect(text).toContain('preDaily');
+    const routines = await asPerson<{ id: string }[]>('schedules:routines');
+    expect(routines.map((r) => r.id)).toEqual(['preDaily', 'retro', 'workWindow']);
+  });
+
   it('words what is wrong with a schedule for the persona', async () => {
     const e = await personaDoor.run(session(), 'Conversations', { op: 'scheduleCreate', prompt: 'x', recurrence: { kind: 'every', minutes: 0 }, why }).catch((x: Error) => x);
     expect((e as Error).message).toMatch(/at least 1/);

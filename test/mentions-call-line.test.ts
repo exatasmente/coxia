@@ -45,6 +45,7 @@ function line(id: string): RunActivity & { states: string[]; answers: string[] }
     status: (s) => void states.push(s),
     waiting: () => void states.push('waiting'),
     continued: () => void states.push('started'),
+    awaitingApproval: () => void states.push('waiting'),
     child: () => line(`${id}-child`),
     lend: () => made,
   };

@@ -1,8 +1,10 @@
 import type { Schedule, ScheduleInput, SchedulePatch, SchedulesView } from '../../shared/schedules';
+import type { SystemRoutine } from '../../shared/systemRoutines';
 import { api, moduleEvents } from './api';
 
 export const schedulesApi = {
   list: () => api.invoke<SchedulesView>('schedules:list'),
+  routines: () => api.invoke<SystemRoutine[]>('schedules:routines'),
   create: (input: ScheduleInput) => api.invoke<Schedule>('schedules:create', input),
   update: (id: string, patch: SchedulePatch) => api.invoke<Schedule>('schedules:update', id, patch),
   remove: (id: string) => api.invoke<boolean>('schedules:remove', id),

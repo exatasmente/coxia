@@ -188,7 +188,11 @@ export const HOOKS: Record<string, Hooks> = {
   'Conversations.create': { subject: (v) => str(v.title) },
   'Conversations.attachmentDelete': { subject: (v) => forumStore().summary(str(v.thread))?.title ?? str(v.thread) },
   // The channel takes the schedule whole; the thread, when absent, is the one the persona is answering in.
-  'Conversations.scheduleCreate': { build: (v) => [only({ prompt: v.prompt, recurrence: v.recurrence, thread: v.thread, workdaysOnly: v.workdaysOnly, paused: v.paused })], subject: (v) => cut(str(v.prompt), 120) },
+  // A direct action (#250) has no prompt: the subject is what it does.
+  'Conversations.scheduleCreate': {
+    build: (v) => [only({ prompt: v.prompt, action: v.action, missed: v.missed, recurrence: v.recurrence, thread: v.thread, workdaysOnly: v.workdaysOnly, paused: v.paused })],
+    subject: (v) => cut(str(v.prompt) || JSON.stringify(v.action ?? ''), 120),
+  },
 
   // ---- Memory
   'Memory.save': { build: (v) => [v.conversation, v.agent, v.id, v.revision, only({ title: v.title, text: v.text, kind: v.kind })] },

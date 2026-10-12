@@ -16,6 +16,7 @@ import {
   type ActivityEntry,
   type ActivityNode,
   type ActivityState,
+  isEndState,
 } from '../shared/activity';
 import { redact } from './errorlog-core';
 
@@ -42,6 +43,8 @@ export interface RunActivity {
   waiting(turns: number): void;
   /** The person let the work go on for another round: it is working again. */
   continued(): void;
+  /** A schedule's direct action waits for the person's approval in Actions (#250): alive, and waiting for the person. */
+  awaitingApproval(): void;
   /** A node under this one: same job, same call. The caller says `started` or `queued` on it. */
   child(node: ActivityNode, role?: string): RunActivity;
   /** A view whose `finished` and `failed` are ignored: one engine run that is a round of a longer exchange, closed by whoever owns the exchange. */
@@ -120,7 +123,7 @@ export function createActivityLog(options: ActivityLogOptions = {}) {
 
   const isDone = (r: Run): boolean => {
     const last = newestStatus(r.entries);
-    return !last || last.state === 'finished' || last.state === 'failed';
+    return !last || isEndState(last.state);
   };
 
   /** The trees of the log, oldest first: a root (no parent, or a parent the log no longer holds) and every node under it. */
@@ -170,7 +173,7 @@ export function createActivityLog(options: ActivityLogOptions = {}) {
     const safe = (text: string, max: number): string => safeText(o.mask ? o.mask(text) : text, max, o.isSecretPath);
     // A node belongs to the job and the call of the run it hangs under, so a tree is always one job and one call.
     const above = o.parent ? runs.get(o.parent) : undefined;
-    const node = o.node ? { type: o.node.type, label: safe(o.node.label, ACTIVITY_NODE_MAX) } : null;
+    const node = o.node ? { type: o.node.type, label: safe(o.node.label, ACTIVITY_NODE_MAX), ...(o.node.schedule ? { schedule: o.node.schedule } : {}) } : null;
     const run: Run = {
       id: randomUUID(),
       jobId: above ? above.jobId : (o.jobId ?? null),
@@ -258,13 +261,17 @@ export function createActivityLog(options: ActivityLogOptions = {}) {
         pending = '';
         emit('status', t('activity.continued'), 'started');
       }),
+      awaitingApproval: safely(() => {
+        pending = '';
+        emit('status', t('activity.awaitingApproval'), 'waiting');
+      }),
       child: (childNode, childRole) => begin(childRole ?? role, { parent: run.id, node: childNode, isSecretPath: o.isSecretPath, mask: o.mask }),
       lend: () => lent,
     };
     const lent: RunActivity = {
       ...handle,
       status: (state, detail) => {
-        if (state !== 'finished' && state !== 'failed') handle.status(state, detail);
+        if (!isEndState(state)) handle.status(state, detail);
       },
     };
     handles.set(run.id, handle);
