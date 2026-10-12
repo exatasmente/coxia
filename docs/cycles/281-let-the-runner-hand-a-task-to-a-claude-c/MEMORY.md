@@ -22,6 +22,7 @@
 
 - ACP: exigiria dependência nova e segunda via de permissões.
 - `executor: undefined` explícito no teste da persona: recusado pela validação (corrigido por remoção da chave).
+- Copiar à mão os passos 34/35 da release para o STEPS: descartado, a mesclagem os traz.
 
 ## Perguntas abertas
 
@@ -29,10 +30,10 @@
 
 ## Onde o trabalho está
 
-- QA rodada 4 (comando rodado, ev-13): tsc passa; ramo 33 commits atrás de origin/release/0.11.0; dos 6 arquivos de teste rodados, 5 passam e config-migrations tem 85 falhas "no migration from config schema 34" (STEPS sem 34/35 da release, base não trazida).
-- PENDENTE: trazer a base (conflitos em CHANGELOG, docs/configuration.md, configModule, configScope, executor, service, migrations, schema, types, config-migrations.test, test/helpers/runner.ts). Ao resolver: v37, STEPS com 34/35 da release + 36: v36ToV37, refazer linha do CHANGELOG.
-- Depois da mesclagem, rodar todos os gates de novo (tsc, vitest completo, theme-audit, i18n:lint, public-audit, build).
-- QA anterior (antes da base nova): tsc, theme-audit, i18n:lint, public-audit e testes da entrega passaram; suíte completa só com falhas instáveis por carga (update-script, modules-registered) que passam isoladas.
+- Última QA (comando rodado): tsc passa; ramo 33 commits atrás de origin/release/0.11.0; config-migrations tem 85 falhas "no migration from config schema 34" porque STEPS não tem 34/35 da release; os outros 5 arquivos de teste rodados passam.
+- A implementação em si (executor, fronteira de segurança, interface, i18n, docs, testes) está feita e aceita pela revisão; antes da base nova, tsc, theme-audit, i18n:lint, public-audit, build e testes da entrega passaram (integração).
+- PENDENTE: trazer a base (conflitos em CHANGELOG, docs/configuration.md, configModule, configScope, executor, service, migrations, schema, types, config-migrations.test, test/helpers/runner.ts). Ao resolver: v37, STEPS 34/35 da release + 36: v36ToV37, refazer linha do CHANGELOG.
+- Depois, rodar todos os gates (tsc, vitest completo, theme-audit, i18n:lint, public-audit, build). Instabilidade conhecida por carga: update-script e modules-registered (passam isolados).
 - Não verificado: interface, SDK real (deny respeitado), suíte completa e demais portões com a base nova.
 - Passagem support → product-owner: Planejar: escolher ACP vs. Agent SDK (SDK já embarcado), como impor o limite de escrita ao worktree, o campo "Executor" no esquema do fluxo (qualquer etapa) e o encaixe com os canais de sessões da #280 (recusa quando desligado, persona/celular negados). <!-- handoff:35 -->
 - Passagem product-owner → pessoa: Planejar: escolher ACP vs. Agent SDK (SDK já embarcado em src/main/claudeSdk.ts), como impor o limite de escrita ao worktree, o campo "Executor" em FlowStage (src/shared/runs/types.ts) e o encaixe com a #280, cujo módulo de sessões não foi achado nesta worktree (conferir se a base já a inclui). <!-- handoff:45 -->
@@ -56,3 +57,4 @@
 - Passagem integrator → developer: Devolver ao implement. A base está 33 commits atrás de origin/release/0.11.0 e a mesclagem de teste tem conflitos. O passo de migração 35 colide com o da #280. Os gates passaram. Cenário que falhou: 2 Esquema vs release. Branch v35 colide com v35 (claudeSessions) da release 0.11.0, que está em 36. Renumerar para v36→v37. Cenário que falhou: 3 Base. 33 commits atrás de origin/release/0.11.0 e conflito em 11 arquivos (merge-tree). Sem fetch nesta etapa. <!-- handoff:313 -->
 - Passagem developer → revisor-plataforma: Integração/QA: trazer a base origin/release/0.11.0 pela ferramenta de conflito do app (manter v37, STEPS 34/35 da release + 36: v36ToV37, refazer a linha do CHANGELOG) e rodar tsc, vitest completo, theme-audit, i18n:lint, public-audit e build; conferir config-migrations e docs-schema-version. <!-- handoff:321 -->
 - Passagem revisor-plataforma → qa-plataforma-2: Integração/QA: trazer a base origin/release/0.11.0 pela ferramenta de conflito do app (manter v37, STEPS 34/35 da release + 36: v36ToV37, refazer a linha do CHANGELOG) e rodar tsc, vitest completo, theme-audit, i18n:lint, public-audit e build; conferir config-migrations e docs-schema-version. <!-- handoff:328 -->
+- Passagem qa-plataforma-2 → developer: QA desta rodada (comando #1, ev-13): tsc passa (saída 0). O ramo segue 33 commits atrás de origin/release/0.11.0. Dos 6 arquivos de teste rodados, 5 passam. test/config-migrations.test.ts tem 85 falhas, todas com "no migration from config schema 34": o STEPS do ramo não tem os passos 34 e 35 da release, porque a base ainda não foi trazida (causa lida na mensagem de erro; não investiguei STEPS em outra leitura). Bloqueio para a integração. Não rodei nesta rodada: vitest completo, theme-audit, i18n:lint, public-audit, build, interface e SDK real. Não verificado. Cenário que falhou: 1 Base: ramo … <!-- handoff:345 -->
