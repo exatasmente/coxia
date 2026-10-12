@@ -1,6 +1,7 @@
 import { screenPolicyChanges } from '../shared/config/screenPolicy';
 import { shellRaised, trackerRaised } from '../shared/config/team';
 import { ACTIVITIES, type AgentDef, type ModelRef, type WorkspaceConfig } from '../shared/config/types';
+import { remoteControlRank } from '../shared/remoteControl';
 
 // What a paired browser may change in the configuration. config:save is desktop-only because the configuration names programs to run (runner.commands, the
 // external tools) and folders to read or write (docs, projects, runner.worktreesDir), and holds the places of the secrets. The team and cycle screens still have
@@ -113,6 +114,15 @@ export function screenRaised(old: AgentDef | undefined, now: AgentDef, id: strin
 }
 
 /**
+ * The agents whose Remote Control goes up (#282): what is shown in claude.ai/code leaves the paired-phone rules, so only the person at the computer turns it on. A paired
+ * browser and the persona may turn it off; an agent they make starts with it off.
+ */
+export function remoteControlRaised(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
+  const was = new Map(before.agents.team.map((a) => [a.id, a]));
+  return after.agents.team.filter((a) => remoteControlRank(a.remoteControl) > remoteControlRank(was.get(a.id)?.remoteControl)).map((a) => `agents.team[${a.id}].remoteControl`);
+}
+
+/**
  * The reserve models of an agent's own model decide where a stage's content goes when the first model is busy, so a paired browser may take entries out and reorder the
  * list, never add one: an entry that was not in the same list before is refused by name (also for an agent made there). The pools of the five roles are `llm.roles`, which
  * the browser cannot change at all.
@@ -135,7 +145,7 @@ export function poolRaised(before: WorkspaceConfig, after: WorkspaceConfig): str
 
 /** The changed paths a paired browser may not change (empty: the change is allowed). */
 export function refusedPaths(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
-  return [...changedPaths(before, after).filter((p) => !covered(p)), ...raisedPermissions(before, after), ...poolRaised(before, after), ...raisedAutonomy(before, after), ...screenPolicyRaised(before, after)];
+  return [...changedPaths(before, after).filter((p) => !covered(p)), ...raisedPermissions(before, after), ...poolRaised(before, after), ...raisedAutonomy(before, after), ...screenPolicyRaised(before, after), ...remoteControlRaised(before, after)];
 }
 
 /**

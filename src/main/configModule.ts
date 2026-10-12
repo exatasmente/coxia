@@ -18,7 +18,7 @@ import { secretAuditEntry, type SecretOp } from './decisionAudit';
 import { viaOf } from './rpc';
 import { secrets, testEnvLedger } from './secrets';
 import { readRegistry } from './workspaces-core';
-import { keepStoredTurns, refusedPaths } from './configScope';
+import { keepStoredTurns, refusedPaths, remoteControlRaised } from './configScope';
 import { checkConfig, getConfig, reloadConfig, saveConfig, updateConfig } from './workspaceConfig';
 import { t } from '../shared/i18n';
 
@@ -88,6 +88,8 @@ export const configModule: Module = (ctx) => {
     return { ok: r.ok, errors: r.errors, warnings: r.warnings };
   });
   ctx.handle('config:save', (next: WorkspaceConfig) => {
+    // The persona reaches this channel through its door: it may turn an agent's Remote Control off, never on (#282).
+    if (viaOf() === 'persona' && remoteControlRaised(getConfig(), next).length) throw new Error(t('main.config.remoteControlPersona'));
     recordedConfig('save', () => saveConfig(keepStoredTurns(next, getConfig())));
     return announce();
   });

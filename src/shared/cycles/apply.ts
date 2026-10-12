@@ -109,9 +109,9 @@ export function templateFromConfig(config: WorkspaceConfig, meta: TemplateMeta):
   // The flows of the squads and of a release or documentation run are not part of a template file, so an agent that works only their stages does not list them there.
   // A draft is an agent still being tried out, and the persona is the person's own: neither is part of the cycle that is shared.
   const team = pruneAgentStages(config.agents.team.filter((a) => !a.system && !outOfCycle(a)), cycle).map((a) => {
-    // The squad is the workspace's own, and so are the screen, the hosts and the logged-in browser: a shared template carries none of them.
+    // The squad is the workspace's own, and so are the screen, the hosts, the logged-in browser and Remote Control: a shared template carries none of them.
     // A template keeps only the holds of the screen step approvals: letting a kind run without asking is the person's choice on the computer (#269).
-    const { squad: _squad, screen: _screen, allowedHosts: _hosts, browserProfile: _profile, screenPolicy, ...rest } = structuredClone(a);
+    const { squad: _squad, screen: _screen, allowedHosts: _hosts, browserProfile: _profile, remoteControl: _remote, screenPolicy, ...rest } = structuredClone(a);
     const held = heldOnly(screenPolicy);
     if (held) return { ...rest, screenPolicy: held, model: withoutPool(rest.model) };
     return { ...rest, model: withoutPool(rest.model) };

@@ -62,6 +62,7 @@ import type { ScreenHub } from '../screen/hub';
 import { grantsFor, withheldText } from '../browser/guard';
 import { type CallHandoffOffer, type CallScreen, beginHandoff, modelSeesImages, offerHandoff, openCallScreen, promptFor } from '../browser/callScreen';
 import type { HandoffService } from '../screen/handoff';
+import type { RemoteControlPort } from '../remoteBridge';
 import type { ScreenAsks } from '../browser/asks';
 import type { TurnAsks } from '../turnAsks-core';
 import { turnAsker } from '../turnLimit';
@@ -149,6 +150,8 @@ export interface ExecutorDeps {
   asks?: ScreenAsks;
   /** The hand-off of a stage's screen to the person (#178); absent: no stage is offered the tool. */
   handoff?: HandoffService | null;
+  /** Shows the stage's session in claude.ai/code when its agent's Remote Control says so (#282); absent: no stage is shown there. */
+  remoteControl?: RemoteControlPort;
 }
 
 export interface StageRun {
@@ -1217,6 +1220,24 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   let wrapPlan: WrapUpPlan | null = null;
   // The session the last answer was given in, and the engine that holds it: what a repair round continues from.
   let answered: Answered = { sessionId: null, engine: 'claude-sdk' };
+  // Opened before the call and closed with the attempt, whatever its end; a refusal or a failure is a line in the thread and the stage runs without it.
+  const mirror = d.remoteControl
+    ? await d.remoteControl
+        .open({
+          agent,
+          run: { id: run.id, issue: run.issue.iid, ref: run.issue.ref },
+          title: `${stage.id} · ${about}`.slice(0, 200),
+          say: (code, params) => {
+            try {
+              d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code, params, stage: stage.id });
+            } catch (e) {
+              console.error('[runner] could not record a Remote Control line', run.id, e instanceof Error ? e.message : e);
+            }
+          },
+        })
+        .catch(() => null)
+    : null;
+  if (mirror) call.mirror = mirror;
   try {
     const firstRun = await watch.guard(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)));
     data = firstRun.data;
@@ -1283,6 +1304,7 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
     if (e instanceof ProviderBusyError) throw new StageError('pool-busy', poolBusyParams(e));
     throw e;
   } finally {
+    mirror?.close();
     // What the call read becomes uses, and what it created gets its baseline; each use is a line in the thread.
     sharedIdx?.finish();
     const uses = procedures?.finish(called ? 'done' : 'failed') ?? [];

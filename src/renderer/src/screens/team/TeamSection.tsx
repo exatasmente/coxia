@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { offeredStages } from '../../../../shared/agentAssist';
 import { squadsOf } from '../../../../shared/config/squads';
 import { isDraft, isPersona, removeAgent, shellRaised, trackerRaised } from '../../../../shared/config/team';
-import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, POOL_MODES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type PoolMode, type WorkspaceConfig } from '../../../../shared/config/types';
+import { AGENT_SHELLS, AGENT_TRACKERS, LLM_ROLES, POOL_MODES, REMOTE_CONTROL_MODES, type AgentDef, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type PoolMode, type RemoteControlMode, type WorkspaceConfig } from '../../../../shared/config/types';
 import { flowIssueText } from '../../../../shared/runs/flowCheck';
 import { squadIssueText } from '../../../../shared/runs/squadCheck';
 import { errorText, api } from '../../api';
@@ -325,6 +325,7 @@ export function AgentPanel({ config, initial, isNew, suggestionId, assisted, pro
         <Toggle checked={draft.autonomous} onChange={(autonomous) => set({ autonomous })} label={t('ui.team.autonomy')} />
         <p className="small muted">{t('ui.team.autonomyHint')}</p>
         <ToolsFields config={config} draft={draft} set={set} />
+        <RemoteControlField draft={draft} set={set} />
         {assisted && <StagesFields config={config} draft={draft} set={set} />}
 
         <Labeled label={t('ui.team.f.squad')} hint={t('ui.team.f.squadHint')}>
@@ -547,6 +548,32 @@ function PoolModeField({ config, draft, set }: { config: WorkspaceConfig; draft:
       </Labeled>
       <p className="small muted">{hint}</p>
       {draft.poolMode === 'delegate' && subagentsOff(config, draft) && <p className="small muted" role="note">{t('ui.team.poolMode.subagentsOff')}</p>}
+    </div>
+  );
+}
+
+const REMOTE_CONTROL_LABEL: Record<RemoteControlMode, string> = { off: 'ui.team.remoteControl.off', mirror: 'ui.team.remoteControl.mirror' };
+
+/**
+ * Whether the agent's stages show up in claude.ai/code (#282). Only on the computer: a paired browser never sees the switch (and configScope refuses a raise from it). The warning
+ * is on the screen as soon as the level is chosen, before Save. In a test workspace the switch is held off with the reason; the main process refuses it there anyway.
+ */
+export function RemoteControlField({ draft, set }: { draft: AgentDraft; set: (p: Partial<AgentDraft>) => void }) {
+  const t = useT();
+  if (isWeb()) return null;
+  const test = document.documentElement.dataset.workspaceTest === '1';
+  return (
+    <div className="wz-stack">
+      <Labeled label={t('ui.team.remoteControl')} hint={t('ui.team.remoteControl.hint')}>
+        {(id) => (
+          <select id={id} className="text-input" disabled={test} value={test ? 'off' : draft.remoteControl} onChange={(e) => set({ remoteControl: e.target.value as RemoteControlMode })}>
+            {REMOTE_CONTROL_MODES.map((m) => <option key={m} value={m}>{t(REMOTE_CONTROL_LABEL[m])}</option>)}
+          </select>
+        )}
+      </Labeled>
+      {test && <p className="small muted" role="note">{t('ui.team.remoteControl.testWorkspace')}</p>}
+      {!test && draft.remoteControl !== 'off' && <p className="small tm-assist-warn" role="note">{t('ui.team.remoteControl.warning')}</p>}
+      {!test && <p className="small muted">{t(draft.remoteControl === 'off' ? 'ui.team.remoteControl.applies.off' : 'ui.team.remoteControl.applies.agent')}</p>}
     </div>
   );
 }

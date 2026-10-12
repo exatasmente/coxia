@@ -2,9 +2,9 @@
 import type { JsonSchema } from './jsonSchema';
 import { STEP_KINDS } from '../browser';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
-import { ACTIVITIES, AGENT_KINDS, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
+import { ACTIVITIES, AGENT_KINDS, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, REMOTE_CONTROL_MODES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 34). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 35). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -296,6 +296,7 @@ const agentDef = object(
     allowedHosts: list('The hosts the agent may reach through the app\'s filtering proxy: exact lowercase names, HTTPS port 443, no wildcard or port. Not used by an agent on shell: host. Absent: none.', string('A host name.', { minLength: 3, maxLength: 253, pattern: '^[a-z0-9][a-z0-9.-]*[a-z0-9]$' }), { maxItems: 20 }),
     browserProfile: boolean('The agent\'s browser keeps its logins between uses, in a profile folder of its own in the workspace\'s data. Absent: off, a fresh profile every time.'),
     poolMode: enumOf('How the agent\'s model pool is used (fallback, switch or delegate). Absent: the stage\'s, then the workspace\'s llm.poolMode.', POOL_MODES),
+    remoteControl: enumOf('Whether the agent\'s stages show up in claude.ai/code: off, or mirror (shown there, nothing typed there reaches the session). Absent: off. A paired browser or the persona may turn it off, never on; a template never brings it; a test workspace never opens it.', REMOTE_CONTROL_MODES),
     screenPolicy: screenPolicy('The agent\'s screen step approvals; its word wins over its squad\'s and the workspace\'s. A paired browser, a template or an import never lets a kind run without asking.'),
     instructions: string('Appended to the agent system prompt (a catalog key or a literal).', { maxLength: 20_000 }),
     system: boolean('One of the five built-in agents: it can be edited and never removed.'),

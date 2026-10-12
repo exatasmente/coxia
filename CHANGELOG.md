@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **An agent's stages can show up in claude.ai/code and the Claude app, view only.** The agent editor has a Remote Control setting, off by default: "View only" shows each stage of that agent as a session in claude.ai/code, signed in with the Claude Code account of the computer, and nothing typed there (a message or Stop) reaches the session; its first message says so. The editor warns, before saving, that this goes around the paired-phone rules. Each session opened is a line in the audit log, and the run's conversation says when a stage is shown there or why it runs without it (no Claude Code credential, a test workspace, a refusal of the bridge). Only the computer turns it on: the paired phone does not see the setting and cannot raise it, the persona cannot turn it on, a test workspace never opens a session and a cycle template never carries it. There is no level that lets claude.ai/code steer a session, no choice per run, and no switch in a sessions screen yet. It relies on an alpha API of the Agent SDK. The config moves to schema 35 (the new field, absent = off).
+
 ## [0.11.0-beta.4] - 2026-10-11
 
 ### Added

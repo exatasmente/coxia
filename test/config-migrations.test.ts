@@ -1167,9 +1167,51 @@ describe('migrateConfig', () => {
       expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     });
 
-    it('is the newest step: 34 is current and 35 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(34);
-      expect(() => migrateConfig({ schemaVersion: 35 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is followed by later steps: the chain does not stop at 34', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(34);
+    });
+  });
+
+  describe('schema 34 to 35: Remote Control of an agent', () => {
+    const v34 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 34;
+      change(c);
+      return c;
+    };
+
+    it('changes only the version, leaves no note, turns it on for no agent and yields a valid file', () => {
+      const before = v34();
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect(r.fromVersion).toBe(34);
+      expect(r.changed).toBe(true);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.notes).toEqual([]);
+      expect({ ...r.config, schemaVersion: 34 }).toEqual(before);
+      expect(r.config.agents.team.some((a) => a.remoteControl !== undefined)).toBe(false);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('a second start changes nothing', () => {
+      const once = migrateConfig(v34(), { legacyInstall: false });
+      const twice = migrateConfig(structuredClone(once.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+      expect(twice.config).toEqual(once.config);
+    });
+
+    it('keeps mirror, and refuses a level that takes input from claude.ai/code: the file is invalid and loading it resets that agent', () => {
+      const ok = migrateConfig(v34((c) => (c.agents.team[0].remoteControl = 'mirror')), { legacyInstall: false });
+      expect(ok.config.agents.team[0].remoteControl).toBe('mirror');
+      expect(validateConfig(ok.config).ok).toBe(true);
+      const raw = v34((c) => (c.agents.team[0].remoteControl = 'control'));
+      expect(validateConfig({ ...raw, schemaVersion: CONFIG_SCHEMA_VERSION }).ok).toBe(false);
+      const control = migrateConfig(raw, { legacyInstall: false });
+      expect(control.config.agents.team[0].remoteControl).toBeUndefined();
+    });
+
+    it('is the newest step: 35 is current and 36 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(35);
+      expect(() => migrateConfig({ schemaVersion: 36 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

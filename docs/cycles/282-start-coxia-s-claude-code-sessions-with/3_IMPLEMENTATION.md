@@ -1,54 +1,67 @@
-# Remote Control pela API bridge: a sessão aparece e o espelho não entrega entrada
+# Etapas de um agente aparecem em claude.ai/code, só para leitura
 
-## Situação desta tentativa (3)
+## O que esta tentativa fez
 
-A revisão devolveu o trabalho ao planejamento com o veredito "mudanças". O 2_PLAN.md recebido ainda descreve a ponte como uma opção em `sdkOptions` (passo 3) e a auditoria sem o id de `createCodeSession` (passo 4). Implementar esse plano produziria código que não cumpre o critério 1. Por isso esta tentativa não mudou código, teste, configuração nem texto de interface, e não rodou nenhum portão. A etapa volta à tl-plataforma para refazer o plano.
+A tentativa anterior deixou o código no worktree, mas não atualizou este documento. Esta tentativa (6) retomou o trabalho a partir desse código.
 
-## O que foi feito antes (tentativa 2)
+Antes da correção, `npx vitest run` com o conjunto completo deu 1 falha em 8948 testes. A falha estava em `test/runs-policy.test.ts`: a regra diz que só `door.ts` pergunta ao workspace se ele é de teste, e `runner/module.ts` passava `isTestWorkspace` à porta do Remote Control.
 
-A pessoa escolheu seguir pela API `./bridge` do SDK, que é alpha, com uma sondagem com login antes do código de produto. Só essa sondagem foi feita.
+A correção: `createRemoteControlPort` (`src/main/remoteBridge.ts`) passou a ter `test` opcional, com `isTestWorkspace` como padrão, e `module.ts` não importa mais essa função.
 
-## Sondagem com login (ev-6, ev-7, ev-8)
+## Decisões tomadas na implementação
 
-- Ambiente: `@anthropic-ai/claude-agent-sdk` 0.3.287, export `./bridge`, base `https://api.anthropic.com`. O token é o OAuth que o Claude Code já guarda no computador (escopo `user:sessions:claude_code`). O script lê o token e nunca o imprime. Não foi passado token de dispositivo confiável.
-- Sequência: `createCodeSession` (título e tag) → `fetchRemoteCredentials` → `attachBridgeSession` → duas mensagens com `write()`, `sendResult()` → processo vivo por alguns minutos → `close()`.
-- Cada passo de criação foi confirmado pela pessoa antes de rodar.
+A pessoa mandou desenvolver e levar as dúvidas ao team lead. O 2_PLAN.md não foi refeito, então estas decisões ficam para a revisão confirmar:
 
-### Modo `mirror` (`outboundOnly: true`)
+1. **Token**: é a credencial OAuth que o Claude Code já guarda no computador (`~/.claude/.credentials.json`). Ela é lida quando uma sessão abre e nunca é guardada nem registrada. Se faltar ou estiver vencida, a etapa roda sem ponte.
+2. **Só o espelho**: os níveis são `off` e `mirror`, e `control` não existe no tipo nem na interface. A ponte é anexada com `outboundOnly: true`, e o que chegar por ela é descartado.
+3. **Critério 3**: a página não mostra recusa por conta própria (ev-6). A primeira mensagem de toda sessão espelhada diz que ela é somente leitura, e a entrada nunca chega à sessão. Isso é um desvio do texto literal do critério.
+4. **Falhas da ponte** (`untrusted_device`, `session_stale_relogin`, `oauth_rejected`, falta de credencial, SDK que não carrega): a etapa roda sem ponte, aparece uma linha na conversa com o motivo, e nenhuma linha vai para a auditoria.
+5. **Fim da sessão**: `close()` quando a tentativa da etapa termina, seja qual for o fim. A sessão não é arquivada.
+6. **Escopo**: só as etapas de uma execução. Chamadas, cerimônias e a persona não abrem a ponte.
+7. **Precedência**: `resolveRemoteControl` aceita um nível da execução que só pode baixar o do agente. A interface ainda não oferece a escolha por execução.
 
-- A sessão apareceu no topo de Recentes em claude.ai/code, com as duas mensagens e a marca "Conectado via Controle Remoto".
-- Uma mensagem digitada na página e o botão Parar não chegaram ao processo: 0 entradas recebidas (ev-6).
-- **A página não mostra recusa.** Ela aceita a mensagem, mostra "executando / Processando…" e só para quando alguém clica em Parar. Para o critério 3, o Coxia teria de avisar por conta própria, por exemplo com uma mensagem fixa de "somente leitura" ao abrir. Isso não foi testado.
+## O que mudou
 
-### Modo `control` (`outboundOnly: false`)
+- **Política pura**: `src/shared/remoteControl.ts` (`resolveRemoteControl`, `remoteControlRank`). Ela recusa a persona, o navegador pareado e o workspace de teste.
+- **Ponte**: `src/main/remoteBridge.ts` é o único ponto que fala com `@anthropic-ai/claude-agent-sdk/bridge`. A sequência é `createCodeSession` (com a tag `coxia`) → `fetchRemoteCredentials` → `attachBridgeSession` (só de saída) → mensagem de somente leitura. Só as mensagens `assistant`, `user` e `result` são repassadas. O módulo nunca lança erro. `createRemoteControlPort` decide, abre, faz a auditoria (deduplicada pelo id da sessão) e avisa na conversa.
+- **Motor**: `EngineRequest.mirror` em `engine/contract.ts`, um campo próprio e não `extra`. `agents.ts` repassa cada mensagem do `query()` e encerra o turno no `result`.
+- **Runner**: `executor.ts` abre a ponte antes da chamada e a fecha no `finally`. `service.ts` e `module.ts` ligam a porta.
+- **Configuração**: `AgentDef.remoteControl` e `REMOTE_CONTROL_MODES` em `types.ts`, o enum em `schema.ts`, a migração v34→v35 (o campo ausente vale `off`, e nada é gravado) e `newAgent` em `team.ts`.
+- **Fronteira**: em `configScope.ts`, `remoteControlRaised` faz parte de `refusedPaths`: o celular pareado e a persona podem desligar, nunca ligar. Em `webPolicy.ts`, `REMOTE_CONTROL_ADMIN` deixa `remoteControl:*` só no desktop. Em `cycles/apply.ts`, um modelo de ciclo nunca leva o campo.
+- **Auditoria**: o tipo `remote-control` entra em `shared/auditoria.ts`, e `Auditoria.tsx` mostra a linha.
+- **Interface**: `RemoteControlField` no editor de agente. Fica oculto no celular pareado e preso em `off` com o motivo num workspace de teste. O aviso aparece assim que "só leitura" é escolhido, antes de Salvar. Os textos estão nos catálogos `en` e `pt-BR` (ui-team, main, ui-today).
+- **Documentação**: `CHANGELOG.md` (Unreleased) e `docs/configuration.md`.
 
-- A sessão apareceu na lista.
-- A mensagem digitada na página chegou ao processo por `onInboundMessage`, e o Parar chegou por `onInterrupt` (ev-7).
-- A entrada remota passa pelo Coxia, que decide o que fazer com ela. Ela pode passar pelas aprovações do Coxia em vez de contorná-las. Isso não foi testado.
+## Testes
 
-### Outros fatos vistos
+- `test/remote-control-policy.test.ts`: o padrão `off`, a precedência e `decidedBy`, a recusa em workspace de teste, no celular pareado e na persona, a subida de nível recusada pelo `configScope` e o modelo de ciclo sem o campo.
+- `test/remote-control-bridge.test.ts`: a ponte só de saída com a tag e a mensagem de somente leitura em primeiro lugar, a entrada descartada, o filtro de mensagens, o módulo que nunca lança erro, nada aberto sem credencial, exatamente uma linha de auditoria por id e nenhuma em falha, e a leitura da credencial.
+- `test/runner-remote-control.test.ts`: a etapa entrega o espelho ao motor, fecha-o e grava uma linha. Com o nível desligado, nada é carregado.
+- `test/remote-control-ui.test.ts`: o campo desligado em workspace novo, o aviso antes de Salvar nos dois idiomas, o campo ausente no celular pareado, preso em workspace de teste, e o salvamento.
+- `test/config-migrations.test.ts`: o passo v34→v35.
 
-- A sessão continua na lista da conta depois de `close()`, marcada "Sem atividade". As duas sessões de teste não foram arquivadas.
-- Abrir pelo endereço `cse_…` às vezes não carrega a página. Pela lista, o endereço é `session_…` e carrega.
-- O seletor de modelo da página mostra "Modelo não suportado" para uma sessão criada assim.
+## Verificado nesta tentativa
 
-## O que o plano revisado precisa trazer
+- `npx vitest run` (conjunto completo, antes da correção): 545 arquivos passaram e 1 falhou (`runs-policy`), com 8943 testes passando e 1 falhando.
+- Depois da correção:
+  - `npx tsc --noEmit`: sem erro.
+  - `npx vitest run` em runs-policy, nos quatro arquivos de remote-control e em config-migrations: 6 arquivos e 157 testes passaram.
+  - `node scripts/theme-audit.mjs`: saída 0.
+  - `npm run i18n:lint`: 0 problemas.
+  - `node scripts/public-audit.mjs`: nada encontrado.
 
-- **Passo 3:** a ponte é aberta por um módulo novo no processo principal (`createCodeSession` → `fetchRemoteCredentials` → `attachBridgeSession` → `write()` de cada mensagem do `query()` → `close`), isolado atrás de uma interface mínima e testado com um fake. `EngineRequest` pode levar o nível decidido, mas não é `sdkOptions` que age.
-- **Passo 4:** a linha de auditoria e a deduplicação usam o id devolvido por `createCodeSession`.
-- **Decisões a fixar:**
-  1. de onde vem o token (credencial do Claude Code ou login próprio);
-  2. como a recusa aparece no espelho, ou a reescrita do critério 3;
-  3. se a entrada do modo `control` passa pelas aprovações do Coxia;
-  4. o que acontece em `untrusted_device`, `session_stale_relogin` e `oauth_rejected` (proposta: a etapa roda sem ponte e registra o motivo);
-  5. se as sessões são arquivadas no fim.
-- Sugeridas pela revisão: filtrar ou não o que é repassado a claude.ai; o que fazer quando a credencial do worker expira (46800 s).
-- Continuam valendo: os passos 1, 2, 5, 6 e 8.
+## Não verificado
 
-## O que não foi verificado
+- O conjunto completo de testes depois da correção (só os arquivos afetados rodaram de novo).
+- `electron-vite build`.
+- Os critérios 1 e 3 contra a conta real, com o app rodando: só a sondagem (ev-6, ev-7) os viu, fora do app.
+- A sessão no app Claude do celular.
+- A renovação da credencial do worker em etapas longas (46800 s).
+- A interface no app em execução: só o teste de componente cobre.
 
-- Se a sessão aparece no app Claude do celular.
-- A duração real da credencial do worker e a renovação com `reconnectTransport`.
-- Se outras contas vão exigir o token de dispositivo confiável.
-- Como a auditoria da #268 registra um evento que não é escrita no host de código.
-- Portões do repositório (`tsc`, `vitest`, `theme-audit`, `i18n:lint`, `public-audit`): não rodados, porque o código não mudou.
+## Fora desta entrega
+
+- O modo control, porque a entrada remota ainda não tem um caminho pelas aprovações.
+- A escolha por execução na interface: o critério 10 está coberto só pela função de resolução.
+- A tela de sessões, a retomada no terminal e a bifurcação (critério 9), que dependem da issue de sessões.
+- O arquivamento das sessões no fim.

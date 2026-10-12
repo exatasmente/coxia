@@ -5,7 +5,7 @@ import { poolFieldsOf } from '../../../../shared/config/pool';
 import { withoutLead } from '../../wizard/poolEdit';
 import { addAgent, isDraft, isPersona, isSystemId, modelPoolOf, removeAgent, stageAgent, updateAgent, workingTeam } from '../../../../shared/config/team';
 import { t } from '../../../../shared/i18n';
-import { MAX_POOL_ENTRIES, type AgentDef, type AgentModel, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type ModelOffer, type ModelPool, type ModelRef, type PoolMode, type StageDef, type WorkspaceConfig } from '../../../../shared/config/types';
+import { MAX_POOL_ENTRIES, type AgentDef, type AgentModel, type AgentPermission, type AgentShell, type AgentToolsConfig, type AgentTracker, type LlmRole, type ModelOffer, type ModelPool, type ModelRef, type PoolMode, type RemoteControlMode, type StageDef, type WorkspaceConfig } from '../../../../shared/config/types';
 import { checkFlow, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
 import type { ScreenPolicy } from '../../../../shared/config/screenPolicy';
@@ -44,6 +44,8 @@ export interface AgentDraft {
   poolMode: PoolMode | null;
   /** The agent's own screen step approvals; a kind it does not name follows its squad, then the workspace. */
   screenPolicy: ScreenPolicy;
+  /** Whether the agent's stages show up in claude.ai/code. */
+  remoteControl: RemoteControlMode;
   /** The stage ids the agent lists (the flow editor keeps them in step with the stages that name it). */
   stages: string[];
 }
@@ -77,6 +79,7 @@ export function draftOf(a: AgentDef): AgentDraft {
     browserProfile: a.browserProfile === true,
     poolMode: a.poolMode ?? null,
     screenPolicy: { ...(a.screenPolicy ?? {}) },
+    remoteControl: a.remoteControl ?? 'off',
     stages: [...a.stages],
   };
 }
@@ -133,7 +136,7 @@ export function subagentsOff(config: WorkspaceConfig, draft: Pick<AgentDraft, 'p
 }
 
 export function blankAgent(): AgentDraft {
-  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, screen: false, allowedHosts: [], browserProfile: false, poolMode: null, screenPolicy: {}, stages: [] };
+  return { id: '', name: '', job: '', instructions: '', model: { role: 'deep', provider: '', model: '' }, permission: 'read', tracker: 'none', shell: 'none', allowedCommands: [], tools: null, autonomous: false, squad: null, turnsTo: null, screen: false, allowedHosts: [], browserProfile: false, poolMode: null, screenPolicy: {}, remoteControl: 'off', stages: [] };
 }
 
 /** What is wrong with the draft on its own (the checks that need the whole team come from `teamIssues`). */
@@ -190,6 +193,8 @@ function fieldsOf(draft: AgentDraft) {
     // Inheriting is the absence of the field, not a value.
     poolMode: draft.poolMode ?? undefined,
     screenPolicy: Object.keys(draft.screenPolicy).length ? { ...draft.screenPolicy } : undefined,
+    // Off is the absence of the field, as for the screen.
+    remoteControl: draft.remoteControl === 'off' ? undefined : draft.remoteControl,
     stages: draft.stages,
   };
 }

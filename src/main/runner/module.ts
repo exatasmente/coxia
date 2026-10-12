@@ -14,6 +14,7 @@ import { callStops } from '../mentions/stop';
 import { viaOf } from '../rpc';
 import { whoNow } from '../persona/who';
 import { recordWrite } from '../auditoria';
+import { createRemoteControlPort, loadBridgeApi, readClaudeToken } from '../remoteBridge';
 import { memoryAuditEntry, type MemoryAuditInput } from '../memory/audit';
 import { attachmentStore } from '../attachments';
 import { keepConversationRecording } from '../mentions/recording';
@@ -255,6 +256,8 @@ export const runsModule: Module = (ctx) => {
     asks: askStore,
     handoff: handoffs,
     turnAsks,
+    // The bridge of claude.ai/code for the agents whose Remote Control is on: the signed-in Claude Code's credential, read when a stage opens one, never kept.
+    remoteControl: createRemoteControlPort({ token: () => readClaudeToken(HOME), api: loadBridgeApi, audit: (entry) => recordWrite(entry) }),
     // One small call to a provider whose key ran out of budget, by the sweep: it goes through the engines, so the same refusal mapping applies.
     probeBudget: async (providerId) => {
       const result = await probeProviderBudget(providerId);
