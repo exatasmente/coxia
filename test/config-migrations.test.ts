@@ -1167,9 +1167,41 @@ describe('migrateConfig', () => {
       expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
     });
 
-    it('is the newest step: 34 is current and 35 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(34);
-      expect(() => migrateConfig({ schemaVersion: 35 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is followed by later steps: the chain does not stop at 34', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(34);
+    });
+  });
+
+  describe('schema 34 to 35: stages may hand their task to a Claude Code session', () => {
+    const v34 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 34;
+      delete c.runner.claudeCodeTasks;
+      change(c);
+      return c;
+    };
+
+    it('writes the switch off, even over a stored value, touches no stage and yields a valid file', () => {
+      const before = v34((c) => (c.runner.claudeCodeTasks = true));
+      const r = migrateConfig(structuredClone(before), { legacyInstall: false });
+      expect(r.fromVersion).toBe(34);
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+      expect(r.config.runner.claudeCodeTasks).toBe(false);
+      expect(r.config.devCycle.stages).toEqual(before.devCycle.stages);
+      expect(r.config.devCycle.stages.some((s) => 'executor' in s)).toBe(false);
+      expect(validateConfig(r.config).ok).toBe(true);
+      const twice = migrateConfig(structuredClone(r.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+    });
+
+    it('only bumps a document whose runner is not an object', () => {
+      const r = migrateConfig(v34((c) => (c.runner = 'broken')), { legacyInstall: false });
+      expect(r.config.schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+    });
+
+    it('is the newest step: 35 is current and 36 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(35);
+      expect(() => migrateConfig({ schemaVersion: 36 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

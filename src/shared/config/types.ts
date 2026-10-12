@@ -4,7 +4,7 @@
 
 import type { ScreenPolicy } from './screenPolicy';
 
-export const CONFIG_SCHEMA_VERSION = 34;
+export const CONFIG_SCHEMA_VERSION = 35;
 
 /** The local state server of the workspace (a terminal session adds it over stdio): off unless the person turned it on. */
 export interface McpStateConfig {
@@ -320,6 +320,10 @@ export interface WaitFor {
 /** How many times a stage may send the work back before the run stops and asks the person. */
 export const DEFAULT_ROUND_LIMIT = 2;
 
+/** Who works a stage that has an agent: the app's own agent, or a Claude Code session the runner hands the task to (`runner.claudeCodeTasks`). */
+export const STAGE_EXECUTORS = ['agent', 'claude-code'] as const;
+export type StageExecutor = (typeof STAGE_EXECUTORS)[number];
+
 export interface StageDef {
   id: string;
   label: string;
@@ -339,6 +343,8 @@ export interface StageDef {
   testEnv?: boolean;
   /** Whether the stage gets the same virtual display a QA stage gets (sandbox or host, Xvfb with no TCP, never the person's screen). Left out: off. */
   display?: boolean;
+  /** Who works the stage. Left out: `agent`. `claude-code` runs only while `runner.claudeCodeTasks` is on; otherwise the stage is refused, never handed to the agent. */
+  executor?: StageExecutor;
   /** The agent that works this stage in a run (an `agents.team` id). It wins over the `stages` list of the agents. Work stages only. */
   agentId?: string;
   /** Files, in the cycle folder, that this stage must produce. Plain names: no folder, nothing that starts with a dot. */
@@ -1011,6 +1017,11 @@ export interface RunnerConfig {
    * computer changes it; a workspace that existed before it was added has it off (the migration). Optional: absent reads as off (`unconfinedOf`).
    */
   unconfined?: boolean;
+  /**
+   * A stage whose `executor` is `claude-code` hands its task to a Claude Code session on this machine. Off by default; only the computer changes it, and a workspace
+   * with `test: true` refuses it anyway. Optional: absent reads as off (`claudeCodeTasksOf`).
+   */
+  claudeCodeTasks?: boolean;
   /**
    * The shared, indexed memory: agents keep notes per conversation and read a short list of them wherever they run. Off: no tool, no prompt section, no folder and no
    * notice, and no agent writes; the Memory view still lists, edits and removes what exists. The computer and a paired browser change it; a workspace that existed before

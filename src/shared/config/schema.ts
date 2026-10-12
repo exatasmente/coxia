@@ -2,7 +2,7 @@
 import type { JsonSchema } from './jsonSchema';
 import { STEP_KINDS } from '../browser';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
-import { ACTIVITIES, AGENT_KINDS, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
+import { ACTIVITIES, AGENT_KINDS, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_EXECUTORS, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
 // The JSON Schema of WorkspaceConfig (schema 34). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
@@ -174,6 +174,7 @@ const stage = object(
     poolMode: enumOf('How the pool of the stage\'s agent is used here (work stages): fallback: one model, the pool only when it is busy; switch: each turn goes to the model of its activity; delegate: a fixed main model hands edit, command and screen work to sub-agents. Left out: the workspace\'s llm.poolMode.', POOL_MODES),
     testEnv: boolean('This stage receives the workspace\'s test environment (plain variables and secret references from testEnvironment). Left out: a QA stage of the current editor reads as yes, an already-saved template reads as no.'),
     display: boolean('This stage gets the same virtual display a QA stage gets (Xvfb, no TCP, never the person\'s screen). Left out: off.'),
+    executor: enumOf('Who works the stage: agent (the app\'s agent) or claude-code (a Claude Code session, only while runner.claudeCodeTasks is on; otherwise the stage is refused). Left out: agent.', STAGE_EXECUTORS),
   },
   ['id', 'kind'],
 );
@@ -598,6 +599,7 @@ export const CONFIG_SCHEMA: JsonSchema = {
         procedures: boolean('Agents keep what they learned as procedures in the workspace and read them the next time. Only the computer changes it. Off: no tool and no prompt section; the Procedures view still lists, edits and deletes. Optional: absent reads as off.'),
         flex: boolean('Calls nobody waits for (stages, questions between agents) ask for the cheaper flex tier where the provider has it and the model is marked for it. Ceremonies and mentions never do. Only the computer changes it. Optional: absent reads as on.'),
         unconfined: boolean('The file tools of a run\'s agents read, and write when the agent writes, anywhere on the machine instead of only in the run\'s worktree; .git, hook folders and secret files stay refused, and the shell\'s sandbox is not affected. Only the computer changes it. Optional: absent reads as off.'),
+        claudeCodeTasks: boolean('A stage whose executor is claude-code hands its task to a Claude Code session on this machine; a workspace with test: true refuses it anyway. Only the computer changes it. Optional: absent reads as off.'),
         sharedMemory: boolean('Agents keep notes per conversation and read a short list of the whole app\'s notes, decisions and findings wherever they run. The computer and a paired browser change it. Off: no tool, no prompt section, no folder, no notice and no agent writes; the Memory view still lists, edits and removes what exists. Optional: absent reads as off.'),
         showReasoning: boolean('The activity of the agents shows the reasoning of the model as one closed Thought line per turn, on every screen and on the paired phone. Off: none is made, stored or sent. The computer and a paired browser change it. Optional: absent reads as on.'),
         commitMessage: string('The commit message of the app\'s commits; {summary} and {iid} are replaced.', { minLength: 1, maxLength: 200 }),
