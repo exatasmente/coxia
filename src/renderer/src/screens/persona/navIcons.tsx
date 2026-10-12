@@ -43,4 +43,12 @@ export const SidebarIcon = (): ReactElement => svg('M4 4h16v16H4zM9 4v16');
 
 export const SendIcon = (): ReactElement => svg('M12 19V5M6 11l6-6 6 6', undefined, 18);
 
-export const AttachIcon = (): ReactElement => svg('M20 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8', undefined, 18);
+export const MicIcon = (): ReactElement => svg(NAV.call, undefined, 18);
+
+/** Hands-free: a microphone in a loop, it listens again after each answer. */
+export const HandsFreeIcon = (): ReactElement => svg('M12 6a2 2 0 0 1 2 2v3a2 2 0 0 1-4 0V8a2 2 0 0 1 2-2zM8.5 11a3.5 3.5 0 0 0 7 0M3 12a9 9 0 0 1 15.4-6.4M21 12a9 9 0 0 1-15.4 6.4M18.5 2.5v3h-3M5.5 21.5v-3h3', undefined, 18);
+
+/** Voice mode: the bars of a voice. */
+export const VoiceModeIcon = (): ReactElement => svg('M4 10v4M8 6v12M12 3v18M16 7v10M20 10v4', undefined, 18);
+
+export const AttachIcon =(): ReactElement => svg('M20 11.5l-8.2 8.2a5 5 0 0 1-7.1-7.1l8.5-8.5a3.3 3.3 0 0 1 4.7 4.7l-8.5 8.5a1.7 1.7 0 0 1-2.4-2.4l7.8-7.8', undefined, 18);

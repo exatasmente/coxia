@@ -38,8 +38,9 @@ export interface MentionInput {
   /**
    * The persona answering in its chat: the answer is plain Markdown (no schema, no `proposals`), told in the persona's own words instead of a thread's. `buttons`: the call
    * has `OpenScreen`, so it is told how to use it (a persona being tested has none). `tools`: it also has the eleven tools of its acts (#248), and is told how to use them.
+   * `voice`: the person said the message, and the answer will be read aloud, so it is told to answer for listening.
    */
-  persona?: { buttons: boolean; tools?: boolean };
+  persona?: { buttons: boolean; tools?: boolean; voice?: boolean };
   /** The agent is autonomous: a comment and a label change it proposes go out as soon as it answers, and it is told so. */
   autonomous?: boolean;
   /** The conversation the agent was called in and the files the message carries: the call gets the read-only attachment tool, scoped to it. */
@@ -187,6 +188,8 @@ export function mentionCall(i: MentionInput): AgentCall {
     i.persona?.buttons ? cp('runner.mention.persona.buttons') : '',
     // What it can do beyond the button: the eleven tools of its acts, or, where it has none (its test copy), that it changes nothing.
     i.persona ? (i.persona.tools ? cp('runner.mention.persona.tools') : cp('runner.mention.persona.cannot')) : '',
+    // A spoken turn is answered aloud: short, no Markdown, and a spoken "yes" never stands for a button.
+    i.persona?.voice ? cp('runner.mention.persona.voice') : '',
     // The persona talks in its own chat, not in a thread of an activity.
     i.persona ? '' : placeLine(i),
     i.shell ? shellRules(i.shell, i.screen) : '',

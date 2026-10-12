@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { AttachmentRef } from '../../../../shared/attachments';
 import { EVENTS_RECONNECTED } from '../../../../shared/activity';
-import { FORUM_EVENT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary } from '../../../../shared/forum';
+import { FORUM_EVENT, type ForumEventPayload, type ForumMessage, type MessageOrigin, type ThreadRead, type ThreadSummary } from '../../../../shared/forum';
 import { baselineSeen, markSeen, mergeMessages } from '../../../../shared/forumView';
 import { api, moduleEvents } from '../../api';
 
@@ -11,7 +11,8 @@ import { api, moduleEvents } from '../../api';
 export const forumApi = {
   list: (squad?: string) => api.invoke<ThreadSummary[]>('forum:list', squad),
   read: (thread: string, afterSeq?: number, limit?: number) => api.invoke<ThreadRead | null>('forum:read', thread, afterSeq, limit),
-  post: (thread: string, text: string) => api.invoke<ForumMessage>('forum:post', thread, text),
+  // `origin`: the person said it (the chat's microphone or voice mode), so the persona answers for listening.
+  post: (thread: string, text: string, origin?: MessageOrigin) => api.invoke<ForumMessage>('forum:post', thread, text, ...(origin ? [origin] : [])),
   create: (title: string) => api.invoke<ThreadSummary>('forum:create', title),
   // The files of a message: one call each, so the body of the RPC stays small; the message is written after the bytes are in.
   attachmentPut: (thread: string, name: string, dataBase64: string) => api.invoke<AttachmentRef>('forum:attachment-put', thread, name, dataBase64),

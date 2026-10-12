@@ -359,7 +359,7 @@ export async function answerMentions(place: MentionPlace, message: ForumMessage,
         // What the agent is told of its screen and its hosts: nothing for an agent with neither, so its prompt is what it was.
         screen: promptFor(screen, def, config.runner.sandbox, grantsFor(def), session?.gui?.display === 'on'),
         proposals: mayPropose(def, deps, place),
-        ...(persona ? { persona: { buttons: !isDraft(def) && !!deps.persona, tools: actSession !== null } } : {}),
+        ...(persona ? { persona: { buttons: !isDraft(def) && !!deps.persona, tools: actSession !== null, voice: message.origin === 'voice' } } : {}),
         autonomous: autonomyOf(config, def),
         attachments: attachments ?? undefined,
         // What the app knows of the activities: the section is text only, so no tool of the call changes and no folder of it is opened.

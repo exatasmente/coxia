@@ -8,6 +8,7 @@ import {
   MESSAGE_KINDS,
   THREAD_ID,
   THREAD_KINDS,
+  messageOrigin,
   type ArtifactRef,
   type EvidenceRef,
   type ForumDraft,
@@ -145,6 +146,7 @@ const MESSAGE: JsonSchema = {
     waitsForAnswer: { type: 'boolean' },
     answersTo: { type: 'integer', minimum: 1 },
     buttons: { type: 'array', maxItems: MAX_BUTTONS, items: BUTTON },
+    origin: { type: 'string', enum: ['voice'] },
     published: { ...publishedSchema, type: ['object', 'null'] },
   },
   required: ['v', 'type', 'seq', 'thread', 'at', 'kind', 'author', 'text', 'code', 'params', 'mentions', 'refs', 'stage', 'to', 'replyTo', 'public', 'published'],
@@ -365,6 +367,8 @@ export function createForumStore(dir: string, deps: ForumDeps = {}): ForumStore 
       // parse is dropped, never stored.
       ...(a.type === 'agent' && d.kind === 'post' && Number.isInteger(d.answersTo) && (d.answersTo as number) >= 1 ? { answersTo: d.answersTo as number } : {}),
       ...(a.type === 'agent' && d.kind === 'post' && buttonsOf(d.buttons).length ? { buttons: buttonsOf(d.buttons) } : {}),
+      // Spoken, not typed: only the person speaks to the app, and only a known origin is kept.
+      ...(a.type === 'person' && d.kind === 'post' && messageOrigin(d.origin) ? { origin: messageOrigin(d.origin) } : {}),
       published: d.published ?? null,
     };
   }

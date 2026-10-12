@@ -17,6 +17,8 @@ import { ChatHeader } from './ChatHeader';
 import { ChatThread } from './ChatThread';
 import { HomeShell } from './HomeShell';
 import { NavIcon } from './navIcons';
+import { VoiceChatControls } from './VoiceChatControls';
+import type { Player } from '../../voice/playback';
 import './chat.css';
 
 // The chat that is the home: the navigation beside it (a sheet on the phone), the header, the conversation with the persona taking the height, the ceremony bar when there is
@@ -28,6 +30,8 @@ interface Props {
   persona: AgentDef | null;
   team: readonly AgentDef[] | undefined;
   actions: ReleaseAction[];
+  /** The app's one player: the persona's spoken answers go through it, like the ceremonies'. */
+  player: Player;
 }
 
 /**
@@ -72,7 +76,7 @@ function StoppedBanner() {
   );
 }
 
-export function ChatScreen({ ceremony: c, go, persona, team, actions }: Props) {
+export function ChatScreen({ ceremony: c, go, persona, team, actions, player }: Props) {
   const t = useT();
   const cycle = useCycle();
   const { plan, onAgora } = useAgora(c, go);
@@ -94,6 +98,16 @@ export function ChatScreen({ ceremony: c, go, persona, team, actions }: Props) {
             persona={persona}
             team={team}
             onOpen={open}
+            voice={
+              <VoiceChatControls
+                thread={agentThreadId(persona.id)}
+                persona={persona}
+                player={player}
+                voice={c.voiceOfAgent(persona.id)}
+                onSettings={() => go({ name: 'settings' })}
+                onVoiceMode={() => go({ name: 'voice' })}
+              />
+            }
             above={
               <>
                 {card ? <CeremonyBar plan={card} onAction={onAgora} /> : null}

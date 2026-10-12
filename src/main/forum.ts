@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { ATTACHMENT_LIMITS, type AttachmentRef } from '../shared/attachments';
-import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, agentThreadId, isPersonaThread, mentionableIds, parseMentions, unknownMentions } from '../shared/forum';
+import { FORUM_EVENT, GENERAL_THREAD, MAX_TEXT, type ForumEventPayload, type ForumMessage, type ThreadRead, type ThreadSummary, agentThreadId, isPersonaThread, mentionableIds, messageOrigin, parseMentions, unknownMentions } from '../shared/forum';
 import { outOfCycle, personaOf, workingTeam } from '../shared/config/team';
 import { PERSON_WHO, type Who } from '../shared/runs';
 import { conversationCommand } from '../shared/plugins/calls';
@@ -47,14 +47,16 @@ export function threadAnchor(thread: string): string {
  * A person's post in a thread: `@agent` mentions are resolved against the team, and the message is internal (never mirrored by itself). A `@name` that is no agent of the team is said
  * to be unknown. Made under the persona's door (`who`), the message is the persona's, never the person's, and it calls nobody: an agent's text never calls another agent.
  */
-export function personPost(forum: ForumStore, agentIds: readonly string[], thread: unknown, text: unknown, quiet = false, who: Who = PERSON_WHO) {
+export function personPost(forum: ForumStore, agentIds: readonly string[], thread: unknown, text: unknown, quiet = false, who: Who = PERSON_WHO, origin?: unknown) {
   if (typeof thread !== 'string') throw new ForumError('bad-thread', { id: '' });
   if (typeof text !== 'string') throw new ForumError('empty');
   if (text.length > MAX_TEXT) throw new ForumError('too-long', { max: MAX_TEXT });
   // `quiet` (the persona's chat): the other agents are not addressed from there, so a `@name` stays plain text, with no mention and no note.
   // A message that calls a plugin is read as that and nothing else: it names no agent, so neither the mentions nor the runner wake on it (see calls.ts).
   const mute = quiet || who.author.type !== 'person' || conversationCommand(text) !== null;
-  const [message] = forum.append(thread, { kind: 'post', author: who.author, text: text.trim(), mentions: mute ? [] : parseMentions(text, agentIds), anchor: threadAnchor(thread) });
+  // A spoken message says so (the store keeps it only for the person's own post), so the persona answers it for listening.
+  const spoken = messageOrigin(origin);
+  const [message] = forum.append(thread, { kind: 'post', author: who.author, text: text.trim(), mentions: mute ? [] : parseMentions(text, agentIds), anchor: threadAnchor(thread), ...(spoken ? { origin: spoken } : {}) });
   const unknown = mute ? [] : unknownMentions(text, agentIds);
   if (unknown.length) forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'main.forum.mentions.unknown', params: { names: unknown.map((n) => `@${n}`).join(', ') } });
   return message;
@@ -123,11 +125,11 @@ export const forumModule: Module = (ctx) => {
     if (typeof thread !== 'string') return null;
     return forum.read(thread, typeof afterSeq === 'number' ? afterSeq : 0, typeof limit === 'number' ? limit : undefined);
   });
-  ctx.handle('forum:post', (thread: unknown, text: unknown) => {
+  ctx.handle('forum:post', (thread: unknown, text: unknown, origin?: unknown) => {
     const who = whoNow();
     const answered = interceptor && typeof thread === 'string' && typeof text === 'string' && text.trim() && text.length <= MAX_TEXT ? interceptor(thread, text, [], who) : null;
     const team = getConfig().agents.team;
-    return answered ?? personPost(forum, mentionableIds(team, typeof thread === 'string' ? thread : undefined), thread, text, isPersonaThread(team, thread), who);
+    return answered ?? personPost(forum, mentionableIds(team, typeof thread === 'string' ? thread : undefined), thread, text, isPersonaThread(team, thread), who, origin);
   });
   ctx.handle('forum:create', (title: unknown): ThreadSummary => {
     if (typeof title !== 'string') throw new ForumError('bad-title');

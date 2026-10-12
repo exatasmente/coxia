@@ -267,6 +267,7 @@
   "ui.settings.voice.bargeInLabel": "Interromper o agente quando eu falar",
   "ui.settings.voice.engineEdge": "Edge (nuvem)",
   "ui.settings.voice.engineHintEdge": "Soa mais natural, mas o texto falado vai para a Microsoft. Para nada sair da máquina, use o Kokoro.",
+  "ui.settings.voice.engineHintEdgePersona": "Isso inclui as respostas da persona lidas em voz alta no chat e no modo de voz: o texto delas também vai para a Microsoft.",
   "ui.settings.voice.engineHintKokoro": "Roda na sua máquina: nada sai dela. Soa um pouco mais robótico, e a primeira fala demora mais porque carrega o modelo.",
   "ui.settings.voice.engineKokoro": "Kokoro (local)",
   "ui.settings.voice.engineLabel": "Voz dos agentes",

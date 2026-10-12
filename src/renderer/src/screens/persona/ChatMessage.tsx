@@ -54,6 +54,7 @@ export function PersonBubble({ m, waiting, stopped = false }: { m: ForumMessage;
         </div>
         <MessageAttachments thread={m.thread} message={m.seq} refs={m.attachments} />
         {waiting && <span className="chat-waits" role="status">{t(queuedKey(stopped))}</span>}
+        {m.origin === 'voice' && <span className="chat-spoken">{t('ui.voice.chat.spoken')}</span>}
         <time className="chat-time" dateTime={m.at}>{stamp(m.at)}</time>
       </div>
     </li>
