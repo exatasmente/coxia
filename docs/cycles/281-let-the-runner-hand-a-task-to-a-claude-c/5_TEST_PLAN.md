@@ -1,53 +1,49 @@
-# Plano de testes: etapa entregue a uma sessão do Claude Code
+# Plano de testes: etapa entregue a uma sessão do Claude Code (rodada 2)
 
 ## Resultado
 
-Devolve ao desenvolvimento. `tsc`, `theme-audit`, `i18n:lint` e `public-audit` passaram. `vitest` falhou: 7 falhas nos cinco testes tocados e 12 na suíte completa (7 arquivos). Nada de interface foi exercitado (sem app em execução; o comportamento real do SDK do Claude Code não foi observado).
+Quase pronto, mas devolve ao desenvolvimento: a suíte completa tem 1 falha em 9030 (ev-7). tsc (ev-6), theme-audit, i18n:lint e public-audit (ev-5) passaram. Antes eram 12 falhas; 11 foram resolvidas. Interface não exercitada; o comportamento real do SDK do Claude Code não foi observado.
 
 ## Comandos rodados nesta etapa
 
-1. `npx tsc --noEmit`: saída 0, sem mensagens (ev-4).
-2. `npx vitest run` nos cinco testes tocados: 7 falhas, 130 passaram (ev-2).
-3. `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`: todos saída 0 (ev-1).
-4. `npx vitest run` completo: 12 falhas, 9014 passaram, 4 ignoradas (ev-3).
+1. `npx tsc --noEmit`: saída 0 (ev-6).
+2. `npx vitest run` completo: saída 1; 1 falha, 9025 passaram, 4 ignoradas (ev-7).
+3. `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`: todos saída 0 (ev-5).
 
 ## Cenários
 
-| # | Critério | O que fazer / esperar | Resultado |
-|---|---|---|---|
-| 1 | Resultado de volta | Etapa `claude-code` com sessão simulada: a resposta é o resultado da sessão. | **FALHA** (ev-2). A criação da execução é recusada: `flow.stages[4].executor: is not a known field`. |
-| 2 | Registro | Transcrição em arquivo e na thread, fora da resposta. | **FALHA** pelo mesmo motivo (ev-2). |
-| 3 | Permissão pendente | `canUseTool` pergunta pelo porto e a etapa espera. | **Passou** no teste de módulo `claude-code-task` (ev-2), com sessão simulada. Comportamento real do SDK não observado. |
-| 4 | Escrita fora do worktree | `Write` fora/`..`/link simbólico negado. | **Passou** no teste de módulo (ev-2), sessão simulada. |
-| 5 | Opção desligada | Recusa sem chamar sessão nem agente. | Guarda isolada **passou** (`claude-code-executor-guard`); o teste de ponta a ponta **FALHA** pelo motivo do cenário 1 (ev-2). |
-| 6 | Workspace de teste | Recusa com a opção ligada. | Idem 5. |
-| 7 | Celular e persona | Ligar a opção / escolher executor negado. | **Parcial.** Recusa da persona ao ligar a opção passou; os testes de escolha do executor **falham** porque o teste lê `devCycle.stages[0]`, que não existe na config neutra (suposição errada do teste, `TypeError`) (ev-2). A recusa do celular passou no teste de escopo. |
-| 8 | Falha da sessão | Etapa falha como qualquer agente. | Módulo **passou**; ponta a ponta **FALHA** (cenário 1) (ev-2). |
-| 9 | Padrão intacto | Etapa sem campo segue no agente do Coxia. | O teste do runner que cobre isso não foi apontado como falho; suíte completa sem outra falha de fluxo (ev-3). |
-| 10 | Sem `~/.claude` | Sessão simulada, `settingSources: []`. | **Passou** no teste de módulo (ev-2); só por leitura do teste que nada toca `~/.claude`. |
-| 11 | Portões do repositório | Cinco portões do AGENTS.md. | tsc, theme-audit, i18n:lint, public-audit: passam (ev-1, ev-4). vitest: **FALHA** (ev-3). |
+| # | Critério | Resultado |
+|---|---|---|
+| 1 | Resultado de volta (ponta a ponta, sessão simulada) | Passou na suíte completa (ev-7); testes de runner-claude-code-stage sem falha. |
+| 2 | Registro (transcrição fora da resposta) | Passou, idem (ev-7). |
+| 3 | Permissão pendente | Passou no teste de módulo, sessão simulada (ev-7). SDK real não observado. |
+| 4 | Escrita fora do worktree | Passou no teste de módulo (ev-7). |
+| 5 | Opção desligada | Passou (guarda e ponta a ponta) (ev-7). |
+| 6 | Workspace de teste | Passou (ev-7). |
+| 7 | Celular e persona | **FALHA** (ev-7). Os dois primeiros testes da persona passam (recusa de ligar a opção e de escolher o executor). O terceiro falha: `configuração inválida: devCycle.stages[0].executor: expected string, got undefined`. O teste baixa o executor com `executor: undefined` explícito e a validação de saveConfig recusa a chave presente com valor indefinido (por IPC real a chave seria descartada na serialização). Correção provável: o teste remover a chave (desestruturar) em vez de atribuir undefined; confirmar se o validador deve tolerar `undefined`. |
+| 8 | Falha da sessão | Passou (ev-7). |
+| 9 | Padrão intacto | Passou; sem outra falha de fluxo na suíte (ev-7). |
+| 10 | Sem `~/.claude` | Passou no teste de módulo; só por leitura que nada toca o diretório real. |
+| 11 | Portões | tsc, theme-audit, i18n:lint, public-audit passam (ev-5, ev-6); vitest falha (ev-7). |
 
-## Falhas encontradas
+## Falha bloqueante
 
-Bloqueantes:
-
-- **Esquema da execução.** `src/shared/runs/schema.ts` (bloco da etapa, ao lado de `display`, ~linha 213) não tem `executor`; `parseRun` recusa o arquivo. Toda execução cujo fluxo tenha etapa `claude-code` não inicia, mesmo com a opção ligada. Corrigir com `executor: enum ['claude-code']` e manter o hash estável. Cobre 5 testes de `runner-claude-code-stage`.
-- **Teste da persona** (`test/config-claude-code-persona.test.ts:44`): usa `getConfig().devCycle.stages[0]`, inexistente na config neutra; ajustar o teste para montar a etapa.
-- **Testes que não acompanharam o campo/opção:** `runner-config.test.ts` e `team-runner-edit.test.ts` (runner ganhou `claudeCodeTasks`, 24 campos contra 23 no esperado); `docs-schema-version.test.ts` (docs/configuration.md ainda não cita "versão do esquema 35"); `ui-i18n.test.ts` (chaves de `ui-team.en.json` fora de ordem); `runs-policy.test.ts` (`module.ts` agora também chama a pergunta de escrita externa; confirmar se é intencional e ajustar a lista ou o código).
+- `test/config-claude-code-persona.test.ts`, terceiro teste: ver cenário 7.
 
 ## Não verificado
 
-- Interface (campo Executor, botão da opção): nenhum app subido, sem teste de componente.
+- Interface (campo Executor e botão da opção): nenhum app subido, sem teste de componente.
 - Comportamento real do SDK (`canUseTool`, `deny` respeitado, `structured_output`).
-- Se as falhas de `runs-policy` e `ui-i18n` já existiam antes desta mudança: não comparado com a base; pela mensagem, decorrem desta mudança.
+- Link da transcrição na timeline, `PendingCommand.tool` e `flow-check`: fora de escopo por decisão.
 - Renumeração do passo de migração v34→v35 com a #280: fica para a integração.
 
 ## Resultado dos cenários
 
-- Portões: tsc, theme-audit, i18n:lint, public-audit: passou (executado na sandbox) — Os quatro terminaram com saída 0.
-- 1/2/8 Resultado, transcrição e falha de ponta a ponta: falhou (executado na sandbox) — A criação da execução é recusada pelo esquema do arquivo: flow.stages[4].executor não é campo conhecido. Os cinco testes de runner-claude-code-stage falham por isso.
-- 5/6 Recusa com opção desligada e workspace de teste (ponta a ponta): falhou (executado na sandbox) — A guarda isolada passa, mas os testes pelo runner falham antes, no mesmo erro do esquema.
+- 1/2/8 Resultado, transcrição e falha de ponta a ponta (sessão simulada): passou (executado na sandbox) — Testes de runner-claude-code-stage passam na suíte completa (a falha do esquema da execução foi corrigida).
 - 3/4 Permissão pendente e escrita fora do worktree (módulo): passou (executado na sandbox) — Testes de claude-code-task passam com sessão simulada; SDK real não observado.
-- 7 Celular e persona: falhou (executado na sandbox) — Dois testes do handler da persona falham por TypeError (devCycle.stages[0] indefinido na config neutra): suposição errada do teste, então a recusa do executor pela persona não foi demonstrada.
-- Suíte vitest completa: falhou (executado na sandbox) — 12 falhas em 7 arquivos: os dois acima mais runner-config, team-runner-edit, docs-schema-version, ui-i18n e runs-policy.
-- Interface: campo Executor e botão da opção: não rodou (lido) — Nenhum app subido; execuções não iniciam por causa do esquema. Sem teste de componente.
+- 5/6 Recusa com opção desligada e workspace de teste: passou (executado na sandbox) — Guarda e ponta a ponta passam.
+- 7 Celular e persona: falhou (executado na sandbox) — Recusas passam; o terceiro teste da persona falha ao salvar config com `executor: undefined` explícito (expected string, got undefined). Suposição do teste; portão vermelho.
+- 9/10 Padrão intacto e sem ~/.claude: passou (executado na sandbox) — Sem outra falha de fluxo; testes de módulo conferem opções isoladas com sessão simulada.
+- 11 Portões tsc, theme-audit, i18n:lint, public-audit: passou (executado na sandbox) — Todos saída 0.
+- Suíte vitest completa: falhou (executado na sandbox) — 1 falha, 9025 passaram, 4 ignoradas.
+- Interface: campo Executor e botão da opção: não rodou (lido) — Nenhum app subido nem teste de componente; sem comprovação.
