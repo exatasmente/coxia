@@ -28,7 +28,7 @@
 
 ## Onde o trabalho está
 
-- Passos 1 a 7 do plano implementados; revisão aprovada (rodadas 3 e 4, sem mudança de código); QA com fakes passou (191 testes do recurso, build ok); gates rodados na tentativa 2 e npm test/typecheck pelo app na integração.
+- Passos 1 a 7 implementados; revisão aprovada (rodadas 3 e 4); QA com fakes passou (191 testes do recurso, build ok, tentativa anterior); QA tentativa 5 só releu o esquema (35, `v34ToV35`), sem mudança de código.
 - Falta: quando a #282 estiver na base, renumerar para 36 (types.ts, migrations.ts, docs/configuration.md, test/config-migrations.test.ts, CHANGELOG) e rodar os cinco portões.
 - Não verificado: Claude Code real (critérios 2 a 6 e 8), tela em app aberto, esquema da #282.
 - Lacuna conhecida (sugestão): sem linha de auditoria quando send/start falha após entregar o texto ao SDK ou quando `interrupt` lança.
@@ -48,3 +48,4 @@
 - Passagem qa-plataforma-2 → integrator: QA: o esquema desta branch ainda é 35 (`v34ToV35`). Conforme a resposta da pessoa, esperar a #282 e renumerar para 36 (`CONFIG_SCHEMA_VERSION`, `v35ToV36`, types.ts, histórico em migrations.ts, docs/configuration.md, test/config-migrations.test.ts, CHANGELOG), depois rodar os gates de novo. Verificação contra o Claude Code real segue pendente. <!-- handoff:254 -->
 - Passagem integrator → developer: Veredito: devolver ao implement. Pela resposta "2882 vai primeiro", que leio como a #282 (suposição minha), esta branch precisa renumerar o esquema de 35 para 36. Nesta tentativa só reli o esquema da branch com um grep: CONFIG_SCHEMA_VERSION = 35 e STEPS termina em v34ToV35. O ajuste pedido não foi aplicado, porque esta etapa só lê. Não verifiquei CHANGELOG, base, gates, nomes de módulo, base do PR nem o esquema da #282 e da release. Cenário que falhou: Esquema: renumeração para 36 após a #282. A branch continua no 35 e o ajuste não foi aplicado. A necessidade vem da ordem dita pela pessoa, li… <!-- handoff:269 -->
 - Passagem developer → revisor-plataforma: Implementação: a pessoa respondeu "Esperar" (opção a). Esta branch fica no esquema 35 (`v34ToV35`) e o código não mudou. Quando a #282 entrar na base, trazer a base pela ferramenta de conflito, renumerar para 36 (`v35ToV36`, types.ts, histórico em migrations.ts, docs/configuration.md, test/config-migrations.test.ts, CHANGELOG) e rodar os cinco portões. Até lá, não renumerar. Verificação contra o Claude Code real segue pendente. <!-- handoff:286 -->
+- Passagem revisor-plataforma → qa-plataforma-2: Revisão rodada 4: aprovada, sem bloqueantes. Esquema 35 mantido até a #282 entrar; depois renumerar para 36 e rodar os cinco portões. Verificação contra o Claude Code real segue pendente. <!-- handoff:293 -->
