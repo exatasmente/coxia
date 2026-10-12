@@ -41,6 +41,8 @@ import { HomeShell } from './screens/persona/HomeShell';
 import { PersonaWizard } from './screens/persona/PersonaWizard';
 import { VoiceModeScreen, useVoiceShortcut } from './screens/persona/VoiceModeScreen';
 import { useConfigView } from './screens/team/teamApi';
+import { ClaudeSessionsScreen } from './screens/ClaudeSessions';
+import { useClaudeSessionsOn } from './claudeSessionsApi';
 import { JobsDock } from './JobsDock';
 import { PersonaIndicator } from './screens/persona/PersonaIndicator';
 import { UpdatePrompt } from './UpdatePrompt';
@@ -88,6 +90,7 @@ export type Screen =
   | { name: 'prompts' }
   | { name: 'schedules' }
   | { name: 'voice' }
+  | { name: 'claudeSessions' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -107,6 +110,7 @@ export function App() {
   // The persona of the workspace: whose conversation the chat is. Kept current by the configuration event.
   const { view: configView, error: configError, reload: reloadConfig } = useConfigView();
   const persona = personaIn(configView?.config);
+  const claudeOn = useClaudeSessionsOn();
   // A workspace known to have none: a notice about a ceremony opens the Overview and not the wizard (until the configuration is read the answer is "unknown", not "none").
   const noPersona = !!configView && !persona;
   // The persona was just saved: the wizard waits for the configuration that holds it, so it is not drawn again for the instant in between.
@@ -275,6 +279,10 @@ export function App() {
     case 'help':
       return <Ajuda go={go} />;
     // slot: routes of feature modules
+    case 'claudeSessions':
+      // Off, or in a paired browser, the screen does not exist.
+      if (!claudeOn) return <Overview ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} persona={persona} />;
+      return <ClaudeSessionsScreen />;
     case 'forum':
       return <ForumScreen go={go} thread={screen.thread} />;
     case 'runs':

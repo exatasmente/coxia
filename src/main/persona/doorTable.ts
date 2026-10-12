@@ -262,7 +262,7 @@ export const keyOf = (o: Pick<Op, 'tool' | 'op'>): string => `${o.tool}.${o.op}`
 /** Why a channel is not an operation: the code is in this table and the sentence is what a failing test says. */
 export const EXCLUSION_REASONS = {
   window: "the window's own plumbing: the pre-daily's turn is the renderer's, the clipboard, the tray, the saved state of the screens",
-  machine: 'it reads or changes the computer rather than the app: the projects folders it scans, the state server, the probes of the host and the sandbox',
+  machine: "it reads or changes the computer rather than the app: the projects folders it scans, the state server, the probes of the host and the sandbox, the machine's Claude Code sessions",
   update: "the app's install: an update is the person's, on their computer",
   voice: "voice and its installs: the person talks to the persona through the chat's microphone, and the persona never records, speaks or installs on its own",
   wizard: "setup, native dialogs and a screen's guided flow: a person's hands on the app's own windows",
@@ -285,6 +285,8 @@ export const EXCLUDED: Readonly<Record<string, ExclusionReason>> = Object.fromEn
   // tap, which the persona must never be able to write for them.
   ...group('window', ['feedback:discussions:open', 'feedback:discussions:opened']),
   ...group('machine', ['agents:scan', 'agents:propose', 'agents:summarize', 'agents:can-summarize', 'mcpstate:get', 'mcpstate:set-enabled', 'mcpstate:set-act', 'mcpstate:write-entry', 'vcs:probe', 'sandbox:probe']),
+  // The machine's Claude Code sessions (#280): only the person sends to them, answers their permission requests, stops or starts one.
+  ...group('machine', ['claudeSessions:enabled', 'claudeSessions:set-enabled', 'claudeSessions:list', 'claudeSessions:read', 'claudeSessions:follow', 'claudeSessions:folders', 'claudeSessions:send', 'claudeSessions:asks', 'claudeSessions:answer', 'claudeSessions:stop', 'claudeSessions:end', 'claudeSessions:start']),
   ...group('update', ['update:busy', 'update:check', 'update:flushed', 'update:info', 'update:install', 'update:run', 'update:seen', 'update:settings-save', 'update:status']),
   ...group('voice', ['voice:cancel', 'voice:check', 'voice:enable', 'voice:install', 'voice:install-cancel', 'voice:list', 'voice:plan', 'voice:segment', 'voice:status', 'voice:test', 'voice:transcribe', 'voice:uninstall']),
   ...group('wizard', [

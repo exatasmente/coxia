@@ -6,7 +6,7 @@ import { same } from '../configScope';
 // What the persona's `Settings.set` may not reach, though it reaches the rest of the configuration (#248). Each of the three is a channel the door excludes, and the same change made
 // through a path of the whole document would walk round that exclusion:
 //  - the test-only mark of a test-environment secret: the person's confirmation of a secret that is not test-only is theirs, and a persona that marks one test-only needs none;
-//  - `mcpState`, which the door excludes as the machine's (the MCP servers the computer runs);
+//  - `mcpState`, which the door excludes as the machine's (the MCP servers the computer runs), and `claudeSessions` (the machine's Claude Code sessions), for the same reason;
 //  - the persona's own entry in the team: its identity and its instructions belong to the editor (`persona:save`, `clear`, `delete`), which is excluded. Its reach (`permission`,
 //    `shell`, `tracker`, `screen`, hosts...) is not: the spec lets it change those and marks the change `raised`.
 // Pure: the refusal is worded here, and the door records it as a refused act.
@@ -18,6 +18,7 @@ export function personaSettingsRefusal(before: WorkspaceConfig, after: Workspace
   if (marked) return doorText('guard.testOnly', { ref: marked.ref });
 
   if (!same(before.mcpState, after.mcpState)) return doorText('guard.mcpState');
+  if (!same(before.claudeSessions, after.claudeSessions)) return doorText('guard.claudeSessions');
 
   const own = personaOf(before.agents.team);
   if (own) {

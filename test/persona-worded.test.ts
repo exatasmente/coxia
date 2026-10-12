@@ -415,6 +415,7 @@ describe('where the app still words a record as the person\'s', () => {
   // Every file that words something as the person's, and why that stays the person's. A file not here fails: it either takes a `who` (and goes in the plan's table) or is
   // listed with its reason.
   const LISTED: Record<string, string> = {
+    'src/main/claudeSessions/asks-core.ts': 'a Claude Code session\'s permission answer is the person\'s at the window only, as against an abort; the persona never answers one',
     'src/main/forum.ts': 'the person is the default author of personPost; the attachment message carries bytes a tool cannot, so the persona has no way to it',
     'src/main/memory/index.ts': 'the label of who edited a note read by the index: the lock is the person\'s whoever used it',
     'src/main/memory/store.ts': 'the lock against agents and the header of a note edited by the person; the persona mark is in the state beside it',

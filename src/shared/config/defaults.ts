@@ -91,6 +91,7 @@ export function neutralConfig(): WorkspaceConfig {
     plugins: neutralPlugins(),
     testEnvironment: neutralTestEnvironment(),
     mcpState: { enabled: false, act: false },
+    claudeSessions: { enabled: false },
   };
 }
 

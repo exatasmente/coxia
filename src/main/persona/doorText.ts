@@ -24,6 +24,7 @@ const TEXTS = {
   'board.noTarget': "Name the card by id, or the issue by project and iid.",
   'guard.testOnly': "The test-only mark of the test-environment secret {ref} is the person's to give: a secret that is not test-only waits for their confirmation, and that is not something to change from here.",
   'guard.mcpState': "The MCP servers switch is the computer's, not the persona's: it is not changed from here.",
+  'guard.claudeSessions': "The Claude Code sessions switch is the person's, on this computer: it is not changed from here.",
   'guard.ownEntry': "The persona's own entry in the team is not removed from here: clearing or deleting the persona is the person's.",
   'guard.ownEdit': "The persona's name, kind and instructions are edited in its editor by the person, not from here. Its reach (permission, shell, tracker, screen, hosts) can be changed.",
   'terminal.off': "The persona's tools are off for terminal sessions in this workspace. The person turns them on in the app, in Settings, under the local state server; nothing here changes that.",

@@ -44,6 +44,7 @@ const KIND: Record<AuditEntry['kind'], string | { key: string }> = {
   'auto-step': { key: 'ui.audit.kind.autoStep' },
   decision: { key: 'ui.audit.kind.decision' },
   'policy-change': { key: 'ui.audit.kind.policyChange' },
+  'claude-session': { key: 'ui.audit.kind.claudeSession' },
 };
 
 const WHO_LABEL: Record<WhoFilter, string> = { all: 'ui.audit.who.all', person: 'ui.audit.who.person', persona: 'ui.audit.who.persona', agent: 'ui.audit.who.agent' };

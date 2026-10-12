@@ -51,9 +51,9 @@ describe('the table of the persona door', () => {
   const { channels, unknown } = registered();
   const named = OPS.filter((o) => o.channel !== null).map((o) => o.channel as string);
 
-  it('finds every registration: 310 channels, and no form of registration it does not know', () => {
+  it('finds every registration: 322 channels, and no form of registration it does not know', () => {
     expect(unknown).toEqual([]);
-    expect(channels.size).toBe(310);
+    expect(channels.size).toBe(322);
     for (const channel of PERSONA_STOP_CHANNELS) expect(channels.has(channel), channel).toBe(true);
   });
 
@@ -69,9 +69,9 @@ describe('the table of the persona door', () => {
     expect(stale).toEqual([]);
   });
 
-  it('has 195 operations that wrap a channel and 115 exclusions, each with a known reason', () => {
+  it('has 195 operations that wrap a channel and 127 exclusions, each with a known reason', () => {
     expect(named).toHaveLength(195);
-    expect(Object.keys(EXCLUDED)).toHaveLength(115);
+    expect(Object.keys(EXCLUDED)).toHaveLength(127);
     for (const [channel, reason] of Object.entries(EXCLUDED)) expect(reason in EXCLUSION_REASONS, `${channel}: ${reason}`).toBe(true);
   });
 

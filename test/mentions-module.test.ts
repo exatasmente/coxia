@@ -39,6 +39,7 @@ const appContext = (): { ctx: ModuleContext; handles: string[] } => {
       handle: (channel) => void handles.push(channel),
       notify: () => undefined,
       emit: () => undefined,
+      emitWindow: () => undefined,
       job: () => undefined,
     },
   };

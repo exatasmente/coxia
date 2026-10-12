@@ -4,7 +4,7 @@ import { STEP_KINDS } from '../browser';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
 import { ACTIVITIES, AGENT_KINDS, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
-// The JSON Schema of WorkspaceConfig (schema 34). It is both what `config:schema` hands to editors and what import validates against.
+// The JSON Schema of WorkspaceConfig (schema 35). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
 
 export const ID = '^[a-z0-9][a-z0-9_-]{0,47}$';
@@ -634,6 +634,9 @@ export const CONFIG_SCHEMA: JsonSchema = {
       mcpState: object('The local state server of the workspace: a terminal session adds it over stdio. It answers the workspace\'s cycles, runs, conversations, evidence and memories, always masked; with `act` on, it also offers the persona\'s tools, which the open app runs through the persona\'s door.', {
         enabled: boolean('A terminal session with the setup entry may list the state server\'s read tools. Off: the server answers every call with the refusal.'),
         act: boolean('With `enabled` on and the app open, the terminal session may also act through the persona\'s tools, as the persona with the terminal as the door. Off: those tools are not listed.'),
+      }),
+      claudeSessions: object('The machine\'s Claude Code sessions in the desktop window: the transcripts, the running and the background sessions, with sending, permission answers, stop and start. Never offered to a paired browser or to the persona; never reads a credential or a key file.', {
+        enabled: boolean('The Claude Code sessions screen and its channels exist. Off: no screen, and every channel refuses.'),
       }),
     },
     ['schemaVersion'],

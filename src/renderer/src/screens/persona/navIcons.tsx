@@ -32,6 +32,7 @@ const NAV: Record<NavId, string> = {
   schedules: 'M4 6h16v14H4zM4 10h16M8 3v5M16 3v5M12 13v3l2 1',
   custo: 'M12 3v18M16 7h-5.5a2.5 2.5 0 0 0 0 5h3a2.5 2.5 0 0 1 0 5H7',
   auditoria: 'M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z',
+  claudeSessions: 'M4 5h16v14H4zM7 10l3 2-3 2M12 15h5',
   settings: 'M4 7h9M17 7h3M4 17h3M11 17h9M15 5v4M9 15v4',
   help: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM9.5 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4V14M12 17v.01',
 };

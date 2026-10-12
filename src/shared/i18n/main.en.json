@@ -2110,6 +2110,9 @@
   "main.mcpstate.unknownMethod": "Unknown method: {method}",
   "main.mcpstate.badToggle": "The opt-in is a boolean.",
   "main.mcpstate.actNeedsRead": "The persona's tools for a terminal session need the state server on first.",
+  "main.claudeSessions.off": "The Claude Code sessions screen is off. Turn it on in Settings.",
+  "main.claudeSessions.windowOnly": "The Claude Code sessions are reached only from the app window on this computer.",
+  "main.claudeSessions.badToggle": "The opt-in is a boolean.",
   "main.mcpstate.unavailable": "The state server cannot be spawned from this install (its built file is not a plain file node can load), so no entry is offered.",
   "main.mcpstate.badTarget": "The folder \"{path}\" is not a project folder of this workspace.",
   "main.mcpstate.mergeConflict": "The .mcp.json file of that project was left as it is: it carries an entry of the same name with a different program, or text that is not a server list."
