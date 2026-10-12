@@ -216,6 +216,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
                   ? t('ui.settings.voice.engineHintKokoro')
                   : t('ui.settings.voice.engineHintEdge')}
               </p>
+              {s.voice.engine !== 'kokoro' && <p className="small muted" style={{ marginTop: 4 }}>{t('ui.settings.voice.engineHintEdgePersona')}</p>}
             </div>
           </div>
           <label className="check-row">

@@ -39,6 +39,7 @@ import { Overview } from './screens/Overview';
 import { ChatScreen } from './screens/persona/ChatScreen';
 import { HomeShell } from './screens/persona/HomeShell';
 import { PersonaWizard } from './screens/persona/PersonaWizard';
+import { VoiceModeScreen, useVoiceShortcut } from './screens/persona/VoiceModeScreen';
 import { useConfigView } from './screens/team/teamApi';
 import { JobsDock } from './JobsDock';
 import { PersonaIndicator } from './screens/persona/PersonaIndicator';
@@ -86,6 +87,7 @@ export type Screen =
   | { name: 'memory' }
   | { name: 'prompts' }
   | { name: 'schedules' }
+  | { name: 'voice' }
   // slot: screens of feature modules (one union member each, above this line)
   ;
 
@@ -130,6 +132,7 @@ export function App() {
 
   useHelpShortcut(screen.name, go);
   usePromptsShortcut(screen.name, go);
+  useVoiceShortcut(screen.name, go, !!persona);
 
   useEffect(() => {
     startCycle();
@@ -235,9 +238,13 @@ export function App() {
           />
         );
       }
-      if (home === 'chat') return <ChatScreen ceremony={ceremony} go={go} persona={persona} team={configView?.config.agents.team} actions={actions} />;
+      if (home === 'chat') return <ChatScreen ceremony={ceremony} go={go} persona={persona} team={configView?.config.agents.team} actions={actions} player={player} />;
       return <Overview ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} section={screen.name === 'overview' ? screen.section : undefined} persona={persona} />;
     }
+    case 'voice':
+      // A spoken conversation with the persona, in the same conversation as the chat; with no persona there is nobody to talk to.
+      if (!persona) return <Overview ceremony={ceremony} go={go} pendingActions={pendingActions} actions={actions} persona={persona} />;
+      return <VoiceModeScreen persona={persona} player={player} voice={ceremony.voiceOfAgent(persona.id)} go={go} />;
     case 'call':
       return <Call ceremony={ceremony} player={player} go={go} />;
     case 'deep':

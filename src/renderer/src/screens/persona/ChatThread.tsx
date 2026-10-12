@@ -36,13 +36,15 @@ interface Props {
   onOpen?: (target: PushTarget) => void;
   /** Pinned between the conversation and the box: the ceremony card of the home. */
   above?: ReactNode;
+  /** The voice controls, drawn in the box. Never in the wizard's test copy. */
+  voice?: ReactNode;
 }
 
 /**
  * The persona's conversation: the stored messages as bubbles, the answer being written, the Work above each answer, the buttons under it, and the box. One continuous
  * conversation with no list and no new chat. The same component is the home's chat and the test of the wizard (`compact`), so a person tries exactly what they will use.
  */
-export function ChatThread({ thread, persona, team, compact = false, onOpen, above }: Props) {
+export function ChatThread({ thread, persona, team, compact = false, onOpen, above, voice }: Props) {
   const t = useT();
   const phone = useIsPhone();
   const cycle = useCycle();
@@ -132,6 +134,7 @@ export function ChatThread({ thread, persona, team, compact = false, onOpen, abo
         autoFocus={!phone && !compact}
         className="composer"
         inline
+        extra={compact ? undefined : voice}
         hint={phone ? t('ui.chat.hint.phone') : t('ui.chat.hint.desktop')}
         placeholder={phone ? t('ui.chat.placeholder.phone') : t('ui.chat.placeholder', { agent: name })}
         onSent={() => {

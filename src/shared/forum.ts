@@ -82,7 +82,17 @@ export interface ForumDraft {
   answersTo?: number | null;
   /** Where a persona's answer offers to take the person: targets of the notification vocabulary, checked again by the store. The app words the button. Only for the post of an agent. */
   buttons?: PushTarget[];
+  /** The person said it instead of typing it (the chat's microphone or voice mode). Kept only for the post of a person. */
+  origin?: MessageOrigin;
   published?: PublishedRef | null;
+}
+
+/** How a person's message came in, when it was not typed. */
+export type MessageOrigin = 'voice';
+
+/** The origin a caller passes, checked: anything but a known origin is ignored. */
+export function messageOrigin(value: unknown): MessageOrigin | undefined {
+  return value === 'voice' ? 'voice' : undefined;
 }
 
 export interface ForumMessage {
@@ -118,6 +128,8 @@ export interface ForumMessage {
   answersTo?: number;
   /** The buttons a persona's answer offers, or the discussions button another agent's answer offers; absent on every other message. */
   buttons?: PushTarget[];
+  /** A person's message that was spoken; absent on a typed one and on every message stored before the field existed. */
+  origin?: MessageOrigin;
   /** Set once the message was mirrored to the tracker. */
   published: PublishedRef | null;
 }

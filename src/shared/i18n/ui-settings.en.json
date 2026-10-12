@@ -267,6 +267,7 @@
   "ui.settings.voice.bargeInLabel": "Interrupt the agent when I talk",
   "ui.settings.voice.engineEdge": "Edge (cloud)",
   "ui.settings.voice.engineHintEdge": "Sounds more natural, but the spoken text goes to Microsoft. To keep everything on your machine, use Kokoro.",
+  "ui.settings.voice.engineHintEdgePersona": "This includes the persona's answers read aloud in the chat and in voice mode: their text goes to Microsoft too.",
   "ui.settings.voice.engineHintKokoro": "Runs on your machine: nothing leaves it. Sounds a bit more robotic, and the first speech takes longer because it loads the model.",
   "ui.settings.voice.engineKokoro": "Kokoro (local)",
   "ui.settings.voice.engineLabel": "Agents' voice",

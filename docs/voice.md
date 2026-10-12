@@ -5,13 +5,23 @@
 ## What "off" means
 
 - No sidecar process is started (`startVoice()` returns before anything happens), none is spawned by a request, and none is created behind your back: with the dependencies missing, turning voice on only works after `voice:install`.
-- No microphone UI: the mic buttons, the space shortcut, the barge-in monitor and the recorder are gone; no replay buttons; the "Voz ligada/desligada" speaker switch in the header of the chat is hidden (it is a sub-option of voice).
+- No microphone UI in the ceremonies: the mic buttons, the space shortcut, the barge-in monitor and the recorder are gone; no replay buttons; the "Voz ligada/desligada" speaker switch in the header of the chat is hidden (it is a sub-option of voice). The persona's chat keeps its voice buttons, and a tap only shows a note that points to Settings → Voz (see below); nothing records or downloads.
 - No synthesis: `voice:plan` returns nothing, the player returns at once (no reading-time wait), `voice:segment` and `voice:transcribe` refuse.
 - Every screen works by text through the composers that were always there.
 - The health panel reports the voice as "off" (not as a failure).
 - The agents are told so: see `src/main/agentVoice.ts`. The output schemas do not change; with voice off the `fala` field is just the short message the screen shows.
 
 Turning it off from Settings → Voz (or `voice:enable(false)`) stops the running sidecar without logging an error. Anything that changes the config (Settings, the wizard, an import) goes through `onConfigChange`, which starts or stops the sidecar and tells the screens (`settings` event).
+
+## Talking to the persona
+
+The renderer's audio lives in `src/renderer/src/voice/` (`audio.ts` re-exports it, so the ceremony screens did not change). The persona's chat and voice mode use it:
+
+- **Chat:** beside the box, talk (push-to-talk: tap, speak, tap again or go quiet), hands-free (listens again after each answer) and voice mode. The gate (`voiceGate.ts`) records only when voice is on, installed and the page can record; otherwise the tap shows a note (with a button to Settings on the computer; a paired phone is told to turn voice on on the computer, and a page over plain http is told that recording needs https).
+- **Voice mode** (`{ name: 'voice' }`, Ctrl/Cmd+Shift+M on the computer): full screen, hands-free from the start, state (listening, thinking, speaking, muted, paused), captions on/off, mute and end. It is the same conversation as the chat. On a paired phone a hidden page pauses it (microphone closed, speech stopped) until a tap resumes; the computer keeps listening without focus. A wake lock keeps the screen on where the browser offers one. On iOS, which has no barge-in, a button interrupts.
+- **The turn:** the transcription is posted with `forum:post(thread, text, 'voice')`; the message keeps `origin: 'voice'` and the persona's prompt gets `prompt.sdd.runner.mention.persona.voice` (short, no Markdown, announce a long action, a spoken "yes" approves nothing on screen). Only the device that posted the turn speaks the answer, sentence by sentence from the live text (`sentences.ts`, `voiceTurns.ts`, `player.sayStream`), with barge-in on while it speaks. A recording that heard no speech is dropped, never transcribed.
+- **Latency:** each turn logs one line (`voice turn latency ms: total=…`) to the developer tools' console, from the end of speech to the first word played.
+- **Privacy:** with Edge, the persona's answers read aloud go to Microsoft too; Settings → Voz says so.
 
 ## Terminology: "call" or "conversa" / "chat"
 

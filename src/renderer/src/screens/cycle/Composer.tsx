@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { AgentDef } from '../../../../shared/config/types';
 import { type AttachmentRef, ATTACHMENT_LIMITS, formatBytes } from '../../../../shared/attachments';
 import { type ForumMessage, parseMentions } from '../../../../shared/forum';
@@ -74,10 +74,12 @@ export interface ComposerProps {
   autoFocus?: boolean;
   /** One line that grows as the text does, with the attach and send buttons as icons inside it and the hint in the box's tooltip and shown, faint, under it while the box has the focus (the persona's chat). Default off. */
   inline?: boolean;
+  /** More controls drawn before the attach button of the `inline` box (the persona's voice controls); the box itself knows nothing of them. */
+  extra?: ReactNode;
 }
 
 /** The box a person writes in, with `@agent` completed from the team as they type and files attached by button, drag and drop or paste. */
-export function Composer({ thread, team, note, onSent, onSendBack, mentions = true, enterSends = false, className = '', hint, placeholder, autoFocus = false, inline = false }: ComposerProps) {
+export function Composer({ thread, team, note, onSent, onSendBack, mentions = true, enterSends = false, className = '', hint, placeholder, autoFocus = false, inline = false, extra }: ComposerProps) {
   const t = useT();
   const phone = useIsPhone();
   const [text, setText] = useState('');
@@ -279,6 +281,7 @@ export function Composer({ thread, team, note, onSent, onSendBack, mentions = tr
         )}
         {inline && (
           <>
+            {extra}
             <button type="button" className="btn icon-btn cy-inline-btn" disabled={busy} aria-label={t('ui.forum.file.attach')} title={t('ui.forum.file.attach')} onClick={() => picker.current?.click()}>
               <AttachIcon />
             </button>

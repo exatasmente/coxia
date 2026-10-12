@@ -262,7 +262,7 @@ export const EXCLUSION_REASONS = {
   window: "the window's own plumbing: the pre-daily's turn is the renderer's, the clipboard, the tray, the saved state of the screens",
   machine: 'it reads or changes the computer rather than the app: the projects folders it scans, the state server, the probes of the host and the sandbox',
   update: "the app's install: an update is the person's, on their computer",
-  voice: 'voice and its installs: voice in the chat is a later issue',
+  voice: "voice and its installs: the person talks to the persona through the chat's microphone, and the persona never records, speaks or installs on its own",
   wizard: "setup, native dialogs and a screen's guided flow: a person's hands on the app's own windows",
   screen: "the person's hands on an agent's screen: what they type there never goes through an agent",
   bytes: 'a picture or a file whose bytes a tool call cannot carry',

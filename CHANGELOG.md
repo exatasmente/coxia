@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Talk to the persona by voice, in the chat and in a voice mode.** Beside the chat's box there are three voice buttons: talk (tap, speak, tap again or go quiet to send), hands-free (it listens again after each answer) and voice mode, a full screen for a spoken conversation that also opens with Ctrl/Cmd+Shift+M. Voice mode shows whether it is listening, thinking or speaking, has captions that turn on and off, a mute and an end button, and keeps going hands-free until it is ended. What is said goes into the same conversation as the chat, marked as spoken, and the persona is told to answer short and without Markdown. The answer is read aloud by the device that spoke, starting with its first complete sentence while the rest is still being written; talking over it interrupts it. A spoken "yes" approves nothing that changes anything outside the computer: those approvals stay on screen. With the voice off or not installed, the buttons say so and lead to the voice settings; nothing records or downloads. On a paired phone, a page that cannot record says why (https, a refused permission), and voice mode pauses when the screen locks or the tab changes, until a tap resumes it. The voice settings now say that, with Edge, the persona's answers read aloud go to Microsoft too.
+
 ## [0.11.0-beta.5] - 2026-10-11
 
 ### Changed
