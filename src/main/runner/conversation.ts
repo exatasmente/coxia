@@ -442,7 +442,8 @@ async function turnOf(
     prompt: continued
       ? messageText
       : [writes ? t('main.runner.conversation.systemWrite', { called: deps.called.name, caller: deps.caller.name }) : t('main.runner.conversation.system', { called: deps.called.name, caller: deps.caller.name }), listed, messageText].filter(Boolean).join('\n\n'),
-    ...(continued ? { resume: { session: continued.session, engine: continued.engine } } : {}),
+    // `conversation` mode: the answer ends the node like any call; the default mode would leave it "started" and open a second start in the same node.
+    ...(continued ? { resume: { session: continued.session, engine: continued.engine, mode: 'conversation' as const } } : {}),
     beat: io.progress,
     schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'], additionalProperties: false },
     system: [
