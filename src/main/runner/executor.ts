@@ -2,7 +2,7 @@ import { claudeCodeTasksOf } from '../../shared/claudeCode';
 import { unconfinedOf } from '../../shared/unconfined';
 import { offersViewImage } from '../sandbox/tool';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import type { ClaudeCodeInput, ClaudeCodeResult } from './claudeCodeTask';
+import { type ClaudeCodeInput, type ClaudeCodeResult, transcriptOf } from './claudeCodeTask';
 import { basename, join } from 'node:path';
 import { docsFlowOf, flowStagesOf, releaseFlowOf, squadOf, squadsOf, turnTarget } from '../../shared/config/squads';
 import { auditPolicyOf, autonomyOf, choiceOn, flowKeyOf } from '../../shared/config/autonomy';
@@ -1241,18 +1241,27 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
         const port = d.claudeCode;
         if (!port) throw new StageError('claude-code-off');
         const asked = (question: string, signal: AbortSignal) => d.askCommand?.({ run: run.id, stage: stage.id, agent: agent.id, command: question }, signal).then((a) => ({ ok: a.decision !== 'deny', note: a.note })) ?? Promise.resolve({ ok: false });
-        const r = await port.run({ call, ask: asked, pause: watch.pause, signal: abort.signal });
-        // The record of the session stays with the stage and out of its answer; the thread says where.
+        // The record of the session stays with the stage and out of its answer, and is kept when the session fails too; the thread says where.
+        const keep = (transcript: string | undefined): void => {
+          if (transcript === undefined) return;
+          try {
+            const folder = join(d.dataDir(), 'claude-code');
+            mkdirSync(folder, { recursive: true });
+            const file = join(folder, `${run.id}-${stage.id}.txt`);
+            writeFileSync(file, transcript, 'utf8');
+            d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.claudeCode.transcript', params: { agent: agent.id, file: basename(file) }, stage: stage.id });
+          } catch (e) {
+            console.error('[runner] could not keep the transcript of a Claude Code session', e instanceof Error ? e.message : e);
+          }
+        };
         try {
-          const folder = join(d.dataDir(), 'claude-code');
-          mkdirSync(folder, { recursive: true });
-          const file = join(folder, `${run.id}-${stage.id}.txt`);
-          writeFileSync(file, r.transcript, 'utf8');
-          d.forum.append(threadId, { kind: 'system', author: { type: 'app' }, code: 'runner.claudeCode.transcript', params: { agent: agent.id, file: basename(file) }, stage: stage.id });
+          const r = await port.run({ call, ask: asked, pause: watch.pause, signal: abort.signal });
+          keep(r.transcript);
+          return r;
         } catch (e) {
-          console.error('[runner] could not keep the transcript of a Claude Code session', e instanceof Error ? e.message : e);
+          keep(transcriptOf(e));
+          throw e;
         }
-        return r;
       }),
     );
     data = firstRun.data;

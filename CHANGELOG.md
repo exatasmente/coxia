@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- A stage of a flow can hand its task to a Claude Code session and use the session's result as its answer (`executor: claude-code`). It is off by default (`runner.claudeCodeTasks`), desktop only, refused in a test workspace and denied to the paired phone and the persona. The session has no native shell, its writes stay inside the run's worktree and each permission request waits for the person. The editor field for the executor is not in the interface yet; it is set in the configuration file.
+- A stage of a flow can hand its task to a Claude Code session and use the session's result as its answer (`executor: claude-code`). It is off by default (`runner.claudeCodeTasks`), desktop only, refused in a test workspace and denied to the paired phone and the persona. The session has no native shell, its writes stay inside the run's worktree and each permission request waits for the person. The flow editor has an Executor field (visible only with the option on), the runner settings have the switch, and the session's transcript is kept apart from the answer and announced in the run's thread.
 
 ## [0.11.0-beta.6] - 2026-10-12
 

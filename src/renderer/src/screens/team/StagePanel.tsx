@@ -1,13 +1,13 @@
 import { useMemo, useState } from 'react';
 import { newAgent } from '../../../../shared/config/team';
 import { isWeb } from '../../platform';
-import { LLM_ROLES, POOL_MODES, STAGE_KINDS, STAGE_TYPES, WAIT_KINDS, type AgentDef, type LlmRole, type PoolMode, type StageDef, type StageType, type WaitKind } from '../../../../shared/config/types';
+import { LLM_ROLES, POOL_MODES, STAGE_EXECUTORS, STAGE_KINDS, STAGE_TYPES, WAIT_KINDS, type AgentDef, type LlmRole, type PoolMode, type StageDef, type StageType, type WaitKind } from '../../../../shared/config/types';
 import { ISSUE_RECORD, isWork } from '../../../../shared/runs/flow';
 import { flowIssueText, type FlowIssue } from '../../../../shared/runs/flowCheck';
 import { useT } from '../../i18n';
 import { slugOf, uniqueId } from './agentEdit';
 import { DEFAULT_ROUND, stageFieldProblems } from './flowEdit';
-import { KIND_LABEL, POOL_MODE_LABEL, TYPE_HINT, TYPE_LABEL, WAIT_LABEL } from './labels';
+import { EXECUTOR_LABEL, KIND_LABEL, POOL_MODE_LABEL, TYPE_HINT, TYPE_LABEL, WAIT_LABEL } from './labels';
 import { agentName, shown } from './text';
 import { ChipsInput, Labeled, SidePanel, Toggle } from './ui';
 
@@ -26,6 +26,8 @@ export interface StagePanelProps {
   /** The keys of the comment templates the workspace has. */
   commentKeys: string[];
   issues: FlowIssue[];
+  /** The workspace's "Hand tasks to Claude Code" option: the executor field shows, and can be chosen, only with it on. */
+  claudeCodeOn: boolean;
   onPatch: (patch: Partial<Record<keyof StageDef, unknown>>) => void;
   onRename: (id: string) => void;
   onCreateAgent: (agent: AgentDef) => void;
@@ -64,7 +66,7 @@ export function StagePanel(p: StagePanelProps) {
     if (next === type) return;
     p.onPatch({
       type: next,
-      ...(next !== 'work' ? { agentId: undefined, produces: undefined, poolMode: undefined } : {}),
+      ...(next !== 'work' ? { agentId: undefined, produces: undefined, poolMode: undefined, executor: undefined } : {}),
       ...(next === 'wait' ? { waitsFor: stage.waitsFor ?? { kind: 'pr-merged' } } : { waitsFor: undefined }),
     });
   };
@@ -151,6 +153,17 @@ export function StagePanel(p: StagePanelProps) {
             )}
           </Labeled>
         )}
+
+        {work && (p.claudeCodeOn || stage.executor === 'claude-code') && (
+          <Labeled label={t('ui.flow.f.executor')} hint={t('ui.flow.f.executorHint')}>
+            {(id) => (
+              <select id={id} className="text-input" value={stage.executor ?? 'agent'} disabled={isWeb() || !p.claudeCodeOn} onChange={(e) => p.onPatch({ executor: e.target.value === 'claude-code' ? 'claude-code' : undefined })}>
+                {STAGE_EXECUTORS.map((x) => <option key={x} value={x}>{t(EXECUTOR_LABEL[x])}</option>)}
+              </select>
+            )}
+          </Labeled>
+        )}
+        {work && !p.claudeCodeOn && stage.executor === 'claude-code' && <p className="small muted" role="note">{t('ui.flow.f.executorOff')}</p>}
 
         {work && (
           <ChipsInput

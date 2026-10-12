@@ -4,6 +4,7 @@ import { proceduresOn } from '../../../../shared/procedures';
 import { soleMaintainerOf } from '../../../../shared/release';
 import { memoryOn } from '../../../../shared/memory';
 import { reasoningOn } from '../../../../shared/activity';
+import { claudeCodeTasksOf } from '../../../../shared/claudeCode';
 import { unconfinedOf } from '../../../../shared/unconfined';
 import { MAX_READ_ONLY_PATHS, MAX_REGISTRY_HOSTS, SANDBOX_LIMIT_RANGES, isRegistryHost, readOnlyPathProblem } from '../../../../shared/sandboxPaths';
 
@@ -52,6 +53,8 @@ export interface RunnerDraft {
   flex: boolean;
   /** The file tools of a run's agents reach the whole machine, not only the run's worktree (desktop only: it lifts the fence of every run). */
   unconfined: boolean;
+  /** A stage may hand its task to a Claude Code session (desktop only: it opens a second agent that edits the worktree). */
+  claudeCodeTasks: boolean;
   /** Agents keep notes per conversation and read a short list of them wherever they run (the computer and a paired browser both change it). */
   sharedMemory: boolean;
   /** The activity shows the reasoning of the model as one closed line per turn (the computer and a paired browser both change it). */
@@ -91,6 +94,7 @@ export function draftOfRunner(r: RunnerConfig): RunnerDraft {
     procedures: proceduresOn({ runner: r }),
     flex: r.flex !== false,
     unconfined: unconfinedOf(r),
+    claudeCodeTasks: claudeCodeTasksOf(r),
     sharedMemory: memoryOn({ runner: r }),
     showReasoning: reasoningOn({ runner: r }),
     soleMaintainer: soleMaintainerOf(r),
@@ -119,6 +123,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
     procedures: d.procedures,
     flex: d.flex,
     unconfined: d.unconfined,
+    claudeCodeTasks: d.claudeCodeTasks,
     sharedMemory: d.sharedMemory,
     showReasoning: d.showReasoning,
     release: { soleMaintainer: d.soleMaintainer },
@@ -131,7 +136,7 @@ export function runnerOf(d: RunnerDraft): RunnerConfig {
  * whether the person's yes stands for a review are the stored ones whatever the draft says, because only the computer changes them (the save is refused otherwise).
  */
 export function runnerOfWeb(d: RunnerDraft, stored: RunnerConfig): RunnerConfig {
-  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', screenPolicy: { ...(stored.screenPolicy ?? {}) }, procedures: stored.procedures, flex: stored.flex, unconfined: stored.unconfined, release: stored.release && { ...stored.release }, conversations: { ...stored.conversations } };
+  return { ...runnerOf(d), worktreesDir: stored.worktreesDir, commands: stored.commands, identity: { ...stored.identity }, sandbox: structuredClone(stored.sandbox), evidence: stored.evidence ?? 'app', screenPolicy: { ...(stored.screenPolicy ?? {}) }, procedures: stored.procedures, flex: stored.flex, unconfined: stored.unconfined, claudeCodeTasks: stored.claudeCodeTasks, release: stored.release && { ...stored.release }, conversations: { ...stored.conversations } };
 }
 
 export type RunnerField = 'triggerLabel' | 'maxConcurrentRuns' | 'commands' | 'idle' | 'max' | 'turns' | 'subTurns' | 'identity' | 'commitMessage' | 'prTitle' | 'sandboxHosts' | 'sandboxPaths' | 'sandboxBrowsers' | 'sandboxLimits';

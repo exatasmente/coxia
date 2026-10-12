@@ -81,6 +81,17 @@ Além da memória do ciclo e do registro das atividades há uma **memória compa
 - **O aviso.** Uma nota que um agente guarda em outra conversa, ou um documento que a etapa de outra execução produz (quando a tentativa é aceita), avisa as execuções que não terminaram quando trata da atividade delas, é uma decisão sobre o repositório delas ou foi escrita pelo agente que as trabalha agora. O aviso é **uma linha na thread** da execução (`runner.sharedMemory.notice`, com ponteiros e sem texto); uma etapa que trabalha o recebe entre dois passos pela caixa de entrada que já entrega mensagens, e a **próxima etapa a começar** lê o que ninguém leu como a primeira seção do prompt, logo depois do bloco "por que esta tentativa roda". A linha `runner.sharedMemory.noticeRead` marca o que foi lido: na entrega, ou quando a tentativa é aceita. Nada disso toca o arquivo da execução (formato do run inalterado).
 - Desligada a chave (`runner.sharedMemory`), nada acima existe: nem seção, nem ferramenta, nem pasta, nem aviso.
 
+### Entregar a tarefa de uma etapa ao Claude Code
+
+Uma etapa de trabalho tem o campo **Executor**: "Agente do Coxia" (o padrão, sem mudança para quem não mexe) ou "Sessão do Claude Code" (`executor: claude-code`). A segunda entrega a tarefa a uma sessão do Claude Code aberta pelo Agent SDK que o app já traz, e o resultado da sessão **substitui** a resposta da etapa.
+
+- **Desligado por padrão** (`runner.claudeCodeTasks`, "Entregar tarefas ao Claude Code" nas configurações do runner). Só o desktop liga; o celular pareado e a persona não ligam a opção nem escolhem o executor. O campo só aparece, e só se escolhe, com a opção ligada.
+- **Recusa, nunca o agente do Coxia no lugar.** Com a opção desligada, ou num workspace `test: true`, a etapa falha antes de abrir qualquer coisa, com mensagem clara.
+- **As mesmas regras de qualquer agente.** Todo pedido de permissão da sessão vira um item pendente de comando para a pessoa (a etapa espera, com os relógios parados); a escrita fica dentro da worktree da execução (os mesmos hooks, mais uma checagem do caminho real, com `..` e links simbólicos); a sessão é isolada (sem `CLAUDE.md`, configurações nem memória automática do Claude Code da pessoa).
+- **Sem shell nativo.** A sessão tem leitura, busca e as ferramentas de arquivo; não tem `Bash`, porque um shell escreveria em qualquer pasta. É um limite desta primeira versão.
+- **A transcrição** (o que a sessão disse e as ferramentas que usou, com segredos mascarados) fica em `<pasta de dados>/claude-code/<execução>-<etapa>.txt`, também quando a sessão falha, e uma linha na thread da execução diz onde. Não entra na resposta. Não há ainda um link na linha do tempo da etapa.
+- **Falha:** sessão com erro, sem resultado ou com resultado vazio falha a etapa como um agente que falha. Esse executor não tem as rodadas de reparo do QA e das evidências; o agente do Coxia as mantém.
+
 ### Autonomia, escalonador e reinício
 
 - Agente **autônomo**: a etapa começa quando a execução chega nela e o resultado segue adiante sem esperar. Agente que **espera**: a etapa fica em `to-start` até a pessoa iniciar (`runs:startStage`), e o resultado fica em `to-accept` até a pessoa aceitar (`runs:accept`) ou devolver com um recado (`runs:return`). Mudar a chave (`runs:setAutonomous`) vale a partir da próxima etapa, nunca no meio de uma. Os gates não mudam.
@@ -419,6 +430,17 @@ Besides the cycle memory and the record of the activities there is a **shared, i
 - **The files of the app's `memory/` folder cannot be written with any agent's file tools**, not even with `runner.unconfined` on.
 - **The notice.** A note an agent keeps in another conversation, or a document another run's stage produces (when its attempt is accepted), notifies the runs that have not finished when it is about their activity, is a decision about their repository or was written by the agent that works them now. The notice is **a line in the run's thread** (`runner.sharedMemory.notice`, with pointers and no text); a stage that is working gets it between two steps through the mailbox that already delivers messages, and the **next stage to start** reads what nobody read as the first section of its prompt, right after the "why this attempt runs" block. The `runner.sharedMemory.noticeRead` line marks what was read: at the handover, or when the attempt is accepted. None of this touches the run's file (the run format is unchanged).
 - With the switch (`runner.sharedMemory`) off, none of the above exists: no section, no tool, no folder, no notice.
+
+### Handing a stage's task to Claude Code
+
+A work stage has the **Executor** field: "App's agent" (the default, nothing changes for whoever leaves it) or "Claude Code session" (`executor: claude-code`). The second hands the task to a Claude Code session opened through the Agent SDK the app already ships, and the session's result **replaces** the stage's answer.
+
+- **Off by default** (`runner.claudeCodeTasks`, "Hand tasks to Claude Code" in the runner settings). Only the desktop turns it on; the paired phone and the persona neither turn the option on nor choose the executor. The field shows, and can be chosen, only with the option on.
+- **Refused, never the app's agent in its place.** With the option off, or in a `test: true` workspace, the stage fails before anything is opened, with a clear message.
+- **The same rules as any agent.** Every permission request of the session becomes a pending command item for the person (the stage waits, its clocks stopped); writes stay inside the run's worktree (the same hooks, plus a check of the real path, `..` and symbolic links included); the session is isolated (none of the person's Claude Code `CLAUDE.md`, settings or automatic memory).
+- **No native shell.** The session has read, search and the file tools; it has no `Bash`, because a shell would write to any folder. It is a limit of this first version.
+- **The transcript** (what the session said and the tools it used, secrets masked) is kept in `<data folder>/claude-code/<run>-<stage>.txt`, also when the session fails, and a line in the run's thread says where. It is not part of the answer. There is no link in the stage's timeline yet.
+- **Failure:** a session that errors, ends with no result or an empty one fails the stage like a failing agent. This executor has no QA or evidence repair rounds; the app's agent keeps them.
 
 ### Autonomy, the scheduler and restarts
 

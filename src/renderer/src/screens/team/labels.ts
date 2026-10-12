@@ -1,7 +1,7 @@
 import type { SitesRefusal } from '../../../../shared/browser';
 import type { AssistField } from '../../../../shared/agentAssist';
 import type { SandboxGuiStatus, SandboxReason } from '../../../../shared/sandbox';
-import type { AgentPermission, PoolMode, SandboxNetwork, AgentShell, AgentTracker, CommentEventKey, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
+import type { AgentPermission, PoolMode, SandboxNetwork, AgentShell, AgentTracker, CommentEventKey, StageExecutor, StageKind, StageType, WaitKind } from '../../../../shared/config/types';
 import type { AssistStep } from './assistEdit';
 import type { TeamTab } from './teamNav';
 
@@ -25,6 +25,7 @@ export const PERMISSION_HINT: Record<AgentPermission, string> = {
   worktree: 'ui.team.permission.worktree.hint',
 };
 
+export const EXECUTOR_LABEL: Record<StageExecutor, string> = { agent: 'ui.flow.f.executorAgent', 'claude-code': 'ui.flow.f.executorClaudeCode' };
 export const POOL_MODE_LABEL: Record<PoolMode, string> = { fallback: 'ui.team.poolMode.fallback', switch: 'ui.team.poolMode.switch', delegate: 'ui.team.poolMode.delegate' };
 export const POOL_MODE_HINT: Record<PoolMode, string> = { fallback: 'ui.team.poolMode.fallback.hint', switch: 'ui.team.poolMode.switch.hint', delegate: 'ui.team.poolMode.delegate.hint' };
 

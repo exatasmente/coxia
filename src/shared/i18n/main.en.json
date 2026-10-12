@@ -1376,7 +1376,7 @@
   "main.forum.code.runner.qa.commands": "Before QA the app ran in the worktree: {list}.",
   "main.forum.code.runner.qa.notRun": "These commands could not run, which says nothing about the code: {list}. QA was told to mark as not run anything that depends on them.",
   "main.forum.code.runner.claudeCode.transcript": "{agent}'s task ran in a Claude Code session. Its transcript is kept as the stage's record ({file}) and is not part of the answer.",
-  "main.forum.code.runner.qa.repair":"These scenarios were claimed as executed without a command of the stage backing them: {names}. QA was asked once to keep the evidence it looked at, point at the command behind each one, or say it was only read.",
+  "main.forum.code.runner.qa.repair": "These scenarios were claimed as executed without a command of the stage backing them: {names}. QA was asked once to keep the evidence it looked at, point at the command behind each one, or say it was only read.",
   "main.forum.code.runner.qa.unbacked": "Scenario claimed as executed and not backed by any command of the stage, so recorded as only read: {name}.",
   "main.forum.code.runner.qa.evidenceRepair": "These scenarios were concluded without evidence kept by the stage: {names}. QA was asked once to keep it with SaveEvidence and cite the id it got back before the stage fails.",
   "main.forum.code.runner.qa.lookKept": "The agent looked at {count} image(s) of this stage and kept none of them, so the app kept them as evidence of the stage before the sandbox went away.",

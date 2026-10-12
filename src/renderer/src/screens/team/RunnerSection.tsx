@@ -3,6 +3,7 @@ import type { RunnerConfig, SandboxNetwork } from '../../../../shared/config/typ
 import { SANDBOX_LIMIT_RANGES } from '../../../../shared/sandboxPaths';
 import { proceduresOn } from '../../../../shared/procedures';
 import { soleMaintainerOf } from '../../../../shared/release';
+import { claudeCodeTasksOf } from '../../../../shared/claudeCode';
 import { unconfinedOf } from '../../../../shared/unconfined';
 import { isFlowCycle } from '../../../../shared/runs/flow';
 import { errorText } from '../../api';
@@ -200,6 +201,8 @@ export function RunnerSection({ config, save }: SectionProps) {
           <p className="small muted">{t('ui.runner.flexHint')}</p>
           <Toggle checked={draft.unconfined} onChange={(unconfined) => set({ unconfined })} label={t('ui.runner.unconfined')} />
           <p className="small muted">{t('ui.runner.unconfinedHint')}</p>
+          <Toggle checked={draft.claudeCodeTasks} onChange={(claudeCodeTasks) => set({ claudeCodeTasks })} label={t('ui.runner.claudeCodeTasks')} />
+          <p className="small muted">{t('ui.runner.claudeCodeTasksHint')}</p>
         </>
       )}
 
@@ -241,6 +244,8 @@ function WebOnComputer({ runner }: { runner: RunnerConfig }) {
       <dd className="small">{t(runner.flex === false ? 'ui.runner.flexOff' : 'ui.runner.flexOn')}</dd>
       <dt className="wz-label">{t('ui.runner.unconfined')}</dt>
       <dd className="small">{t(unconfinedOf(runner) ? 'ui.runner.unconfinedOn' : 'ui.runner.unconfinedOff')}</dd>
+      <dt className="wz-label">{t('ui.runner.claudeCodeTasks')}</dt>
+      <dd className="small">{t(claudeCodeTasksOf(runner) ? 'ui.runner.claudeCodeTasksOn' : 'ui.runner.claudeCodeTasksOff')}</dd>
       <dt className="wz-label">{t('ui.runner.evidence')}</dt>
       <dd className="small">{t(runner.evidence === 'cycle' ? 'ui.runner.evidenceCycle' : 'ui.runner.evidenceApp')}</dd>
     </dl>

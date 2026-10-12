@@ -97,25 +97,33 @@ export async function runClaudeCodeTask(deps: ClaudeCodeDeps, input: ClaudeCodeI
     },
   };
   let sessionId: string | null = null;
-  for await (const m of query({ prompt: call.prompt, options })) {
-    call.beat?.();
-    if (m.session_id) sessionId = m.session_id;
-    if (m.type === 'assistant' && Array.isArray(m.message?.content)) {
-      for (const block of m.message.content as { type: string; text?: string; name?: string; input?: unknown }[]) {
-        if (block.type === 'text' && block.text) say(block.text);
-        if (block.type === 'tool_use' && block.name) say(lineOf(block.name, block.input));
+  try {
+    for await (const m of query({ prompt: call.prompt, options })) {
+      call.beat?.();
+      if (m.session_id) sessionId = m.session_id;
+      if (m.type === 'assistant' && Array.isArray(m.message?.content)) {
+        for (const block of m.message.content as { type: string; text?: string; name?: string; input?: unknown }[]) {
+          if (block.type === 'text' && block.text) say(block.text);
+          if (block.type === 'tool_use' && block.name) say(lineOf(block.name, block.input));
+        }
       }
+      if (m.type !== 'result') continue;
+      const transcript = lines.join('\n');
+      if (m.subtype !== 'success' || m.is_error) throw new Error(`agent failed: ${redact(clip(m.result ?? `agent ended with ${m.subtype ?? 'no result'}`, 600))}`); // i18n-ignore: developer error from the SDK result
+      if (call.schema) {
+        if (m.structured_output == null) throw new Error('agent ended without a result'); // i18n-ignore: developer error from the SDK result
+        return { data: m.structured_output, sessionId, engine: 'claude-sdk', transcript };
+      }
+      const said = (m.result ?? '').trim();
+      if (!said) throw new Error('agent ended without a result'); // i18n-ignore: developer error from the SDK result
+      return { data: { summary: said }, sessionId, engine: 'claude-sdk', transcript };
     }
-    if (m.type !== 'result') continue;
-    const transcript = lines.join('\n');
-    if (m.subtype !== 'success' || m.is_error) throw new Error(`agent failed: ${redact(clip(m.result ?? `agent ended with ${m.subtype ?? 'no result'}`, 600))}`); // i18n-ignore: developer error from the SDK result
-    if (call.schema) {
-      if (m.structured_output == null) throw new Error('agent ended without a result'); // i18n-ignore: developer error from the SDK result
-      return { data: m.structured_output, sessionId, engine: 'claude-sdk', transcript };
-    }
-    const said = (m.result ?? '').trim();
-    if (!said) throw new Error('agent ended without a result'); // i18n-ignore: developer error from the SDK result
-    return { data: { summary: said }, sessionId, engine: 'claude-sdk', transcript };
+    throw new Error('agent ended without a result'); // i18n-ignore: developer error from the SDK result
+  } catch (e) {
+    // A session that fails still leaves its record: the stage keeps it from the error it throws.
+    throw Object.assign(e instanceof Error ? e : new Error(String(e)), { transcript: lines.join('\n') });
   }
-  throw new Error('agent ended without a result'); // i18n-ignore: developer error from the SDK result
 }
+
+/** The record a failed session left, carried by the error it threw. */
+export const transcriptOf = (e: unknown): string | undefined => (typeof e === 'object' && e !== null && typeof (e as { transcript?: unknown }).transcript === 'string' ? (e as { transcript: string }).transcript : undefined);

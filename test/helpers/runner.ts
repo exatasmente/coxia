@@ -365,6 +365,8 @@ export interface BootOptions {
   offers?: RunnerDeps['offers'];
   /** The limit of a stage's last turn, in ms. */
   procedureTurnMs?: number;
+  /** The port to a Claude Code session of a stage whose executor says so (a fake of the test's); none by default. */
+  claudeCode?: RunnerDeps['claudeCode'];
 }
 
 /** The workspace config of the tests: the agent cycle on a workspace with one repository, a project of issues and the identity the app commits as. */
@@ -419,6 +421,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     noticeMergeMs: options.noticeMergeMs,
     offers: options.offers,
     procedureTurnMs: options.procedureTurnMs,
+    claudeCode: options.claudeCode,
   };
   if (options.publish) {
     const { createPublisher } = await import('../../src/main/runner/publish');

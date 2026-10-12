@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { claudeCodeTasksOf } from '../../../../shared/claudeCode';
 import { squadsOf } from '../../../../shared/config/squads';
 import type { AgentDef, StageDef, StageType } from '../../../../shared/config/types';
 import { flowOf } from '../../../../shared/runs/flow';
@@ -317,6 +318,7 @@ export function FlowEditor({ config, save, squad }: SectionProps & { squad?: str
                 takenIds={[...config.agents.team, ...draft.newAgents].map((a) => a.id)}
                 commentKeys={commentKeys}
                 issues={checks.rows}
+                claudeCodeOn={claudeCodeTasksOf(config.runner)}
                 onPatch={(patch) => edit(patchStage(stages, current.id, patch))}
                 onRename={(to) => rename(current.id, to)}
                 onCreateAgent={(a) => change({ ...draft, newAgents: [...draft.newAgents, a] })}

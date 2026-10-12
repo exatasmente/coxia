@@ -1,32 +1,32 @@
-# Sessão do Claude Code ligada ao executor da etapa
+# Sessão do Claude Code: executor, interface, testes de ponta a ponta e documentação
 
 ## Estado
 
-O módulo da sessão existe e está ligado ao executor e à produção. Continuam por fazer a interface (campo Executor, botão da opção, transcrição na timeline), a documentação em `docs/` e `flow-check` rejeitando `claude-code` em etapa sem agente. **Nenhum comando foi rodado nesta tentativa** (tsc, vitest, theme-audit, i18n:lint, public-audit): tudo abaixo é leitura e escrita de código, não verificado por execução.
+O módulo da sessão, a guarda, a recusa do celular e da persona, a interface do campo e da opção, a documentação e os testes de ponta a ponta estão escritos. **Nenhum comando foi rodado** (esta etapa não tem shell): `npx tsc --noEmit`, `npx vitest run`, `node scripts/theme-audit.mjs`, `npm run i18n:lint` e `node scripts/public-audit.mjs` são **não verificados**. Tudo abaixo é leitura e escrita de código.
 
-## O que mudou nesta tentativa
+## O que mudou nesta rodada (devolução da revisão 3)
 
-- `src/main/runner/claudeCodeTask.ts` (novo): `runClaudeCodeTask(deps, input)` abre a sessão pelo Agent SDK (`query` injetável). Opções: `permissionMode: 'default'`, `settingSources: []`, `settings.autoMemoryEnabled: false`, `disallowedTools` com `Bash`, `WebFetch`, `WebSearch`, `NotebookEdit` e `SECRET_READ_DENY`, `hooks` = os `call.confine.hooks` da própria etapa (a cerca da worktree), `outputFormat` quando há schema, `maxTurns` da chamada. `canUseTool`: para `Edit`/`Write`/`MultiEdit`/`NotebookEdit` repete `checkPath` (resolve link simbólico e `..`) e nega sem perguntar; senão pausa o relógio, pergunta à pessoa e devolve `allow` ou `deny` com a nota; com a etapa abortada, nega. O texto de `result` vira `data = { summary }` (ou o `structured_output` com schema); `is_error`, subtipo diferente de `success`, resultado vazio ou fim sem resultado lançam erro como um agente que falha. A transcrição (texto e linhas de ferramenta, passadas por `redact`) volta à parte.
-- `src/main/runner/executor.ts`: `ExecutorDeps.claudeCode = { test(); run(input) }`. O ramo da chamada principal usa `d.claudeCode.run` no lugar de `d.engine` (nunca cai no agente do Coxia; sem porta, `claude-code-off`). A pergunta de permissão usa o `askCommand` existente (texto `Ferramenta: caminho`). A transcrição é gravada em `<dataDir>/claude-code/<run>-<stage>.txt` e uma mensagem do app (`runner.claudeCode.transcript`) a anuncia na conversa. Rodadas de reparo (QA sem comando, evidência, documentos faltantes) são puladas para esse executor.
-- `src/main/runner/service.ts` e `module.ts`: `RunnerDeps.claudeCode` repassado ao executor; na produção usa `isTestWorkspace`, `loadClaudeQuery`, `claudeSdkEnv(rc().agentModel(...))` e `claudeExecutable`.
-- `src/main/configScope.ts` e `configModule.ts`: `claudeCodeRaised` (liga a opção ou escolhe o executor) recusada em `config:save` quando a chamada é da persona (`byPersona()`), com a mensagem `main.config.webScope`.
-- `src/shared/i18n/main.en.json` e `main.pt-BR.json`: `main.forum.code.runner.claudeCode.transcript`.
-- `CHANGELOG.md` (`Unreleased`): entrada, dizendo que o campo ainda não está na interface.
-- Testes: `test/claude-code-task.test.ts` (novo, sessão simulada, tmp dirs, nada de `~/.claude`): resultado e transcrição à parte, schema, falhas (erro, `is_error`, vazio, sem resultado), opções isoladas e sem `Bash`, permissão pendente com relógio pausado e recusa com nota, escrita fora por `..` e link e caminho absoluto negada sem perguntar, etapa abortada. `test/claude-code-executor-guard.test.ts` ajustado ao novo formato da porta e com o teste de `claudeCodeRaised`.
+- **Transcrição também na falha** (`src/main/runner/claudeCodeTask.ts`, `executor.ts`): `runClaudeCodeTask` anexa o texto acumulado ao erro que lança (`transcriptOf(e)`); o ramo do executor grava o arquivo e a mensagem da thread tanto no sucesso quanto no erro.
+- **Teste do `executeStage` com `claude-code`** (`test/runner-claude-code-stage.test.ts`, novo; `test/helpers/runner.ts` ganhou a opção `claudeCode` do `boot`): porta de sessão simulada, fluxo inteiro do runner. Cobre: a sessão roda e `d.engine` nunca roda para o desenvolvedor, e o resultado aparece na thread no lugar da resposta do agente (critérios 1 e 9); transcrição em arquivo + mensagem `runner.claudeCode.transcript`, fora das mensagens do agente (critério 2); falha da sessão deixa a execução `failed` com a mensagem e ainda grava a transcrição (critério 8); opção desligada e workspace de teste falham com a mensagem clara, sem chamar a porta nem o agente (critérios 5 e 6); etapa sem executor ou com `agent` segue no agente do Coxia com a opção ligada (critério 9).
+- **Teste do handler da persona** (`test/config-claude-code-persona.test.ts`, novo): `config:save` pela porta da persona (`invokePersona` dentro de um ato aberto) é negado ao ligar `runner.claudeCodeTasks` e ao escolher `executor`, sem mudar a configuração guardada; a janela da pessoa liga e escolhe; a persona pode baixar os dois (critério 7).
+- **Teste do erro com transcrição** em `test/claude-code-task.test.ts`; formatação de `withExecutor` em `test/claude-code-executor-guard.test.ts` corrigida.
+- **Interface:** `StagePanel.tsx` (campo Executor para etapas de trabalho, só visível com a opção ligada ou quando a etapa já está em `claude-code`; desabilitado com a opção desligada e no navegador pareado; aviso quando a opção está desligada e a etapa já usa Claude Code), `FlowEditor.tsx` (passa `claudeCodeOn`), `labels.ts` (`EXECUTOR_LABEL`), `RunnerSection.tsx` e `runnerEdit.ts` (botão "Entregar tarefas ao Claude Code", só no desktop; no navegador pareado aparece só leitura e o valor guardado é mantido). Chaves em `ui-team.en.json` e `ui-team.pt-BR.json`. Mudar o tipo da etapa para não trabalho limpa o `executor`.
+- **Documentação:** seção nova em `docs/runner.md` (pt-BR e en) e o CHANGELOG atualizado.
+- **Ruído de diff:** o espaço depois dos dois-pontos em `main.forum.code.runner.qa.repair` voltou nos dois catálogos principais.
 
-## Do que já existia (passos anteriores)
+## Do que já existia
 
-Esquema e migração v34→v35, `claudeCodeTasksOf`, `FlowStage.executor` só quando `claude-code`, `guardExecutor` (`claude-code-off`, `claude-code-test`), `executorRaised` para o celular e seus testes.
+Esquema e migração v34→v35, `claudeCodeTasksOf`, `FlowStage.executor` só quando `claude-code`, `guardExecutor`, `executorRaised` e `claudeCodeRaised`, o módulo da sessão e a fiação em `service.ts` e `module.ts`, e os testes de módulo.
 
 ## Não feito
 
-- Interface: campo Executor no editor do fluxo, botão em `RunnerSection`, transcrição no detalhe da etapa (`runs:claudeTranscript` não foi criado; a transcrição é arquivo e mensagem da conversa), chaves i18n da interface. O critério 2 ("transcrição disponível como detalhe") está atendido só pelo arquivo e pela mensagem, não por um link na tela.
-- Documentação em `docs/` (opção, campo, limites: sem shell nativo).
-- `PendingCommand.tool`: a ferramenta vai dentro do texto da pergunta.
-- `flow-check` rejeitando `claude-code` em etapa sem agente.
-- Teste de integração do ramo do executor (etapa `claude-code` com `query` falso pelo `executeStage`, critérios 1, 5, 6, 8 e 9 de ponta a ponta) e teste da recusa da persona pelo handler.
-- Confirmar: se `config:save` recebe a configuração inteira também quando vem pela porta da persona (`Settings.set` com path/valor); a guarda foi posta no handler por isso, mas o encaminhamento da persona não foi lido.
+- Link da transcrição no detalhe da etapa (`StageTimeline.tsx`) e canal `runs:claudeTranscript`: a transcrição fica em arquivo e na mensagem da thread. O critério 2 vale por esses dois, não por um link na tela.
+- `PendingCommand.tool`: a ferramenta vai no texto da pergunta.
+- `flow-check` rejeitando `executor` em etapa sem agente (o campo é ignorado nelas; a interface o limpa ao trocar o tipo).
+- Teste de componente do `StagePanel` com a opção desligada (critério 5 na interface): a visibilidade é uma condição no componente, sem teste automatizado.
 
 ## Verificação
 
-Não rodados, portanto não verificados: `npx tsc --noEmit`, `npx vitest run` (em especial `test/claude-code-task.test.ts`, `test/claude-code-executor-guard.test.ts`, `test/config-migrations.test.ts`), `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`. Pontos de tipo a conferir no tsc: o retorno `firstRun` agora é a união do motor e do resultado da sessão; o cast de `loadClaudeQuery` em `module.ts`; o tipo das opções em `claudeCodeTask.ts`; o mock de `AgentCall` nos testes; chaves `main.forum.code.*` talvez exigirem registro de código em outro lugar.
+Não rodados, portanto não verificados: `npx tsc --noEmit`, `npx vitest run` (em especial `test/runner-claude-code-stage.test.ts`, `test/config-claude-code-persona.test.ts`, `test/claude-code-task.test.ts`, `test/claude-code-executor-guard.test.ts`, `test/config-migrations.test.ts` e os testes de `runnerEdit`), `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`.
+
+Pontos que a execução deve conferir primeiro: o id da etapa `implement` e o agente `developer` no fluxo de engenharia do `boot`; se o texto da resposta da sessão aparece na thread como o teste assume; `dataDir` do executor ser a pasta `b.dir` do `boot`; `runAct`/`invokePersona` devolverem a rejeição do handler como o teste assume; teste de chaves i18n não usadas ou de cobertura dos dois catálogos para as chaves novas; tipos de `firstRun` e do cast de `loadClaudeQuery`.

@@ -7,7 +7,7 @@ import { TEST_STAGES } from './helpers/config';
 
 const port = (test: boolean) => ({ test: () => test, run: async () => Promise.reject(new Error('no session in a guard test')) });
 
-const withExecutor =(executor: 'claude-code' | 'agent' | undefined) => {
+const withExecutor = (executor: 'claude-code' | 'agent' | undefined) => {
   const c = structuredClone(neutralConfig());
   c.devCycle.stages = [{ ...structuredClone(TEST_STAGES[0]), executor }];
   return c;

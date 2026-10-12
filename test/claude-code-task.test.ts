@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { AgentCall } from '../src/main/agents';
-import { type ClaudeCodeDeps, runClaudeCodeTask } from '../src/main/runner/claudeCodeTask';
+import { type ClaudeCodeDeps, runClaudeCodeTask, transcriptOf } from '../src/main/runner/claudeCodeTask';
 
 // A session simulated by a function that plays the SDK's messages: nothing real is opened and nothing of the person's Claude Code is read.
 type Canned = (options: { canUseTool: (tool: string, input: Record<string, unknown>) => Promise<{ behavior: string; message?: string }>; [k: string]: unknown }) => AsyncGenerator<Record<string, unknown>>;
@@ -64,6 +64,16 @@ describe('a task handed to a Claude Code session', () => {
       yield message;
     };
     await expect(runClaudeCodeTask(depsOf(play), { call: callOf(), ask: async () => ok, pause, signal: new AbortController().signal })).rejects.toThrow();
+  });
+
+  it('carries what the session said on the error of a session that fails', async () => {
+    const play: Canned = async function* () {
+      yield { type: 'assistant', session_id: 's', message: { content: [{ type: 'text', text: 'half way' }] } };
+      yield { type: 'result', subtype: 'error_during_execution', result: 'boom' };
+    };
+    const e = await runClaudeCodeTask(depsOf(play), { call: callOf(), ask: async () => ok, pause, signal: new AbortController().signal }).catch((x: unknown) => x);
+    expect(transcriptOf(e)).toContain('half way');
+    expect(transcriptOf(new Error('plain'))).toBeUndefined();
   });
 
   it('fails when the session ends with no result', async () => {
