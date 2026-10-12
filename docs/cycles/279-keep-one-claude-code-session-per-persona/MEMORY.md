@@ -12,8 +12,8 @@
 - `Run.provider` diz o provedor que respondeu; é o que se guarda.
 - Prompt com sessão retomada: só seq > upTo (menos a atual), seção `runner.section.threadSince`. Sessão guardada só após a resposta postada.
 - `extra.resume` só no modo `conversation`.
-- Revisão: aprovado, sem bloqueantes.
-- QA (tentativa 1): 5_TEST_PLAN.md com 10 cenários, todos passam.
+- Revisão: aprovado, sem bloqueantes. QA: 10 cenários passam.
+- Integração: pronto para o PR. Sem mudança de esquema (CONFIG_SCHEMA_VERSION 34 igual à release), CHANGELOG em Unreleased › Changed.
 
 ## Restrições
 
@@ -22,6 +22,7 @@
 - Motor `open` mantém o comportamento atual.
 - Gates do AGENTS.md: tsc, vitest, theme-audit, i18n:lint, public-audit (+ electron-vite build no CI).
 - O teste de catálogo exige `cp('chave literal')`.
+- Uma pasta `out/` deixada por um build faz o `public-audit.test` falhar; apagar antes de rodar a suíte.
 
 ## Tentado e descartado
 
@@ -32,16 +33,19 @@
 
 ## Perguntas abertas
 
-- Não verificado: erro real do SDK/CLI para sessão removida; compactação do CLI; contagem de sessões em disco real (critério 1); suíte completa nesta etapa.
-- Sugestões da revisão (não bloqueiam): o `catch` de `runClaudeSdk` trata qualquer erro pré-saída como sessão perdida (pode dobrar tentativa em erro de rede); respostas simultâneas na mesma conversa sem trava; prompt de reserva montado a cada resposta retomada.
+- Não verificado: erro real do SDK/CLI para sessão removida; compactação do CLI; contagem de sessões em disco real (critério 1): conferência manual com o Claude Code logado.
+- Não verificado: se as 4 falhas de navegador (`@playwright/mcp` ausente no ambiente) também ocorrem na release; lista dos outros PRs abertos para a release.
+- Sugestões da revisão (não bloqueiam): o `catch` de `runClaudeSdk` trata qualquer erro pré-saída como sessão perdida; respostas simultâneas sem trava; prompt de reserva montado a cada resposta retomada.
 - Achado para outra issue: a rodada de reparo da QA (`executor.ts` ~731) envia só o texto da rodada, sem a sessão anterior.
 
 ## Onde o trabalho está
 
-- Implementação feita e revisada. QA: 157 testes de sessão e regressão passam; tsc, theme-audit, i18n:lint, public-audit e electron-vite build passam (ev-2, ev-3, ev-4).
-- Próximo: integração/PR, com a conferência manual com o Claude Code logado, se possível. Relacionadas: #262, #275.
+- Integração concluída (7_INTEGRATION.md, ev-5): tsc, theme-audit, i18n:lint, public-audit e electron-vite build saem com 0; vitest: só 4 arquivos de navegador falham por ambiente.
+- PR #284 já aberto, base release/0.11.0, CI success em 0dba745e; branch 1 commit atrás (release 0.11.0-beta.4, sem conflito, merge-tree 0).
+- Próximo: nota de lançamento / merge pela pessoa. Relacionadas: #262, #275.
 - Passagem support → product-owner: Refinar: localizar a chamada de resposta da persona, onde guardar o id da sessão e o desenho do fallback; confirmar com teste que hoje cada mensagem abre uma sessão. <!-- handoff:11 -->
 - Passagem product-owner → pessoa: Planejar: guardar o id da sessão por conversa (e se sobrevive a reinício), passar `resume` na chamada de `answerMentions` (`deps.engine(call, [])`), cair em sessão nova sem erro quando a retomada falhar, decidir o que o prompt envia com sessão retomada, cobrir wake agendado e pós-parada, e escrever o teste com SDK falso (incluindo o que mostra hoje uma sessão por mensagem). <!-- handoff:20 -->
 - Passagem tl-plataforma → pessoa: Implementar conforme 2_PLAN.md, na ordem dela: teste de linha de base; SessionGoneError e runClaudeSdk/runAgent (mode 'conversation' com fallback, atividade finished); sessionKeep + runtime; call.ts e answer.ts; testes de wake e parada; CHANGELOG. Conferir no código o repasse de extra.resume em sdkOptions e o provider realmente guardado após fallback de orçamento. Rodar os gates do AGENTS.md. <!-- handoff:33 -->
 - Passagem developer → revisor-plataforma: Revisar o diff contra 2_PLAN.md e 3_IMPLEMENTATION.md. Pontos de atenção: - `extra.resume` só no modo `conversation`; a rodada de QA ficou como está e vira outra issue. - `SessionGoneError` lançado só antes de qualquer saída. - A sessão é guardada após a resposta ser postada. Sem verificação ainda: - `electron-vite build`; - o comportamento do CLI real com uma sessão removida (conferência manual com o Claude Code logado). As quatro falhas de navegador da suíte vêm de `@playwright/mcp` ausente no `node_modules` do worktree. <!-- handoff:69 -->
 - Passagem revisor-plataforma → qa-plataforma-2: Integração: a revisão aprovou sem bloqueantes. Antes de abrir o PR, rodar `electron-vite build` e, se possível, a conferência manual com o Claude Code logado (três mensagens, uma sessão; apagar a sessão e enviar a quarta). <!-- handoff:76 -->
+- Passagem qa-plataforma-2 → integrator: Integração/PR: os gates e o build passam. Ficam pendentes a conferência manual com o Claude Code logado (três mensagens, uma sessão; apagar a sessão e enviar a quarta) e a issue separada da rodada de reparo da QA. <!-- handoff:93 -->
