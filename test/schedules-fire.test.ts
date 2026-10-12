@@ -1,6 +1,7 @@
 // A schedule firing (#275), with a fake clock and a fake engine: the persona's turn starts from the schedule's line by the `schedule` door with no session kept from before, its
 // answer lands in the conversation, a failure is said there and leaves the schedule as it was, one schedule never runs twice at once, the scheduler fires nothing while it is
-// off, a paused schedule waits, and the firings missed while the app was closed become one late firing when it is turned on.
+// off, a paused schedule waits, and the firings missed while the app was closed become one late firing when it is turned on. Since #250: the direct actions fire with no turn of
+// the persona, a failure or a wait for approval is said, and a schedule set to skip passes over a missed time with a line saying so.
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,7 +18,8 @@ import { placeOfThread } from '../src/main/mentions/place';
 import { createPersonaLive } from '../src/main/persona/live';
 import type { ScreenFacts } from '../src/main/persona/openScreen';
 import { createSessionKeep } from '../src/main/persona/sessionKeep';
-import { createFirer } from '../src/main/schedules/fire';
+import { type DirectResult, type DirectRunner, createFirer } from '../src/main/schedules/fire';
+import type { Schedule, ScheduleAction } from '../src/shared/schedules';
 import { createScheduleService } from '../src/main/schedules/service';
 import { type ScheduleStore, createScheduleStore } from '../src/main/schedules/store';
 import { fakeEngine } from './helpers/runner';
@@ -169,6 +171,171 @@ describe('a schedule waking a conversation that keeps its session (#279)', () =>
     expect(engine.calls[0].resume).toBeUndefined();
     expect(messages().some((m) => m.code === 'runner.mentionFailed')).toBe(false);
     expect(keep.get(THREAD)).toMatchObject({ session: 'session-1', provider: target.provider });
+  });
+});
+
+describe('direct actions and the missed-firing rule (#250)', () => {
+  const DIRECT_WORLD = { persona: 'me', hasThread: (id: string) => forum.summary(id) !== null, now: at(2, 10), agents: ['dev'], ceremonies: ['retro'], isRef: () => true };
+  type Node = { label: string; schedule: string; states: string[] };
+  let nodes: Node[];
+  let taken: string[];
+
+  const direct = (result: (s: Schedule) => Promise<DirectResult>): DirectRunner => ({
+    run: (s) => {
+      taken.push(s.action.kind);
+      return result(s);
+    },
+  });
+  function directWorld(runner: DirectRunner, over: { wake?: typeof wake } = {}) {
+    const firer = createFirer({
+      store,
+      forum,
+      wake: over.wake ?? wake,
+      direct: runner,
+      describe: (s) => `${s.action.kind} of ${s.id}`,
+      activity: (s, label) => {
+        const node: Node = { label, schedule: s.id, states: [] };
+        nodes.push(node);
+        return { status: (state) => void node.states.push(state), awaitingApproval: () => void node.states.push('waiting') };
+      },
+      now: () => now,
+      workdays: () => WORKDAYS,
+    });
+    return { firer, service: createScheduleService({ store, firer, now: () => now }) };
+  }
+  const makeDirect = (action: ScheduleAction, over: Partial<Parameters<ScheduleStore['create']>[0]> = {}) =>
+    store.create({ action, recurrence: { kind: 'every', minutes: 5 }, thread: THREAD, ...over }, 'user', { ...DIRECT_WORLD, now }, WORKDAYS);
+  const codes = () => messages().filter((m) => m.author.type === 'app' && String(m.code).startsWith('schedule.')).map((m) => m.code);
+
+  beforeEach(() => {
+    nodes = [];
+    taken = [];
+  });
+
+  it('starts a run and runs a ceremony at their time with no turn of the persona, and says each in the conversation and the activity', async () => {
+    const run = makeDirect({ kind: 'run', ref: '12' });
+    const retro = makeDirect({ kind: 'ceremony', ceremony: 'retro' });
+    const { service } = directWorld(direct(async () => ({ state: 'done', detail: '' })));
+    await service.setEnabled(true);
+    now = at(2, 10, 5);
+    await service.tick();
+    expect(taken.sort()).toEqual(['ceremony', 'run']);
+    expect(engine.calls).toHaveLength(0);
+    expect(doors).toEqual([]);
+    expect(codes().filter((c) => c === 'schedule.fired')).toHaveLength(2);
+    expect(codes().filter((c) => c === 'schedule.done')).toHaveLength(2);
+    expect(nodes.map((n) => [n.schedule, n.states])).toEqual(expect.arrayContaining([[run.id, ['started', 'finished']], [retro.id, ['started', 'finished']]]));
+    expect(store.get(run.id)).toMatchObject({ lastRun: at(2, 10, 5).toISOString(), nextRun: at(2, 10, 10).toISOString(), lastError: null });
+  });
+
+  it('fires a direct action while the persona\'s engine is down', async () => {
+    engine.script('me', () => {
+      throw new Error('the model is down');
+    });
+    makeDirect({ kind: 'run', ref: '12' });
+    const { service } = directWorld(direct(async () => ({ state: 'done', detail: '' })));
+    await service.setEnabled(true);
+    now = at(2, 10, 5);
+    await service.tick();
+    expect(codes()).toEqual(['schedule.fired', 'schedule.done']);
+    expect(engine.calls).toHaveLength(0);
+  });
+
+  it('calls an agent of the team by the schedule door, in the schedule\'s conversation', async () => {
+    const woken: [string, string][] = [];
+    makeDirect({ kind: 'agent', agent: 'dev', prompt: 'Check the build.' });
+    const { service } = directWorld(direct(async () => ({ state: 'done', detail: '' })), { wake: async (_m, agent, door) => void woken.push([agent, door]) });
+    await service.setEnabled(true);
+    now = at(2, 10, 5);
+    await service.tick();
+    expect(woken).toEqual([['dev', 'schedule']]);
+    expect(taken).toEqual([]);
+    expect(fired()[0]).toMatchObject({ text: 'Check the build.', params: { prompt: 'Check the build.' } });
+  });
+
+  it('says a failure in the conversation and the activity, keeps it as the last error, and stays active for its next time', async () => {
+    const s = makeDirect({ kind: 'ceremony', ceremony: 'retro' });
+    const { service } = directWorld(direct(async () => Promise.reject(new Error('The ceremony is off.'))));
+    await service.setEnabled(true);
+    now = at(2, 10, 5);
+    await service.tick();
+    expect(messages().find((m) => m.code === 'schedule.failed')?.params).toMatchObject({ schedule: s.id, reason: 'The ceremony is off.' });
+    expect(nodes[0].states).toEqual(['started', 'failed']);
+    expect(store.get(s.id)).toMatchObject({ paused: false, lastError: 'The ceremony is off.', nextRun: at(2, 10, 10).toISOString() });
+  });
+
+  it('waits for an approval without opening a second action, and ends the wait when the proposal is carried out or refused', async () => {
+    const s = makeDirect({ kind: 'run', ref: '12' });
+    const { service, firer } = directWorld(direct(async () => ({ state: 'awaiting', actionId: 'a-1' })));
+    await service.setEnabled(true);
+    now = at(2, 10, 5);
+    await service.tick();
+    expect(store.get(s.id)?.waiting).toMatchObject({ actionId: 'a-1' });
+    expect(codes()).toEqual(['schedule.fired', 'schedule.waiting']);
+    expect(nodes[0].states).toEqual(['started', 'waiting']);
+
+    // The next time comes while it waits: nothing new is opened, the conversation says it still waits, and the time moves on.
+    now = at(2, 10, 10);
+    await service.tick();
+    expect(taken).toEqual(['run']);
+    expect(codes().at(-1)).toBe('schedule.stillWaiting');
+    expect(store.get(s.id)?.nextRun).toBe(at(2, 10, 15).toISOString());
+
+    expect(firer.settle('a-other', { ok: true })).toBe(false);
+    expect(firer.settle('a-1', { ok: true })).toBe(true);
+    expect(store.get(s.id)?.waiting).toBeNull();
+    expect(codes().at(-1)).toBe('schedule.done');
+    expect(nodes[0].states).toEqual(['started', 'waiting', 'finished']);
+
+    // A refusal ends the next wait with the failure said, as the same action refused by hand.
+    now = at(2, 10, 15);
+    await service.tick();
+    expect(firer.settle('a-1', { ok: false, reason: 'refused by the person' })).toBe(true);
+    expect(messages().filter((m) => m.code === 'schedule.failed').at(-1)?.params).toMatchObject({ reason: 'refused by the person' });
+    expect(store.get(s.id)).toMatchObject({ waiting: null, paused: false, lastError: 'refused by the person' });
+  });
+
+  it('closed past its time and set to skip, does not fire: it says which time was missed and counts the next from now', async () => {
+    const s = makeDirect({ kind: 'run', ref: '12' }, { missed: 'skip' });
+    now = at(2, 13);
+    const { service } = directWorld(direct(async () => ({ state: 'done', detail: '' })));
+    await service.setEnabled(true);
+    expect(taken).toEqual([]);
+    const line = messages().find((m) => m.code === 'schedule.skipped');
+    expect(line?.params).toMatchObject({ schedule: s.id, at: '2026-03-02 10:05' });
+    expect(nodes.map((n) => n.states)).toEqual([['skipped']]);
+    expect(store.get(s.id)).toMatchObject({ nextRun: at(2, 13, 5).toISOString(), lastSkipped: at(2, 10, 5).toISOString(), lastRun: null });
+    await service.tick();
+    expect(codes()).toEqual(['schedule.skipped']);
+  });
+
+  it('set to skip, still fires a time that is late while the scheduler was on (a long turn, a computer asleep), marked late', async () => {
+    makeDirect({ kind: 'run', ref: '12' }, { missed: 'skip' });
+    const { service } = directWorld(direct(async () => ({ state: 'done', detail: '' })));
+    await service.setEnabled(true);
+    now = at(2, 10, 20);
+    await service.tick();
+    expect(taken).toEqual(['run']);
+    expect(codes()).toEqual(['schedule.firedLate', 'schedule.done']);
+  });
+
+  it('set to skip, a persona schedule woken late does not wake the persona', async () => {
+    make({ missed: 'skip' });
+    now = at(2, 13);
+    const { service } = directWorld(direct(async () => ({ state: 'done', detail: '' })));
+    await service.setEnabled(true);
+    expect(doors).toEqual([]);
+    expect(codes()).toEqual(['schedule.skipped']);
+  });
+
+  it('set to run once, fires once marked late however many times passed', async () => {
+    makeDirect({ kind: 'run', ref: '12' });
+    now = at(2, 13);
+    const { service } = directWorld(direct(async () => ({ state: 'done', detail: '' })));
+    await service.setEnabled(true);
+    await service.tick();
+    expect(taken).toEqual(['run']);
+    expect(codes()).toEqual(['schedule.firedLate', 'schedule.done']);
   });
 });
 

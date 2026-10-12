@@ -21,12 +21,19 @@ export interface ScheduleService {
 export function createScheduleService(deps: { store: ScheduleStore; firer: Firer; now(): Date }): ScheduleService {
   let on = false;
   let answered = false;
+  // When the scheduler was turned on: a time before it passed while the app was closed or the scheduler off, which is what a schedule's missed-firing rule is about (#250).
+  // A firing late for any other reason (a long turn, a computer asleep with the app open) is not missed: it fires, marked late.
+  let onSince = 0;
 
   async function tick(): Promise<void> {
     if (!on) return;
     const now = deps.now();
     const due = deps.store.list().filter((s) => isDue(s, now) && !deps.firer.running(s.id));
-    await Promise.all(due.map((s) => deps.firer.fire(s, { late: isLate(s, now) }).catch((e) => console.error('[schedules] a firing failed', e instanceof Error ? e.message : e))));
+    await Promise.all(
+      due.map((s) =>
+        deps.firer.fire(s, { late: isLate(s, now), missed: Date.parse(s.nextRun ?? '') < onSince }).catch((e) => console.error('[schedules] a firing failed', e instanceof Error ? e.message : e)),
+      ),
+    );
   }
 
   return {
@@ -34,6 +41,7 @@ export function createScheduleService(deps: { store: ScheduleStore; firer: Firer
     asked: () => answered,
     async setEnabled(value) {
       answered = true;
+      if (value && !on) onSince = deps.now().getTime();
       on = value;
       if (on) await tick();
     },

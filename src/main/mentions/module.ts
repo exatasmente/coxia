@@ -161,7 +161,9 @@ export const mentionsModule: Module = () => {
   wake = (message, persona, door) => {
     const place = placeOfThread(forum.summary(message.thread), (id) => runStore().get(id), getConfig(), HOME);
     if (!place || place.kind === 'run') return Promise.reject(new Error(t('main.schedules.error.thread')));
-    if (!getConfig().agents.team.some((a) => a.id === persona)) return Promise.reject(new Error(t('main.schedules.error.persona')));
+    // An agent schedule (#250) wakes an agent of the team the same way; one that left the team is said as such.
+    const team = getConfig().agents.team;
+    if (!team.some((a) => a.id === persona)) return Promise.reject(new Error(t(personaOf(team) ? 'main.schedules.error.agent' : 'main.schedules.error.persona')));
     accept(message, place, [persona], door);
     return inFlight().get(message.thread) ?? Promise.resolve();
   };
@@ -178,9 +180,11 @@ export const mentionsModule: Module = () => {
     // The persona's answer keeps a session (what it read, the values it must never write back): made now, so the line of its call shares the mask.
     const persona = personaOf(team);
     const session = persona && message.thread === agentThreadId(persona.id) && calls.includes(persona.id) ? createSession({ persona: persona.id, thread: message.thread, seq: message.seq, door }) : null;
+    // A schedule's line (#250) names its schedule: the call's node says which firing it is.
+    const fromSchedule = message.author.type === 'app' && typeof message.params?.schedule === 'string' ? { schedule: message.params.schedule } : {};
     for (const id of calls) {
       if (!team.some((a) => a.id === id) || callLines.has(lineKey(message.thread, message.seq, id))) continue;
-      const activity = beginCallActivity(id, { jobId: mentionJob(message.thread), call: { agent: id, thread: message.thread, message: message.seq }, node: { type: 'call', label: message.text }, isSecretPath: (p) => secretPath(p, root), ...(session && id === persona?.id ? { mask: (text: string) => session.maskText(text) } : {}) });
+      const activity = beginCallActivity(id, { jobId: mentionJob(message.thread), call: { agent: id, thread: message.thread, message: message.seq }, node: { type: 'call', label: message.text, ...fromSchedule }, isSecretPath: (p) => secretPath(p, root), ...(session && id === persona?.id ? { mask: (text: string) => session.maskText(text) } : {}) });
       activity.status(ahead ? 'queued' : 'started');
       callLines.set(lineKey(message.thread, message.seq, id), { activity, queued: ahead });
       ahead = true;

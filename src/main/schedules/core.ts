@@ -1,4 +1,15 @@
-import { type Recurrence, type Schedule, type ScheduleInput, type SchedulePatch, SCHEDULE_MIN_MINUTES, SCHEDULE_PROMPT_MAX } from '../../shared/schedules';
+import {
+  type Recurrence,
+  type Schedule,
+  type ScheduleAction,
+  type ScheduleInput,
+  type ScheduleMissed,
+  type SchedulePatch,
+  DIRECT_CEREMONIES,
+  SCHEDULE_MIN_MINUTES,
+  SCHEDULE_PROMPT_MAX,
+  actionPrompt,
+} from '../../shared/schedules';
 
 // The rules of a schedule (#275), pure: when it fires next, whether it is due, and whether an input is one the store may keep. The clock is always given, so a test drives it.
 
@@ -57,7 +68,7 @@ export const isDue = (s: Pick<Schedule, 'paused' | 'nextRun'>, now: Date): boole
 export const isLate = (s: Pick<Schedule, 'nextRun'>, now: Date): boolean => s.nextRun !== null && now.getTime() - Date.parse(s.nextRun) >= LATE_MS;
 
 /** What can be wrong with a schedule; the message is the catalog's `main.schedules.error.<code>`. */
-export type ScheduleProblem = 'prompt' | 'recurrence' | 'interval' | 'time' | 'days' | 'past' | 'persona' | 'thread';
+export type ScheduleProblem = 'prompt' | 'recurrence' | 'interval' | 'time' | 'days' | 'past' | 'persona' | 'thread' | 'action' | 'agent' | 'ceremony' | 'ref' | 'missed';
 
 export class ScheduleError extends Error {
   constructor(readonly code: ScheduleProblem | 'notFound' | 'tooMany' | 'fromSchedule') {
@@ -95,27 +106,92 @@ const checkPrompt = (raw: unknown): string => {
   return prompt;
 };
 
-/** What a schedule may point at: the persona that exists, and the conversations that do. */
+/** What a schedule may point at: the persona that exists, the conversations that do, and what a direct action may name (#250). */
 export interface ScheduleWorld {
   persona: string | null;
   hasThread(thread: string): boolean;
   now: Date;
+  /** The agents of the team a schedule may call: every one but the persona. None when not given. */
+  agents?: readonly string[];
+  /** The direct ceremonies the workspace has on. None when not given. */
+  ceremonies?: readonly string[];
+  /** Whether a text is an issue or card the runner can start a run for. None is when not given. */
+  isRef?(ref: string): boolean;
 }
 
-/** A new schedule's input, checked and normalised; throws a ScheduleError naming what is wrong. */
-export function validateInput(input: ScheduleInput, world: ScheduleWorld): Required<ScheduleInput> {
+const text = (raw: unknown): string => (typeof raw === 'string' ? raw.trim() : '');
+
+/** An action as given, checked: a prompt where the action takes one, an agent of the team that is not the persona, a ref the runner reads, a direct ceremony that is on. */
+export function checkAction(raw: unknown, world: ScheduleWorld): ScheduleAction {
+  const a = raw as Partial<Record<string, unknown>> | null;
+  if (!a || typeof a !== 'object') throw new ScheduleError('action');
+  if (a.kind === 'persona') return { kind: 'persona', prompt: checkPrompt(a.prompt) };
+  if (a.kind === 'agent') {
+    const agent = text(a.agent);
+    // The persona is woken by its own action: an agent schedule never calls it.
+    if (!agent || agent === world.persona || !world.agents?.includes(agent)) throw new ScheduleError('agent');
+    return { kind: 'agent', agent, prompt: checkPrompt(a.prompt) };
+  }
+  if (a.kind === 'run') {
+    const ref = text(a.ref);
+    if (!ref || !world.isRef?.(ref)) throw new ScheduleError('ref');
+    const repo = text(a.repo);
+    return repo ? { kind: 'run', ref, repo } : { kind: 'run', ref };
+  }
+  if (a.kind === 'ceremony') {
+    const ceremony = text(a.ceremony);
+    if (!(DIRECT_CEREMONIES as readonly string[]).includes(ceremony) || !world.ceremonies?.includes(ceremony)) throw new ScheduleError('ceremony');
+    const squad = text(a.squad);
+    return squad ? { kind: 'ceremony', ceremony, squad } : { kind: 'ceremony', ceremony };
+  }
+  throw new ScheduleError('action');
+}
+
+const checkMissed = (raw: unknown): ScheduleMissed => {
+  if (raw === 'run' || raw === 'skip') return raw;
+  throw new ScheduleError('missed');
+};
+
+/** A schedule's input once checked: every field the store keeps from it. */
+export interface ValidInput {
+  persona: string;
+  prompt: string;
+  action: ScheduleAction;
+  missed: ScheduleMissed;
+  recurrence: Recurrence;
+  workdaysOnly: boolean;
+  thread: string;
+  paused: boolean;
+}
+
+/** A new schedule's input, checked and normalised; throws a ScheduleError naming what is wrong. With no action it wakes the persona with the prompt, and runs a missed firing once. */
+export function validateInput(input: ScheduleInput, world: ScheduleWorld): ValidInput {
   const persona = world.persona;
   if (!persona || (input.persona !== undefined && input.persona !== persona)) throw new ScheduleError('persona');
   const thread = typeof input.thread === 'string' ? input.thread.trim() : '';
   if (!thread || !world.hasThread(thread)) throw new ScheduleError('thread');
-  return { persona, prompt: checkPrompt(input.prompt), recurrence: checkRecurrence(input.recurrence, world.now), workdaysOnly: input.workdaysOnly === true, thread, paused: input.paused === true };
+  const action = input.action !== undefined ? checkAction(input.action, world) : ({ kind: 'persona', prompt: checkPrompt(input.prompt) } as const);
+  return {
+    persona,
+    prompt: actionPrompt(action),
+    action,
+    missed: input.missed === undefined ? 'run' : checkMissed(input.missed),
+    recurrence: checkRecurrence(input.recurrence, world.now),
+    workdaysOnly: input.workdaysOnly === true,
+    thread,
+    paused: input.paused === true,
+  };
 }
 
-/** A patch, checked field by field; only the fields it names change. */
+/** A patch, checked field by field; only the fields it names change. A prompt alone is checked here and given to the action by the store, which knows it. */
 export function validatePatch(patch: SchedulePatch, world: ScheduleWorld): SchedulePatch {
   const out: SchedulePatch = {};
   if (!patch || typeof patch !== 'object') return out;
-  if (patch.prompt !== undefined) out.prompt = checkPrompt(patch.prompt);
+  if (patch.action !== undefined) {
+    out.action = checkAction(patch.action, world);
+    out.prompt = actionPrompt(out.action);
+  } else if (patch.prompt !== undefined) out.prompt = checkPrompt(patch.prompt);
+  if (patch.missed !== undefined) out.missed = checkMissed(patch.missed);
   if (patch.recurrence !== undefined) out.recurrence = checkRecurrence(patch.recurrence, world.now);
   if (patch.workdaysOnly !== undefined) out.workdaysOnly = patch.workdaysOnly === true;
   if (patch.paused !== undefined) out.paused = patch.paused === true;

@@ -66,7 +66,16 @@ describe('what a schedule may not be', () => {
   const input = { prompt: 'Summarise the day.', recurrence: { kind: 'every' as const, minutes: 5 }, thread: 'agent-me' };
 
   it('takes a well-formed one and fills the persona and the defaults', () => {
-    expect(validateInput(input, world())).toEqual({ persona: 'me', prompt: 'Summarise the day.', recurrence: { kind: 'every', minutes: 5 }, workdaysOnly: false, thread: 'agent-me', paused: false });
+    expect(validateInput(input, world())).toEqual({
+      persona: 'me',
+      prompt: 'Summarise the day.',
+      action: { kind: 'persona', prompt: 'Summarise the day.' },
+      missed: 'run',
+      recurrence: { kind: 'every', minutes: 5 },
+      workdaysOnly: false,
+      thread: 'agent-me',
+      paused: false,
+    });
   });
 
   it('refuses an interval under a minute, an empty prompt, a missing persona or conversation', () => {
@@ -89,5 +98,40 @@ describe('what a schedule may not be', () => {
   it('checks only the fields a patch names', () => {
     expect(validatePatch({ paused: true }, world())).toEqual({ paused: true });
     expect(code(() => validatePatch({ recurrence: { kind: 'every', minutes: -1 } }, world()))).toBe('interval');
+  });
+});
+
+describe('the action and the missed-firing rule of a schedule (#250)', () => {
+  const direct = { agents: ['dev', 'qa'], ceremonies: ['retro'], isRef: (r: string) => /^\d+$/.test(r) };
+  const base = { recurrence: { kind: 'every' as const, minutes: 5 }, thread: 'agent-me' };
+
+  it('takes each direct action with only its own fields, and mirrors the prompt', () => {
+    expect(validateInput({ ...base, action: { kind: 'agent', agent: 'dev', prompt: ' Check the build. ' } }, world(direct))).toMatchObject({ action: { kind: 'agent', agent: 'dev', prompt: 'Check the build.' }, prompt: 'Check the build.' });
+    expect(validateInput({ ...base, action: { kind: 'run', ref: '123' } }, world(direct))).toMatchObject({ action: { kind: 'run', ref: '123' }, prompt: '' });
+    expect(validateInput({ ...base, action: { kind: 'run', ref: '123', repo: 'web' } }, world(direct)).action).toEqual({ kind: 'run', ref: '123', repo: 'web' });
+    expect(validateInput({ ...base, action: { kind: 'ceremony', ceremony: 'retro' } }, world(direct))).toMatchObject({ action: { kind: 'ceremony', ceremony: 'retro' }, prompt: '' });
+  });
+
+  it('refuses the persona or a stranger as the agent, a bad ref, a ceremony that needs a card or is off, an unknown kind and a prompt missing where one is needed', () => {
+    expect(code(() => validateInput({ ...base, action: { kind: 'agent', agent: 'me', prompt: 'x' } }, world({ ...direct, agents: ['me', 'dev'] })))).toBe('agent');
+    expect(code(() => validateInput({ ...base, action: { kind: 'agent', agent: 'nobody', prompt: 'x' } }, world(direct)))).toBe('agent');
+    expect(code(() => validateInput({ ...base, action: { kind: 'agent', agent: 'dev', prompt: '' } }, world(direct)))).toBe('prompt');
+    expect(code(() => validateInput({ ...base, action: { kind: 'run', ref: 'not a ref' } }, world(direct)))).toBe('ref');
+    expect(code(() => validateInput({ ...base, action: { kind: 'ceremony', ceremony: 'gate' } }, world({ ...direct, ceremonies: ['retro', 'gate'] })))).toBe('ceremony');
+    expect(code(() => validateInput({ ...base, action: { kind: 'ceremony', ceremony: 'retro' } }, world({ ...direct, ceremonies: [] })))).toBe('ceremony');
+    expect(code(() => validateInput({ ...base, action: { kind: 'cron' } as never }, world(direct)))).toBe('action');
+    // A world that names no agents, ceremonies or refs allows none of them.
+    expect(code(() => validateInput({ ...base, action: { kind: 'run', ref: '1' } }, world()))).toBe('ref');
+  });
+
+  it('runs a missed firing once by default, takes skip, and refuses anything else', () => {
+    expect(validateInput({ ...base, prompt: 'x' }, world()).missed).toBe('run');
+    expect(validateInput({ ...base, prompt: 'x', missed: 'skip' }, world()).missed).toBe('skip');
+    expect(code(() => validateInput({ ...base, prompt: 'x', missed: 'later' as never }, world()))).toBe('missed');
+    expect(validatePatch({ missed: 'skip' }, world())).toEqual({ missed: 'skip' });
+  });
+
+  it('gives a patched action its mirrored prompt', () => {
+    expect(validatePatch({ action: { kind: 'run', ref: '7' } }, world(direct))).toEqual({ action: { kind: 'run', ref: '7' }, prompt: '' });
   });
 });

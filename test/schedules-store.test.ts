@@ -74,6 +74,55 @@ describe('the schedules store', () => {
     expect(existsSync(`${file}.tmp`)).toBe(false);
   });
 
+  it('reads a schedule written before #250 as waking the persona and running a missed firing once, without writing the file', () => {
+    const old = { id: 's-old', persona: 'me', prompt: 'Summarise the day.', recurrence: { kind: 'every', minutes: 5 }, workdaysOnly: false, thread: 'agent-me', paused: false, createdBy: 'user', updatedBy: 'user', createdAt: at(1, 9).toISOString(), updatedAt: at(1, 9).toISOString(), nextRun: at(2, 10).toISOString(), lastRun: null, lastError: null };
+    const body = JSON.stringify({ v: 1, schedules: [old] });
+    writeFileSync(file, body);
+    const store = createScheduleStore(file);
+    expect(store.get('s-old')).toMatchObject({ action: { kind: 'persona', prompt: 'Summarise the day.' }, prompt: 'Summarise the day.', missed: 'run', waiting: null });
+    expect(readFileSync(file, 'utf8')).toBe(body);
+  });
+
+  it('skips a missed firing: the next time from now, the missed one kept; a one-off ends', () => {
+    const store = createScheduleStore(file);
+    const every = store.create({ ...input, missed: 'skip' }, 'user', world(), WORKDAYS);
+    expect(store.markSkipped(every.id, at(2, 13), WORKDAYS)).toMatchObject({ lastSkipped: at(2, 10, 5).toISOString(), nextRun: at(2, 13, 5).toISOString(), lastRun: null });
+    const once = store.create({ ...input, recurrence: { kind: 'once', at: at(2, 12).toISOString() } }, 'user', world(), WORKDAYS);
+    expect(store.markSkipped(once.id, at(2, 14), WORKDAYS)?.nextRun).toBeNull();
+  });
+
+  it('keeps a wait for approval across a restart, and a failure without touching the times', () => {
+    const store = createScheduleStore(file);
+    const made = store.create(input, 'user', world(), WORKDAYS);
+    store.setWaiting(made.id, { actionId: 'a-1', since: at(2, 10).toISOString() });
+    store.setError(made.id, 'boom');
+    expect(createScheduleStore(file).get(made.id)).toMatchObject({ waiting: { actionId: 'a-1' }, lastError: 'boom', nextRun: made.nextRun });
+    expect(store.setWaiting('s-gone', null)).toBeNull();
+  });
+
+  it('reads an action a hand edit left without the fields of its kind as waking the persona', () => {
+    const bad = { id: 's-bad', persona: 'me', prompt: 'Look.', action: { kind: 'agent' }, recurrence: { kind: 'every', minutes: 5 }, thread: 'agent-me', nextRun: null };
+    writeFileSync(file, JSON.stringify({ v: 1, schedules: [bad] }));
+    expect(createScheduleStore(file).get('s-bad')?.action).toEqual({ kind: 'persona', prompt: 'Look.' });
+  });
+
+  it('ends a wait when the action changes, and keeps it when the same action is saved again', () => {
+    const store = createScheduleStore(file);
+    const w = { ...world(), isRef: () => true };
+    const made = store.create({ ...input, action: { kind: 'run', ref: '12' } }, 'user', w, WORKDAYS);
+    store.setWaiting(made.id, { actionId: 'a-1', since: at(2, 10).toISOString() });
+    expect(store.update(made.id, { action: { kind: 'run', ref: '12' } }, 'user', w, WORKDAYS).waiting).toMatchObject({ actionId: 'a-1' });
+    expect(store.update(made.id, { action: { kind: 'run', ref: '13' } }, 'user', w, WORKDAYS).waiting).toBeNull();
+  });
+
+  it('gives a new prompt to the action that takes one, and refuses it for one that takes none', () => {
+    const store = createScheduleStore(file);
+    const made = store.create(input, 'user', world(), WORKDAYS);
+    expect(store.update(made.id, { prompt: 'Look again.' }, 'user', world(), WORKDAYS)).toMatchObject({ action: { kind: 'persona', prompt: 'Look again.' }, prompt: 'Look again.' });
+    const run = store.create({ ...input, action: { kind: 'run', ref: '12' } }, 'user', { ...world(), isRef: () => true }, WORKDAYS);
+    expect(() => store.update(run.id, { prompt: 'x' }, 'user', world(), WORKDAYS)).toThrow('prompt');
+  });
+
   it('refuses an id it does not have', () => {
     const store = createScheduleStore(file);
     expect(() => store.update('s-none', { paused: true }, 'user', world(), WORKDAYS)).toThrow('notFound');

@@ -116,8 +116,10 @@ export const OP_DOCS: Record<string, string> = {
   'Conversations.create': 'Starts a general conversation with a title.',
   'Conversations.attachmentDelete': 'Deletes a message and its attachments.',
   'Conversations.schedules': 'The schedules that wake you with a prompt in a conversation, and whether the scheduler runs now.',
-  'Conversations.scheduleCreate': 'Schedules a prompt for you: recurrence {kind:"every",minutes} | {kind:"daily",time:"HH:MM",days:[0-6]} | {kind:"once",at:ISO}. Answers in this conversation unless thread says another. Not from a scheduled turn.',
-  'Conversations.scheduleUpdate': 'Changes a schedule: patch with prompt, recurrence, workdaysOnly, thread or paused. Not from a scheduled turn.',
+  'Conversations.routines': 'The app\'s own timed jobs (pre-daily reminder, retro day, work window): read-only, set in Settings.',
+  'Conversations.scheduleCreate':
+    'Schedules a prompt for you, or a direct action that needs no model: action {kind:"agent",agent,prompt} | {kind:"run",ref,repo?} | {kind:"ceremony",ceremony:"retro",squad?} (or prompt alone to wake you). recurrence {kind:"every",minutes} | {kind:"daily",time:"HH:MM",days:[0-6]} | {kind:"once",at:ISO}. missed: run (once, late; default) or skip. Answers in this conversation unless thread says another. Not from a scheduled turn.',
+  'Conversations.scheduleUpdate': 'Changes a schedule: patch with prompt, action, missed, recurrence, workdaysOnly, thread or paused. Not from a scheduled turn.',
   'Conversations.scheduleRemove': 'Removes a schedule.',
 
   // ---- Memory
