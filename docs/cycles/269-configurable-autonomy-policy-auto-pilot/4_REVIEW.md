@@ -1,32 +1,26 @@
-# Revisão: aprovações dos passos na tela (rodada 2)
+# Revisão: aprovações dos passos na tela (rodada 3)
 
 Veredito: **aprovado**. Nenhum achado bloqueante.
 
-## Bloqueantes da rodada anterior
+## Bloqueantes das rodadas anteriores
 
-A rodada 1 não deixou bloqueantes. As duas sugestões seguem como estavam, sem virar bloqueantes (nenhum fato novo no diff).
+As rodadas 1 e 2 não deixaram bloqueantes. Nada a tratar.
 
-## O que foi conferido nesta rodada
+## O que mudou desde a rodada 2
 
-Lido:
-- `CONFIG_SCHEMA_VERSION = 33` em `src/shared/config/types.ts`; `v32ToV33` existe e `STEPS` termina em `32: v32ToV33`, depois dos passos da release.
-- Busca por marcadores de conflito em `src`: só aparecem textos de mensagens nos catálogos (falsos positivos). Nenhum marcador real.
+Segundo o recado da implementação, nenhum código mudou: só foi conferida a base (branch sem commits atrás de `origin/release/0.11.0`; PR com base `release/0.11.0`, sem conflitos, CI verde no head anterior). Não há fato novo no diff que justifique um bloqueante. Esta rodada não releu o diff nem reexecutou comandos; apoia-se nas rodadas anteriores e no relato da implementação.
 
-Não rodado de novo nesta etapa: tsc, vitest, lints, build. Valem os resultados relatados pela implementação (tsc, theme-audit, i18n:lint, public-audit e build com saída 0; suíte com falha só nos 4 testes de navegador real, por falta de `@playwright/mcp`, e no tempo esgotado de `agent-assist-prompts`, que passa sozinho).
+## Sugestões (mantidas, não bloqueantes)
 
-## Achados
-
-Nenhum bloqueante.
-
-Sugestões (da rodada 1, mantidas):
 1. `src/main/browser/sensitive.ts`: envio por Enter é checado só pelo campo em foco; botão "Pagar" com campo neutro passa com `submit` liberado. Limite da heurística, documentar.
-2. `src/main/workspaceConfig.ts`: importa `./browser/audit` só para registrar a mudança; na unificação com a #268 mover para módulo neutro.
+2. `src/main/workspaceConfig.ts`: importa `./browser/audit` só para registrar a mudança; na unificação com a #268, mover o registro para módulo neutro.
 
 ## Não verificado
 
-- Resolução dos 13 conflitos lida só por amostra (esquema e migração); o resto do diff da mescla não foi relido.
-- Tela e janela de aprovação vistas no app.
-- Os 4 testes de navegador real e a causa do tempo esgotado de `agent-assist-prompts`.
+- Tela de configurações e janela de aprovação vistas no app.
+- Os 4 testes de navegador real (falta `@playwright/mcp`) e se falham também na base; tempo esgotado de `agent-assist-prompts` na suíte completa (passa sozinho).
+- Gates não rodados de novo nesta rodada.
+- CI do PR nos commits de documentos ainda não enviados.
 - Unificação com a #268.
 
 ## Condição de lançamento
