@@ -1196,6 +1196,9 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
       // A conversation that ended is forgotten: the next call to the same agent opens a new one instead of leaving a message in a queue nobody reads.
       const forget = (): void => {
         if (conversationOf.get(to) === entry) conversationOf.delete(to);
+        // It also leaves the chain: it is no longer being called, so a later call to it is not a cycle.
+        const at = chain.lastIndexOf(to);
+        if (at > 0) chain.splice(at, 1);
       };
       if (writes) {
         let r: Awaited<ReturnType<typeof runConversation>>;
