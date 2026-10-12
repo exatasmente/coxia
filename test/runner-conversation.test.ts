@@ -8,7 +8,8 @@ import { type ForumStore, createForumStore } from '../src/main/forum-core';
 import type { AgentDef } from '../src/shared/config/types';
 import { neutralConfig } from '../src/shared/config';
 import { runThreadId } from '../src/shared/forum';
-import { runConversation } from '../src/main/runner/conversation';
+import { type ConversationExchange, runConversation } from '../src/main/runner/conversation';
+import { t } from '../src/shared/i18n';
 import { ASK_CONVERSATION_TOOL } from '../src/main/runner/tools';
 import type { AgentCall } from '../src/main/agents';
 import type { ActivityEntry } from '../src/shared/activity';
@@ -30,10 +31,10 @@ const agent = (id: string, over: Partial<AgentDef> = {}): AgentDef => ({ id, nam
 const run = { id: 'r1', worktree: dir, issue: { ref: 'app#1' }, repo: 'app', cycleFolder: 'docs/cycles/1' } as never;
 
 /** What the caller keeps saying, and where the answers of the called agent go. */
-function exchange(messages: string[]): { fromCaller: () => Promise<string | null>; answered: string[]; ex: { fromCaller: () => Promise<string | null>; answered: (text: string) => void } } {
+function exchange(messages: string[], waiting = false): { fromCaller: () => Promise<string | null>; answered: string[]; ex: ConversationExchange } {
   const answered: string[] = [];
   const fromCaller = async (): Promise<string | null> => messages.shift() ?? null;
-  return { answered, fromCaller, ex: { fromCaller, answered: (text) => answered.push(text) } };
+  return { answered, fromCaller, ex: { fromCaller, answered: (text) => answered.push(text), pendingFromCaller: () => messages.shift() ?? null, callerWaiting: () => waiting } };
 }
 
 describe('a conversation between two agents', () => {
@@ -221,6 +222,54 @@ describe('a conversation between two agents', () => {
     expect(pushed.map((e) => e.state ?? e.kind)).toEqual(['started', 'failed']);
     expect(pushed[1].label).toContain('model unavailable');
     expect(pushed[0].parent).toBeUndefined();
+  });
+
+  describe('the caller\'s message and the turns', () => {
+    const base = (engine: (call: AgentCall) => Promise<{ data: unknown; sessionId?: string | null; engine?: 'claude-sdk' }>, over: Record<string, unknown> = {}) =>
+      ({ run, stage: { id: 'implement' } as never, caller: agent('developer'), called: agent('qa', { permission: 'worktree' }), forum, config: () => neutralConfig(), engine, commands: [] as string[], abort: new AbortController(), chain: ['developer'], place: 'run' as const, title: 'talk', ...over }) as never;
+
+    it('puts the first message of the caller in what the called writer reads at its first turn', async () => {
+      const seen: AgentCall[] = [];
+      await runConversation(base(async (call) => (seen.push(call), { data: { texto: 'done' } })), exchange(['please check the fixture scenario']).ex);
+      expect(seen[0].prompt).toContain('please check the fixture scenario');
+    });
+
+    it('runs exactly one turn when the called agent answers without asking for more, and ends the conversation', async () => {
+      const seen: AgentCall[] = [];
+      const r = await runConversation(base(async (call) => (seen.push(call), { data: { texto: 'all done' } })), exchange(['first']).ex);
+      expect(seen).toHaveLength(1);
+      expect(r.reason).toBe('ended');
+      const thread = forum.read(runThreadId('r1'), 0, 500)?.messages ?? [];
+      expect(thread.filter((m) => m.code === 'runner.conversation.ended')).toHaveLength(1);
+    });
+
+    it('returns at once to a called writer that asks while the caller waits for the conversation, so it cannot hang', async () => {
+      let asked = '';
+      const engine = async (call: AgentCall) => {
+        const result = (await call.runnerTools!.find((x) => x.name === ASK_CONVERSATION_TOOL)!.run({ text: 'which scenario?' } as never, {} as never)) as unknown as { response: string };
+        asked = result.response;
+        return { data: { texto: 'my answer' } };
+      };
+      const ex = exchange(['first'], true);
+      const r = await runConversation(base(engine), ex.ex);
+      expect(asked).toBe(t('main.runner.conversation.callerWaiting'));
+      expect(r.reason).toBe('ended');
+      expect(ex.answered).toEqual(['my answer']);
+    });
+
+    it('delivers a later message of the caller in the same session, as the message and nothing else', async () => {
+      const seen: AgentCall[] = [];
+      const engine = async (call: AgentCall) => {
+        seen.push(call);
+        return { data: { texto: `answer ${seen.length}` }, sessionId: 's1', engine: 'claude-sdk' as const };
+      };
+      const r = await runConversation(base(engine), exchange(['first point', 'second point']).ex);
+      expect(seen).toHaveLength(2);
+      expect(seen[1].resume).toMatchObject({ session: 's1', engine: 'claude-sdk' });
+      expect(seen[1].prompt).toContain('second point');
+      expect(seen[1].prompt).not.toContain('first point');
+      expect(r.reason).toBe('ended');
+    });
   });
 
   describe('the end of the node of a called agent', () => {

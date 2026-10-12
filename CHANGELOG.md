@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **A called agent reads the caller's message, and a call to an agent that writes can no longer hang the stage.** The agent called with `CallAgent` now gets the caller's message (and each later one, in the same session) as part of what it reads, instead of answering that it received nothing. A turn that ends without asking for more ends the conversation, where before it was called again with nothing new. A called agent that writes and asks for the caller's next message gets an immediate "answer now" instead of waiting for a message the caller, blocked inside its call, could never send. A conversation with no progress for half of the stage's idle limit (at least 30 seconds) ends with a line in the thread and a message back to the caller, and the Stop of a run (and of the run screen) now stops a conversation between agents. A reader that waits more than that for its caller is now ended too, and the next `CallAgent` to it opens a new conversation.
+
 ## [0.11.0-beta.7] - 2026-10-12
 
 ### Added

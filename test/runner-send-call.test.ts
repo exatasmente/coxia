@@ -194,4 +194,32 @@ describe('a conversation started by a stage', () => {
     // The thread says the command under the called agent, and the change was committed with the calling stage.
     expect(b.thread(run).some((m) => m.code === 'runner.exec' && m.params.agent === 'qa' && m.params.command === 'npm test')).toBe(true);
   });
+
+  it('gives a writer that asks for more an immediate notice instead of hanging the caller, and opens a new conversation on the next call', async () => {
+    const b = await boot({
+      sandbox: fakeSandbox(),
+      configure: (c) => {
+        c.agents.team.find((a) => a.id === 'qa')!.permission = 'worktree';
+      },
+    });
+    easy(b);
+    const topics: string[] = [];
+    b.engine.script('refiner', async (call) => {
+      const open = toolOf(call, CALL_AGENT_TOOL)!;
+      await open.run({ to: 'qa', topic: 'first point', place: 'run' }, {} as never);
+      await open.run({ to: 'qa', topic: 'second point', place: 'run' }, {} as never);
+      return work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' });
+    });
+    b.engine.script('qa', async (call) => {
+      topics.push(call.prompt);
+      // the caller is inside its own call, so the answer comes back at once and the turn ends with the conversation
+      await toolOf(call, 'AskConversation').run({ text: 'which scenario?' } as never, {} as never);
+      return { texto: 'answered' };
+    });
+    await b.runner.start('app#101');
+    await b.settle();
+    expect(topics).toHaveLength(2);
+    expect(topics[0]).toContain('first point');
+    expect(topics[1]).toContain('second point');
+  });
 });
