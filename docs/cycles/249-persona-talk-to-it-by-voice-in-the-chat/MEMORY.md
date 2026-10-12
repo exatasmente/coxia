@@ -7,32 +7,35 @@
 - Sem canal IPC novo. Só o aparelho que enviou o turno fala a resposta. Voz da persona = voiceOfAgent(persona.id). Cerimônias não migradas.
 - Configurações de voz abrem a tela settings (sem âncora); latência vai para console.info no renderer (linha i18n-ignore).
 - Revisão: aprovado por leitura, 4 sugestões não bloqueantes. QA: gates verdes, nenhuma falha.
-- Integração (7_INTEGRATION.md): devolvida só pela base (ver abaixo).
+- Integração devolveu só pela base. Implementação (tentativa 3): o CHANGELOG da branch foi alinhado à release (bloco beta.5 e links do rodapé); a nossa linha fica em [Unreleased] > Added.
 
 ## Restrições
 
 - Texto novo nos dois catálogos, `.novoice` onde disser "call"; cores só por tokens; testes com fakes.
 - vitest em ambiente node, sem jsdom: lógica em funções puras.
 - Voz desligada/não instalada: sem microfone nem download. Celular: gravação exige https; instalar/ligar voz só no computador.
-- Nunca merge/rebase/commit pelo shell; base vem pela ferramenta de conflito do app. PR com base release/0.11.0, não main.
+- Nunca merge/rebase/commit pelo shell; a base vem pela ferramenta de conflito do app. PR com base release/0.11.0, não main.
 
 ## Tentado e descartado
 
 - params.origin em vez de campo próprio. Migrar telas que duplicam useTalk. Canal IPC novo para voz da persona.
 - QA não abriu o app: sem voz instalada no ambiente.
+- Evitar o conflito do CHANGELOG só pelo texto: impossível, os dois lados inserem no mesmo ponto abaixo de [Unreleased]. Ficou trivial (o lado da release está vazio).
 
 ## Perguntas abertas
 
 - Pessoa confirmar propostas 11–13 (não bloqueia).
-- Não verificado: app rodando com voz, latência real, lacunas entre frases, barge-in com eco, celular real, atalho Ctrl/Cmd+Shift+M, modelo seguir o prompt de voz, aparência do modo de voz, PRs abertos na release (esquema).
+- Não verificado: app rodando com voz, latência real, lacunas entre frases, barge-in com eco, celular real, atalho Ctrl/Cmd+Shift+M, modelo seguir o prompt de voz, aparência do modo de voz, PRs abertos na release (esquema), gates depois da mesclagem da base.
 - 4 arquivos de teste do navegador falham por falta de @playwright/mcp (ambiente).
 
 ## Onde o trabalho está
 
-- Integração conferiu: esquema 34 = release; theme-audit, i18n:lint, public-audit 0; electron-vite build ok; nomes de módulo novos sem colisão; CHANGELOG tem a linha.
-- Bloqueio: branch 11 commits atrás de origin/release/0.11.0, conflito só em CHANGELOG.md. Próximo: trazer a base pelo app, reconferir tsc/testes de voz, voltar à integração e então abrir o PR.
+- Integração conferiu: esquema 34 = release; theme-audit, i18n:lint, public-audit 0; electron-vite build ok; nomes de módulo novos sem colisão.
+- Base: a branch está 8 à frente e 11 atrás de origin/release/0.11.0; o merge-tree acusa conflito só em CHANGELOG.md. Resolução: manter o arquivo da branch (ev-4). Próximo: trazer a base pelo app, rodar de novo tsc e os testes de voz, voltar à integração e abrir o PR.
+- Passagem dev-experiencia → integrator: trazer a base pela ferramenta do app (CHANGELOG: manter o da branch), rodar de novo os gates e abrir o PR com base release/0.11.0, ressalvando o que não foi verificado.
 - Passagem support → product-owner: Refinamento: decidir as três perguntas abertas (sim falado, meta de latência, tela bloqueada/foco), propor prioridade e avaliar dividir a entrega (extração do áudio compartilhado, voz no chat, modo de voz, celular). <!-- handoff:11 -->
 - Passagem product-owner → pessoa: Planejamento: desenhar as quatro fatias (áudio compartilhado, voz no chat, modo de voz, celular), a origem "voz" no turno da persona e a fala por frase sobre o texto ao vivo; confirmar no código o comportamento de hoje, que veio só da triagem. Tratar as regras 11, 12 e 13 como propostas a confirmar. <!-- handoff:20 -->
 - Passagem tl-experiencia → pessoa: Implementação: seguir 2_PLAN.md na ordem das entregas 1 a 5, um commit por entrega, todos passando em tsc, vitest, theme-audit, i18n:lint e public-audit. Começar pela Entrega 1 (dividir audio.ts em voice/ com reexport, callback de silêncio com motivo e heard) e provar que as cerimônias não mudaram. Na Entrega 2, conferir antes de tudo que o campo origin sobrevive ao armazenamento do fórum. Toda lógica nova em funções puras, porque o vitest roda em ambiente node, sem jsdom. Verificar na hora: onde abrir as configurações de voz (seção/âncora), o canal de log do renderer para a linha de latência … <!-- handoff:33 -->
 - Passagem dev-experiencia → revisor-experiencia: Revisão/teste: o código das cinco entregas e os 12 testes novos estão na worktree; tsc, i18n:lint, public-audit e theme-audit passam, e os testes de voz também. Na suíte inteira, as falhas que restam são só dos testes do navegador (falta o pacote local @playwright/mcp). Falta verificar com o app rodando e a voz instalada: microfone no chat, modo de voz (estados, legendas, silenciar, encerrar, Ctrl/Cmd+Shift+M), fala antes do fim do texto, barge-in, a linha de latência no console (meta de 3 s), aviso com a voz desligada, e o celular com e sem https. electron-vite build não foi rodado. <!-- handoff:69 -->
 - Passagem qa-experiencia → integrator: Integração: gates verdes (tsc, auditorias, 154 testes de voz); suíte inteira só falha nos 4 arquivos do navegador (falta @playwright/mcp). Antes de abrir o PR, ressalvar que app com voz, latência, celular e electron-vite build não foram verificados. <!-- handoff:90 -->
+- Passagem integrator → dev-experiencia: Integração: devolver. A branch está 11 commits atrás de origin/release/0.11.0 e a mesclagem de teste dá conflito em CHANGELOG.md. Os demais itens passam: esquema 34 igual ao da release, gates, build e nomes de módulo novos. Cenário que falhou: Base atualizada com a release aberta. 11 commits atrás de origin/release/0.11.0; merge-tree acusa conflito em CHANGELOG.md. <!-- handoff:110 -->
