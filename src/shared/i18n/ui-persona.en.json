@@ -228,7 +228,6 @@
   "ui.chat.work.working": "working…",
   "ui.chat.writing": "Writing",
   "ui.nav.chat": "Chat",
-  "ui.nav.chat.live": "Chat, a ceremony is in progress",
   "ui.overview.title": "Overview",
   "ui.persona.banner": "The persona is stopped. Messages wait until you resume it.",
   "ui.persona.banner.waiting_one": "{count} message is waiting.",

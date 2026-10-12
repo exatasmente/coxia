@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- **The navigation stays on every screen it opens.** The sidebar of the computer and the menu of the phone were only on the chat and the Overview: Runs, Board, Settings, Actions and the other screens of the navigation lost it, and the phone fell back on the old bottom bar. Those screens now sit in the same frame, with the sidebar beside them on the computer and, on a phone, a slim bar at the top with the same menu button; the bottom bar is gone. The conversations (call, deep dive, gate, QA hand-off, retro) keep the whole screen.
+
 ## [0.11.0-beta.4] - 2026-10-11
 
 ### Added
