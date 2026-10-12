@@ -1,37 +1,39 @@
-# Integração: sessões do Claude Code da máquina
+# Integração: ordem de entrada e renumeração do esquema
 
 ## Veredito
 
-**Devolver ao implement.** O item 2 é bloqueante: o passo v34→v35 da configuração aparece nesta branch e também na branch da #282. Os demais itens passaram.
+**Devolver ao implement.** A pessoa respondeu "2882 vai primeiro". Leio como a #282 primeiro: "2882" não é uma issue deste repositório, e a leitura mais provável é "282" com um 8 repetido. Esta resposta é a mais recente e vale mais que o "280 primeiro" anterior. Se a leitura estiver errada, basta dizer, e o veredito volta a ser o da rodada anterior.
+
+Com a #282 entrando primeiro, esta branch precisa renumerar o passo de configuração.
+
+## O que renumerar nesta branch
+
+- `CONFIG_SCHEMA_VERSION` de 35 para 36 (`src/shared/config/types.ts:7`).
+- `v34ToV35` vira `v35ToV36` e passa a migrar do esquema 35 (o da #282) para o 36 (`src/shared/config/migrations.ts:500`).
+- Comentário de histórico em `migrations.ts` e `docs/configuration.md`.
+- `test/config-migrations.test.ts` (bloco 34→35 vira 35→36) e `CHANGELOG.md`, que cita o esquema 35.
+- Atenção: a `release/0.11.0` está no 34 e a #282 vai trazer o 35. Esta branch só pode ser mesclada depois, com a base trazida pela ferramenta de conflito do app.
 
 ## Itens
 
 | # | Item | Resultado | Evidência |
 |---|---|---|---|
-| 1 | CHANGELOG | Passou. Linha em `[Unreleased]` / `Added`, descrevendo o recurso e o esquema 35. | Lido em CHANGELOG.md |
-| 2 | Esquema | **Bloqueante.** `CONFIG_SCHEMA_VERSION` é 35 aqui (ev-6: `types.ts:7`, `v34ToV35` em `migrations.ts:500`) e 34 em `origin/release/0.11.0`, o que está certo. A `origin/cycle/...` da #282 (d434be69) também tem `v34ToV35`: dois passos com o mesmo número. | ev-6 (lado desta branch, executado); lado da #282 e da release: `git show <branch>:src/shared/config/migrations.ts` na execução anterior (ev-5), não reproduzido nesta rodada porque o sandbox não é repositório git |
-| 3 | Base | Passou. 0 commits atrás de `origin/release/0.11.0` (9 à frente); `git merge-tree` sem conflito. | ev-5 |
-| 4 | Gates | Passaram (ver abaixo). | ev-5; `npx tsc --noEmit` reexecutado nesta rodada, código 0 (ev-6) |
-| 5 | Nomes de módulo | Passou. Nenhum arquivo adicionado pela branch tem par na mesma pasta que só difere por maiúscula ou extensão. | verificação por arquivo adicionado |
-| 6 | Base do PR | Deve ser `release/0.11.0` (aberta), não a main. Não verificado: o PR ainda não existe. | — |
-
-### Qual renumerar
-
-Recomendação: quem mesclar depois renumera para v36. Se a #282 entrar primeiro, esta branch passa a v36 (`CONFIG_SCHEMA_VERSION` 36, `v35ToV36`, `types.ts`, `docs/configuration.md`, comentário de histórico e `test/config-migrations.test.ts`). Precisa de decisão sobre a ordem de entrada. Não verificado: os pull requests abertos (só olhei as branches `cycle/` remotas).
-
-## Gates
-
-- `npx tsc --noEmit`: código 0 (ev-6).
-- `npx vitest run` (rodado pelo app, ev-5): 9066 testes passaram, 2 falharam: `agent-assist-prompts` estourou 5 s e passou nas reexecuções; `public-audit.test` falhou só com `out/` presente (artefato de build).
-- `theme-audit`, `i18n:lint`, `public-audit`, `electron-vite build`: código 0 (ev-5); `out/` apagado depois.
+| 1 | CHANGELOG | Linha em `[Unreleased]` / `Added` (rodada anterior). Não reconferido agora, e precisa ajustar a menção ao esquema. | não verificado nesta rodada |
+| 2 | Esquema | **Bloqueante.** Esta branch: 35 com `v34ToV35` (lido, ev-13). A #282 usa o mesmo número e entra primeiro, então esta branch renumera para 36. | ev-13 (lido) |
+| 3 | Base | Não reverificada nesta rodada. A rodada anterior achou 0 commits atrás de `origin/release/0.11.0`. Reconferir depois da renumeração e da entrada da #282. | não verificado |
+| 4 | Gates | Nesta etapa o app rodou `npm test` (562 arquivos passaram, 1 pulado, 9068 testes, código 0) e `npm run typecheck` (código 0). theme-audit, i18n:lint, public-audit e build não foram rodados nesta rodada. | saída do app |
+| 5 | Nomes de módulo | Não reconferido. O teste `module-names-case.test.ts` passou dentro do `npm test`. | saída do app |
+| 6 | Base do PR | Deve ser `release/0.11.0`. O PR ainda não existe. | não verificado |
 
 ## Não verificado
 
+- A leitura de "2882" como #282 (suposição minha, a confirmar).
 - Nada contra o Claude Code real nem com a tela aberta.
-- Suíte completa não reexecutada por mim nesta rodada.
-- Pull requests abertos para a release; a comparação git do esquema com a #282 nesta rodada.
+- O esquema da #282 e da release não foi relido nesta rodada.
+- Pull requests abertos.
 
 ## Resultado dos cenários
 
-- Esquema: sem colisão com a #282 após a decisão 280 primeiro: falhou (lido) — Esta branch tem CONFIG_SCHEMA_VERSION 35 e v34ToV35 (ev-6, executado). A branch da #282 (d434be69) também define v34ToV35, segundo a execução anterior (ev-5). Nesta rodada o sandbox não é repositório git, então só o lado desta branch foi reconferido. Falha: um dos dois precisa renumerar para v36. — afirmado como executado (como o app registrou)
-- Gates npm test e typecheck: passou (lido) — tsc --noEmit reexecutado nesta rodada: código 0 (ev-6). Vitest rodado pelo app na execução anterior (ev-5): 2 falhas, ambas explicadas e passando na reexecução ou sem out/. Não reexecutei a suíte completa. — afirmado como executado (como o app registrou)
+- Esquema: ordem de entrada e numeração: falhou (lido) — Esta branch tem CONFIG_SCHEMA_VERSION 35 e v34ToV35. Com a #282 entrando primeiro (leitura de "2882"), precisa ir a 36.
+- Testes e typecheck rodados pelo app: passou (lido) — npm test: 562 arquivos passaram, 9068 testes, código 0. npm run typecheck: código 0. Rodados pelo app antes da etapa, não por mim.
+- Base, outros gates e base do PR: não rodou (lido) — Não reverificados nesta rodada: sem mudança de código e o veredito já devolve ao implement. Sem comprovação.
