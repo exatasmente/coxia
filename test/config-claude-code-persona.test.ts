@@ -55,7 +55,9 @@ describe('config:save and the persona', () => {
     // Lowering is not a raise: the persona may turn both back off.
     const lowered = structuredClone(getConfig());
     lowered.runner.claudeCodeTasks = false;
-    lowered.devCycle.stages[0] = { ...lowered.devCycle.stages[0], executor: undefined };
+    // Drop the key: the config validator refuses a key present with an undefined value.
+    const { executor: _dropped, ...rest } = lowered.devCycle.stages[0];
+    lowered.devCycle.stages[0] = rest;
     await asPersona(lowered);
     expect(getConfig().runner.claudeCodeTasks).toBe(false);
     expect(getConfig().devCycle.stages[0].executor).toBeUndefined();

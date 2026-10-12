@@ -2,12 +2,14 @@
 
 ## Decisões
 
-- Executor por etapa: campo "Executor" (Agente do Coxia padrão | Sessão do Claude Code), visível/escolhível só com a opção global "Entregar tarefas ao Claude Code" (`runner.claudeCodeTasks`, desligada, só desktop). Opção desligada ou workspace test: true: a etapa recusa (`claude-code-off`/`claude-code-test`), nunca cai no agente do Coxia. Celular e persona não ligam a opção nem escolhem o executor.
+- Executor por etapa: campo "Executor" (Agente do Coxia padrão | Sessão do Claude Code), visível/escolhível só com a opção global "Entregar tarefas ao Claude Code" (`runner.claudeCodeTasks`, desligada, só desktop). Opção desligada ou workspace test: true: a etapa recusa (`claude-code-off`/`claude-code-test`), nunca cai no agente do Coxia. Celular e persona não ligam a opção nem escolhem o executor (podem baixar).
 - Mecanismo: Agent SDK já embarcado (não ACP). Resultado substitui a resposta; transcrição em arquivo na pasta de dados + linha na thread; sem Bash nativo; permissões viram item pendente de comando; escrita confinada à worktree.
-- Sem link da transcrição na timeline, sem `PendingCommand.tool`, sem flow-check de executor sem agente, sem teste de componente do StagePanel: aceito.
+- Aceito fora do escopo: link da transcrição na timeline, `PendingCommand.tool`, flow-check de executor sem agente, teste de componente do StagePanel.
+- Teste da persona: para baixar o executor, remover a chave (saveConfig recusa chave com valor undefined).
 - Resposta: (1) Como a etapa é configurada: um campo na própria etapa do fluxo, "Executor", com duas opções: "Agente do Coxia" (padrão, o que existe hoje) e "Sessão do Claude Code". Quem não mexe no campo não vê mudança. O campo só aparece e só pode ser escolhido com a opção global "Entregar tarefas ao Claude Code" ligada (desligada por padrão, só desktop). Com a opção desligada, ou em workspace test: true, a etapa não alcança nenhuma sessão: a execução recusa com mensagem clara, sem cair silenciosamente no agente normal. Celular pareado e persona não podem ligar a opção nem escolher o executor. (2) Resul… <!-- answer:22 -->
 - Resposta: Volta e pede as correções <!-- answer:132 -->
 - Resposta: O que continua em aberto: - 7 Celular e persona — Recusas passam; o terceiro teste da persona falha ao salvar config com `executor: undefined` explícito (expected string, got undefined). Suposição do teste; portão vermelho. - Suíte vitest completa — 1 falha, 9025 passaram, 4 ignoradas. <!-- answer:239 -->
+- Resposta: O que continua em aberto: - test/config-claude-code-persona.test.ts:58 — O teste baixa o executor com `executor: undefined` explícito; a validação de `saveConfig` recusa a chave presente com valor indefinido ("expected string, got undefined"), então o teste falha e o portão vermelho persiste. Pedido anterior da QA ainda não atendido. Remover a chave em vez de atribuir <!-- answer:249 -->
 
 ## Restrições
 
@@ -17,6 +19,7 @@
 ## Tentado e descartado
 
 - ACP: exigiria dependência nova e segunda via de permissões.
+- `executor: undefined` explícito no teste da persona: recusado pela validação.
 
 ## Perguntas abertas
 
@@ -24,10 +27,10 @@
 
 ## Onde o trabalho está
 
-- QA rodada 2 (rodou de verdade): tsc, theme-audit, i18n:lint, public-audit saída 0; vitest 1 falha em 9030: test/config-claude-code-persona.test.ts, 3º teste.
-- Revisão rodada 6 (só leitura): a falha continua; linha 58 do teste ainda atribui `executor: undefined`, que saveConfig recusa. Correção: remover a chave. Veredito: mudanças.
-- Não verificado: interface, SDK real, respeito real a deny.
-- Próximo: developer corrige o teste e roda a suíte e os portões; depois integração renumera v34→v35 com a #280.
+- QA rodada 2 (rodou de verdade): tsc, theme-audit, i18n:lint, public-audit saída 0; vitest 1 falha em 9030 (3º teste de test/config-claude-code-persona.test.ts).
+- Implementação tentativa 9: a linha do teste foi corrigida (chave removida por desestruturação). Nenhum comando rodado; não verificado.
+- Não verificado: a correção em execução, interface, SDK real, respeito real a deny.
+- Próximo: QA roda o teste da persona, tsc (variável `_dropped` não usada), suíte completa e portões; depois integração renumera v34→v35 com a #280.
 - Passagem support → product-owner: Planejar: escolher ACP vs. Agent SDK (SDK já embarcado), como impor o limite de escrita ao worktree, o campo "Executor" no esquema do fluxo (qualquer etapa) e o encaixe com os canais de sessões da #280 (recusa quando desligado, persona/celular negados). <!-- handoff:35 -->
 - Passagem product-owner → pessoa: Planejar: escolher ACP vs. Agent SDK (SDK já embarcado em src/main/claudeSdk.ts), como impor o limite de escrita ao worktree, o campo "Executor" em FlowStage (src/shared/runs/types.ts) e o encaixe com a #280, cujo módulo de sessões não foi achado nesta worktree (conferir se a base já a inclui). <!-- handoff:45 -->
 - Passagem tl-plataforma → pessoa: Implementar 2_PLAN.md: (1) esquema/migração (StageDef.executor, runner.claudeCodeTasks, passo v34→v35, hash do fluxo estável); (2) fronteira em configScope/persona; (3) src/main/runner/claudeCodeTask.ts com Agent SDK; (4) guarda e ramo em executor.ts; (5) UI e i18n; (6) testes com sessão simulada. Antes de codar: confirmar o formato de readOutput, o destino da transcrição e o ponto de recusa da persona. <!-- handoff:59 -->
@@ -43,3 +46,4 @@
 - Passagem developer → revisor-plataforma: QA: rodar `npx tsc --noEmit`, `npx vitest run` completo e os quatro portões restantes. Conferir primeiro runner-claude-code-stage, config-claude-code-persona (a etapa `build` precisa passar em saveConfig), runner-config, team-runner-edit, docs-schema-version, ui-i18n e runs-policy. Na integração, renumerar o passo v34→v35 com a #280. <!-- handoff:206 -->
 - Passagem revisor-plataforma → qa-plataforma-2: QA: rodar `npx tsc --noEmit`, `npx vitest run` completo e os quatro portões restantes; conferir primeiro runner-claude-code-stage, config-claude-code-persona (a etapa `build` precisa passar em saveConfig), runner-config, team-runner-edit, docs-schema-version, ui-i18n e runs-policy. Na integração, renumerar o passo v34→v35 com a #280. <!-- handoff:213 -->
 - Passagem pessoa → revisor-plataforma: O que continua em aberto: - 7 Celular e persona — Recusas passam; o terceiro teste da persona falha ao salvar config com `executor: undefined` explícito (expected string, got undefined). Suposição do teste; portão vermelho. - Suíte vitest completa — 1 falha, 9025 passaram, 4 ignoradas. <!-- handoff:240 -->
+- Passagem pessoa → developer: O que continua em aberto: - test/config-claude-code-persona.test.ts:58 — O teste baixa o executor com `executor: undefined` explícito; a validação de `saveConfig` recusa a chave presente com valor indefinido ("expected string, got undefined"), então o teste falha e o portão vermelho persiste. Pedido anterior da QA ainda não atendido. Remover a chave em vez de atribuir <!-- handoff:250 -->
