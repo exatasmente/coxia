@@ -5,15 +5,16 @@
 - Resposta da pessoa: volta e pede correção.
 - Base do PR: release/0.11.0. Resolução do conflito: manter o CHANGELOG.md da branch.
 - Resposta: volta e pedo correção <!-- answer:161 -->
+- Resposta: b eu autorizo <!-- answer:197 --> (a mesclagem da base pelo shell foi autorizada só desta vez; feita em 053433c8)
 
 ## Restrições
 
-- Merge, rebase e commit só pela ferramenta de conflito do app, nunca pelo shell.
+- Fora a mesclagem autorizada uma vez (answer:197), merge, rebase e commit só pela ferramenta de conflito do app, nunca pelo shell.
 - Esquema de configuração 34, igual ao da release; sem passo de migração novo.
 
 ## Tentado e descartado
 
-- Alinhar o CHANGELOG da branch com a release para facilitar a mesclagem: o conflito persiste (os dois lados escrevem logo abaixo de [Unreleased]).
+- Alinhar o CHANGELOG da branch com a release para facilitar a mesclagem: o conflito persistiu (os dois lados escrevem logo abaixo de [Unreleased]); resolvido no merge mantendo o arquivo da branch.
 
 ## Perguntas abertas
 
@@ -21,9 +22,11 @@
 
 ## Onde o trabalho está
 
-- Código das cinco entregas, testes e docs prontos. Integração tentativa 3: branch 13 à frente e 11 atrás de origin/release/0.11.0, conflito só em CHANGELOG.md. tsc exit 0; npm test só falha nos 4 arquivos do navegador (@playwright/mcp ausente).
-- Falta: trazer a base pela ferramenta do app, repetir tsc e testes de voz, abrir o PR.
-- Não verificado: app com voz, latência (meta 3 s), celular, modelo seguindo o prompt de voz, theme-audit/i18n:lint/public-audit/build depois da mesclagem, PRs abertos na release.
+- O código das cinco entregas, os testes e a documentação estão prontos. A base origin/release/0.11.0 foi mesclada no commit 053433c8, com o CHANGELOG.md mantido como na branch; agora a branch está 15 à frente e 0 atrás da release.
+- Depois da mesclagem (ev-9): tsc com saída 0; 20 arquivos e 191 testes de voz/i18n/política passam; i18n:lint, theme-audit e public-audit limpos. Na suíte inteira falham os 4 arquivos do navegador (falta @playwright/mcp) e modules-registered falhou uma vez, mas passou sozinho (2/2).
+- Falta: electron-vite build depois da mesclagem e abrir o PR com base release/0.11.0.
+- Não verificado: o app com voz, a latência (meta de 3 s), o celular, o modelo seguir o prompt de voz e se há PRs abertos na release.
+- Sugestões da revisão ainda abertas, que não bloqueiam: teste para "fala desligada não sintetiza"; latência só no console; acoplamento da marca de primeira palavra com player.speaking; separar GateNote/gateMessage.
 - Passagem support → product-owner: Refinamento: decidir as três perguntas abertas (sim falado, meta de latência, tela bloqueada/foco), propor prioridade e avaliar dividir a entrega (extração do áudio compartilhado, voz no chat, modo de voz, celular). <!-- handoff:11 -->
 - Passagem product-owner → pessoa: Planejamento: desenhar as quatro fatias (áudio compartilhado, voz no chat, modo de voz, celular), a origem "voz" no turno da persona e a fala por frase sobre o texto ao vivo; confirmar no código o comportamento de hoje, que veio só da triagem. Tratar as regras 11, 12 e 13 como propostas a confirmar. <!-- handoff:20 -->
 - Passagem tl-experiencia → pessoa: Implementação: seguir 2_PLAN.md na ordem das entregas 1 a 5, um commit por entrega, todos passando em tsc, vitest, theme-audit, i18n:lint e public-audit. Começar pela Entrega 1 (dividir audio.ts em voice/ com reexport, callback de silêncio com motivo e heard) e provar que as cerimônias não mudaram. Na Entrega 2, conferir antes de tudo que o campo origin sobrevive ao armazenamento do fórum. Toda lógica nova em funções puras, porque o vitest roda em ambiente node, sem jsdom. Verificar na hora: onde abrir as configurações de voz (seção/âncora), o canal de log do renderer para a linha de latência … <!-- handoff:33 -->
@@ -35,3 +38,4 @@
 - Passagem qa-experiencia → integrator: Integração: trazer origin/release/0.11.0 pela ferramenta de conflito do app (só CHANGELOG.md conflita; manter o arquivo da branch), repetir tsc e testes de voz, e abrir o PR com base release/0.11.0 ressalvando app com voz, latência e celular não verificados. <!-- handoff:145 -->
 - Passagem pessoa → qa-experiencia: volta e pedo correção <!-- handoff:162 -->
 - Passagem qa-experiencia → integrator: Integração: trazer origin/release/0.11.0 pela ferramenta de conflito do app (só CHANGELOG.md conflita; manter o arquivo da branch), repetir tsc e testes de voz, abrir o PR com base release/0.11.0 ressalvando app com voz, latência e celular não verificados. <!-- handoff:174 -->
+- Passagem integrator → dev-experiencia: Integração devolvida de novo só pela base: a branch está 13 à frente e 11 atrás de origin/release/0.11.0, e o merge-tree acusa conflito só em CHANGELOG.md. Esquema 34 igual ao da release, linha no CHANGELOG presente, nenhum nome de módulo novo colide. tsc e npm test foram observados nesta etapa: tsc exit 0; npm test só falha nos 4 arquivos do navegador (falta @playwright/mcp). Não rodei theme-audit, i18n:lint, public-audit nem electron-vite build. Cenário que falhou: Base atualizada com a release aberta. 13 à frente e 11 atrás de origin/release/0.11.0; merge-tree acusa conflito só em CHANGELOG… <!-- handoff:187 -->
