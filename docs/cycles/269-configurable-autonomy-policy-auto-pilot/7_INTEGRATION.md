@@ -1,37 +1,49 @@
-# Integração: veredito e conferências
+# Integração: conferências antes do pull request
 
-**Veredito: devolver ao implement.** Dois itens bloqueantes: o esquema de configuração (item 2) e a base (item 3).
+**Veredito: código pronto; um bloqueio fora do código.** O pull request #276 aponta para `release/0.9.1`. Por decisão do Neto, a release-alvo é `release/0.11.0` e a base do PR tem de ser ela. Não consigo redirecionar pelo host: só leio, e não há operação para trocar a base. Falta alguém trocar a base do #276. Não é caso de devolver ao implement.
+
+## O que falta para liberar
+
+1. Trocar a base do PR #276 para `release/0.11.0` (no GitHub: Edit ao lado do título, ou `gh pr edit 276 --base release/0.11.0`). Não foi feito por mim.
+2. Depois da troca, conferir que o GitHub segue sem conflitos e com CI verde (só foi visto com a base antiga).
 
 ## Itens
 
 | # | Item | Resultado | Evidência |
 |---|---|---|---|
-| 1 | CHANGELOG | OK. Há linha em `[Unreleased]` › Added ("Screen step approvals"). Lido nesta etapa. A mescla com a release dá conflito neste arquivo. | leitura de `CHANGELOG.md` |
-| 2 | Esquema | **BLOQUEANTE.** Branch: `CONFIG_SCHEMA_VERSION = 29`, passo `v28ToV29`. `origin/release/0.11.0`: versão 32, passos `v29ToV30`, `v30ToV31`, `v31ToV32`. O passo 28→29 da branch fica numa posição que a release já ocupa de outro modo. **Renumerar o passo desta branch** para `v32ToV33`, com `CONFIG_SCHEMA_VERSION = 33`, depois de trazer a base. Pull requests abertos para a release: não consultados (só conferi as branches). | ev-4 |
-| 3 | Base | **BLOQUEANTE.** Depois de `git fetch`: `git rev-list --count HEAD..origin/release/0.11.0` = 160. A mescla de teste (`git merge-tree`, sem gravar nada) dá conflito em 13 arquivos: CHANGELOG.md, docs/configuration.md, src/shared/auditoria.ts, config/{defaults,migrations,schema,transfer,types}.ts, cycles/apply.ts e 4 arquivos de teste. Pedido: trazer a base pela ferramenta de conflito do app. Não fiz merge, rebase nem commit. | ev-4 |
-| 4 | Gates | Parcial; ver abaixo. | saída do app |
-| 5 | Nomes de módulo | Há pares na mesma pasta que diferem só pela extensão, mas todos já existiam antes desta mudança (`jobs.css`/`jobs.ts`, `activity.css`/`activity.ts`, `CeremonyCommands.tsx`/`ceremonyCommands.css`); a mudança não acrescenta nenhum. Não bloqueante. Pares tipo `.gitignore`/`.nvmrc` e `icon.png`/`icon.svg` são falsos positivos do meu filtro. | `git ls-files` + awk |
-| 6 | Base do PR | Deve ser `release/0.11.0` (a release aberta), não a main. Não aberto ainda. A release aberta foi deduzida da branch mais nova de release e da versão 0.11.0-beta; não confirmei no host. | leitura |
+| 1 | CHANGELOG | OK na tentativa anterior: linha "Screen step approvals" em `[Unreleased]` › Added, com a condição da #268. Não refeito agora. | grep em `CHANGELOG.md` |
+| 2 | Esquema | OK na tentativa anterior: `CONFIG_SCHEMA_VERSION = 33`, passo `32: v32ToV33` depois de `v31ToV32`; release na versão 32; sem passo repetido. PRs abertos para a release não foram listados. Não refeito agora. | ev-4 |
+| 3 | Base | OK na tentativa anterior: 0 commits atrás de `origin/release/0.11.0` depois do fetch. Não refeito agora. | ev-4, ev-8 |
+| 4 | Gates | Ver abaixo. | ev-9, ev-10, ev-11 |
+| 5 | Nomes de módulo | OK na tentativa anterior: só pares preexistentes; a mudança não acrescenta nenhum. Não refeito agora. | git ls-files |
+| 6 | Base do PR | **BLOQUEANTE.** PR #276 com base `release/0.9.1`; deve ser `release/0.11.0` (decisão do Neto). Não posso redirecionar. | ev-8 (vcs_read) |
 
-## Gates (observados nesta etapa pelo app antes de mim)
+## Gates
 
-- `npm run typecheck` (tsc --noEmit): saída 0.
-- `npm test` (vitest run): 7833 passam, 15 ignorados; 4 arquivos de navegador real falham (browser-contract, browser-quit, browser-runtime, browser-sites) porque falta `@playwright/mcp` neste computador. Não verifiquei se falham também na base.
+Observados nesta etapa (rodados pelo app):
+- typecheck (`tsc --noEmit`): saída 0 (ev-9).
+- suíte: 4 arquivos falham, 532 passam; 8808 testes passam, 2 falham, 15 ignorados (ev-10). Falham browser-contract, browser-runtime, browser-quit e browser-sites, com `Cannot find module @playwright/mcp` na cópia (ev-11). Não verifiquei se falham também na base: **não verificado**.
 
-## Para a próxima passagem
-
-1. Trazer a base pela ferramenta de conflito; resolver os 13 arquivos.
-2. Renumerar a migração (v32→v33, versão 33) e ajustar os testes de migração e de esquema.
-3. Na mesma mescla, tratar a #268 (unificar `screen-autonomous`/`screen-policy` com `auto-step`/`policy-change`; `src/shared/auditoria.ts` já conflita).
-4. Rodar de novo todos os gates e o build.
+Da tentativa anterior (não repetidos agora): theme-audit, i18n:lint (6190 chaves, 0 problemas), public-audit e `electron-vite build` com saída 0; `agent-assist-prompts` sozinho: 36 passam.
 
 ## Não verificado
 
-Pull requests abertos para a release; a tela e a janela de aprovação no app; os 4 testes de navegador real.
+- As 2 falhas de `@playwright/mcp` na base.
+- Tela de configurações e janela de aprovação vistas no app.
+- Pull requests abertos para a release (só vi o #276).
+- Que `release/0.11.0` é a release aberta no host (decisão do Neto, não conferida por mim).
+
+## Condição de lançamento
+
+Não ir à produção sem a #268; unificar `screen-autonomous`/`screen-policy` com `auto-step`/`policy-change` na mescla dela.
+
+## Plano de teste / cenários
+
+- Typecheck e suíte completa: rodados pelo app (ev-9, ev-10, ev-11). Só 4 arquivos de navegador falham por falta de @playwright/mcp; na base, não verificado.
+- CHANGELOG, esquema, base, nomes de módulo, lints e build: conferidos na tentativa anterior (ev-4, ev-8); não repetidos nesta.
 
 ## Resultado dos cenários
 
-- CHANGELOG tem linha em Unreleased: passou (executado na sandbox) — Linha 'Screen step approvals' em [Unreleased] › Added.
-- Esquema sem passo repetido com a release: falhou (executado na sandbox) — Release 0.11.0 na versão 32 com passos 29→30..31→32; a branch tem v28→v29 e versão 29. Renumerar para v32→v33.
-- Base em dia com a release aberta: falhou (executado na sandbox) — 160 commits atrás de origin/release/0.11.0; mescla de teste dá conflito em 13 arquivos.
-- Nomes de módulo sem pares por maiúscula/extensão: passou (executado na sandbox) — Só pares já existentes (css/ts); a mudança não acrescenta nenhum.
+- Base do PR é a release aberta: falhou (lido) — O PR #276 tem base release/0.9.1; deve ser release/0.11.0 (decisão do Neto). Não consigo trocar pelo host (só leitura). Visto por leitura (vcs_read), registrado em ev-8; não reconferido nesta tentativa.
+- Typecheck e suíte completa: passou (lido) — tsc --noEmit saiu 0 (ev-9). Suíte: 8808 passam, 2 falham, 4 arquivos de navegador por falta de @playwright/mcp (ev-10, ev-11). Se também falham na base: não verificado. — afirmado como executado (como o app registrou)
+- Base e esquema contra release/0.11.0: passou (lido) — 0 commits atrás de origin/release/0.11.0; CONFIG_SCHEMA_VERSION 33 com passo v32ToV33, sem passo repetido contra a release (versão 32). PRs abertos para a release não foram listados. — afirmado como executado (como o app registrou)
