@@ -516,6 +516,8 @@ export interface FlowStage {
   cycleAutonomous: boolean;
   /** The stage asked for the virtual display a QA stage gets. */
   display: boolean;
+  /** The stage hands its task to a Claude Code session. Only present then, so the hash of every flow that never set it stays as it was. */
+  executor?: 'claude-code';
   /** The files the stage must produce. */
   artifacts: string[];
   /** The artifacts the stage is given; null: every earlier one. */

@@ -42,6 +42,7 @@ export function flowOf(config: FlowConfig, stages: StageDef[] = config.devCycle.
       autonomous: who?.autonomous ?? false,
       cycleAutonomous: cycle,
       display: s.display === true,
+      ...(type === 'work' && s.executor === 'claude-code' ? { executor: 'claude-code' as const } : {}),
       artifacts: [...(s.produces ?? [])],
       reads: s.reads ? [...s.reads] : null,
       next: s.next === undefined ? (stages[i + 1]?.id ?? null) : s.next,

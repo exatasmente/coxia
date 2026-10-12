@@ -738,6 +738,30 @@ describe('migrateConfig', () => {
       expect(validateConfig(r.config).ok).toBe(true);
     });
 
+    it('drops an invalid stage executor alone: the stage list and the flow are kept, the stage falls back to the agent', () => {
+      const c = v25();
+      c.devCycle.stages = [structuredClone(TEST_STAGES[0])];
+      c.devCycle.stages[0].executor = 'robot';
+      c.devCycle.flows = { release: [{ ...c.devCycle.stages[0], executor: 7 }] };
+      c.schemaVersion = CONFIG_SCHEMA_VERSION;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.changed).toBe(true);
+      expect(r.config.devCycle.stages).toHaveLength(1);
+      expect(r.config.devCycle.stages[0]).toMatchObject({ id: c.devCycle.stages[0].id, kind: c.devCycle.stages[0].kind });
+      expect(r.config.devCycle.stages[0].executor).toBeUndefined();
+      expect(r.config.devCycle.flows?.release).toHaveLength(1);
+      expect(r.config.devCycle.flows?.release[0].executor).toBeUndefined();
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps a valid stage executor a file carries', () => {
+      const c = v25();
+      c.devCycle.stages = [{ ...structuredClone(TEST_STAGES[0]), executor: 'claude-code' }];
+      c.schemaVersion = CONFIG_SCHEMA_VERSION;
+      const r = migrateConfig(c, { legacyInstall: false });
+      expect(r.config.devCycle.stages[0].executor).toBe('claude-code');
+    });
+
     it('switches nothing on for what the provider offers: no features, no offer, no effort, and a file without flex reads it as on', () => {
       const c = v25();
       delete c.runner.flex;

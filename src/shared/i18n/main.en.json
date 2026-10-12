@@ -1164,6 +1164,8 @@
   "main.engine.pool.work.shell": "running commands",
   "main.engine.pool.work.screen": "the screen",
   "main.runner.error.missing-artifacts": "The stage ended without producing: {names}.",
+  "main.runner.error.claude-code-off": "This stage hands its task to a Claude Code session, but that is not available: turn on \"Hand tasks to Claude Code\" in the runner settings, or set the stage's executor back to the app's agent. Nothing was run.",
+  "main.runner.error.claude-code-test": "This stage hands its task to a Claude Code session, which a test workspace never does. Nothing was run.",
   "main.runner.error.qa-evidence-missing": "QA concluded scenarios without keeping and citing evidence for each one with SaveEvidence. Save the result in /coxia/out, cite its id in evidenceIds, and retry QA: {scenarios}.",
   "main.mentions.call.refusedCycle": "{called} is already in this exchange: a loop of agents calling each other is not opened. Answer with what you have.",
   "main.mentions.call.refusedCap": "This answer already called {cap} agents; no new call is made. Answer with what you have.",

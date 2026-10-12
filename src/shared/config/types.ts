@@ -1,4 +1,4 @@
-// WorkspaceConfig (schema 34): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 35): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 

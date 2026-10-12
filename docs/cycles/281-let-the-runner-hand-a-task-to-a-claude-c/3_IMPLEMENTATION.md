@@ -1,44 +1,27 @@
-# Implementação parcial: só o esquema e a migração
+# Implementação parcial: esquema, guarda e fronteira do celular
 
 ## Estado
 
-Dos sete passos de 2_PLAN.md, só o passo 1 (esquema e migração) está no código. Os passos 2 a 7 não foram feitos. Nenhum portão do repositório foi rodado nesta tentativa: nada abaixo está verificado por execução.
+Do plano estão feitos o passo 1 (esquema e migração), parte do passo 2 (resolução do fluxo), a fronteira do celular do passo 3 e a guarda do passo 5. Falta o módulo da sessão (passo 4), o desvio real no executor, a interface, o restante do i18n e a documentação. **Nenhum comando foi rodado nesta tentativa** (tsc, vitest, theme-audit, i18n:lint, public-audit): nada abaixo está verificado por execução.
 
 ## O que mudou (lido no diff do worktree)
 
-- `src/shared/config/types.ts`:
-  - `CONFIG_SCHEMA_VERSION` 34 → 35;
-  - `STAGE_EXECUTORS` e `StageExecutor`;
-  - `StageDef.executor?`;
-  - `RunnerConfig.claudeCodeTasks?`.
-- `src/shared/claudeCode.ts` (novo): `claudeCodeTasksOf(runner)`, em que ausente significa desligado. Segue o modelo de `unconfined.ts`.
-- `src/shared/config/schema.ts`: o enum `executor` no objeto `stage`, que vale para `devCycle.stages` e para `devCycle.flows`, e o booleano `runner.claudeCodeTasks`.
-- `src/shared/config/defaults.ts`: `claudeCodeTasks: false`.
-- `src/shared/config/migrations.ts`:
-  - comentário da v35;
-  - `v34ToV35`, que grava `claudeCodeTasks: false` mesmo por cima de um valor guardado, não toca nas etapas e, com `runner` inválido, só sobe a versão;
-  - `34: v34ToV35` em `STEPS`;
-  - novo nesta tentativa: no reparo (`poolKeyAt`), um `executor` inválido em `devCycle.stages[i]` ou em `devCycle.flows.<squad>[i]` é descartado sozinho.
-- `test/config-migrations.test.ts`: casos da v34→v35. O passo grava `false`, não acrescenta `executor` às etapas, o resultado valida, uma segunda migração não muda nada, um `runner` inválido só sobe a versão, e 35 é a versão atual, com 36 recusado.
+- Esquema e migração (passo 1): `StageDef.executor?`, `runner.claudeCodeTasks`, `claudeCodeTasksOf` em `src/shared/claudeCode.ts`, `v34ToV35`, descarte de `executor` inválido no reparo e os testes da migração, incluindo o do descarte do executor inválido (já presente em `test/config-migrations.test.ts`). Os comentários "schema 34" de `schema.ts` e `types.ts` agora dizem 35.
+- `src/shared/runs/types.ts` e `flow.ts`: `FlowStage.executor?: 'claude-code'`, só presente em etapa de trabalho com esse executor, para o hash dos fluxos existentes não mudar.
+- `src/main/runner/executor.ts`: códigos `claude-code-off` e `claude-code-test`, `guardExecutor` chamada logo depois de `pickAgent` (antes de worktree, sandbox ou tela), `ExecutorDeps.claudeCode?: { test() }`. Como o módulo da sessão ainda não existe, o ponto da chamada ao motor lança `claude-code-off` para a etapa claude-code: ela nunca chega ao `d.engine`.
+- `src/main/configScope.ts`: `executorRaised`, ligada em `refusedPaths`; uma etapa que passa a claude-code (no ciclo ou num fluxo) é recusada por nome, e voltar ao agente é permitido. `runner.claudeCodeTasks` já é recusada por não estar em `WEB_EDITABLE`.
+- `src/shared/i18n/main.en.json` e `main.pt-BR.json`: mensagens dos dois erros.
+- `test/claude-code-executor-guard.test.ts` (novo): guarda (padrão intacto, opção desligada, workspace de teste), hash do fluxo, `executorRaised` e a opção fora do que o celular edita.
 
 ## Não feito
 
-- Passo 2: `FlowStage.executor` (só quando `claude-code`) na resolução do fluxo, a checagem do fluxo para etapa sem agente e `PendingCommand.tool`.
-- Passo 3: `executorRaised` em `configScope.ts`, a recusa da persona e `runs:claudeTranscript` em `DESKTOP_ONLY`.
-- Passo 4: `src/main/runner/claudeCodeTask.ts`.
-- Passo 5: guarda e desvio em `executor.ts`, com os códigos `claude-code-off` e `claude-code-test`.
-- Passo 6: interface e i18n.
+- Passo 3: recusa da persona (`persona/assist.ts`) e `runs:claudeTranscript` em `DESKTOP_ONLY`.
+- Passo 4: `src/main/runner/claudeCodeTask.ts` (Agent SDK, canUseTool, hooks de confinamento, transcrição). Sem ele, os critérios 1 a 4 da spec não são atendidos.
+- Passo 5 restante: ligar `d.claudeCode` à produção (`isTestWorkspace`) e trocar o `throw` provisório pela chamada da sessão; `PendingCommand.tool`.
+- Passo 6: campo Executor no editor do fluxo, botão em `RunnerSection`, cartão e transcrição na timeline, chaves i18n da interface.
 - Passo 7: documentação e CHANGELOG.
-- Testes dos critérios 1 a 9 da spec, e um teste para o descarte do `executor` inválido no reparo.
+- `flow-check` rejeitando claude-code em etapa sem agente (hoje o campo é ignorado nelas).
 
 ## Verificação
 
-Nenhum comando de verificação foi rodado. Não verificados:
-
-- `npx tsc --noEmit`
-- `npx vitest run`
-- `node scripts/theme-audit.mjs`
-- `npm run i18n:lint`
-- `node scripts/public-audit.mjs`
-
-Um ponto a conferir: o comentário do topo de `schema.ts` ainda diz "schema 34".
+Não rodados, portanto não verificados: `npx tsc --noEmit`, `npx vitest run` (incluindo `test/claude-code-executor-guard.test.ts` e `test/config-migrations.test.ts`), `node scripts/theme-audit.mjs`, `npm run i18n:lint`, `node scripts/public-audit.mjs`. Um ponto a conferir no tsc: `after.devCycle.flows` em `executorRaised` e o formato do mock de `guardExecutor` nos testes.

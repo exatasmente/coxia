@@ -1164,6 +1164,8 @@
   "main.engine.pool.work.shell": "os comandos",
   "main.engine.pool.work.screen": "a tela",
   "main.runner.error.missing-artifacts": "A etapa terminou sem produzir: {names}.",
+  "main.runner.error.claude-code-off": "Esta etapa entrega a tarefa a uma sessão do Claude Code, mas isso não está disponível: ligue \"Entregar tarefas ao Claude Code\" nas configurações do runner, ou volte o executor da etapa para o agente do Coxia. Nada foi executado.",
+  "main.runner.error.claude-code-test": "Esta etapa entrega a tarefa a uma sessão do Claude Code, o que um workspace de teste nunca faz. Nada foi executado.",
   "main.runner.error.qa-evidence-missing": "A QA concluiu cenários sem guardar e citar a comprovação de cada um com SaveEvidence. Salve o resultado em /coxia/out, cite o id em evidenceIds e tente a QA novamente: {scenarios}.",
   "main.mentions.call.refusedCycle": "{called} já está nesta troca: um ciclo de agentes chamando uns aos outros não é aberto. Responda com o que você tem.",
   "main.mentions.call.refusedCap": "Esta resposta já chamou {cap} agentes; nenhuma chamada nova é feita. Responda com o que você tem.",

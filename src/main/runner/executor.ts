@@ -1,3 +1,4 @@
+import { claudeCodeTasksOf } from '../../shared/claudeCode';
 import { unconfinedOf } from '../../shared/unconfined';
 import { offersViewImage } from '../sandbox/tool';
 import { existsSync, rmSync } from 'node:fs';
@@ -71,7 +72,7 @@ import type { ScreenSessions } from '../browser/sessions';
 // The agent never writes the documents nor commits: the app does both, so an agent that only reads can still produce its stage's documents, and
 // the commits carry the workspace's identity. What the attempt means for the run (done, a question, findings) is the service's to apply.
 
-export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget', 'pool-busy', 'docs-folder-unsafe', 'qa-evidence-missing'] as const;
+export const STAGE_ERROR_CODES = ['no-stage', 'unknown-agent', 'worktree-gone', 'timeout', 'too-long', 'turns', 'empty-answer', 'missing-artifacts', 'no-identity', 'cancelled', 'no-sandbox', 'budget', 'pool-busy', 'docs-folder-unsafe', 'qa-evidence-missing', 'claude-code-off', 'claude-code-test'] as const;
 export type StageErrorCode = (typeof STAGE_ERROR_CODES)[number];
 
 export class StageError extends Error {
@@ -149,6 +150,8 @@ export interface ExecutorDeps {
   asks?: ScreenAsks;
   /** The hand-off of a stage's screen to the person (#178); absent: no stage is offered the tool. */
   handoff?: HandoffService | null;
+  /** How a stage reaches a Claude Code session; absent: no stage with that executor runs (it is refused, never run by the app's agent). */
+  claudeCode?: { test(): boolean };
 }
 
 export interface StageRun {
@@ -614,12 +617,23 @@ function keepStageRecording(d: ExecutorDeps, current: Run, stage: Pick<FlowStage
 }
 
 /**
+ * A stage that hands its task to a Claude Code session is refused before anything opens when the option is off, when the workspace is a test one, or when the app has no
+ * way to reach a session. It never falls back to the app's own agent: that would run the task somewhere the person did not choose.
+ */
+export function guardExecutor(stage: Pick<FlowStage, 'executor'>, config: WorkspaceConfig, d: Pick<ExecutorDeps, 'claudeCode'>): void {
+  if (stage.executor !== 'claude-code') return;
+  if (!claudeCodeTasksOf(config.runner) || !d.claudeCode) throw new StageError('claude-code-off');
+  if (d.claudeCode.test()) throw new StageError('claude-code-test');
+}
+
+/**
  * @param usage Told what every model call of the attempt used, as it happens: a stage that fails or is stopped part-way has used it all the same.
  * @param carried The files the message that resumes the stage carries (the person's answer): the run file does not keep them, so they come from the turn that recorded the move.
  */
 export async function executeStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: AbortController, usage?: (u: UsageReport) => void, carried?: readonly AttachmentRef[]): Promise<StageRun> {
   const config = d.config();
   const { agent, stage, kind } = pickAgent(config, run, flow);
+  guardExecutor(stage, config, d);
   if (!existsSync(run.worktree)) throw new StageError('worktree-gone');
   const writes = agent.permission === 'worktree';
   // A documentation run refuses a non-regular AGENTS.md target before the agent starts.
@@ -1218,6 +1232,8 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
   // The session the last answer was given in, and the engine that holds it: what a repair round continues from.
   let answered: Answered = { sessionId: null, engine: 'claude-sdk' };
   try {
+    // The session module is not wired yet: until it is, a claude-code stage stops here instead of reaching the app's agent.
+    if (stage.executor === 'claude-code') throw new StageError('claude-code-off');
     const firstRun = await watch.guard(withActivityContext(`run:${run.id}`, () => d.engine(call, commands)));
     data = firstRun.data;
     // Which engine answered, so the round that continues it is asked of the same one: a session of one engine is not one the other knows. With a pool of models

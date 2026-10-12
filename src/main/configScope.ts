@@ -135,7 +135,23 @@ export function poolRaised(before: WorkspaceConfig, after: WorkspaceConfig): str
 
 /** The changed paths a paired browser may not change (empty: the change is allowed). */
 export function refusedPaths(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
-  return [...changedPaths(before, after).filter((p) => !covered(p)), ...raisedPermissions(before, after), ...poolRaised(before, after), ...raisedAutonomy(before, after), ...screenPolicyRaised(before, after)];
+  return [...changedPaths(before, after).filter((p) => !covered(p)), ...raisedPermissions(before, after), ...poolRaised(before, after), ...raisedAutonomy(before, after), ...screenPolicyRaised(before, after), ...executorRaised(before, after)];
+}
+
+/**
+ * The stage lists are editable by a paired browser, but who works a stage is not: a stage that becomes `claude-code` (or is made so) is refused by name. Going back to
+ * the app's agent is allowed. `runner.claudeCodeTasks` is not an editable path at all.
+ */
+export function executorRaised(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
+  const out: string[] = [];
+  const check = (path: string, was: { id: string; executor?: string }[] | undefined, now: { id: string; executor?: string }[] | undefined): void => {
+    const had = new Set((was ?? []).filter((s) => s.executor === 'claude-code').map((s) => s.id));
+    for (const s of now ?? []) if (s.executor === 'claude-code' && !had.has(s.id)) out.push(`${path}[${s.id}].executor`);
+  };
+  check('devCycle.stages', before.devCycle.stages, after.devCycle.stages);
+  const flows = after.devCycle.flows ?? {};
+  for (const [key, stages] of Object.entries(flows)) check(`devCycle.flows.${key}`, before.devCycle.flows?.[key], stages);
+  return out;
 }
 
 /**
