@@ -1,24 +1,26 @@
-# Revisão: entrega da mensagem ao chamado e fim da espera circular
+# Revisão: segunda rodada da entrega da mensagem ao chamado
 
 Veredito: **mudanças**.
 
+## Bloqueantes anteriores
+
+1. Teste do aviso imediato (TS2352): tratado. `tsc --noEmit` passa.
+2. Teste de tela com abort local: tratado, passa.
+3. `activity-calls` com mensagem pendente: tratado, passa.
+4. Teste de `callAgent`: escrito, mas **falha** (ver abaixo). A caracterização do relógio de ociosidade (critério 8) continua não escrita.
+
 ## O que foi verificado (rodado)
 
-- `npm ci` e `npx tsc --noEmit`: **falha** com 1 erro em `test/runner-conversation.test.ts:249` (TS2352, a ferramenta devolve `ToolResult`, não `string`).
-- `vitest` em `runner-conversation`, `runner-conversation-stall`, `runner-send-call`, `activity-calls`, `qa-conversation-commit`, `runner-conversation-screen`: 3 falhas, 42 passam. O arquivo novo `runner-conversation-stall.test.ts` passa (3 testes).
-- `npm run i18n:lint`: passa (6416 chaves nos dois idiomas). `node scripts/public-audit.mjs`: passa.
-- `node scripts/theme-audit.mjs`: imprime 17 ocorrências no total; não comparado com a base, o diff não toca o renderer. Não conclusivo.
-- `vitest run` completo: **não rodado**. Só os arquivos acima.
+- `npm ci` e `npx tsc --noEmit`: passam.
+- `vitest run` completo: 9153 passam, 2 falham. Uma falha é `test/runner-send-call.test.ts` (o teste novo). A outra foi um timeout de worker em `cycle-parity-novoice`, que passou ao rodar sozinho (não relacionada).
+- `npm run i18n:lint` passa (6416 chaves). `node scripts/public-audit.mjs` passa.
+- `theme-audit`: não rodado nesta rodada (o diff não toca o renderer).
 
 ## Bloqueantes
 
-1. `test/runner-conversation.test.ts:249-254`: o teste do aviso imediato compara `asked` (um `ToolResult` com `response`) com uma string. Falha no vitest e no tsc. Usar `.response` e tipar o retorno.
-2. `test/runner-conversation-screen.test.ts:83`: `call.abort` deixou de ser o `deps.abort`, porque `runConversation` cria um abort local. Regressão do contrato testado; ajustar o teste (o abort do turno é o local, ligado ao da execução) e conferir que a tela abre/fecha com o abort certo.
-3. `test/activity-calls.test.ts` ("keeps one node for several rounds..."): quebra porque turno sem `AskConversation` agora encerra a conversa. O plano previa ajustar esse teste (dar mensagem pendente); não foi feito.
-4. Testes que faltam (pedidos no plano e no recado): `callAgent` em `runner-send-call.test.ts` (retorno de falta de progresso, conversa nova na chamada seguinte após o fim) e a caracterização do relógio de ociosidade (critério 8). Critério 8 e a causa dos 70 min seguem não verificados.
+1. `test/runner-send-call.test.ts:221` e `src/main/runner/executor.ts:1134`: o teste espera dois turnos do chamado (duas conversas seguidas), mas recebe um. Causa lida: `chain.push(to)` nunca é desfeito, então a segunda chamada ao mesmo agente é recusada como ciclo (`callRefusal`), mesmo com a primeira conversa já encerrada e `forget()` feito. Resultado: o teste novo está vermelho e a nota do CHANGELOG ("the next `CallAgent` to it opens a new conversation") não é verdadeira para o chamado que escreve nem para o leitor. Ou o fim da conversa tira o chamado da cadeia (e o teste passa a valer), ou o teste e a nota mudam para o comportamento real. A causa do ciclo foi lida, não confirmada por execução isolada.
 
-## Pontos a conferir (não bloqueantes)
+## Não bloqueantes
 
-- Chave de `screenApi.stop(thread, agent)` contra o registro em `callStops` (thread da execução + id do chamado): não conferida; critério 5 só foi testado pelo `callStops` direto.
-- O retorno de `stalled`/`stopped` do `callAgent` do chamado que escreve não tem teste.
-- Repositório público: nada de nome ou segredo no diff. Regra de config: sem campo novo, sem migração, conforme plano. Escrita externa: nada novo fora da porta Actions.
+- Falta a caracterização do relógio de ociosidade (critério 8) e teste do retorno `stalled`/`stopped` por `callAgent`; a chave de `screenApi.stop` contra `callStops` não foi conferida. Seguem não verificados.
+- Repositório público e regra de config: nada de nome ou segredo; sem campo novo de config; sem escrita nova fora da porta Actions.
