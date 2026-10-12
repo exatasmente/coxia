@@ -1186,18 +1186,39 @@ async function runStage(d: ExecutorDeps, run: Run, flow: FlowStage[], abort: Abo
       };
       // A conversation with a writer is the only writer of the worktree while it runs: the stage waits for it (its answers still come as messages), so the two
       // never write together, and the called agent's commands join the run's list under its name. A reader's conversation runs beside the stage as before.
+      // A writer's caller waits inside this very call, so the writer's `AskConversation` returns at once instead of waiting for a message that cannot come.
+      const exchange = {
+        fromCaller: incoming,
+        answered: (text: string) => inbox.post(text),
+        pendingFromCaller: (): string | null => pending.shift() ?? null,
+        callerWaiting: () => writes,
+      };
+      // A conversation that ended is forgotten: the next call to the same agent opens a new one instead of leaving a message in a queue nobody reads.
+      const forget = (): void => {
+        if (conversationOf.get(to) === entry) conversationOf.delete(to);
+      };
       if (writes) {
-        const r = await runConversation(conversation, { fromCaller: incoming, answered: (text) => inbox.post(text) });
-        conversationOf.set(to, { thread: r.thread, say: entry.say });
+        let r: Awaited<ReturnType<typeof runConversation>>;
+        try {
+          r = await runConversation(conversation, exchange);
+        } finally {
+          forget();
+        }
         for (const e of r.log ?? []) {
           conversationCommands.push({ command: clipText(maskOf(redact(e.command.replace(/\s+/g, ' '))), 300), exitCode: e.exitCode, timedOut: e.timedOut, output: maskOf(e.output), ms: e.ms, n: e.n, by: 'agent' });
         }
+        if (r.reason === 'stalled') return t('main.runner.tools.conversationStalled', { called: to, thread: r.thread });
+        if (r.reason === 'stopped') return t('main.runner.tools.conversationStopped', { called: to, thread: r.thread });
       } else {
-        void runConversation(conversation, { fromCaller: incoming, answered: (text) => inbox.post(text) })
+        void runConversation(conversation, exchange)
           .then((r) => {
-            conversationOf.set(to, { thread: r.thread, say: entry.say });
+            forget();
+            // The reader runs beside the stage: a cut is told to the caller as a message, as its answers are.
+            if (r.reason === 'stalled') inbox.post(t('main.runner.tools.conversationStalled', { called: to, thread: r.thread }));
+            if (r.reason === 'stopped') inbox.post(t('main.runner.tools.conversationStopped', { called: to, thread: r.thread }));
           })
           .catch((e: unknown) => {
+            forget();
             console.error('[runner] the conversation failed', run.id, to, e instanceof Error ? e.message : e);
           });
       }
