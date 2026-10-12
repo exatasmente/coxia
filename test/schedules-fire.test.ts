@@ -14,6 +14,9 @@ import { type ForumStore, createForumStore } from '../src/main/forum-core';
 import { ensureAgentThread } from '../src/main/forum-channels';
 import { answerMentions } from '../src/main/mentions/answer';
 import { placeOfThread } from '../src/main/mentions/place';
+import { createPersonaLive } from '../src/main/persona/live';
+import type { ScreenFacts } from '../src/main/persona/openScreen';
+import { createSessionKeep } from '../src/main/persona/sessionKeep';
 import { createFirer } from '../src/main/schedules/fire';
 import { createScheduleService } from '../src/main/schedules/service';
 import { type ScheduleStore, createScheduleStore } from '../src/main/schedules/store';
@@ -127,6 +130,45 @@ describe('a schedule firing', () => {
     const { firer } = world();
     expect(await firer.fire({ ...store.get(s.id)!, thread: 'general-gone' }, { late: false })).toBe('skipped');
     expect(store.get(s.id)).toMatchObject({ lastError: 'thread', paused: false });
+  });
+});
+
+describe('a schedule waking a conversation that keeps its session (#279)', () => {
+  const FACTS: ScreenFacts = { ceremonies: () => ({ preDaily: true, unblock: true, gate: true, qaHandoff: false, retro: false, releaseConflicts: true }), ceremonyName: (id) => id, cards: async () => [], run: () => false, conflict: () => false, thread: () => true };
+  const kept = () => {
+    const keep = createSessionKeep(join(root, 'persona-sessions.json'));
+    const target = { engine: 'claude-sdk' as const, provider: 'cli' };
+    const wakeKeeping = async (message: ForumMessage, persona: string, door: string): Promise<void> => {
+      const place = placeOfThread(forum.summary(message.thread), () => null, config);
+      if (!place) throw new Error('no place');
+      await answerMentions(place, message, { forum, config: () => config, engine, env: () => ({ fallbackCwd: root }), calls: [persona], door, persona: { live: createPersonaLive({ emit: () => undefined, redact: (t) => t }), screens: FACTS, sessions: { keep, target: () => target } } });
+    };
+    return { keep, target, wakeKeeping };
+  };
+
+  it('continues the session of the conversation it wakes in', async () => {
+    engine.script('me', () => 'ok');
+    const { keep, wakeKeeping } = kept();
+    keep.set(THREAD, { session: 's-a', engine: 'claude-sdk', provider: 'cli', upTo: 1 });
+    const s = make();
+    const { firer } = world({ wake: wakeKeeping });
+    now = at(2, 10, 5);
+    expect(await firer.fire(store.get(s.id)!, { late: false })).toBe('fired');
+    expect(engine.calls[0].resume).toMatchObject({ session: 's-a', mode: 'conversation' });
+    expect(keep.get(THREAD)?.session).toBe('s-a');
+  });
+
+  it('opens a new session when there is no valid one, and the conversation shows no failure', async () => {
+    engine.script('me', () => 'ok');
+    const { keep, target, wakeKeeping } = kept();
+    keep.set(THREAD, { session: 's-a', engine: 'claude-sdk', provider: 'another', upTo: 1 });
+    const s = make();
+    const { firer } = world({ wake: wakeKeeping });
+    now = at(2, 10, 5);
+    await firer.fire(store.get(s.id)!, { late: false });
+    expect(engine.calls[0].resume).toBeUndefined();
+    expect(messages().some((m) => m.code === 'runner.mentionFailed')).toBe(false);
+    expect(keep.get(THREAD)).toMatchObject({ session: 'session-1', provider: target.provider });
   });
 });
 

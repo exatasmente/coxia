@@ -89,7 +89,7 @@ export class StageError extends Error {
 }
 
 /** Runs one agent call; `commands` are what an agent that writes may execute. The real one is `runAgent` of agents.ts. */
-export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ data: unknown; partial?: true; sessionId?: string | null; engine?: ResolvedRole['engine'] }>;
+export type StageEngine = (call: AgentCall, commands: string[]) => Promise<{ data: unknown; partial?: true; sessionId?: string | null; engine?: ResolvedRole['engine']; provider?: string }>;
 
 export interface ExecutorDeps {
   engine: StageEngine;
