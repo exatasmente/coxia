@@ -6,9 +6,10 @@
 - Escopo: registrar todo passo autônomo (início de etapa, comando no host, portão, push, pull request, escrita do quadro) e as decisões sobre passos retidos, com passo, hora, agente e política em vigor (cinco escolhas + nível/origem). Mudanças de política também. A persona não apaga nem edita. A spec do product owner veio truncada: não se afirma que não há critérios extras.
 - Plano seguido: campo opcional `policy` em `AuditEntry` (`auditPolicyOf`/`levelOf` em autonomy.ts); tipos `auto-step`, `decision`, `policy-change`; `saveConfig(next, by='person')` grava a mudança de política; cadeia de hash + `tampered` em `listAudit`; plugins e mentions sem `policy`; sem tela nova.
 - Decidido na implementação: a aprovação grava `decision` no "sim", antes da escrita; o início de etapa é gravado também quando a etapa é autônoma pelo interruptor do agente; o texto do pull request usa `{crLong}`.
-- Revisão rodadas 1 e 2: aprovado, sem bloqueantes. A integração anterior devolveu só pela base; a pessoa autorizou trazê-la pelo shell (merge --no-commit --no-ff de origin/release/0.11.0, commit feito pelo app).
-- Depois da mescla: a decisão sobre passo retido diz quem decidiu (`persona` com ato da persona aberto, `who.by` no portão). Filtro "Quem": `by: person` = pessoa, `by: persona` = persona.
+- Revisão rodadas 1 e 2: aprovado, sem bloqueantes. A pessoa autorizou trazer a base pelo shell (merge de origin/release/0.11.0, commit feito pelo app).
+- Decisão sobre passo retido diz quem decidiu (`persona` com ato da persona aberto, `who.by` no portão). Filtro "Quem": `by: person` = pessoa, `by: persona` = persona.
 - A issue da política é a #269; esta (#268) é a auditoria.
+- Comunicação: 6_RELEASE_NOTE.md e comentário escritos em linguagem simples, sem caminhos; não verificados declarados.
 - Resposta: A issue da política de autonomia configurável é a #269 (esta, #268, é a auditoria). A spec completa do product owner chegou truncada, então não dá para afirmar que não há critérios além dos listados; o corpo da #269 traz 9 critérios de aceite. Escopo: registrar todo passo autônomo e também os retidos que foram aprovados ou recusados, com passo, hora, agente e a política em vigor (com o nível); a persona não apaga o registro. <!-- answer:12 -->
 - Resposta: Eu autorizo você fazer pelo shell <!-- answer:172 -->
 
@@ -16,9 +17,9 @@
 
 - Textos novos por `t()` com os dois catálogos; CHANGELOG `Unreleased` atualizado; repositório público.
 - A #269 não pode ir à produção sem esta. Registros antigos não são reescritos.
-- O esquema de configuração não muda nesta tarefa (32, igual à release).
+- O esquema de configuração não muda (32, igual à release).
 - Chaves de catálogo não podem ser montadas dinamicamente na tela: usar mapa explícito.
-- PR com base `release/0.11.0` (deduzida), não a main. Rebase e push pelo shell continuam fora.
+- PR com base `release/0.11.0` (deduzida). Push e criação de PR fora do alcance dos agentes; o app abre o PR.
 - `test/persona-worded.test.ts` falha para arquivo novo de `src/main` ou `src/shared` com `by: 'person'` fixo: use `who.by`/`PERSON_WHO.by`.
 - Apagar `out/` antes do vitest, senão public-audit.test falha.
 
@@ -30,15 +31,16 @@
 ## Perguntas abertas
 
 - Formato final do nível (agente/squad/workspace) depende da #269; hoje workspace e fluxo, isolado em `levelOf`.
-- Interruptores de autonomia de agente e de squad não geram `policy-change`; cobrir com a #269 (que também mexe em auditoria.ts/Auditoria.tsx).
+- Interruptores de autonomia de agente e de squad não geram `policy-change`; cobrir com a #269.
 - `askCommand` (service.ts:526) ainda grava `by: 'person'` fixo.
 - Confirmar a lista de passos contra o texto completo da spec, se houver.
-- Limite conhecido: agente `shell: host` pode editar o arquivo; só há detecção (hash). `lastChain` lê 64 KB do fim.
-- Pull requests abertos para a release: não consultados.
+- Limite: agente `shell: host` pode editar o arquivo; só há detecção (hash). `lastChain` lê 64 KB do fim.
+- #276 (da #269) aberto contra a mesma release e mexe nos mesmos arquivos de auditoria: mesclar esta antes ou junto; conflito entre os dois não conferido.
 
 ## Onde o trabalho está
 
-- Integração rodada 2 (ev-10): 0 commits atrás de origin/release/0.11.0; esquema 32 igual à release; CHANGELOG ok; tsc saída 0 e suíte 530/534 arquivos observados (falham só os 4 de navegador, sem `@playwright/mcp`). theme-audit, i18n:lint, public-audit e build não rodados por esta etapa (QA/implementação: ok).
+- Branch local termina em e0baf936; não está no remoto (sem PR ainda). A pessoa autorizou o push; precisa ser feito pelo app.
+- Integração: 0 commits atrás de origin/release/0.11.0; esquema 32; CHANGELOG ok; tsc ok; suíte 530/534 (falham só os 4 de navegador, sem `@playwright/mcp`).
 - Não verificado: tela do log no app; build desta rodada; os 4 testes de navegador; PRs abertos para a release.
 - Próxima etapa: abrir o PR contra `release/0.11.0`.
 - Passagem support → product-owner: Refinar: delimitar \"passo autônomo\" (todos os pontos em que a política decide sem um sim), definir o formato política/nível junto com a #269 e planejar testes com fakes de que a persona não escreve nem apaga o log. <!-- handoff:21 -->
@@ -50,3 +52,4 @@
 - Passagem developer → revisor-plataforma: Revisão/integração: a base `release/0.11.0` foi mesclada com `--no-commit`; o commit da etapa fecha o merge. Conferir que, depois desse commit, a branch fica 0 commits atrás de `origin/release/0.11.0`. Revisar: a resolução de `recordWrite` (a cadeia é calculada sobre a linha já carimbada pelo ato da persona) e a correção das decisões feitas pela persona (`actions.ts` `recordDecision`, `service.ts` `gateBy`, `auditModel.ts` `whoOf`). Os gates passaram depois da mescla (ev-7), menos os 4 testes de navegador, que dependem de `@playwright/mcp`. Falta abrir a tela do log no app. Depois disso, abrir… <!-- handoff:200 -->
 - Passagem revisor-plataforma → qa-plataforma-2: QA/Integração: depois do commit de merge do app, conferir que a branch está 0 commits atrás de origin/release/0.11.0, rodar os gates e abrir o PR contra release/0.11.0. A tela do log segue sem ter sido aberta no app. <!-- handoff:206 -->
 - Passagem qa-plataforma-2 → integrator: Integração: a base está em dia (0 commits atrás de origin/release/0.11.0) e os gates passaram. Abrir o pull request contra release/0.11.0. A tela do log e o build desta rodada não foram verificados; os 4 testes de navegador dependem de @playwright/mcp. <!-- handoff:224 -->
+- Passagem integrator → pessoa: Abrir o pull request contra release/0.11.0. Base em dia (0 atrás), esquema 32 sem mudança, CHANGELOG ok. Citar como não verificados: tela do log, build desta rodada, 4 testes de navegador (@playwright/mcp), PRs abertos para a release. <!-- handoff:239 -->
