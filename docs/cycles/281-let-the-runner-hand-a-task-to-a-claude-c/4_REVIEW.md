@@ -1,22 +1,22 @@
-# Revisão da rodada 6: o teste da persona continua vermelho
+# Revisão da rodada 7: o teste da persona foi corrigido
 
 ## Veredito
 
-Mudanças. Só leitura; nenhum comando foi rodado nesta etapa. Os números da QA anterior (1 falha em 9030) não foram reconfirmados aqui.
+Aprovado. Só leitura; nenhum comando foi rodado nesta etapa.
 
 ## Bloqueante anterior
 
-- **Teste da persona com `executor: undefined` explícito: NÃO tratado.** `test/config-claude-code-persona.test.ts:58` ainda faz `{ ...lowered.devCycle.stages[0], executor: undefined }`. A validação de `saveConfig` recusa a chave presente com valor indefinido ("expected string, got undefined"), então o terceiro teste falha e o portão `vitest` fica vermelho. Critério 7 (persona pode baixar, não subir) fica sem demonstração. Correção de uma linha: remover a chave (desestruturar `executor` fora do objeto) em vez de atribuir `undefined`. O produto não precisa mudar.
+- **Teste da persona com `executor: undefined` explícito: tratado.** `test/config-claude-code-persona.test.ts:58-60` agora faz `const { executor: _dropped, ...rest } = lowered.devCycle.stages[0]; lowered.devCycle.stages[0] = rest;`, removendo a chave. Isso evita a recusa de `saveConfig` para chave presente com valor indefinido e mantém a asserção de que o executor volta a ficar ausente (linha 63). O produto não mudou.
 
 ## Critérios de aceite
 
-Sem fato novo no diff desta rodada: o que foi aceito antes não é reaberto. Em aberto só o critério 7 pelo teste acima.
+Sem fato novo no diff desta rodada; o que foi aceito antes não é reaberto. O critério 7 passa a ter o teste coerente com a validação, por leitura.
 
 ## Não verificado
 
-- Nenhum portão rodado nesta etapa (tsc, vitest, theme-audit, i18n:lint, public-audit).
+- Nenhum portão rodado aqui: tsc (inclusive a variável `_dropped` não usada; desestruturação com resto costuma ser tolerada, mas não foi conferido), vitest, theme-audit, i18n:lint, public-audit. A QA anterior mediu 1 falha em 9030, justamente esse teste.
 - Interface e comportamento real do SDK (deny respeitado, `canUseTool`, `structured_output`).
 
 ## Próximo
 
-Corrigir o teste, rodar a suíte; depois renumerar v34→v35 com a #280 na integração.
+QA roda o teste da persona, o tsc, a suíte completa e as auditorias; na integração, renumerar v34→v35 com a #280.
