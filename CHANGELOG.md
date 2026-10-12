@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.11.0-beta.4] - 2026-10-11
+
 ### Added
 
 - **A run can fall back on the signed-in Claude Code CLI when a provider's budget runs out.** An Anthropic provider saved with no key is now named "signed-in Claude Code CLI" in the setup assistant, the review and the validation (an informative note, no longer "no API key"): it uses the login the Claude Code CLI of the computer already has, and Coxia still offers no login and reads no credential file. In Models, the person can turn on the fallback and choose which agents may use it: when the provider of one of them refuses a call for budget, the call is made once more on the signed-in CLI instead of waiting; other agents wait as before. When the CLI reaches its own usage limit, the stage waits and says the time it resets. Calls through the CLI are shown as subscription use, never as API cost. Off by default, edited on the computer only, and refused in a test workspace. The config moves to schema 34 (the new setting, off).
@@ -463,7 +465,8 @@ First public version.
 - A card already covered earlier the same day is compared with what that meeting saw: unchanged cards get a short turn built from the earlier one (no agent call, with "go deeper anyway"); changed cards are discussed focusing on what moved, next to what was said and decided. The agenda marks each card and puts what changed or is blocked first.
 - Minutes can be deleted (one version or a whole day) from History and the minutes screen, after a confirmation that lists what stays where it was written. They go to a trash folder for 30 days and can be restored; the deletion is in the audit log.
 
-[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.3...HEAD
+[Unreleased]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.4...HEAD
+[0.11.0-beta.4]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.3...v0.11.0-beta.4
 [0.11.0-beta.3]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.2...v0.11.0-beta.3
 [0.11.0-beta.2]: https://github.com/exatasmente/coxia/compare/v0.11.0-beta.1...v0.11.0-beta.2
 [0.11.0-beta.1]: https://github.com/exatasmente/coxia/compare/v0.10.0...v0.11.0-beta.1
