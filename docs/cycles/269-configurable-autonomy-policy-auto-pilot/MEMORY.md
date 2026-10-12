@@ -34,11 +34,11 @@
 
 - Mescla com a #268: unificar `screen-autonomous`/`screen-policy` com `auto-step`/`policy-change` e `saveConfig(next, by)`; mover o registro de `workspaceConfig.ts` para módulo neutro.
 - Limites da heurística: Enter em campo neutro com botão "Pagar"; `autocomplete` de cartão não é lido.
-- Não verificado: tela e janela de aprovação no app; 4 testes de navegador real (falta `@playwright/mcp`) e se falham na base; `agent-assist-prompts` esgota o tempo na suíte completa (passa sozinho); CI nos commits de documentos não enviados.
+- Não verificado: tela e janela de aprovação no app; 4 testes de navegador real (falta `@playwright/mcp`) e se falham na base; `agent-assist-prompts` esgota o tempo na suíte completa (passa sozinho).
 
 ## Onde o trabalho está
 
-QA tentativa 3: os 9 arquivos de teste da política passam de novo (504, ev-13); nenhum código mudou. Plano de testes atualizado. Próximo: integração/PR. Conferência visual segue pendente; não liberar sem a #268.
+Integração concluída (pronto para o PR #276, base release/0.11.0; gates tsc, theme-audit, i18n, public-audit e build saíram 0). Comunicação: 6_RELEASE_NOTE.md e comentário escritos a partir dos documentos, sem reexecução. Conferência visual segue pendente; não liberar sem a #268.
 - Passagem support → product-owner: Planejar: mapear as camadas de configuração (agente, squad, workspace), a tela de configurações, a detecção por palavras das quatro categorias sempre retidas e a ligação com #268. <!-- handoff:19 -->
 - Passagem product-owner → pessoa: Planejar a partir de 1_SPEC.md. Ler a tela de configurações (Settings.tsx, TeamSettings.tsx), onde moram agente/squad/workspace (AgentDef, SquadDef, bloco de autonomia do workspace/fluxo em src/shared/config/types.ts), o classificador src/main/browser/classify.ts (lista de palavras mistura pagamento e envio com salvar/apagar: prever detecção das quatro categorias antes da política), asks.ts/intermediary.ts, screenPrompt.ts e o registro de #268 para reaproveitar. Cuidar do choque de nome com a \"autonomia\" existente. <!-- handoff:30 -->
 - Passagem tl-plataforma → pessoa: Implementar o 2_PLAN.md na ordem dada: (1) tipos e resolução puros em shared/config/screenPolicy.ts com testes; (2) config v29 (types, defaults, schema, migração, validate, transfer, configScope); (3) detecção sensitive.ts e envoltório em classify; (4) decisão no intermediary + gate.autonomous + auditoria; (5) instantâneo por chamada em callScreen, frase de prompt e chaves de catálogo; (6) registro de mudança em saveConfig; (7) ScreenPolicyFields.tsx no agente, squad e workspace, aviso na janela de aprovação (com a Experiência); (8) CHANGELOG e docs. Conferir na implementação: chaves de prompt… <!-- handoff:49 -->
