@@ -2166,5 +2166,17 @@
   "main.ownership.readyClient": "this instance is a client of workspace {workspace}: owned by {owner}, it does not run the runner or the scheduler",
   "main.ownership.readyExpired": "this instance is a client of workspace {workspace}: the lease of {owner} expired, an admin can take it over with ownership:claim",
   "main.ownership.noticeTitle": "Workspace owned by another instance",
-  "main.ownership.noticeBody": "{owner} owns this workspace. This window only shows it: nothing runs here."
+  "main.ownership.noticeBody": "{owner} owns this workspace. This window only shows it: nothing runs here.",
+  "main.autonomy.incidentTitle": "Incident on {kind}: autonomy withdrawn",
+  "main.autonomy.incidentRevoked": "The autonomy for {kind} was revoked and the next action of that kind asks again. {note}",
+  "main.autonomy.incidentNoGrant": "An incident was recorded for {kind}, which had no autonomy: it keeps asking, and its record starts over. {note}",
+  "main.autonomy.unknownAction": "No action {id} in the track record.",
+  "main.autonomy.revertedNote": "action {id} was reverted",
+  "main.autonomy.badKind": "Unknown kind of external effect.",
+  "main.autonomy.personaRefused": "Autonomy is the person's to grant and take back: the persona cannot.",
+  "main.autonomy.alreadyGranted": "Autonomy for {kind} is already granted.",
+  "main.autonomy.notOffered": "Autonomy for {kind} is not offered yet: it needs {n} approved proposals in a row with none reverted.",
+  "main.autonomy.badThreshold": "The threshold must be a number of zero or more.",
+  "main.autonomy.amountNeeded": "A grant for a spend needs the most one spend may be.",
+  "main.autonomy.notGranted": "No autonomy is granted for {kind}: it waits for a yes."
 }

@@ -23,6 +23,7 @@
   "ui.audit.flowMain": "main flow",
   "ui.audit.kind.act": "Act of the persona",
   "ui.audit.kind.autoStep": "Autonomous step",
+  "ui.audit.kind.autonomy": "Autonomy",
   "ui.audit.kind.claudeSession": "Claude Code session",
   "ui.audit.kind.config": "Configuration change",
   "ui.audit.kind.decision": "Decision on a held step",

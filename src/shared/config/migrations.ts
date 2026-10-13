@@ -62,6 +62,8 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v36 agents.team[].remoteControl: whether an agent's stages show up in claude.ai/code; absent means off, so nothing is raised. Nothing stored changes; the bump makes
 //       an older app refuse the file instead of repairing (and then saving) a team it cannot read.
 //   v37 `budget`: the operating budget (#198), with no limit for every workspace (a missing or null limit means none), so nothing a workspace does changes.
+//   v38 `effects`: when the app offers autonomy per kind of external effect (#199), N = 5 for every kind. Grants are not in the config; a `runner.autonomy` push or pull request switch that
+//       is on is read as a grant of that kind by the person, so nothing that goes out by itself today stops.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -517,7 +519,13 @@ function v36ToV37(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
   return { ...old, schemaVersion: 37, budget: { currency: 'USD', monthly: null, categories: {} } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29, 29: v29ToV30, 30: v30ToV31, 31: v31ToV32, 32: v32ToV33, 33: v33ToV34, 34: v34ToV35, 35: v35ToV36, 36: v36ToV37 };
+// The workspace gains the rule of when autonomy is offered. Nothing is granted or taken away by it.
+function v37ToV38(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
+  if (isObject(old.effects)) return { ...old, schemaVersion: 38 };
+  return { ...old, schemaVersion: 38, effects: { offerAfter: 5, perKind: {} } };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29, 29: v29ToV30, 30: v30ToV31, 31: v31ToV32, 32: v32ToV33, 33: v33ToV34, 34: v34ToV35, 35: v35ToV36, 36: v36ToV37, 37: v37ToV38 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

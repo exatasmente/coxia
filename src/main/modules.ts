@@ -13,6 +13,7 @@ import { register as conflictVerify } from './conflictVerify';
 import { cycleModule } from './cycle';
 import { register as diagramFix } from './diagramFix';
 import { register as efeitos } from './efeitos';
+import { effectGrantsModule } from './effectGrants';
 import { errorlog } from './errorlog';
 import { register as feedback } from './feedback';
 import { forumModule } from './forum';
@@ -61,6 +62,7 @@ const ALL: Module[] = [
   custoTempo,
   diagramFix,
   efeitos,
+  effectGrantsModule,
   errorlog,
   feedback,
   forumModule,

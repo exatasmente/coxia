@@ -274,6 +274,7 @@ export const EXCLUSION_REASONS = {
   scope: "the phone's scoped save: the persona's configuration changes go through the whole-document save, with its own audit",
   own: "the persona's own wizard, editor, clear, delete and stop: the stop is the person's control of the persona, and one the controlled party could release is not a control",
   budget: "the operating budget (#198): its limits are the person's, and the party that spends is not the one that sets what it may spend; the figures are on the Settings screen",
+  autonomy: "autonomy per kind of external effect (#199): the person grants and takes it back, and an agent that could grant itself would have none of the control it stands for; the figures are on the Settings screen",
   scheduler: "the scheduler's switch: letting schedules wake the persona unattended is the person's yes, asked when the app opens",
 } as const;
 export type ExclusionReason = keyof typeof EXCLUSION_REASONS;
@@ -291,6 +292,7 @@ export const EXCLUDED: Readonly<Record<string, ExclusionReason>> = Object.fromEn
   // The machine's Claude Code sessions (#280): only the person sends to them, answers their permission requests, stops or starts one.
   ...group('machine', ['claudeSessions:enabled', 'claudeSessions:set-enabled', 'claudeSessions:list', 'claudeSessions:read', 'claudeSessions:follow', 'claudeSessions:folders', 'claudeSessions:send', 'claudeSessions:asks', 'claudeSessions:answer', 'claudeSessions:stop', 'claudeSessions:end', 'claudeSessions:start']),
   ...group('budget', ['budget:get', 'budget:ledger', 'budget:set']),
+  ...group('autonomy', ['autonomy:grant', 'autonomy:incident', 'autonomy:mark-reverted', 'autonomy:revoke', 'autonomy:status']),
   // Who owns the workspace and handing it over (#209): the person's, from the window or the admin door; the persona neither hands the workspace over nor takes it.
   ...group('machine', ['ownership:claim', 'ownership:release', 'ownership:status']),
   ...group('update', ['update:busy', 'update:check', 'update:flushed', 'update:info', 'update:install', 'update:run', 'update:seen', 'update:settings-save', 'update:status']),

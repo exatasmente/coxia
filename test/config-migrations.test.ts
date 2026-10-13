@@ -1279,9 +1279,39 @@ describe('migrateConfig', () => {
       expect(validateConfig({ ...base, budget: { currency: 'USD', monthly: 10, categories: { model: 4 } } }).ok).toBe(true);
     });
 
-    it('is the newest step: 37 is current and 38 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(37);
-      expect(() => migrateConfig({ schemaVersion: 38 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is followed by a later step: the chain does not stop at 37', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(37);
+    });
+  });
+
+  describe('schema 37 to 38: autonomy per kind of effect', () => {
+    const v37 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 37;
+      delete c.effects;
+      change(c);
+      return c;
+    };
+
+    it('adds N = 5 and leaves the switches of the runner as they were, so nothing that goes out by itself stops', () => {
+      const r = migrateConfig(v37((c) => Object.assign(c.runner.autonomy, { cycle: true, push: true, pullRequest: true })), { legacyInstall: false });
+      expect(r.fromVersion).toBe(37);
+      expect(r.config.effects).toEqual({ offerAfter: 5, perKind: {} });
+      expect(r.config.runner.autonomy).toMatchObject({ cycle: true, push: true, pullRequest: true });
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps an effects section already there, and refuses N of zero', () => {
+      const kept = migrateConfig(v37((c) => (c.effects = { offerAfter: 3, perKind: { push: 10 } })), { legacyInstall: false });
+      expect(kept.config.effects).toEqual({ offerAfter: 3, perKind: { push: 10 } });
+      const base = { ...v37(), schemaVersion: CONFIG_SCHEMA_VERSION };
+      expect(validateConfig({ ...base, effects: { offerAfter: 0, perKind: {} } }).ok).toBe(false);
+      expect(validateConfig({ ...base, effects: { offerAfter: 5, perKind: { push: 2 } } }).ok).toBe(true);
+    });
+
+    it('is the newest step: 38 is current and 39 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(38);
+      expect(() => migrateConfig({ schemaVersion: 39 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });
