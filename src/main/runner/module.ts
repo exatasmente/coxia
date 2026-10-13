@@ -13,6 +13,7 @@ import { callStops } from '../mentions/stop';
 import { viaOf } from '../rpc';
 import { whoNow } from '../persona/who';
 import { recordWrite } from '../auditoria';
+import { modelRefusal, recordModelUsage } from '../budget';
 import { createRemoteControlPort, loadBridgeApi, readClaudeToken } from '../remoteBridge';
 import { memoryAuditEntry, type MemoryAuditInput } from '../memory/audit';
 import { attachmentStore } from '../attachments';
@@ -283,6 +284,8 @@ export const runsModule: Module = (ctx) => {
       const result = await probeProviderBudget(providerId);
       return result.ok ? { state: 'ok' as const, detail: '' } : result.refusal ? { state: 'out' as const, detail: result.refusal.detail } : { state: 'unknown' as const, detail: result.detail };
     },
+    // The operating budget (#198): no stage starts while the model category or the month is spent, and what a stage's model calls cost goes to the ledger.
+    spend: { hold: () => modelRefusal(), record: (used, about) => void recordModelUsage(used, about) },
     runs: runStore(),
     forum: forumStore(),
     config: getConfig,

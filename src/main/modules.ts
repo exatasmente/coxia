@@ -3,6 +3,7 @@ import { agentPrep } from './agentPrep';
 import { autostart } from './autostart';
 import { register as board } from './board';
 import { browserModule } from './browser/module';
+import { budgetModule } from './budget';
 import { custoTempo } from './custo-tempo';
 import { register as auditoria } from './auditoria';
 import { register as ceremonyCommands } from './ceremonyCommands';
@@ -51,6 +52,7 @@ const ALL: Module[] = [
   autostart,
   board,
   browserModule,
+  budgetModule,
   ceremonyCommands,
   claudeSessionsModule,
   configModule,

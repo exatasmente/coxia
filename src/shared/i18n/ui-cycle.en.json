@@ -361,6 +361,7 @@
   "ui.cycle.wait.reporterReply": "Waiting for a reply on the issue.",
   "ui.cycle.wait.stableOut": "Waiting for the stable to be on the host: its tag on the remote, on main.",
   "ui.cycle.wait.time": "Waiting {minutes} minutes.",
+  "ui.cycle.wait.workspaceBudget": "Waiting for room in the budget: nothing that spends starts until the limit is raised or the month turns.",
   "ui.forum.addressed": "To {who}",
   "ui.forum.agentChat": "Chat with {agent}",
   "ui.forum.agents": "Chat with an agent",

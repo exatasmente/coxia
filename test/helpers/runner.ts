@@ -342,6 +342,8 @@ export interface BootOptions {
   limits?: { idleMs?: number; maxMs?: number };
   /** The one small call the sweep makes to a provider whose key ran out of budget; without it the runs keep waiting. */
   probeBudget?: RunnerDeps['probeBudget'];
+  /** The operating budget's hold and ledger (#198); none by default, and then nothing is ever held. */
+  spend?: RunnerDeps['spend'];
   /** The clock the runner and its publisher read (a release run's waits are about how long ago something was published). */
   now?: () => Date;
   /** The tags a release run's wait for its beta reads. */
@@ -410,6 +412,7 @@ export async function boot(options: BootOptions = {}): Promise<Boot> {
     timeoutMs: options.timeoutMs,
     limits: options.limits,
     probeBudget: options.probeBudget,
+    spend: options.spend,
     now: options.now,
     pluginEvent: options.pluginEvent,
     pluginHold: options.pluginHold,

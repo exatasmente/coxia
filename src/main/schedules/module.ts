@@ -20,6 +20,7 @@ import { type ScheduleWorld, ScheduleError } from './core';
 import { createDirectRunner } from './direct';
 import { createFirer } from './fire';
 import { createScheduleService } from './service';
+import { modelHeld } from '../budget';
 import { createScheduleStore } from './store';
 
 // The schedules of the workspace (#275, #250): the channels the screen and the persona's tools use, and the job on the app's own clock that fires them. The person and the persona
@@ -105,7 +106,7 @@ export const schedulesModule: Module = (ctx) => {
     now: () => new Date(),
     workdays,
   });
-  const service = createScheduleService({ store, firer, now: () => new Date() });
+  const service = createScheduleService({ store, firer, now: () => new Date(), held: modelHeld });
   const changed = (): void => ctx.emit({ type: 'module', name: 'schedules:changed', payload: service.view() });
 
   // The wait of a direct action ends with its proposal: carried out, refused, or set aside by the person.

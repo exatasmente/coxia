@@ -273,6 +273,7 @@ export const EXCLUSION_REASONS = {
   guard: "the test workspace's flag and the confirmations of the test environment's secrets: the guard that lets an agent be tried without writing anywhere",
   scope: "the phone's scoped save: the persona's configuration changes go through the whole-document save, with its own audit",
   own: "the persona's own wizard, editor, clear, delete and stop: the stop is the person's control of the persona, and one the controlled party could release is not a control",
+  budget: "the operating budget (#198): its limits are the person's, and the party that spends is not the one that sets what it may spend; the figures are on the Settings screen",
   scheduler: "the scheduler's switch: letting schedules wake the persona unattended is the person's yes, asked when the app opens",
 } as const;
 export type ExclusionReason = keyof typeof EXCLUSION_REASONS;
@@ -289,6 +290,7 @@ export const EXCLUDED: Readonly<Record<string, ExclusionReason>> = Object.fromEn
   ...group('machine', ['agents:scan', 'agents:propose', 'agents:summarize', 'agents:can-summarize', 'mcpstate:get', 'mcpstate:set-enabled', 'mcpstate:set-act', 'mcpstate:write-entry', 'vcs:probe', 'sandbox:probe']),
   // The machine's Claude Code sessions (#280): only the person sends to them, answers their permission requests, stops or starts one.
   ...group('machine', ['claudeSessions:enabled', 'claudeSessions:set-enabled', 'claudeSessions:list', 'claudeSessions:read', 'claudeSessions:follow', 'claudeSessions:folders', 'claudeSessions:send', 'claudeSessions:asks', 'claudeSessions:answer', 'claudeSessions:stop', 'claudeSessions:end', 'claudeSessions:start']),
+  ...group('budget', ['budget:get', 'budget:ledger', 'budget:set']),
   ...group('update', ['update:busy', 'update:check', 'update:flushed', 'update:info', 'update:install', 'update:run', 'update:seen', 'update:settings-save', 'update:status']),
   ...group('voice', ['voice:cancel', 'voice:check', 'voice:enable', 'voice:install', 'voice:install-cancel', 'voice:list', 'voice:plan', 'voice:segment', 'voice:status', 'voice:test', 'voice:transcribe', 'voice:uninstall']),
   ...group('wizard', [

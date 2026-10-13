@@ -8,6 +8,7 @@ import type { Card, ReleaseAction } from '../../../../shared/types';
 import type { Screen } from '../../App';
 import { errorText } from '../../api';
 import { useT } from '../../i18n';
+import { WORKSPACE_BUDGET_WAIT } from '../../../../shared/budget';
 import { RunBadge } from './RunBadge';
 import { SKIP_WAIT_KEY, WAIT_KEY, agentName, agentOf, squadName } from './names';
 import { patchRun, reloadConfig, runsApi } from './runsApi';
@@ -116,7 +117,7 @@ function Waiting({ run, flow, config }: { run: Run; flow: readonly FlowStage[]; 
       {run.status === 'question' && q?.holder && <p className="small muted">{t('ui.cycle.question.holderNote', { agent: agentName(team, q.holder) })}</p>}
       {run.status === 'waiting' && run.wait && (
         <p className="small muted">
-          {t(WAIT_KEY[run.wait.kind] ?? 'ui.cycle.wait.time', { label: run.wait.label ?? '', minutes: run.wait.minutes ?? 0, provider: run.wait.provider ?? '', plugin: run.wait.plugin ?? '' })}
+          {t(run.wait.kind === 'budget' && run.wait.provider === WORKSPACE_BUDGET_WAIT ? 'ui.cycle.wait.workspaceBudget' : (WAIT_KEY[run.wait.kind] ?? 'ui.cycle.wait.time'), { label: run.wait.label ?? '', minutes: run.wait.minutes ?? 0, provider: run.wait.provider ?? '', plugin: run.wait.plugin ?? '' })}
         </p>
       )}
       {run.status === 'failed' && run.error && (
