@@ -64,6 +64,8 @@ import { CONFIG_SCHEMA_VERSION, LLM_ROLES, type DeepPartial, type LlmRole, type 
 //   v37 `budget`: the operating budget (#198), with no limit for every workspace (a missing or null limit means none), so nothing a workspace does changes.
 //   v38 `effects`: when the app offers autonomy per kind of external effect (#199), N = 5 for every kind. Grants are not in the config; a `runner.autonomy` push or pull request switch that
 //       is on is read as a grant of that kind by the person, so nothing that goes out by itself today stops.
+//   v39 `accounts`: the registry of external accounts (#200). Every configured code host is listed in it, so the rule that an agent acts only in a listed provider holds for the
+//       host a workspace already uses without breaking it; a workspace with no host gets an empty registry.
 // A migration takes the document of version N and returns the document of version N+1, never reading the disk or the machine:
 // everything it needs comes in the context, so it is testable with plain objects.
 
@@ -525,7 +527,24 @@ function v37ToV38(old: Doc, _ctx: MigrationContext, _notes: string[]): Doc {
   return { ...old, schemaVersion: 38, effects: { offerAfter: 5, perKind: {} } };
 }
 
-const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29, 29: v29ToV30, 30: v30ToV31, 31: v31ToV32, 32: v32ToV33, 33: v33ToV34, 34: v34ToV35, 35: v35ToV36, 36: v36ToV37, 37: v37ToV38 };
+// The registry starts with the workspace's code hosts: they are accounts Coxia already acts in, and the registry's rule must not cut a workspace off from its own host.
+function v38ToV39(old: Doc, _ctx: MigrationContext, notes: string[]): Doc {
+  if (Array.isArray(old.accounts)) return { ...old, schemaVersion: 39 };
+  const taken = new Set<string>();
+  const accounts: Record<string, unknown>[] = [];
+  for (const v of Array.isArray(old.vcs) ? old.vcs : []) {
+    if (!isObject(v) || typeof v.host !== 'string' || !v.host.trim()) continue;
+    const base = `code-host-${String(v.id ?? v.kind ?? 'main').toLowerCase().replace(/[^a-z0-9-]+/g, '-')}`.replace(/-+$/, '').slice(0, 40);
+    let id = base;
+    for (let n = 2; taken.has(id); n++) id = `${base.slice(0, 36)}-${n}`;
+    taken.add(id);
+    accounts.push({ id, provider: v.host.trim().toLowerCase(), purpose: 'code host', secretRefs: typeof v.secretRef === 'string' && v.secretRef ? [v.secretRef] : [] });
+  }
+  if (accounts.length) notes.push(`the registry of external accounts lists the ${accounts.length} configured code host(s)`);
+  return { ...old, schemaVersion: 39, accounts };
+}
+
+const STEPS: Record<number, Step> = { 1: v1ToV2, 2: v2ToV3, 3: v3ToV4, 4: v4ToV5, 5: v5ToV6, 6: v6ToV7, 7: v7ToV8, 8: v8ToV9, 9: v9ToV10, 10: v10ToV11, 11: v11ToV12, 12: v12ToV13, 13: v13ToV14, 14: v14ToV15, 15: v15ToV16, 16: v16ToV17, 17: v17ToV18, 18: v18ToV19, 19: v19ToV20, 20: v20ToV21, 21: v21ToV22, 22: v22ToV23, 23: v23ToV24, 24: v24ToV25, 25: v25ToV26, 26: v26ToV27, 27: v27ToV28, 28: v28ToV29, 29: v29ToV30, 30: v30ToV31, 31: v31ToV32, 32: v32ToV33, 33: v33ToV34, 34: v34ToV35, 35: v35ToV36, 36: v36ToV37, 37: v37ToV38, 38: v38ToV39 };
 
 const tokens = (path: string): (string | number)[] => [...path.matchAll(/([^.[\]]+)|\[(\d+)\]/g)].map((m) => (m[2] !== undefined ? Number(m[2]) : m[1]));
 

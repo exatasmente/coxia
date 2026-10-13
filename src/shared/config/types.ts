@@ -1,10 +1,10 @@
-// WorkspaceConfig (schema 38): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 39): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
 import type { ScreenPolicy } from './screenPolicy';
 
-export const CONFIG_SCHEMA_VERSION = 38;
+export const CONFIG_SCHEMA_VERSION = 39;
 
 /**
  * The operating budget the person sets (#198): a monthly total and a limit per category, in one currency. A missing or null limit means no limit, so a workspace
@@ -29,6 +29,24 @@ export interface EffectsConfig {
   offerAfter: number;
   /** N for one kind, by name (`push`, `pull-request`, `comment`, ...). */
   perKind: Record<string, number>;
+}
+
+/**
+ * An external account Coxia acts in (#200): a VPS provider, a registrar, an email or payment service, monitoring, a tool. The person opens every account (a provider asks for a
+ * person at sign-up, identity checks and terms); Coxia acts inside it through the provider's official API with the credentials named here by reference. No value is ever here.
+ */
+export interface ExternalAccount {
+  /** Stable name, `[a-z][a-z0-9-]{0,39}`; a grant of autonomy tied to the account names it. */
+  id: string;
+  /** The provider by the name an integration uses (`hetzner`, `github.com`), compared case-insensitively by `assertAccount`. */
+  provider: string;
+  /** What the account is for, in a line. */
+  purpose: string;
+  /** References into the secrets store (never values) of the credentials the account's integrations use. */
+  secretRefs: string[];
+  /** What the account costs a month, in the budget's currency. */
+  monthlyCost?: number;
+  notes?: string;
 }
 
 /** The machine's Claude Code sessions in the app (desktop only): off unless the person turned it on. */
@@ -1238,6 +1256,8 @@ export interface WorkspaceConfig {
   budget?: BudgetConfig;
   /** When the app offers autonomy per kind of effect (#199). Optional: absent reads as 5 for every kind. */
   effects?: EffectsConfig;
+  /** The registry of the external accounts Coxia acts in (#200). Optional: absent reads as empty. A workspace migrated from before it lists its code hosts here. */
+  accounts?: ExternalAccount[];
 }
 
 /** A secret the config needs, found by walking the secretRef fields. */

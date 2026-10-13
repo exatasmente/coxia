@@ -1309,9 +1309,41 @@ describe('migrateConfig', () => {
       expect(validateConfig({ ...base, effects: { offerAfter: 5, perKind: { push: 2 } } }).ok).toBe(true);
     });
 
-    it('is the newest step: 38 is current and 39 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(38);
-      expect(() => migrateConfig({ schemaVersion: 39 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is followed by a later step: the chain does not stop at 38', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(38);
+    });
+  });
+
+  describe('schema 38 to 39: the registry of external accounts', () => {
+    const v38 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 38;
+      delete c.accounts;
+      change(c);
+      return c;
+    };
+
+    it('lists every configured code host, with the reference of its token and never a value', () => {
+      const r = migrateConfig(v38((c) => (c.vcs = [{ id: 'main', kind: 'github', host: 'GitHub.com', apiUrl: '', user: '', secretRef: 'vcs.github', cliPreference: 'auto', cliCommand: null }, { id: 'main', kind: 'gitlab', host: 'git.example.com', apiUrl: '', user: '', secretRef: null, cliPreference: 'auto', cliCommand: null }])), { legacyInstall: false });
+      expect(r.fromVersion).toBe(38);
+      expect(r.config.accounts).toEqual([
+        { id: 'code-host-main', provider: 'github.com', purpose: 'code host', secretRefs: ['vcs.github'] },
+        { id: 'code-host-main-2', provider: 'git.example.com', purpose: 'code host', secretRefs: [] },
+      ]);
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('gives a workspace with no host an empty registry, keeps one already there, and changes nothing the second time', () => {
+      expect(migrateConfig(v38(), { legacyInstall: false }).config.accounts).toEqual([]);
+      const mine = [{ id: 'registrar', provider: 'example-registrar', purpose: 'domains', secretRefs: ['reg.key'], monthlyCost: 1.5 }];
+      const kept = migrateConfig(v38((c) => (c.accounts = mine)), { legacyInstall: false });
+      expect(kept.config.accounts).toEqual(mine);
+      expect(migrateConfig(structuredClone(kept.config) as unknown as Record<string, any>, { legacyInstall: false }).changed).toBe(false);
+    });
+
+    it('is the newest step: 39 is current and 40 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(39);
+      expect(() => migrateConfig({ schemaVersion: 40 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

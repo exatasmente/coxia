@@ -2178,5 +2178,12 @@
   "main.autonomy.notOffered": "A autonomia para {kind} ainda não é oferecida: precisa de {n} propostas aprovadas seguidas, nenhuma desfeita.",
   "main.autonomy.badThreshold": "O limite deve ser um número de zero ou mais.",
   "main.autonomy.amountNeeded": "Uma concessão para gasto precisa do maior valor que um gasto pode ter.",
-  "main.autonomy.notGranted": "Nenhuma autonomia concedida para {kind}: espera um sim."
+  "main.autonomy.notGranted": "Nenhuma autonomia concedida para {kind}: espera um sim.",
+  "main.accounts.unknownProvider": "{provider} não está no registro de contas externas: cadastre a conta antes.",
+  "main.accounts.invalid": "A conta não é válida: confira {field}.",
+  "main.accounts.tooMany": "O registro guarda no máximo 100 contas.",
+  "main.accounts.exists": "Já existe uma conta {id}.",
+  "main.accounts.missing": "Nenhuma conta {id} no registro.",
+  "main.accounts.personaRefused": "A pessoa abre, muda e fecha contas externas: a persona não pode.",
+  "main.autonomy.unknownAccount": "Essa conta não está no registro."
 }
