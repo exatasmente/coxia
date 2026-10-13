@@ -13,6 +13,7 @@
   "ui.audit.choice.pullRequest": "{crLong}",
   "ui.audit.choice.push": "push",
   "ui.audit.door": "Pedido feito pela {door}",
+  "ui.audit.door.admin": "porta de administração do servidor",
   "ui.audit.door.paired": "tela de um navegador pareado",
   "ui.audit.door.terminal": "sessão de terminal",
   "ui.audit.door.window": "janela",

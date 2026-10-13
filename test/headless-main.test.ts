@@ -70,7 +70,8 @@ describe('main', () => {
     running = started;
     expect(exit).not.toHaveBeenCalled();
     // Said in the workspace's language, which is applied by the time the core is up.
-    expect(lines).toHaveLength(1);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toMatch(/^(admin door|porta de administração): .*admin\.sock$/);
     expect(lines[0]).toMatch(new RegExp(`^coxia (ready: listening on|pronto: escutando em) 127\\.0\\.0\\.1:${port}/cerimonias/, workspace principal$`));
 
     const health = await get('/cerimonias/healthz');

@@ -4,6 +4,7 @@ import type { Settings } from '../shared/settings';
 import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, TurnOptions, Voice } from '../shared/types';
 import { ACTIVITY_EVENT, ACTIVITY_GET, reasoningOn } from '../shared/activity';
 import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, freeReleaseCheckout, listActions, previewAction, skipAction, startActions } from './actions';
+import { type AdminDoor, type AdminDoorState, createAdminDoor } from './adminDoor';
 import { activityLog, setActivitySink, setThoughtsGate } from './activity';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { setBoardHost } from './board';
@@ -11,7 +12,7 @@ import { realBoardHost, startBoardHost } from './boardHost';
 import { loadCards } from './cards';
 import { continueInClaude, pasteCommand } from './claude';
 import { getSettings, saveSettings } from './config';
-import { bootEnv, dataRoot } from './env';
+import { atasDir, bootEnv, dataRoot, workspaceId } from './env';
 import { installProcessHandlers, logError } from './errorlog';
 import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGateRound, recordGate, startGate, visualGate } from './gate';
 import { glossary } from './glossary';
@@ -60,6 +61,8 @@ export interface CoxiaOptions {
   /** The folder of the built renderer, served to paired browsers. Absent: the web door answers the RPC and no page. */
   rendererDir?: string;
   window?: Window;
+  /** Listens on the admin socket in the workspace's folder (#211), for a client on this machine: the server shell, the CLI, the SDK. Off when absent: the desktop has its window. */
+  adminDoor?: boolean;
 }
 
 export interface StopOptions {
@@ -72,6 +75,8 @@ export interface Coxia {
   start(): Promise<void>;
   /** Clears every timer, closes the web door, stops voice and the screens, and lets a running stage reach a safe point within the deadline. Safe to call twice. */
   stop(options?: StopOptions): Promise<void>;
+  /** Whether the admin socket listens and, when it does not, why; meaningful after `start`. */
+  adminDoor(): AdminDoorState | null;
 }
 
 /** Long enough for a short stage to end by itself, short enough for a service manager that kills after a while. */
@@ -165,10 +170,12 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
   let dropProcessHandlers: (() => void) | null = null;
 
   const win = options.window;
-  // To the window and to every paired browser.
+  let admin: AdminDoor | null = null;
+  // To the window, to every paired browser and to every admin client.
   const emit = (ev: AppEvent): void => {
     win?.emit(ev);
     broadcast(ev);
+    admin?.emit(ev);
   };
   const notify = (n: Notice): void => {
     pushNotice(n);
@@ -196,12 +203,19 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
     }
     startScheduler({ notify, emit });
     await syncWebAccess().catch((e) => fail('[web]', 'module:web', e));
+    // Last, so every channel is registered when the first client connects. A door that cannot open says why and the core goes on.
+    if (options.adminDoor) {
+      admin = createAdminDoor(atasDir(), workspaceId);
+      await admin.start();
+    }
   }
 
   function stop(stopOptions: StopOptions = {}): Promise<void> {
     stopping ??= (async () => {
       const deadlineMs = stopOptions.deadlineMs ?? DEFAULT_STOP_DEADLINE_MS;
-      // The timers first, so nothing new starts while the running work ends.
+      // The door first: no new call arrives while the running work ends.
+      await admin?.stop().catch((e) => fail('[stop]', 'core:stop', e));
+      // The timers next, so nothing new starts while the running work ends.
       stopScheduler();
       stopUpdates();
       disarmAll();
@@ -219,5 +233,5 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
     return stopping;
   }
 
-  return { start, stop };
+  return { start, stop, adminDoor: () => admin?.state() ?? null };
 }

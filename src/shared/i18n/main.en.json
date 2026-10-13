@@ -2124,11 +2124,19 @@
   "main.host.unavailable.restart": "this host cannot start the app again, so it cannot change workspace: that is only on the desktop",
   "main.host.unavailable.pick": "this host has no file dialog: picking a file is only on the desktop",
   "main.host.unavailable.screen": "this host has no agent screen: it is only on the desktop",
-  "main.headless.usage": "Usage: coxia [options]\n  --data-dir <dir>          the data folder (or COXIA_DATA_DIR, CERIMONIAS_DATA_DIR); required\n  --master-key-file <file>  the master key that protects stored secrets, 64 hex digits, mode 0600, outside the data folder (or COXIA_MASTER_KEY_FILE); required\n  --port <port>             the port of the web door (or COXIA_PORT); required\n  --host <address>          the address of the web door (or COXIA_HOST); default 127.0.0.1\n  --workspace <id>          the workspace this process runs (or COXIA_WORKSPACE); default: the one the registry marks as current\n  --renderer-dir <dir>      the built renderer to serve (or COXIA_RENDERER_DIR); default: out/renderer next to the bundle\nOne process runs one workspace. SIGTERM and SIGINT stop it.",
+  "main.headless.usage": "Usage: coxia [options]\n  --data-dir <dir>          the data folder (or COXIA_DATA_DIR, CERIMONIAS_DATA_DIR); required\n  --master-key-file <file>  the master key that protects stored secrets, 64 hex digits, mode 0600, outside the data folder (or COXIA_MASTER_KEY_FILE); required\n  --port <port>             the port of the web door (or COXIA_PORT); required\n  --host <address>          the address of the web door (or COXIA_HOST); default 127.0.0.1\n  --workspace <id>          the workspace this process runs (or COXIA_WORKSPACE); default: the one the registry marks as current\n  --renderer-dir <dir>      the built renderer to serve (or COXIA_RENDERER_DIR); default: out/renderer next to the bundle\n  --no-admin-door           do not open the admin socket in the workspace folder (or COXIA_ADMIN_DOOR=0)\nOne process runs one workspace. SIGTERM and SIGINT stop it.",
   "main.headless.badOption": "{detail}",
   "main.headless.required": "{flag} is required (or set {variable})",
   "main.headless.noRenderer": "there is no built renderer in {path} (no index.html)",
   "main.headless.keyFile": "the master key file {path} is missing, is not a plain file readable only by its owner with 64 hex digits, or sits inside the data folder: no secret can be stored without it",
   "main.headless.startFailed": "the core did not start: {detail}",
-  "main.headless.ready": "coxia ready: listening on {address}, workspace {workspace}"
+  "main.headless.ready": "coxia ready: listening on {address}, workspace {workspace}",
+  "main.headless.adminOpen": "admin door: {path}",
+  "main.headless.adminClosed": "admin door closed: {reason}",
+  "main.admin.badFirst": "the first line must be {\"hello\": <contract version>}",
+  "main.admin.badRequest": "a request is {\"id\": <number>, \"channel\": <name>, \"args\": [...]}",
+  "main.admin.pathTooLong": "the workspace folder is too deep for a local socket ({path})",
+  "main.admin.inUse": "another process already listens on {path}",
+  "main.admin.notASocket": "{path} exists and is not a socket that can be replaced",
+  "main.admin.listenFailed": "could not listen on {path}: {detail}"
 }

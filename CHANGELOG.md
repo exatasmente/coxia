@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **A local admin door on the core, for a client on the same machine.** A core run by the headless entry now listens on a Unix socket in the workspace's folder (`admin.sock`, mode `0600`, removed on stop), where the server's shell, the CLI and the SDK, reached over SSH, call the same channels the window does, with the window's rights, and receive the events the core emits. Whoever can connect is the user the process runs as, so there is no token; the first line is the contract version and a mismatch is refused with both versions. The audit names the door `admin`. A path too long for a socket, a folder that cannot take it or another live process on the workspace leaves the door closed with the reason, and the core starts anyway; a client that stops reading is disconnected instead of waited for. `--no-admin-door` (or `COXIA_ADMIN_DOOR=0`) turns it off, the desktop does not have it, and `scripts/admin-call.mjs` makes one call from a shell. See [docs/headless.md](docs/headless.md).
+
 ### Changed
 
 - **The core no longer reaches Electron.** Besides the secrets and the folders, what only the owner of the process does (the app's version, the exit, the relaunch that changes workspace, the file dialogs, and the encoder of the agents' screen) is now asked of the host through one port, which the desktop fills from its runtime. Only the desktop shell imports Electron, and a test walks the imports of every other file under `src/main` to keep it so. On a host without a desktop these features are absent, not broken: changing workspace, picking a file and the agent's screen answer with the stable code `host-unavailable`. Nothing changes on the desktop.

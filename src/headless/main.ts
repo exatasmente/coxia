@@ -37,6 +37,7 @@ const FLAGS = {
   host: { type: 'string' },
   port: { type: 'string' },
   'renderer-dir': { type: 'string' },
+  'no-admin-door': { type: 'boolean' },
   help: { type: 'boolean' },
 } as const;
 
@@ -47,6 +48,7 @@ interface Options {
   host: string;
   port: number;
   rendererDir?: string;
+  adminDoor: boolean;
 }
 
 // The bundle sits in out/headless and the sources in src/headless: both are two folders under the app's own, where package.json and the built renderer are.
@@ -79,7 +81,9 @@ function options(argv: string[], env: NodeJS.ProcessEnv): Options | null {
   }
   const workspace = v.workspace ?? env.COXIA_WORKSPACE;
   const rendererDir = v['renderer-dir'] ?? env.COXIA_RENDERER_DIR;
-  return { dataDir, keyFile, host, port, ...(workspace ? { workspace } : {}), ...(rendererDir ? { rendererDir: resolve(rendererDir) } : {}) };
+  // On unless it is turned off: a server's shell and CLI reach the core through it. COXIA_ADMIN_DOOR=0 is the same as the flag.
+  const adminDoor = !v['no-admin-door'] && env.COXIA_ADMIN_DOOR !== '0';
+  return { dataDir, keyFile, host, port, adminDoor, ...(workspace ? { workspace } : {}), ...(rendererDir ? { rendererDir: resolve(rendererDir) } : {}) };
 }
 
 function packageVersion(): string {
@@ -135,6 +139,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
       dataDir: opts.dataDir,
       ...(opts.workspace ? { workspace: opts.workspace } : {}),
       web: { host: opts.host, port: opts.port },
+      adminDoor: opts.adminDoor,
       secrets,
       host,
       ...(rendererDir ? { rendererDir } : {}),
@@ -146,6 +151,8 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
     if (!door.listening) throw new Error(door.message);
     const signals = installSignalHandlers(core, { exit });
     out(t('main.headless.ready', { address: `${door.address}${door.basePath}`, workspace: workspaceId() }));
+    const admin = core.adminDoor();
+    if (admin) out(admin.listening ? t('main.headless.adminOpen', { path: admin.path }) : t('main.headless.adminClosed', { reason: admin.reason }));
     return { core, signals, workspace: workspaceId(), address: door.address ?? '' };
   } catch (e) {
     await core?.stop({ deadlineMs: 1_000 }).catch(() => undefined);

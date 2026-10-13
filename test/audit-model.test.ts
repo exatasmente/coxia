@@ -62,6 +62,7 @@ describe('what a persona line shows', () => {
     expect(doorWords('window')).toEqual({ key: 'ui.audit.door.window' });
     expect(doorWords('paired')).toEqual({ key: 'ui.audit.door.paired' });
     expect(doorWords('terminal')).toEqual({ key: 'ui.audit.door.terminal' });
+    expect(doorWords('admin')).toEqual({ key: 'ui.audit.door.admin' });
     expect(doorWords('schedule')).toEqual({ raw: 'schedule' });
     expect(doorWords(undefined)).toBeNull();
   });
