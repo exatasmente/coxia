@@ -29,6 +29,7 @@ O pacote reúne o código do próprio app; as dependências do npm ficam fora e 
 | `--host <endereço>` | `COXIA_HOST` | O endereço (IPv4 ou `localhost`). Padrão `127.0.0.1`. |
 | `--workspace <id>` | `COXIA_WORKSPACE` | O workspace que este processo roda. Padrão: o que o registro marca como atual. |
 | `--no-admin-door` | `COXIA_ADMIN_DOOR=0` | Não abre o soquete de administração. Padrão: aberto. |
+| `--init` | | Só cria o registro de workspaces da pasta de dados (com o primeiro workspace), imprime o id dele e sai com 0. Precisa só de `--data-dir`. Para o instalador, antes de o supervisor subir os núcleos. |
 | `--renderer-dir <pasta>` | `COXIA_RENDERER_DIR` | O renderer compilado. Padrão: `out/renderer` ao lado do pacote; sem ele a porta responde a API e nenhuma página. |
 
 ### A chave mestra
@@ -100,6 +101,7 @@ The bundle holds the app's own code; npm dependencies stay outside and are read 
 | `--host <address>` | `COXIA_HOST` | The address (IPv4 or `localhost`). Default `127.0.0.1`. |
 | `--workspace <id>` | `COXIA_WORKSPACE` | The workspace this process runs. Default: the one the registry marks as current. |
 | `--no-admin-door` | `COXIA_ADMIN_DOOR=0` | Do not open the admin socket. Default: open. |
+| `--init` | | Only create the data folder's workspace registry (with its first workspace), print its id and exit 0. Needs only `--data-dir`. For an installer, before the supervisor starts the cores. |
 | `--renderer-dir <dir>` | `COXIA_RENDERER_DIR` | The built renderer. Default: `out/renderer` next to the bundle; without it the door answers the API and no page. |
 
 ### The master key

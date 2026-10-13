@@ -5,7 +5,7 @@ import { t } from '../shared/i18n';
 import { NEUTRAL_WEB } from '../shared/settings';
 import { validateWeb } from '../main/config';
 import { type Coxia, createCoxia } from '../main/core';
-import { workspaceId } from '../main/env';
+import { bootEnv, workspaceId } from '../main/env';
 import type { HostPort } from '../main/host';
 import { masterKeyPort } from '../main/masterKey';
 import { type SignalHandlers, installSignalHandlers } from '../main/signals';
@@ -38,10 +38,13 @@ const FLAGS = {
   port: { type: 'string' },
   'renderer-dir': { type: 'string' },
   'no-admin-door': { type: 'boolean' },
+  init: { type: 'boolean' },
   help: { type: 'boolean' },
 } as const;
 
 interface Options {
+  /** Only prepare the data folder (the workspace registry) and exit: for an installer, before anything supervises the cores. */
+  init?: true;
   dataDir: string;
   workspace?: string;
   keyFile: string;
@@ -69,6 +72,7 @@ function options(argv: string[], env: NodeJS.ProcessEnv): Options | null {
   };
   // The data folder has no default here: a service must never fall back to the desktop's folder by forgetting a flag.
   const dataDir = resolve(need(v['data-dir'] ?? env.COXIA_DATA_DIR ?? env.CERIMONIAS_DATA_DIR, '--data-dir', 'COXIA_DATA_DIR'));
+  if (v.init) return { init: true, dataDir, keyFile: '', host: '', port: 0, adminDoor: false };
   const keyFile = resolve(need(v['master-key-file'] ?? env.COXIA_MASTER_KEY_FILE, '--master-key-file', 'COXIA_MASTER_KEY_FILE'));
   const rawPort = need(v.port ?? env.COXIA_PORT, '--port', 'COXIA_PORT');
   const port = /^\d{1,5}$/.test(rawPort) ? Number(rawPort) : NaN;
@@ -126,6 +130,18 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
   }
   if (!opts) {
     out(t('main.headless.usage'));
+    exit(0);
+    return null;
+  }
+
+  if (opts.init) {
+    try {
+      bootEnv({ dataDir: opts.dataDir });
+    } catch (e) {
+      return failed(e instanceof Error ? e.message : String(e));
+    }
+    // The workspace the registry runs first, one line, for the installer's log; nothing else of the data.
+    out(workspaceId());
     exit(0);
     return null;
   }

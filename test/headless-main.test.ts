@@ -228,3 +228,23 @@ describe('main refuses to start', () => {
     expect(out.join('\n')).toContain('--master-key-file');
   });
 });
+
+describe('main --init', () => {
+  it('creates the workspace registry of an empty data folder, says its first workspace and exits 0, with no key, port or door', async () => {
+    const { main } = await entry();
+    const exit = vi.fn();
+    const out: string[] = [];
+    expect(await main(['--init', '--data-dir', dataDir], {}, { exit, out: (l) => out.push(l), err: () => undefined })).toBeNull();
+    expect(exit).toHaveBeenCalledExactlyOnceWith(0);
+    expect(out).toEqual(['principal']);
+    expect(JSON.parse(readFileSync(join(dataDir, 'workspaces.json'), 'utf8'))).toMatchObject({ current: 'principal' });
+    expect(tree(dataDir).some((f) => f.endsWith('admin.sock'))).toBe(false);
+  });
+
+  it('still needs the data folder', async () => {
+    const { main } = await entry();
+    const exit = vi.fn();
+    expect(await main(['--init'], {}, { exit, out: () => undefined, err: () => undefined })).toBeNull();
+    expect(exit).toHaveBeenCalledExactlyOnceWith(1);
+  });
+});
