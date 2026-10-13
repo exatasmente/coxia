@@ -92,6 +92,7 @@ export function neutralConfig(): WorkspaceConfig {
     testEnvironment: neutralTestEnvironment(),
     mcpState: { enabled: false, act: false },
     claudeSessions: { enabled: false },
+    budget: { currency: 'USD', monthly: null, categories: {} },
   };
 }
 
