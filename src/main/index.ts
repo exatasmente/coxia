@@ -1,47 +1,28 @@
 import { join } from 'node:path';
 import { BrowserWindow, Menu, Notification, Tray, app, clipboard, ipcMain, nativeImage, session, shell } from 'electron';
-import type { HunkChoice } from '../shared/conflict';
-import type { Settings } from '../shared/settings';
-import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, TurnOptions, Voice } from '../shared/types';
-import { ACTIVITY_EVENT, ACTIVITY_GET, reasoningOn } from '../shared/activity';
-import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, freeReleaseCheckout, listActions, previewAction, skipAction, startActions } from './actions';
-import { activityLog, setActivitySink, setThoughtsGate } from './activity';
-import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
-import { loadCards } from './cards';
-import { continueInClaude, pasteCommand } from './claude';
-import { getSettings, saveSettings } from './config';
-import { installElectronPorts } from './electronPorts';
-import { bootEnv } from './env';
+import type { AppEvent } from '../shared/types';
+import { detectRelease } from './actions';
+import { getSettings } from './config';
+import { createCoxia } from './core';
+import { electronPorts } from './electronPorts';
 import { installProcessHandlers, logError } from './errorlog';
-import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGateRound, recordGate, startGate, visualGate } from './gate';
-import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
-import { askRetro, latestRetro, prepareRetro } from './retro';
-import { MODULES } from './modules';
-import { endLiveScreens, hasOpenScreens } from './runner/module';
 import { resourcesDir } from './paths';
 import { wantsQuitForUpdate } from './update-core';
 import { SHOWN_EVENT } from '../shared/update';
 import { announceRunning, flushRenderer, forgetRunning, terminateChildren, trackWindow } from './update';
 import { beforeQuit as updatesBeforeQuit, onWindowFocus, setUpdateHooks } from './updates';
 import { bindIpc, handle } from './rpc';
-import { setBoardHost } from './board';
-import { realBoardHost, startBoardHost } from './boardHost';
 import { upperFirst } from '../shared/cycles/text';
 import { ceremonyLabel } from './cyclePrompts';
-import { getConfig, onConfigChange } from './workspaceConfig';
-import { checkStatus, type Notice, registerJob, startScheduler } from './scheduler';
-import { getHistory, listHistory, loadState, saveState } from './state';
-import { saveMinutes } from './store';
-import { glossary } from './glossary';
-import { cancelSpeech, planSpeech, speakSegment, startVoice, stopVoice, transcribe, voicesFor } from './voice';
-import { broadcast, pushNotice, registerWebAccess, stopWebAccess, syncWebAccess } from './webAccess';
+import { onConfigChange } from './workspaceConfig';
+import { type Notice, checkStatus } from './scheduler';
+import { broadcast } from './webAccess';
 import { t } from '../shared/i18n';
 import { warmLoginPath } from './loginPath';
 
-// The modules load before this body runs, and none of them touches the disk on import: the data folder is fixed here, before anything reads it,
-// and the desktop fills the ports: the secrets and path modules take the keychain and the folders from them.
-bootEnv();
-installElectronPorts();
+// The modules load before this body runs, and none of them touches the disk on import: the core fixes the data folder when it is made, and the desktop
+// gives it the keychain, the folders and the process it owns, which the secrets, paths and host modules read at the time of use.
+// An error thrown before the core starts (making the window, the tray) still reaches the error log; the core leaves these handlers to the desktop.
 installProcessHandlers();
 
 // Mitigate blank/black repaints reported on Windows by using Electron's software-rendering path.
@@ -84,11 +65,6 @@ function showNotice(n: Notice, send: (ev: AppEvent) => void): void {
     send(n.onClick);
   });
   note.show();
-}
-
-function notify(n: Notice): void {
-  pushNotice(n);
-  showNotice(n, emit);
 }
 
 const SCREEN_FIELDS = ['ref', 'id', 'mr', 'back'];
@@ -174,68 +150,9 @@ function createTray(): void {
   tray.on('click', show);
 }
 
-function handlers(): void {
-  handle('state:load', () => loadState());
-  handle('state:save', (state: SavedCeremony) => saveState(state));
-  handle('history:list', () => listHistory());
-  handle('history:get', (id: string) => getHistory(id));
-  handle('cards:load', (limit: number, refresh?: boolean, squad?: unknown) => loadCards(limit, refresh, typeof squad === 'string' && squad ? squad : null));
-  handle('agent:prepare', (card: Card, options?: TurnOptions) => prepareTurn(card, options));
-  handle('agent:reply', (card: Card, turn: AgentTurn, text: string) => reply(card, turn, text));
-  handle('deep:ask', (card: Card, question: string, sessionId: string | null) => deepAsk(card, question, sessionId));
-  handle('deep:options', (card: Card, sessionId: string) => deepOptions(card, sessionId));
-  handle('ata:teams', (minutes: Minutes, cards: Card[]) => teamsText(minutes, cards));
-  handle('ata:save', (minutes: Minutes, teams: string, selected: number[], ceremonyId?: string) => saveMinutes(minutes, teams, selected, ceremonyId));
-  handle('voice:plan', (text: string, voice: Voice) => {
-    const { engine, prosody } = getSettings().voice;
-    return planSpeech(text, voice, engine, { prosody, glossary: glossary() });
-  });
-  handle('voice:segment', (token: string, segment: SpeechSegment) => speakSegment(token, segment));
-  handle('voice:cancel', (token: string) => cancelSpeech(token));
-  handle('voice:transcribe', (audio: ArrayBuffer) => transcribe(audio, glossary()));
-  handle('voice:list', () => voicesFor(getSettings().voice.engine));
+// The channels that only the window can serve: they need the clipboard and the desktop's notifications.
+function desktopHandlers(): void {
   handle('clipboard:copy', (text: string) => clipboard.writeText(text));
-  handle('settings:get', () => getSettings());
-  handle('settings:save', (s: Settings) => {
-    const saved = saveSettings(s);
-    emit({ type: 'settings', settings: saved });
-    return saved;
-  });
-  handle('claude:continue', (sessionId: string, prompt?: string) => continueInClaude(sessionId, prompt));
-  handle('claude:command', (sessionId: string, prompt?: string) => pasteCommand(sessionId, prompt));
-  handle('status:check', () => checkStatus(true));
-  handle('actions:list', () => listActions());
-  handle('actions:detect', () => detectRelease(true));
-  handle('actions:preview', (id: string) => previewAction(id));
-  handle('actions:approve', (id: string) => approveAction(id));
-  handle('actions:freeBranch', (id: string) => freeReleaseCheckout(id));
-  handle('actions:skip', (id: string) => skipAction(id));
-  handle('actions:conflict', (id: string, question: string) => conflictTalk(id, question));
-  handle('conflict:fromMr', (card: Card, ref: string) => conflictFromMr(card, ref));
-  handle('conflict:prepare', (id: string) => conflictPrepare(id));
-  handle('conflict:propose', (id: string) => conflictPropose(id));
-  handle('conflict:choose', (id: string, hunkId: string, choice: HunkChoice, edited?: string) => conflictChoose(id, hunkId, choice, edited));
-  handle('conflict:apply', (id: string, options: { skipTests: boolean }) => conflictApply(id, options));
-  handle('conflict:commit', (id: string) => conflictCommit(id));
-  handle('conflict:reopen', (id: string) => conflictReopen(id));
-  handle('conflict:discard', (id: string) => conflictDiscard(id));
-  handle('gate:options', (card: Card) => gateOptions(card));
-  handle('gate:start', (card: Card, gate: 1 | 2, file?: string) => startGate(card, gate, typeof file === 'string' ? file : undefined));
-  handle('gate:get', (id: string) => getGate(id));
-  handle('gate:answer', (id: string, q: number, input: { choice?: number; text?: string }) => answerGate(id, q, input));
-  handle('gate:explain', (id: string, question: string) => explainGate(id, question));
-  handle('gate:visual', (id: string) => visualGate(id));
-  handle('gate:insert', (id: string) => insertGateVisual(id));
-  handle('gate:round', (id: string) => newGateRound(id));
-  handle('gate:record', (id: string) => recordGate(id));
-  handle('qa:prepare', (card: Card) => prepareQa(card));
-  handle('qa:get', (iid: string) => getQa(iid));
-  handle('qa:ask', (iid: string, question: string) => askQa(iid, question));
-  handle('qa:write', (iid: string) => writeQaChecklist(iid));
-  handle('retro:prepare', (squad?: unknown) => prepareRetro(typeof squad === 'string' && squad ? squad : null));
-  handle('retro:latest', (squad?: unknown) => latestRetro(typeof squad === 'string' && squad ? squad : null));
-  handle('retro:ask', (id: string, question: string) => askRetro(id, question));
-  handle(ACTIVITY_GET, (id?: string | null) => activityLog.get(typeof id === 'string' ? id : null));
   handle('jobs:notify', (title: unknown, body: unknown, screen: unknown) => notifyJob(title, body, screen));
 }
 
@@ -285,43 +202,36 @@ if (!app.requestSingleInstanceLock()) {
     if (wantsQuitForUpdate(argv)) void quitForUpdate();
     else show();
   });
-  app.whenReady().then(() => {
+  const core = createCoxia({
+    ...electronPorts(),
+    rendererDir: join(import.meta.dirname, '../renderer'),
+    window: { emit: emitWindow, emitWindow, notify: (n) => showNotice(n, emit) },
+  });
+  app.whenReady().then(async () => {
     // The PATH of the person's login shell is what the commands of a run need; reading it takes a moment, so it starts now.
     warmLoginPath();
     Menu.setApplicationMenu(null);
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media'));
     bindIpc((channel, fn) => ipcMain.handle(channel, (_e, ...args) => (fn as (...a: unknown[]) => unknown)(...args)));
-    handlers();
-    setActivitySink((entry) => emit({ type: 'module', name: ACTIVITY_EVENT, payload: entry }));
-    // Read when a thought is made, so the switch of the workspace takes effect from the next one.
-    setThoughtsGate(() => reasoningOn(getConfig()));
-    registerWebAccess(join(import.meta.dirname, '../renderer'));
-    startVoice();
+    desktopHandlers();
     createWindow();
     createTray();
-    startActions({ notify, emit });
-    // The board reaches the code host through one door, handed in once and never handed back to a module.
-    setBoardHost(realBoardHost);
-    startBoardHost();
-    for (const register of MODULES) {
-      register({ handle, notify, emit, emitWindow, job: registerJob });
-    }
-    startScheduler({ notify, emit });
-    void syncWebAccess().catch((e) => fail('[web]', 'module:web', e));
+    await core.start();
     announceRunning();
   });
   app.on('quit', (_e, code) => console.log(`[app] quit with exit code ${code}`));
-  // The open screens of the agents get a few seconds to keep their recordings and close their browsers before the app goes: the quit is held once, then asked again.
-  let screensEnded = false;
-  let screensEnding = false;
+  // The core stops before the app goes (the open screens keep their recordings, the web door closes, a stage in the middle is left for the next start): the quit is held once, then asked again.
+  let stopped = false;
+  let stopping = false;
   app.on('before-quit', (event) => {
     quitting = true;
-    if (!screensEnded && hasOpenScreens()) {
+    if (!stopped) {
       event.preventDefault();
-      if (!screensEnding) {
-        screensEnding = true;
-        void endLiveScreens().finally(() => {
-          screensEnded = true;
+      if (!stopping) {
+        stopping = true;
+        // No grace for a stage: closing the app has always interrupted it, and the next start takes it over.
+        void core.stop({ deadlineMs: 0 }).finally(() => {
+          stopped = true;
           app.quit();
         });
       }
@@ -329,9 +239,6 @@ if (!app.requestSingleInstanceLock()) {
     }
     updatesBeforeQuit();
     forgetRunning();
-    void endLiveScreens();
-    stopVoice();
-    void stopWebAccess();
   });
   app.on('window-all-closed', () => app.quit());
 }

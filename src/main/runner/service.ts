@@ -380,6 +380,11 @@ export interface Runner {
   resume(): void;
   /** Resolves when nothing is running: stages, mentions and what they started. */
   idle(): Promise<void>;
+  /**
+   * The process is going: no stage starts from now on, and a running one gets `deadlineMs` to reach its end. A stage still going after that is aborted and left as it is
+   * (working), so the next `resume` starts it over, exactly as after a kill. Resolves when the work has unwound, a few seconds after the deadline at most.
+   */
+  stop(deadlineMs: number): Promise<void>;
 }
 
 /** How one plugin call ended, as the runner reads it from what `pluginEvent` returns. */
@@ -398,6 +403,8 @@ const PLUGIN_FAILED: Partial<Record<PluginEvent, string>> = {
 };
 
 const MAX_STEPS = 200;
+/** After the deadline of a stop, how long the aborted work gets to unwind before the stop returns. */
+const STOP_UNWIND_MS = 3_000;
 /** The most the person may paste as the memory from the run screen: the same ceiling the screen reads back, so nothing is written that could not be shown. */
 const MEMORY_EDIT_MAX = 200_000;
 /** A release run that ended is watched this long for the stable version to be published (and its tracking issue closed). */
@@ -478,6 +485,8 @@ export function createRunner(deps: RunnerDeps): Runner {
     });
   };
 
+  // Set by `stop`: nothing new starts, and what an abort interrupts is left for the next resume instead of being failed.
+  let stopping = false;
   const inflight = new Map<string, Promise<void>>();
   const again = new Set<string>();
   const aborts = new Map<string, AbortController>();
@@ -659,7 +668,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   function pump(id: string): void {
     // A provider whose key ran out of budget holds every run that would keep working on it: nothing new starts until a call goes through again.
     const paused = deps.runs.get(id)?.status === 'waiting' && deps.runs.get(id)?.wait?.kind === 'budget';
-    if (paused || budget.size) return;
+    if (paused || budget.size || stopping) return;
     if (inflight.has(id)) {
       again.add(id);
       return;
@@ -676,7 +685,7 @@ export function createRunner(deps: RunnerDeps): Runner {
   async function drive(id: string): Promise<void> {
     for (let i = 0; i < MAX_STEPS; i++) {
       const run = deps.runs.get(id);
-      if (!run || run.status !== 'working') return;
+      if (!run || run.status !== 'working' || stopping) return;
       // A plugin of the run asked the person for something: the stage does not start until every request is answered (pluginSettled lets it go).
       const hold = deps.pluginHold?.(id) ?? null;
       if (hold) {
@@ -745,6 +754,8 @@ export function createRunner(deps: RunnerDeps): Runner {
         console.error('[runner] could not record usage', run.id, e instanceof Error ? e.message : e);
       }
     }
+    // Interrupted by `stop`: the run stays working, with what the agent did kept in the worktree, and the next start takes the stage over (`resume`).
+    if (stopping && abort.signal.aborted) return;
     // The person may have cancelled while the agent worked: what it did is kept in the worktree, and the run stays as the person left it.
     const current = deps.runs.get(run.id);
     if (!current || current.status !== 'working' || current.stage !== run.stage) return;
@@ -1528,6 +1539,25 @@ export function createRunner(deps: RunnerDeps): Runner {
         await Promise.allSettled(all);
       }
     },
+    async stop(deadlineMs) {
+      stopping = true;
+      const sleep = (ms: number): { done: Promise<boolean>; cancel(): void } => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const done = new Promise<boolean>((r) => (timer = setTimeout(() => r(true), Math.max(0, ms))));
+        return { done, cancel: () => clearTimeout(timer) };
+      };
+      const settled = async (ms: number): Promise<boolean> => {
+        const limit = sleep(ms);
+        try {
+          return !(await Promise.race([api.idle().then(() => false), limit.done]));
+        } finally {
+          limit.cancel();
+        }
+      };
+      if (await settled(deadlineMs)) return;
+      for (const abort of [...aborts.values(), ...chainAborts.values()]) abort.abort();
+      await settled(STOP_UNWIND_MS);
+    },
   };
 
   // ---- the agents named in a message ------------------------------------------------------------------------------------------------
@@ -1706,6 +1736,8 @@ export function createRunner(deps: RunnerDeps): Runner {
       } finally {
         shared?.finish();
       }
+      // Stopped while the agent thought: the question keeps its holder, and the next start walks the chain again.
+      if (stopping) return;
       // The person (or a cancel) may have answered while the agent thought: then what it said is not used.
       const now = deps.runs.get(id)?.question;
       if (deps.runs.get(id)?.status !== 'question' || !now || now.askedAt !== q.askedAt || now.holder !== q.holder || (now.hops ?? 0) !== (q.hops ?? 0)) return;
@@ -1784,6 +1816,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     } finally {
       shared?.finish();
     }
+    if (stopping) return;
     // The person (or a cancel) may have answered while the other liaison thought: then what it said is not used (the request stays in the channel as it was).
     const now = deps.runs.get(id)?.question;
     if (deps.runs.get(id)?.status !== 'question' || !now || now.askedAt !== q.askedAt || now.holder !== q.holder || (now.hops ?? 0) !== (q.hops ?? 0)) return;

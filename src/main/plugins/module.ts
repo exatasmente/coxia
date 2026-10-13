@@ -785,6 +785,12 @@ function arm(a: ReleaseAction, d: PluginsDeps = pluginsDeps): void {
   );
 }
 
+/** The core is stopping: the announced writes keep their place in Actions and are armed again at the next start (above). */
+export function disarmAll(): void {
+  for (const timer of timers.values()) clearTimeout(timer);
+  timers.clear();
+}
+
 function disarm(id: string): void {
   const timer = timers.get(id);
   if (timer) clearTimeout(timer);

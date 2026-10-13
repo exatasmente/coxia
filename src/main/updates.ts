@@ -270,16 +270,29 @@ export function onWindowFocus(): void {
 
 // ---- schedule -------------------------------------------------------------------------------------------------------------------------------
 
+let stopped = false;
+
+/** The core is stopping: the checks are not scheduled again, so no timer of this module outlives it. */
+export function stopUpdates(): void {
+  stopped = true;
+  if (releaseTimer) clearTimeout(releaseTimer);
+  if (sourceTimer) clearInterval(sourceTimer);
+  if (emitTimer) clearTimeout(emitTimer);
+  releaseTimer = sourceTimer = emitTimer = null;
+}
+
 function schedule(): void {
   if (releaseTimer) clearTimeout(releaseTimer);
   if (sourceTimer) clearInterval(sourceTimer);
   releaseTimer = sourceTimer = null;
   const mode = currentMode().mode;
-  if (!settings.auto) return;
+  if (!settings.auto || stopped) return;
   if (mode === 'release') {
     const arm = (): void => {
       releaseTimer = setTimeout(() => {
-        void checkRelease().finally(arm);
+        void checkRelease().finally(() => {
+          if (!stopped) arm();
+        });
       }, nextCheckDelay(release.lastCheckAt, Date.now(), settings.intervalHours));
       releaseTimer.unref();
     };
