@@ -1,0 +1,6 @@
+/* Instances: the connection bar of a window that is the client of a server, and the settings section. */
+.inst-banner { position: fixed; left: 12px; bottom: 12px; z-index: 90; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; max-width: min(560px, calc(100vw - 24px)); padding: 8px 14px; border-radius: 12px; border: 1px solid var(--teal-line); background: var(--teal-soft); color: var(--teal-ink); font-size: 13px; }
+.inst-banner.inst-down { border-color: var(--amber-line); background: var(--amber-soft); color: var(--amber-ink); }
+.inst-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.inst-item { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 12px; border: 1px solid var(--line); min-width: 0; }
+.inst-fp { font-family: ui-monospace, monospace; overflow-wrap: anywhere; }

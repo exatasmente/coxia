@@ -133,6 +133,14 @@ describe('calls', () => {
     expect(await c.next()).toEqual({ id: 7, ok: true, value: { a: 1, b: 'two' } });
   });
 
+  it('carries binary values with the wire marker and leaves a plain value as it was', async () => {
+    const { path, rpc } = await boot();
+    rpc.handle('test:bin', (audio: ArrayBuffer, plain: unknown) => ({ n: new Uint8Array(audio).length, plain, out: new Uint8Array([1, 2]).buffer }));
+    const c = await greeted(path, 1);
+    c.send({ id: 3, channel: 'test:bin', args: [{ $bytes: Buffer.from([1, 2, 3]).toString('base64') }, { a: [1, { b: null }], $bytes: 5 }] });
+    expect(await c.next()).toEqual({ id: 3, ok: true, value: { n: 3, plain: { a: [1, { b: null }], $bytes: 5 }, out: { $bytes: Buffer.from([1, 2]).toString('base64') } } });
+  });
+
   it('answers a failure with its contract code', async () => {
     const { path, contract } = await boot();
     const c = await greeted(path, 1);
