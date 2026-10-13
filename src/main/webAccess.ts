@@ -4,6 +4,7 @@ import type { AppEvent } from '../shared/types';
 import type { PairingCode, WebView } from '../shared/webAccess';
 import { getSettings, saveWebSettings } from './config';
 import { dataRoot } from './env';
+import { passkeys } from './passkey';
 import { handle, handleDevice, hasChannel, invoke } from './rpc';
 import { createWebApp, startListening, type Listening, type WebApp } from './web';
 import { createAuth, type Auth } from './webAuth';
@@ -89,7 +90,7 @@ export async function syncWebAccess(): Promise<void> {
   if (current?.key === key) return;
   await stopWebAccess();
   if (!w.enabled) return;
-  const app = createWebApp({ settings: webSettings, rendererDir, auth: theAuth(), invoke, hasChannel, onDeviceGone: (id) => push?.removeDevice(id) });
+  const app = createWebApp({ settings: webSettings, rendererDir, auth: theAuth(), invoke, hasChannel, isAdmin: (id) => passkeys().hasPasskey(id), onDeviceGone: (id) => { push?.removeDevice(id); passkeys().removeDevice(id); } });
   state = await startListening(app, w);
   if (state.listening) current = { app, key };
   else await app.close();
@@ -115,6 +116,7 @@ export function registerWebAccess(dir: string): void {
   handle('web:revoke', (id: string) => {
     theAuth().revoke(id);
     push?.removeDevice(id);
+    passkeys().removeDevice(id);
     current?.app.dropDevice(id);
     return view();
   });

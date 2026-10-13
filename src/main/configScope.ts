@@ -145,7 +145,17 @@ export function poolRaised(before: WorkspaceConfig, after: WorkspaceConfig): str
 
 /** The changed paths a paired browser may not change (empty: the change is allowed). */
 export function refusedPaths(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
-  return [...changedPaths(before, after).filter((p) => !covered(p)), ...raisedPermissions(before, after), ...poolRaised(before, after), ...raisedAutonomy(before, after), ...screenPolicyRaised(before, after), ...remoteControlRaised(before, after)];
+  return [...outsideEditable(before, after), ...raisedPaths(before, after)];
+}
+
+/** The changed paths that are not in WEB_EDITABLE: refused to every paired browser, a device with a passkey included (config:save is its door for those). */
+export function outsideEditable(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
+  return changedPaths(before, after).filter((p) => !covered(p));
+}
+
+/** What the change raises: a permission, a reach, an autonomy. A browser without a passkey is refused these; one with a passkey may, after the step-up of kind `permission`. */
+export function raisedPaths(before: WorkspaceConfig, after: WorkspaceConfig): string[] {
+  return [...raisedPermissions(before, after), ...poolRaised(before, after), ...raisedAutonomy(before, after), ...screenPolicyRaised(before, after), ...remoteControlRaised(before, after)];
 }
 
 /**

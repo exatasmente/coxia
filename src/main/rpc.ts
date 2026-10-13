@@ -7,6 +7,7 @@ import { CONTRACT_VERSION, ContractError, type Hello, type Settled, errorCodeOf,
 import { t } from '../shared/i18n';
 import type { Through } from '../shared/auditoria';
 import { openAct } from './persona/act';
+import { stepUpContext, type StepUpContext } from './passkeyContext';
 
 type Handler = (...args: never[]) => unknown;
 type Binder = (channel: string, fn: Handler) => void;
@@ -101,7 +102,19 @@ export function deviceChannels(): string[] {
   return [...deviceTable.keys()];
 }
 
-export async function invoke(channel: string, args: unknown[], deviceId?: string): Promise<unknown> {
+// Called inside every call of the HTTP door before the handler runs: the passkey module uses it for the channels that need a step-up whatever their handler does.
+let webGate: ((channel: string) => void) | null = null;
+export const setWebGate = (fn: ((channel: string) => void) | null): void => {
+  webGate = fn;
+};
+
+export async function invoke(channel: string, args: unknown[], deviceId?: string, step?: Omit<StepUpContext, 'deviceId'>): Promise<unknown> {
+  // A call of a paired browser carries its device, origin and assertion for the passkey step-up, across the awaits of the handler.
+  if (deviceId) return stepUpContext.run({ deviceId, ...step }, () => invokeWeb(channel, args, deviceId));
+  return invokeWeb(channel, args, deviceId);
+}
+
+async function invokeWeb(channel: string, args: unknown[], deviceId?: string): Promise<unknown> {
   const dev = deviceTable.get(channel);
   if (dev) {
     if (!deviceId) throw new ContractError('browser-only', t('main.rpc.browserOnly', { channel }));
@@ -109,7 +122,10 @@ export async function invoke(channel: string, args: unknown[], deviceId?: string
   }
   const fn = table.get(channel);
   if (!fn) throw new ContractError('unknown-channel', t('main.rpc.unknownChannel', { channel }));
-  return guarded(channel, 'web', fn, args as never[]);
+  return guarded(channel, 'web', ((...a: never[]) => {
+    webGate?.(channel);
+    return fn(...a);
+  }) as Handler, args as never[]);
 }
 
 /**

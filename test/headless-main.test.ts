@@ -104,8 +104,8 @@ describe('main', () => {
     expect(view.settings).toMatchObject({ enabled: true, host: '127.0.0.1', port });
     expect(view.status.listening).toBe(true);
 
-    // Moving or switching off from a client changes the other fields only; the door stays where it is and the saved address stays as it was.
-    const after = (await rpc.invoke('web:configure', [{ enabled: false, port: port + 1, basePath: '/other/' }])) as typeof view & { settings: { basePath: string } };
+    // Moving or switching off from a client (the admin socket: a call from the paired door would now need a passkey) changes the other fields only; the door stays where it is and the saved address stays as it was.
+    const after = (await rpc.invokeAdmin('web:configure', [{ enabled: false, port: port + 1, basePath: '/other/' }])) as typeof view & { settings: { basePath: string } };
     expect(after.settings).toMatchObject({ enabled: true, port, basePath: '/other/' });
     expect(after.status.listening).toBe(true);
     const saved = JSON.parse(readFileSync(join(dataDir, 'web.json'), 'utf8')) as { enabled: boolean; port: number; basePath: string };
