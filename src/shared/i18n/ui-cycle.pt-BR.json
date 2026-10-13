@@ -361,6 +361,7 @@
   "ui.cycle.wait.reporterReply": "Aguardando uma resposta na issue.",
   "ui.cycle.wait.stableOut": "Aguardando a estável estar no host: a tag dela no remoto, na main.",
   "ui.cycle.wait.time": "Aguardando {minutes} minutos.",
+  "ui.cycle.wait.workspaceBudget": "Aguardando folga no orçamento: nada que gasta começa até o limite subir ou o mês virar.",
   "ui.forum.addressed": "Para {who}",
   "ui.forum.agentChat": "Conversar com {agent}",
   "ui.forum.agents": "Conversar com um agente",

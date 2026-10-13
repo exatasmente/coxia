@@ -855,14 +855,14 @@ export function askReporter(run: Run, question: { by: string; text: string }, at
  * The stage hit a provider whose key ran out of budget. It is a wait, not a failure: nothing is spent and no retry is offered, and the run goes on by
  * itself when the sweep finds the provider answering again. `detail` is the reason in words, already built from the provider's own (masked) text.
  */
-export function stageWaitingOnBudget(run: Run, input: { provider: string; engine: string; detail: string }, at: string): Transition {
+export function stageWaitingOnBudget(run: Run, input: { provider: string; engine: string; detail: string; /** The workspace's own operating budget (#198) holds the stage, not a provider's key. */ workspace?: boolean }, at: string): Transition {
   need(run, 'working');
   const out = clone(run, at);
   out.status = 'waiting';
   out.wait = { kind: 'budget', since: at, provider: input.provider, detail: input.detail };
   (record(out, run.stage) as StageRecord).status = 'waiting';
   log(out, at, 'wait-started', run.stage, 'app', `budget:${input.provider}`);
-  return { run: out, messages: [{ kind: 'system', author: app, code: 'run.stage.wait.budget', params: { stage: run.stage, provider: input.provider, engine: input.engine, detail: input.detail }, stage: run.stage }] };
+  return { run: out, messages: [{ kind: 'system', author: app, code: input.workspace ? 'run.stage.wait.workspaceBudget' : 'run.stage.wait.budget', params: { stage: run.stage, provider: input.provider, engine: input.engine, detail: input.detail }, stage: run.stage }] };
 }
 
 /**

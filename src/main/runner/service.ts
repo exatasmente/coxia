@@ -88,6 +88,7 @@ import {
   COMMAND_DECISIONS,
   type CommandDecision,
   type PendingCommand,
+  type StageUsage,
 } from '../../shared/runs';
 import type { AppEvent } from '../../shared/types';
 import type { PluginEvent } from '../../shared/plugins/events';
@@ -140,6 +141,7 @@ import { answerMentions } from '../mentions/answer';
 import type { MemoryPort } from '../memory/port';
 import type { MemoryWrite } from '../memory/store';
 import { createNoticeHub } from './notices';
+import { WORKSPACE_BUDGET_WAIT } from '../../shared/budget';
 import type { MemorySession } from '../memory/session';
 import type { ProceduresPort } from '../procedures/port';
 import type { ProcedureOffers } from '../procedures/offers';
@@ -278,6 +280,11 @@ export interface RunnerDeps {
    * a stage is working, in the session. Absent: no run is told. The switch decides at every note.
    */
   memoryWrites?: (listener: (write: MemoryWrite) => void) => () => void;
+  /**
+   * The workspace's operating budget (#198). `hold` says, in words, why nothing new may start (the model category or the month is spent), or null; the runner then keeps its
+   * runs waiting and starts none by itself. `record` enters what a stage's model calls cost in the ledger. Absent: no budget, as before.
+   */
+  spend?: { hold(): string | null; record(used: StageUsage, about: { run: string; stage: string }): void };
   /** For a test: how long notices that arrive close together are held to be told as one, in ms. */
   noticeMergeMs?: number;
   /** Where the offers to keep a procedure are held: a stage and an answer in a run's thread raise them after their last turn (#187). Absent: no last turn. */
@@ -692,6 +699,13 @@ export function createRunner(deps: RunnerDeps): Runner {
         tell(run, moveRun(d, id, (r) => stageWaitingOnPlugin(r, hold, now())));
         return;
       }
+      // The operating budget is spent: no new stage starts. The run waits with the reason and goes on by itself when the limit is raised or the month turns.
+      const spent = deps.spend?.hold() ?? null;
+      if (spent) {
+        budget.set(WORKSPACE_BUDGET_WAIT, { engine: '', reason: spent, since: now() });
+        tell(run, moveRun(d, id, (r) => stageWaitingOnBudget(r, { provider: WORKSPACE_BUDGET_WAIT, engine: '', detail: spent, workspace: true }, now())));
+        return;
+      }
       await step(run);
       // The step moved the run. A run sitting at a gate with the autonomy block's "gates" choice on is approved by the app itself and goes on; the reason says where
       // the decision came from. `pump` already deferred the run while this drive ran (`inflight`), so the gate is looked at here, once, before the loop starts it again.
@@ -752,6 +766,11 @@ export function createRunner(deps: RunnerDeps): Runner {
         moveRun(d, run.id, (r) => recordUsage(r, run.stage, used, now()));
       } catch (e) {
         console.error('[runner] could not record usage', run.id, e instanceof Error ? e.message : e);
+      }
+      try {
+        deps.spend?.record(used, { run: run.id, stage: run.stage });
+      } catch (e) {
+        console.error('[runner] could not record the spend', run.id, e instanceof Error ? e.message : e);
       }
     }
     // Interrupted by `stop`: the run stays working, with what the agent did kept in the worktree, and the next start takes the stage over (`resume`).
@@ -1926,14 +1945,18 @@ export function createRunner(deps: RunnerDeps): Runner {
    * it on (`waitDone`), whatever their stage; a provider that refuses again, or that cannot be told (a 5xx, the network), leaves them waiting.
    */
   async function probeWaitingProviders(): Promise<Run[]> {
-    const probe = deps.probeBudget;
-    if (!probe || !budget.size) return [];
+    const probe = deps.probeBudget ?? (async () => ({ state: 'unknown', detail: '' }) as const);
+    if (!budget.size) return [];
     const sent: Run[] = [];
     for (const [provider, state] of [...budget]) {
       if (!dueForProbe(state, Date.parse(now()))) continue;
       let result: Awaited<ReturnType<BudgetProbeFn>>;
       try {
-        result = await probe(provider);
+        // The workspace's own budget is asked of the ledger, not of a provider: no call is made.
+        if (provider === WORKSPACE_BUDGET_WAIT) {
+          const still = deps.spend?.hold() ?? null;
+          result = still ? { state: 'out', detail: still } : { state: 'ok', detail: '' };
+        } else result = await probe(provider);
       } catch (e) {
         result = probeStateOf(e);
       }
@@ -2014,7 +2037,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     const config = deps.config();
     if (!config.runner.enabled || !isFlowCycle(config.devCycle.stages) || !deps.issues.ready()) return [];
     // A provider without budget holds the starts: without resolving each run's roles there is no way to tell whether it would use that provider, so nothing starts.
-    if (budget.size) return [];
+    if (budget.size || deps.spend?.hold()) return [];
     const room = config.runner.maxConcurrentRuns - deps.runs.list().filter((r) => r.status === 'working').length;
     if (room <= 0) return [];
     const found = (await deps.issues.triggered(config.runner.triggerLabel)).sort((a, b) => a.iid - b.iid);

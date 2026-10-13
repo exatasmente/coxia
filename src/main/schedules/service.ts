@@ -18,7 +18,7 @@ export interface ScheduleService {
   view(): SchedulesView;
 }
 
-export function createScheduleService(deps: { store: ScheduleStore; firer: Firer; now(): Date }): ScheduleService {
+export function createScheduleService(deps: { store: ScheduleStore; firer: Firer; now(): Date; /** The operating budget is spent (#198): a schedule is the app's own initiative, so nothing fires until there is room again; it stays due. */ held?(): boolean }): ScheduleService {
   let on = false;
   let answered = false;
   // When the scheduler was turned on: a time before it passed while the app was closed or the scheduler off, which is what a schedule's missed-firing rule is about (#250).
@@ -26,7 +26,7 @@ export function createScheduleService(deps: { store: ScheduleStore; firer: Firer
   let onSince = 0;
 
   async function tick(): Promise<void> {
-    if (!on) return;
+    if (!on || deps.held?.()) return;
     const now = deps.now();
     const due = deps.store.list().filter((s) => isDue(s, now) && !deps.firer.running(s.id));
     await Promise.all(

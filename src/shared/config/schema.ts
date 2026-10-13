@@ -639,6 +639,11 @@ export const CONFIG_SCHEMA: JsonSchema = {
       claudeSessions: object('The machine\'s Claude Code sessions in the desktop window: the transcripts, the running and the background sessions, with sending, permission answers, stop and start. Never offered to a paired browser or to the persona; never reads a credential or a key file.', {
         enabled: boolean('The Claude Code sessions screen and its channels exist. Off: no screen, and every channel refuses.'),
       }),
+      budget: object('The operating budget: what the app may spend in a month and per category, checked before anything that costs money runs. An operating limit, not a guarantee: a card limit or the provider\'s own cap is outside the app. No credential is ever here.', {
+        currency: enumOf('The currency of every amount. Only USD today: the model providers bill in it and the app converts nothing.', ['USD']),
+        monthly: { type: ['number', 'null'], description: 'The most the instance may spend in a calendar month (UTC), across categories. Null: no limit.', minimum: 0, maximum: 1e9 },
+        categories: { type: 'object', description: 'A limit per category (model, infrastructure, domains and the ones added later), by name. A category with no entry has no limit of its own.', additionalProperties: { type: 'number', minimum: 0, maximum: 1e9 }, maxProperties: 30 } as JsonSchema,
+      }),
     },
     ['schemaVersion'],
   ),

@@ -1242,9 +1242,46 @@ describe('migrateConfig', () => {
       expect(control.config.agents.team[0].remoteControl).toBeUndefined();
     });
 
-    it('is the newest step: 36 is current and 37 is refused', () => {
-      expect(CONFIG_SCHEMA_VERSION).toBe(36);
-      expect(() => migrateConfig({ schemaVersion: 37 }, { legacyInstall: false })).toThrow(/newer app/);
+    it('is followed by later steps: the chain does not stop at 36', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBeGreaterThan(36);
+    });
+  });
+
+  describe('schema 36 to 37: the operating budget', () => {
+    const v36 = (change: (doc: Record<string, any>) => void = () => undefined): Record<string, any> => {
+      const c = JSON.parse(JSON.stringify(neutralConfig())) as Record<string, any>;
+      c.schemaVersion = 36;
+      delete c.budget;
+      change(c);
+      return c;
+    };
+
+    it('gives an existing workspace no limit at all, so nothing it does changes, and yields a valid file', () => {
+      const r = migrateConfig(v36(), { legacyInstall: false });
+      expect(r.fromVersion).toBe(36);
+      expect(r.changed).toBe(true);
+      expect(r.config.budget).toEqual({ currency: 'USD', monthly: null, categories: {} });
+      expect(validateConfig(r.config).ok).toBe(true);
+    });
+
+    it('keeps a budget a later build already wrote, and a second start changes nothing', () => {
+      const kept = migrateConfig(v36((c) => (c.budget = { currency: 'USD', monthly: 50, categories: { model: 20 } })), { legacyInstall: false });
+      expect(kept.config.budget).toEqual({ currency: 'USD', monthly: 50, categories: { model: 20 } });
+      const twice = migrateConfig(structuredClone(kept.config) as unknown as Record<string, any>, { legacyInstall: false });
+      expect(twice.changed).toBe(false);
+    });
+
+    it('refuses a negative limit and a field it does not know', () => {
+      const base = { ...v36(), schemaVersion: CONFIG_SCHEMA_VERSION };
+      expect(validateConfig({ ...base, budget: { currency: 'USD', monthly: -1, categories: {} } }).ok).toBe(false);
+      expect(validateConfig({ ...base, budget: { currency: 'USD', monthly: null, categories: { model: -2 } } }).ok).toBe(false);
+      expect(validateConfig({ ...base, budget: { currency: 'USD', monthly: null, categories: {}, apiKey: 'x' } }).ok).toBe(false);
+      expect(validateConfig({ ...base, budget: { currency: 'USD', monthly: 10, categories: { model: 4 } } }).ok).toBe(true);
+    });
+
+    it('is the newest step: 37 is current and 38 is refused', () => {
+      expect(CONFIG_SCHEMA_VERSION).toBe(37);
+      expect(() => migrateConfig({ schemaVersion: 38 }, { legacyInstall: false })).toThrow(/newer app/);
     });
   });
 });

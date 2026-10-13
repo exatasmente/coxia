@@ -1,10 +1,24 @@
-// WorkspaceConfig (schema 36): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 37): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
 import type { ScreenPolicy } from './screenPolicy';
 
-export const CONFIG_SCHEMA_VERSION = 36;
+export const CONFIG_SCHEMA_VERSION = 37;
+
+/**
+ * The operating budget the person sets (#198): a monthly total and a limit per category, in one currency. A missing or null limit means no limit, so a workspace
+ * stored without any of it behaves exactly as before. It is an operating limit the app checks before it spends, not a guarantee: a card limit or a provider's cap
+ * is outside the app. Credentials are never here; a spend that needs one names a secret reference elsewhere.
+ */
+export interface BudgetConfig {
+  /** The currency of every amount (an ISO 4217 code). */
+  currency: string;
+  /** The most the instance may spend in a calendar month (UTC), across categories; null: no limit. */
+  monthly: number | null;
+  /** A limit per category (`model`, `infrastructure`, `domains`, and the ones added later); a category with no entry has no limit of its own. */
+  categories: Record<string, number>;
+}
 
 /** The machine's Claude Code sessions in the app (desktop only): off unless the person turned it on. */
 export interface ClaudeSessionsConfig {
@@ -1209,6 +1223,8 @@ export interface WorkspaceConfig {
    * workspace stored without it is off and behaves exactly as before.
    */
   claudeSessions?: ClaudeSessionsConfig;
+  /** The operating budget (#198). Optional: a workspace stored without it has no limit and behaves exactly as before. Changed only on the computer. */
+  budget?: BudgetConfig;
 }
 
 /** A secret the config needs, found by walking the secretRef fields. */

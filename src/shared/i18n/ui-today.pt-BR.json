@@ -50,6 +50,7 @@
   "ui.audit.kind.screenPolicy": "Aprovações dos passos na tela mudaram",
   "ui.audit.kind.screenUse": "Tela usada por uma pessoa",
   "ui.audit.kind.secret": "Segredo",
+  "ui.audit.kind.spend": "Gasto",
   "ui.audit.kind.sync": "Sincronização",
   "ui.audit.kind.testEnv": "Ambiente de teste",
   "ui.audit.kind.turnLimit": "Resposta num limite de passos",
