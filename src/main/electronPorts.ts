@@ -1,7 +1,7 @@
 import { BrowserWindow, app, dialog, nativeImage, safeStorage } from 'electron';
 import type { CryptoPort } from './secrets-core';
-import { type PickRequest, setHostPort } from './host';
-import { setPathsPort } from './paths';
+import { type HostPort, type PickRequest, setHostPort } from './host';
+import { type PathsPort, setPathsPort } from './paths';
 import type { NativeImageLike } from './screen/frame';
 import { realEncoderEnv } from './screen/encoderWindow';
 import { setCryptoPort } from './secrets';
@@ -51,25 +51,35 @@ export async function pickWithDialog(request: PickRequest): Promise<string | nul
   return picked.canceled ? null : (picked.filePaths[0] ?? null);
 }
 
-/** Fills the ports with what the desktop uses today: the OS keychain, the runtime's folders and the process it owns, each read at the time of use. */
-export function installElectronPorts(): void {
-  setCryptoPort(keychain);
-  setPathsPort({
-    isPackaged: () => app?.isPackaged ?? false,
-    resources: () => process.resourcesPath,
-    userData: () => app.getPath('userData'),
-    appPath: () => app.getAppPath(),
-  });
-  setHostPort({
-    version: () => app.getVersion(),
-    exit: (code) => app.exit(code),
-    // A quit lets the windows and the before-quit hooks run; the exit is the fallback for one that hangs.
-    restart: () => {
-      app.relaunch();
-      app.quit();
-      setTimeout(() => app.exit(0), 5000).unref();
+/** What the desktop gives the core: the OS keychain, the runtime's folders and the process it owns, each read at the time of use. */
+export function electronPorts(): { secrets: CryptoPort; paths: PathsPort; host: HostPort } {
+  return {
+    secrets: keychain,
+    paths: {
+      isPackaged: () => app?.isPackaged ?? false,
+      resources: () => process.resourcesPath,
+      userData: () => app.getPath('userData'),
+      appPath: () => app.getAppPath(),
     },
-    pick: pickWithDialog,
-    screen: { nativeImage: nativeImage as unknown as NativeImageLike, encoderEnv: realEncoderEnv },
-  });
+    host: {
+      version: () => app.getVersion(),
+      exit: (code) => app.exit(code),
+      // A quit lets the windows and the before-quit hooks run; the exit is the fallback for one that hangs.
+      restart: () => {
+        app.relaunch();
+        app.quit();
+        setTimeout(() => app.exit(0), 5000).unref();
+      },
+      pick: pickWithDialog,
+      screen: { nativeImage: nativeImage as unknown as NativeImageLike, encoderEnv: realEncoderEnv },
+    },
+  };
+}
+
+/** Fills the ports with what the desktop gives, for a caller that does not go through the core (a test of the ports). */
+export function installElectronPorts(): void {
+  const { secrets, paths, host } = electronPorts();
+  setCryptoPort(secrets);
+  setPathsPort(paths);
+  setHostPort(host);
 }

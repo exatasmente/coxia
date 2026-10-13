@@ -470,5 +470,21 @@ export const runsModule: Module = (ctx) => {
     run: () => r.sweep(),
   });
   // A run that was in the middle of a stage when the app closed starts that stage over; the others go on where they were.
-  setTimeout(() => r.resume(), 2_000);
+  resumeTimer = setTimeout(() => {
+    resumeTimer = null;
+    r.resume();
+  }, 2_000);
 };
+
+let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * The process is going: the delayed resume is dropped, no stage starts, a running one gets `deadlineMs` to end and is then interrupted, and the open screens end. The runs it
+ * leaves working are taken over by the next start, as after a kill. Nothing here fails when the module never registered.
+ */
+export async function stopRunner(deadlineMs: number): Promise<void> {
+  if (resumeTimer) clearTimeout(resumeTimer);
+  resumeTimer = null;
+  await current?.stop(deadlineMs);
+  await endLiveScreens();
+}

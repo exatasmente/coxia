@@ -149,10 +149,21 @@ function tick(): void {
   }
 }
 
+let firstTick: ReturnType<typeof setTimeout> | null = null;
+let ticker: ReturnType<typeof setInterval> | null = null;
+
 export function startScheduler(d: Deps): void {
   deps = d;
   knownTask('status', getSettings().schedule.statusEveryMin);
   knownTask('release', getSettings().schedule.statusEveryMin);
-  setTimeout(tick, 15_000);
-  setInterval(tick, TICK_MS);
+  firstTick = setTimeout(tick, 15_000);
+  ticker = setInterval(tick, TICK_MS);
+}
+
+/** No tick fires after this: the timers are the scheduler's only handle on the process. A sweep already going ends on its own. */
+export function stopScheduler(): void {
+  if (firstTick) clearTimeout(firstTick);
+  if (ticker) clearInterval(ticker);
+  firstTick = ticker = null;
+  deps = null;
 }

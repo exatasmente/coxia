@@ -36,7 +36,8 @@ describe('channel table', () => {
   });
 
   it('has a main-process handler for every channel in the table', () => {
-    const main = read('src/main/index.ts');
+    // The channels are registered by the core and by the desktop shell.
+    const main = read('src/main/core.ts') + read('src/main/index.ts');
     for (const channel of Object.values(API_CHANNELS)) expect(main, channel).toContain(`handle('${channel}'`);
   });
 
