@@ -827,6 +827,7 @@
   "main.retention.outside": "outside the expected folder",
   "main.custo.goalRange": "the goal must be between US$ 1 and US$ 10,000",
   "main.custo.unexpected": "unexpected answer from OpenRouter",
+  "main.contract.mismatch": "This client speaks version {client} of the Coxia contract and the instance speaks version {instance}. Update whichever is older.",
   "main.rpc.unknownChannel": "unknown channel: {channel}",
   "main.conflictVerify.tooLong": "the command of {project} is over {max} characters",
   "main.conflictGit.interrupted": "[interrupted: {signal}]",

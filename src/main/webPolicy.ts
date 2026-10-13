@@ -1,3 +1,4 @@
+import { HELLO_CHANNEL } from '../shared/contract';
 import { t } from '../shared/i18n';
 // What a browser session may call. The desktop window has no such limits (IPC does not go through here).
 export type WebAccess = 'allow' | 'deny' | 'external';
@@ -125,9 +126,13 @@ const CLAUDE_SESSIONS = /^claudeSessions:/;
 // own switch travels in config:cycle-save, where configScope refuses a raise from the phone.
 const REMOTE_CONTROL_ADMIN = /^remoteControl:/;
 
+// The handshake of the contract (#207) only compares two version numbers and answers the instance's own: any client may call it, and it is named so a later change of the
+// default cannot close it by accident. test/contract.test.ts pins it.
+export const CONTRACT_CHANNELS = new Set([HELLO_CHANNEL]);
+
 export function webAccess(channel: string): WebAccess {
   if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MEMORY_UNLISTED.test(channel) || TURN_ASKS_UNLISTED.test(channel) || PERSONA_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel) || CLAUDE_SESSIONS.test(channel) || REMOTE_CONTROL_ADMIN.test(channel)) return 'deny';
-  if (MEMORY_CHANNELS.has(channel) || TURN_ASK_CHANNELS.has(channel) || PERSONA_CHANNELS.has(channel)) return 'allow';
+  if (CONTRACT_CHANNELS.has(channel) || MEMORY_CHANNELS.has(channel) || TURN_ASK_CHANNELS.has(channel) || PERSONA_CHANNELS.has(channel)) return 'allow';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }

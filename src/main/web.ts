@@ -9,6 +9,7 @@ import { AuthError, createAuth, type Auth, SESSION_TTL_MS } from './webAuth';
 import { createIdempotency, IdempotencyConflict, type Idempotency } from './webIdempotency';
 import { webRefusal } from './webPolicy';
 import { IDEMPOTENCY_KEY, isQueueable } from '../shared/outbox';
+import { CONTRACT_HEADER, CONTRACT_VERSION, type ErrorCode, contractMismatch, errorCodeOf } from '../shared/contract';
 import { t } from '../shared/i18n';
 
 const COOKIE = 'cer_session';
@@ -150,12 +151,19 @@ function json(res: ServerResponse, status: number, body: unknown, headers: Recor
   res.end(data);
 }
 
+// The code a refusal of the HTTP door carries when the cause is the request and not a channel: the status says what kind.
+const codeForStatus = (status: number): ErrorCode =>
+  status === 401 ? 'unauthorized' : status === 403 ? 'forbidden' : status === 404 ? 'not-found' : status === 409 ? 'conflict' : status === 429 ? 'rate-limited' : status >= 400 && status < 500 ? 'invalid-input' : 'internal';
+
 class HttpError extends Error {
+  readonly code: ErrorCode;
   constructor(
     readonly status: number,
     message: string,
+    code?: ErrorCode,
   ) {
     super(message);
+    this.code = code ?? codeForStatus(status);
   }
 }
 
@@ -221,8 +229,18 @@ export function createWebApp(deps: WebDeps): WebApp {
     if (!String(req.headers['content-type'] ?? '').startsWith('application/json')) throw new HttpError(415, t('main.web.json'));
   }
 
+  // A page that outlived an update still sends the version it was built with. A request without the header comes from a page older than the contract (or from a stream the
+  // browser cannot add headers to) and is let through: refusing it would lock out every phone that cached its page before this version.
+  function guardContract(req: IncomingMessage): void {
+    const given = req.headers[CONTRACT_HEADER];
+    if (given === undefined) return;
+    const value = Array.isArray(given) ? given[0] : given;
+    if (value !== String(CONTRACT_VERSION)) throw new HttpError(409, contractMismatch(value, CONTRACT_VERSION).message, 'contract-mismatch');
+  }
+
   async function api(req: IncomingMessage, res: ServerResponse, rel: string): Promise<void> {
     const method = req.method ?? 'GET';
+    guardContract(req);
     if (rel === 'api/login') {
       if (method !== 'POST') throw new HttpError(405, t('main.web.method'));
       guardWrite(req);
@@ -272,7 +290,7 @@ export function createWebApp(deps: WebDeps): WebApp {
       if (method !== 'POST') throw new HttpError(405, t('main.web.method'));
       guardWrite(req);
       const channel = rel.slice('api/rpc/'.length);
-      if (!deps.hasChannel(channel)) throw new HttpError(404, t('main.rpc.unknownChannel', { channel }));
+      if (!deps.hasChannel(channel)) throw new HttpError(404, t('main.rpc.unknownChannel', { channel }), 'unknown-channel');
       const refusal = webRefusal(channel, deps.settings().allowExternalEffects);
       if (refusal) throw new HttpError(403, refusal);
       let args: unknown;
@@ -292,7 +310,7 @@ export function createWebApp(deps: WebDeps): WebApp {
       } catch (e) {
         if (e instanceof IdempotencyConflict) throw new HttpError(409, e.message);
         console.error('[web]', channel, e instanceof Error ? e.message : e);
-        throw new HttpError(500, e instanceof Error ? e.message : String(e));
+        throw new HttpError(500, e instanceof Error ? e.message : String(e), errorCodeOf(e));
       }
       json(res, 200, { result: encodeWire(result) });
       return;
@@ -352,12 +370,12 @@ export function createWebApp(deps: WebDeps): WebApp {
           return;
         }
         if (e instanceof AuthError) {
-          json(res, e.status, { error: e.message }, e.retryAfterSec ? { 'Retry-After': String(e.retryAfterSec) } : {});
+          json(res, e.status, { error: e.message, code: codeForStatus(e.status) }, e.retryAfterSec ? { 'Retry-After': String(e.retryAfterSec) } : {});
         } else if (e instanceof HttpError) {
-          json(res, e.status, { error: e.message });
+          json(res, e.status, { error: e.message, code: e.code });
         } else {
           console.error('[web]', e);
-          json(res, 500, { error: t('main.web.internal') });
+          json(res, 500, { error: t('main.web.internal'), code: 'internal' });
         }
       }
     })();

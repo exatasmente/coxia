@@ -22,7 +22,7 @@ import { type PathsPort, setPathsPort } from './paths';
 import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
 import { askRetro, latestRetro, prepareRetro } from './retro';
 import { stopRunner } from './runner/module';
-import { handle } from './rpc';
+import { handle, hello } from './rpc';
 import { type Notice, checkStatus, registerJob, startScheduler, stopScheduler } from './scheduler';
 import { setCryptoPort } from './secrets';
 import type { CryptoPort } from './secrets-core';
@@ -141,6 +141,7 @@ function handlers(emit: (ev: AppEvent) => void): void {
   handle('retro:prepare', (squad?: unknown) => prepareRetro(typeof squad === 'string' && squad ? squad : null));
   handle('retro:latest', (squad?: unknown) => latestRetro(typeof squad === 'string' && squad ? squad : null));
   handle('retro:ask', (id: string, question: string) => askRetro(id, question));
+  handle('contract:hello', (clientVersion: unknown) => hello(clientVersion));
   handle(ACTIVITY_GET, (id?: string | null) => activityLog.get(typeof id === 'string' ? id : null));
 }
 

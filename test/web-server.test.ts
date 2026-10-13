@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { DEFAULT_SETTINGS, type WebSettings } from '../src/shared/settings';
+import { CONTRACT_VERSION, ERROR_CODES } from '../src/shared/contract';
 import { decodeWire, encodeWire } from '../src/shared/wire';
 import { clientIp, createWebApp, inCidr, originAllowed, resolveStatic, type WebApp } from '../src/main/web';
 import { createAuth, type Auth } from '../src/main/webAuth';
@@ -376,5 +377,36 @@ describe('events', () => {
     expect(received.join('')).toContain('data: {"type":"navigate","to":"retro"}');
     expect(closed).toBe(true);
     expect(app.clientCount()).toBe(0);
+  });
+});
+
+describe('the contract version on the HTTP door', () => {
+  it('refuses a page built for another version, with both versions and a code', async () => {
+    const cookie = await pairedCookie();
+    const before = calls.length;
+    const res = await rpc('state:load', [], cookie, { 'x-coxia-contract': '99' });
+    expect(res.status).toBe(409);
+    expect(res.json().code).toBe('contract-mismatch');
+    expect(res.json().error).toContain('99');
+    expect(res.json().error).toContain(String(CONTRACT_VERSION));
+    expect(calls.length).toBe(before);
+    const session = await http('GET', `${BASE}api/session`, { cookie, headers: { 'x-coxia-contract': '0' } });
+    expect(session.status).toBe(409);
+    expect(session.json().code).toBe('contract-mismatch');
+  });
+
+  it('answers a page of the same version, and one that sends no version (a page from before the contract)', async () => {
+    const cookie = await pairedCookie();
+    expect((await rpc('state:load', [], cookie, { 'x-coxia-contract': String(CONTRACT_VERSION) })).status).toBe(200);
+    expect((await rpc('state:load', [], cookie)).status).toBe(200);
+  });
+
+  it('gives every refusal and failure a code of the closed list', async () => {
+    const cookie = await pairedCookie();
+    const refusals = [await rpc('nope:nothing', [], cookie), await rpc('claude:continue', [], cookie), await rpc('boom', [], cookie), await http('POST', `${BASE}api/rpc/state:load`, { headers: JSON_POST }), await http('GET', `${BASE}nothing/here`)];
+    const codes = refusals.map((r) => r.json().code);
+    expect(codes).toEqual(['unknown-channel', 'forbidden', 'internal', 'unauthorized', 'not-found']);
+    for (const code of codes) expect(ERROR_CODES).toContain(code);
+    expect(refusals[2].json().error).toBe('falhou de propósito');
   });
 });

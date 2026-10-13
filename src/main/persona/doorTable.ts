@@ -281,6 +281,8 @@ const group = (reason: ExclusionReason, channels: string[]): [string, ExclusionR
 
 export const EXCLUDED: Readonly<Record<string, ExclusionReason>> = Object.fromEntries([
   ...group('window', ['agent:activity:get', 'agent:prepare', 'agent:reply', 'autostart:get', 'autostart:set', 'clipboard:copy', 'claude:continue', 'claude:command', 'jobs:notify', 'log:renderer', 'state:load', 'state:save', 'diagram:fix', 'glossary:hear', 'persona:live-read']),
+  // The client's version handshake (#207): plumbing between a client and the instance, with nothing for a tool to do.
+  ...group('window', ['contract:hello']),
   // The discussions screen a button opened by project and number: its read is the screen's (the persona reads threads through VcsRead), and the line it leaves records the person's
   // tap, which the persona must never be able to write for them.
   ...group('window', ['feedback:discussions:open', 'feedback:discussions:opened']),

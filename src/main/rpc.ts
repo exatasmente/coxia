@@ -3,6 +3,7 @@ import { takeContext } from '../shared/activity';
 import { withActivityContext } from './activity';
 import { rpcContext } from './errorlog-core';
 import { logError } from './errorlog';
+import { CONTRACT_VERSION, ContractError, type Hello, type Settled, errorCodeOf, contractMismatch, wireErrorOf } from '../shared/contract';
 import { t } from '../shared/i18n';
 import type { Through } from '../shared/auditoria';
 import { openAct } from './persona/act';
@@ -33,6 +34,9 @@ export const viaOf = (): Through => {
   return via === 'web' ? 'paired' : via === 'persona' ? 'persona' : 'window';
 };
 
+// What leaves a channel is always a ContractError: the code is the one the failure's class carries, or 'internal'; the message is the text the person already read.
+const coded = (e: unknown): ContractError => (e instanceof ContractError ? e : new ContractError(errorCodeOf(e), e instanceof Error ? e.message : String(e)));
+
 // Every failure of a channel call lands in the error log, whichever door it came through. The arguments never do.
 function guarded(channel: string, via: Via, run: (...args: never[]) => unknown, raw: never[]): unknown {
   // A call made for a renderer job carries the job id as a trailing marker; the handler never sees it.
@@ -40,13 +44,28 @@ function guarded(channel: string, via: Via, run: (...args: never[]) => unknown, 
   const args = given as never[];
   const fail = (e: unknown): never => {
     logError(`rpc:${channel}`, e, rpcContext(channel, args, via));
-    throw e;
+    throw coded(e);
   };
   try {
     const result = origin.run(via, () => withActivityContext(jobId, () => run(...args)));
     return result instanceof Promise ? result.catch(fail) : result;
   } catch (e) {
     return fail(e);
+  }
+}
+
+/** The handshake: a client names the contract version it was built with, and the instance answers its own or refuses with both. */
+export function hello(clientVersion: unknown): Hello {
+  if (clientVersion !== CONTRACT_VERSION) throw contractMismatch(typeof clientVersion === 'number' ? clientVersion : String(clientVersion), CONTRACT_VERSION);
+  return { version: CONTRACT_VERSION };
+}
+
+/** Runs a call and settles it to a value or a { code, message }, for a transport that would otherwise lose the code of a thrown error (Electron's IPC). */
+export async function settle(run: () => unknown): Promise<Settled> {
+  try {
+    return { ok: true, value: await run() };
+  } catch (e) {
+    return { ok: false, error: wireErrorOf(e) };
   }
 }
 
@@ -77,14 +96,19 @@ export function channels(): string[] {
   return [...table.keys()];
 }
 
+/** The channels only a paired browser's device reaches; the contract names them with the others. */
+export function deviceChannels(): string[] {
+  return [...deviceTable.keys()];
+}
+
 export async function invoke(channel: string, args: unknown[], deviceId?: string): Promise<unknown> {
   const dev = deviceTable.get(channel);
   if (dev) {
-    if (!deviceId) throw new Error(t('main.rpc.browserOnly', { channel }));
+    if (!deviceId) throw new ContractError('browser-only', t('main.rpc.browserOnly', { channel }));
     return guarded(channel, 'web', ((...a: never[]) => (dev as (d: string, ...a: unknown[]) => unknown)(deviceId, ...a)) as Handler, args as never[]);
   }
   const fn = table.get(channel);
-  if (!fn) throw new Error(t('main.rpc.unknownChannel', { channel }));
+  if (!fn) throw new ContractError('unknown-channel', t('main.rpc.unknownChannel', { channel }));
   return guarded(channel, 'web', fn, args as never[]);
 }
 
@@ -95,8 +119,8 @@ export async function invoke(channel: string, args: unknown[], deviceId?: string
 export function invokePersona(channel: string, args: unknown[]): unknown {
   // i18n-ignore: developer error: the door is the only caller and keeps an act open
   if (!openAct()) throw new Error(`invokePersona outside an act: ${channel}`);
-  if (channel.startsWith('persona:')) throw new Error(t('main.rpc.unknownChannel', { channel }));
+  if (channel.startsWith('persona:')) throw new ContractError('unknown-channel', t('main.rpc.unknownChannel', { channel }));
   const fn = table.get(channel);
-  if (!fn) throw new Error(t('main.rpc.unknownChannel', { channel }));
+  if (!fn) throw new ContractError('unknown-channel', t('main.rpc.unknownChannel', { channel }));
   return guarded(channel, 'persona', fn, args as never[]);
 }

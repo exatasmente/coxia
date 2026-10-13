@@ -73,6 +73,7 @@ export type ScheduleProblem = 'prompt' | 'recurrence' | 'interval' | 'time' | 'd
 export class ScheduleError extends Error {
   constructor(readonly code: ScheduleProblem | 'notFound' | 'tooMany' | 'fromSchedule') {
     super(code);
+    this.name = 'ScheduleError';
   }
 }
 

@@ -11,7 +11,7 @@ import { wantsQuitForUpdate } from './update-core';
 import { SHOWN_EVENT } from '../shared/update';
 import { announceRunning, flushRenderer, forgetRunning, terminateChildren, trackWindow } from './update';
 import { beforeQuit as updatesBeforeQuit, onWindowFocus, setUpdateHooks } from './updates';
-import { bindIpc, handle } from './rpc';
+import { bindIpc, handle, settle } from './rpc';
 import { upperFirst } from '../shared/cycles/text';
 import { ceremonyLabel } from './cyclePrompts';
 import { onConfigChange } from './workspaceConfig';
@@ -212,7 +212,8 @@ if (!app.requestSingleInstanceLock()) {
     warmLoginPath();
     Menu.setApplicationMenu(null);
     session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(permission === 'media'));
-    bindIpc((channel, fn) => ipcMain.handle(channel, (_e, ...args) => (fn as (...a: unknown[]) => unknown)(...args)));
+    // Electron's IPC keeps only the message of a thrown error, so a call settles to a value or a { code, message } and the preload turns it back.
+    bindIpc((channel, fn) => ipcMain.handle(channel, (_e, ...args) => settle(() => (fn as (...a: unknown[]) => unknown)(...args))));
     desktopHandlers();
     createWindow();
     createTray();

@@ -1,12 +1,24 @@
 import { tagArgs } from '../../shared/activity';
 import { buildApi } from '../../shared/apiChannels';
+import { CONTRACT_VERSION, ContractError, HELLO_CHANNEL, type Hello, type Settled } from '../../shared/contract';
 import type { Api } from '../../shared/types';
 import { currentJob } from './jobs';
 
-const bridge = (window as unknown as { api: Api }).api;
+// The preload also hands over `call`, which keeps the error code that a thrown error would lose crossing the bridge.
+const bridge = (window as unknown as { api: Api & { call?: (channel: string, ...args: unknown[]) => Promise<Settled> } }).api;
+
+async function invoke(channel: string, ...args: unknown[]): Promise<unknown> {
+  if (!bridge.call) return bridge.invoke(channel, ...args);
+  const settled = await bridge.call(channel, ...args);
+  if (!settled.ok) throw new ContractError(settled.error.code, settled.error.message);
+  return settled.value;
+}
 
 // A call made for a job carries its id, so the main process can say which job an agent run belongs to.
-export const api: Api = buildApi((channel, ...args) => bridge.invoke(channel, ...tagArgs(args, currentJob())), bridge.onEvent, { copy: bridge.copy });
+export const api: Api = buildApi((channel, ...args) => invoke(channel, ...tagArgs(args, currentJob())), bridge.onEvent, { copy: bridge.copy });
+
+/** Tells the instance which contract this window was built with; rejects with the refusal (both versions in its message) when they differ. */
+export const contractHello = (): Promise<Hello> => invoke(HELLO_CHANNEL, CONTRACT_VERSION) as Promise<Hello>;
 
 export const AGENT_COLORS = ['#0F766E', '#6D28D9', '#C2410C', '#1D4ED8', '#9D174D', '#4D7C0F', '#374151', '#0E7490'];
 

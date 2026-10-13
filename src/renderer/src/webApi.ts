@@ -2,6 +2,7 @@
 // Imported first in main.tsx so api.ts finds window.api.
 import { EVENTS_RECONNECTED } from '../../shared/activity';
 import { buildApi } from '../../shared/apiChannels';
+import { CONTRACT_HEADER, CONTRACT_VERSION, type ErrorCode, isErrorCode } from '../../shared/contract';
 import { t } from '../../shared/i18n';
 import type { AppEvent } from '../../shared/types';
 import { isQueueable, IDEMPOTENCY_HEADER } from '../../shared/outbox';
@@ -16,27 +17,37 @@ export class HttpStatusError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    /** The stable code of the failure, when the instance sent one from the closed list. */
+    readonly code?: ErrorCode,
   ) {
     super(message);
   }
 }
 
+// Every call says which contract this page was built with, so an instance that moved on refuses it instead of answering a call it cannot follow.
+const CONTRACT = { [CONTRACT_HEADER]: String(CONTRACT_VERSION) };
+
 export async function post(path: string, body: unknown, headers: Record<string, string> = {}): Promise<unknown> {
   const res = await fetch(url(path), {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', 'X-Cerimonias': '1', ...headers },
+    headers: { 'Content-Type': 'application/json', 'X-Cerimonias': '1', ...CONTRACT, ...headers },
     body: JSON.stringify(body),
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string; result?: unknown };
+  const data = (await res.json().catch(() => ({}))) as { error?: string; code?: unknown; result?: unknown };
   if (res.status === 401 && path !== 'api/login') window.dispatchEvent(new Event(UNAUTHORIZED));
-  if (!res.ok) throw new HttpStatusError(res.status, data.error ?? t('ui.error.http', { status: res.status }));
+  if (!res.ok) throw new HttpStatusError(res.status, data.error ?? t('ui.error.http', { status: res.status }), isErrorCode(data.code) ? data.code : undefined);
   return data;
 }
 
-export async function sessionCheck(): Promise<'ok' | 'login' | 'offline'> {
+/** 'mismatch' carries the instance's own words, which name both versions. */
+export async function sessionCheck(): Promise<'ok' | 'login' | 'offline' | { mismatch: string }> {
   try {
-    const res = await fetch(url('api/session'), { credentials: 'same-origin', cache: 'no-store' });
+    const res = await fetch(url('api/session'), { credentials: 'same-origin', cache: 'no-store', headers: CONTRACT });
+    if (res.status === 409) {
+      const data = (await res.json().catch(() => ({}))) as { error?: string; code?: unknown };
+      if (data.code === 'contract-mismatch' && data.error) return { mismatch: data.error };
+    }
     return res.ok ? 'ok' : res.status === 401 ? 'login' : 'offline';
   } catch {
     return 'offline';
