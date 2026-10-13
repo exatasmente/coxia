@@ -45,7 +45,7 @@ Um processo roda um workspace. Para vários, suba vários processos com `--works
 
 ### Saúde
 
-`GET <caminho base>/healthz` (padrão `/cerimonias/healthz`) responde sem autenticação `{"ok":true,"version":"…","workspace":"<id>"}`: só isso, sem nome nem caminho. Serve ao gerenciador de serviço e à verificação de saúde de uma atualização.
+`GET /healthz`, e também `GET <caminho base>/healthz` (padrão `/cerimonias/healthz`), responde sem autenticação `{"ok":true,"version":"…","workspace":"<id>"}`: só isso, sem nome nem caminho. Serve ao gerenciador de serviço e à verificação de saúde de uma atualização.
 
 ### Sinais e saída
 
@@ -116,7 +116,7 @@ A process runs one workspace. For several, start several processes with `--works
 
 ### Health
 
-`GET <base path>/healthz` (default `/cerimonias/healthz`) answers without authentication `{"ok":true,"version":"…","workspace":"<id>"}`: nothing else, no name, no path. It is for the service manager and an update's health check.
+`GET /healthz`, and also `GET <base path>/healthz` (default `/cerimonias/healthz`), answers without authentication `{"ok":true,"version":"…","workspace":"<id>"}`: nothing else, no name, no path. It is for the service manager and an update's health check.
 
 ### Signals and exit
 

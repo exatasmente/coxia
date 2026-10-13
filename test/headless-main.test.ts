@@ -80,6 +80,9 @@ describe('main', () => {
     expect(health.headers['cache-control']).toBe('no-store');
     expect(health.body).not.toContain(dataDir);
     expect((await get('/cerimonias/healthz', 'HEAD')).status).toBe(200);
+    // At the root too, for a probe that does not know the base path; a POST is no health check.
+    expect(JSON.parse((await get('/healthz')).body)).toMatchObject({ ok: true, workspace: 'principal' });
+    expect((await get('/healthz', 'POST')).status).toBe(404);
     // Not a route of the API: nothing else is open without a session.
     expect((await get('/cerimonias/api/rpc/state:load', 'POST')).status).toBeGreaterThanOrEqual(400);
 
@@ -108,6 +111,7 @@ describe('main', () => {
     const saved = JSON.parse(readFileSync(join(dataDir, 'web.json'), 'utf8')) as { enabled: boolean; port: number; basePath: string };
     expect(saved).toMatchObject({ enabled: false, port: 4330, basePath: '/other/' });
     expect((await get('/other/healthz')).status).toBe(200);
+    expect((await get('/healthz')).status).toBe(200);
   });
 
   it('runs the workspace it is told to and leaves the registry current one alone', async () => {
