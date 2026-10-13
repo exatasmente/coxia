@@ -18,7 +18,7 @@ const { getConfig, reloadConfig, saveConfig, updateConfig } = await import('../s
 const { sandbox } = await import('../src/main/sandbox/workspace');
 const { forumStore, forumModule } = await import('../src/main/forum');
 const { attachmentStore } = await import('../src/main/attachments');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { memoryStore } = await import('../src/main/memory/instance');
 const { conversationsPath } = await import('../src/main/memory/store');
 const assist = await import('../src/main/agentAssist');
@@ -308,7 +308,7 @@ describe('discarding', () => {
     expect(agent(id)).toBeUndefined();
     expect(threadOf(id)).toBeNull();
     expect(existsSync(attachmentStore().dirOf(agentThreadId(id)))).toBe(false);
-    expect(existsSync(ATAS)).toBe(true);
+    expect(existsSync(atasDir())).toBe(true);
     // The stored file agrees: a reload does not bring it back.
     reloadConfig();
     expect(agent(id)).toBeUndefined();
@@ -320,10 +320,10 @@ describe('discarding', () => {
     const kept = { conversation: 'general', agent: 'writer' };
     expect(memory.save({ scope: { conversation: agentThreadId(id), agent: id }, kind: 'note', title: 'Tried it', text: 'Written during the test of the draft.' }).ok).toBe(true);
     expect(memory.save({ scope: kept, kind: 'note', title: 'Kept', text: 'Written in another conversation.' }).ok).toBe(true);
-    expect(existsSync(join(conversationsPath(ATAS), agentThreadId(id)))).toBe(true);
+    expect(existsSync(join(conversationsPath(atasDir()), agentThreadId(id)))).toBe(true);
 
     assist.discardAssistDraft(id);
-    expect(existsSync(join(conversationsPath(ATAS), agentThreadId(id)))).toBe(false);
+    expect(existsSync(join(conversationsPath(atasDir()), agentThreadId(id)))).toBe(false);
     expect(memory.list({ conversation: 'general' }).notes).toHaveLength(1);
     memory.removeConversation('general');
   });
@@ -398,7 +398,7 @@ describe('with an old problem in the flow', () => {
     stored.language = 'en';
     stored.agents.team = stored.agents.team.filter((a) => a.id !== 'developer');
     delete stored.devCycle.stages.find((s) => s.id === 'implement')!.agentId;
-    writeConfigFile(ATAS, stored);
+    writeConfigFile(atasDir(), stored);
     reloadConfig();
     expect(() => updateConfig((c) => ({ ...c, agents: { ...c.agents, team: [...c.agents.team, newAgent({ id: 'worker' })] } }))).toThrow();
 

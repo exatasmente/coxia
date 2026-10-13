@@ -69,8 +69,8 @@ describe('starting a run', () => {
     delete stored.devCycle.stages.find((s) => s.id === 'implement')!.agentId;
     const { writeConfigFile } = await import('../src/main/config-bootstrap');
     const { reloadConfig } = await import('../src/main/workspaceConfig');
-    const { ATAS } = await import('../src/main/env');
-    writeConfigFile(ATAS, stored);
+    const { atasDir } = await import('../src/main/env');
+    writeConfigFile(atasDir(), stored);
     reloadConfig();
     await expect(c.runner.start('app#101')).rejects.toMatchObject({ code: 'no-agent' });
     await expect(c.runner.start('app#101')).rejects.toThrow(/Implement/);

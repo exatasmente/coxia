@@ -22,7 +22,7 @@ import { activityLog, withActivityContext } from '../src/main/activity';
 import { askAgent, askBare, obj, str } from '../src/main/agents';
 import { MaxTurnsError } from '../src/main/engine/contract';
 import { engineFor } from '../src/main/engine/registry';
-import { ATAS } from '../src/main/env';
+import { atasDir } from '../src/main/env';
 import { readIndex } from '../src/main/sessions-core';
 import { rc } from '../src/main/workspaceConfig';
 import { installEnvSecret, installLegacyConfig } from './helpers/config';
@@ -73,8 +73,8 @@ describe('a bare call on the Claude SDK', () => {
   it('works from the data folder of the workspace, which is no repository, and not from the projects', async () => {
     scripts = [answered()];
     await bare();
-    expect(calls[0].options.cwd).toBe(ATAS);
-    expect(ATAS).not.toBe(rc().projectsRoot);
+    expect(calls[0].options.cwd).toBe(atasDir());
+    expect(atasDir()).not.toBe(rc().projectsRoot);
   });
 
   it('asks for the schema it was given, on the model of the role, with two turns', async () => {
@@ -102,7 +102,7 @@ describe('a bare call on the Claude SDK', () => {
     scripts = [answered('s-bare')];
     await bare();
     expect(calls[0].options).not.toHaveProperty('persistSession');
-    expect(readIndex(ATAS).find((e) => e.id === 's-bare')).toMatchObject({ role: 'deep' });
+    expect(readIndex(atasDir()).find((e) => e.id === 's-bare')).toMatchObject({ role: 'deep' });
   });
 
   it('stops at the turn limit and does not resume the session', async () => {

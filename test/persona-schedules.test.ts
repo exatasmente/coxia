@@ -20,7 +20,7 @@ const { listAudit } = await import('../src/main/auditoria');
 const { forumStore } = await import('../src/main/forum');
 const { saveConfig } = await import('../src/main/workspaceConfig');
 const { ToolError } = await import('../src/main/engine/open/tools/types');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 
 type Handler = (...args: unknown[]) => unknown;
 const ipc = new Map<string, Handler>();
@@ -41,7 +41,7 @@ beforeAll(async () => {
   setLanguage('en');
   const base = neutralConfig();
   saveConfig({ ...base, language: 'en', agents: { ...base.agents, team: [...base.agents.team, newAgent({ id: 'me', name: 'Me', kind: 'persona', instructions: 'about the person' })] } });
-  mkdirSync(join(ATAS, 'forum'), { recursive: true });
+  mkdirSync(join(atasDir(), 'forum'), { recursive: true });
   const { ensureAgentThread } = await import('../src/main/forum-channels');
   ensureAgentThread(forumStore(), { id: 'me', name: 'Me' }, 'en');
   const { schedulesModule } = await import('../src/main/schedules/module');

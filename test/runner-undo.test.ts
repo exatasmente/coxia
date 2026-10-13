@@ -10,7 +10,7 @@ import { type Boot, boot, doc, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -21,13 +21,13 @@ const { onRunnerActionDone } = await import('../src/main/runner/door');
 
 let forge: Forge;
 let stop: (() => void) | null = null;
-const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+const asReal = (test: boolean) => writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(ATAS, f), { force: true });
-  for (const d of ['runs', 'forum']) rmSync(join(ATAS, d), { recursive: true, force: true });
+  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(atasDir(), f), { force: true });
+  for (const d of ['runs', 'forum']) rmSync(join(atasDir(), d), { recursive: true, force: true });
   asReal(false);
   stop?.();
   stop = null;
@@ -50,7 +50,7 @@ function script(b: Boot): void {
 async function ran(configure?: (c: import('../src/shared/config/types').WorkspaceConfig) => void): Promise<{ b: Boot; run: Run }> {
   forge = makeForge();
   setVcsRuntimeForTests(forge.runtime());
-  const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; configure?.(c); } });
+  const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; configure?.(c); } });
   script(b);
   stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
   const started = await b.runner.start('app#101');
@@ -91,7 +91,7 @@ describe('undoing a post of the run', () => {
   it('a stage that runs again after its comment was removed posts a new one instead of editing a note that is gone', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => void (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => void (c.language = 'en') });
     script(b);
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     const run = await b.runner.start('app#101');

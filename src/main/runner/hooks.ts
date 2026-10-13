@@ -3,7 +3,7 @@ import type { HookCallback, Options } from '@anthropic-ai/claude-agent-sdk';
 import { prompt as cp } from '../cyclePrompts';
 import { type DenialCode, WRITE_TOOLS, anchored, checkPath, writeTarget } from '../engine/guard';
 import { noBroadSearch, noSecrets, redactSecretResults, secretPath, shellAllowlist } from '../agents';
-import { ATAS } from '../env';
+import { atasDir } from '../env';
 import { MEMORY_DIR } from './activities';
 
 // The hooks of an agent that changes files in its run's worktree. They are the same callbacks for both engines (the open engine runs them
@@ -81,7 +81,7 @@ export function confinedHooks(o: ConfineOptions): Hooks {
       isSecret: (p) => secretPath(p, o.root),
       ...(narrow ? { fence: o.root, reserved: o.writeReserved } : {}),
       writeAllow: o.writeAllow,
-      keep: o.keep ?? [join(ATAS, MEMORY_DIR)],
+      keep: o.keep ?? [join(atasDir(), MEMORY_DIR)],
       anywhere: o.anywhere && !o.writeRoot,
     });
     if (!check.ok) return say(input.tool_name, target, check.code);

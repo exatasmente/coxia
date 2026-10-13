@@ -11,6 +11,7 @@ import { loadCards } from './cards';
 import { continueInClaude, pasteCommand } from './claude';
 import { getSettings, saveSettings } from './config';
 import { installElectronPorts } from './electronPorts';
+import { bootEnv } from './env';
 import { installProcessHandlers, logError } from './errorlog';
 import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGateRound, recordGate, startGate, visualGate } from './gate';
 import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
@@ -37,7 +38,9 @@ import { broadcast, pushNotice, registerWebAccess, stopWebAccess, syncWebAccess 
 import { t } from '../shared/i18n';
 import { warmLoginPath } from './loginPath';
 
-// The modules load before this body runs, so the desktop fills the ports first: the secrets and path modules take the keychain and the folders from them.
+// The modules load before this body runs, and none of them touches the disk on import: the data folder is fixed here, before anything reads it,
+// and the desktop fills the ports: the secrets and path modules take the keychain and the folders from them.
+bootEnv();
 installElectronPorts();
 installProcessHandlers();
 

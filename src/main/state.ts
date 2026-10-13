@@ -16,8 +16,8 @@ export function saveState(state: SavedCeremony): void {
   if (!CEREMONY_ID.test(state.id)) throw new Error(`invalid ceremony id ${state.id}`);
   // Deleted from the history while a window still held it: the stale save does not bring it back (Restore does).
   if (trashedCeremonyIds().has(state.id)) return;
-  mkdirSync(HISTORY, { recursive: true });
-  const file = join(HISTORY, `${state.id}.json`);
+  mkdirSync(HISTORY(), { recursive: true });
+  const file = join(HISTORY(), `${state.id}.json`);
   writeFileSync(`${file}.tmp`, JSON.stringify({ ...state, date: state.id.slice(0, 10) }));
   renameSync(`${file}.tmp`, file);
   registerCeremony(state);

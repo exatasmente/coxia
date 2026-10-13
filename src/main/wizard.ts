@@ -25,7 +25,7 @@ import {
 } from '../shared/wizard';
 import { locateSdk, loadClaudeQuery, claudeExecutable } from './claudeSdk';
 import { probeOpenAIProvider } from './engine/open';
-import { ATAS, DATA_ROOT, HOME } from './env';
+import { atasDir, dataRoot, HOME } from './env';
 import { listCycleTemplates, prepareAgents } from './cycles';
 import { providerSecret } from './llm';
 import { readProfileEnv, sdkEnv } from './llm-core';
@@ -61,7 +61,7 @@ declare global {
   }
 }
 
-const SDK_DIR = join(DATA_ROOT, 'claude-sdk');
+const SDK_DIR = (): string => join(dataRoot(), 'claude-sdk');
 
 // ---- optional modules ---------------------------------------------------------------------------------------------------------------------
 // import.meta.glob resolves at build time to whatever of these files exist, so the wizard compiles and works with or without them.
@@ -175,7 +175,7 @@ async function testSdk(p: LlmProvider, model: string, started: number): Promise<
     let detail = '';
     const q = query({
       prompt: TEST_PROMPT,
-      options: { model, env, maxTurns: 1, tools: [], allowedTools: [], settingSources: [], persistSession: false, cwd: ATAS, abortController: ctl, ...(exe ? { pathToClaudeCodeExecutable: exe } : {}) },
+      options: { model, env, maxTurns: 1, tools: [], allowedTools: [], settingSources: [], persistSession: false, cwd: atasDir(), abortController: ctl, ...(exe ? { pathToClaudeCodeExecutable: exe } : {}) },
     });
     for await (const m of q) {
       if (m.type !== 'result') continue;
@@ -208,8 +208,8 @@ function bundledVersion(): string | null {
 
 function sdkStatus(): SdkStatus {
   const location = locateSdk(getConfig().claudeSdk, HOME);
-  const version = location.mode === 'local' ? installedVersion(SDK_DIR) ?? getConfig().claudeSdk.version : location.mode === 'bundled' ? bundledVersion() : null;
-  return { location, version, installDir: SDK_DIR, npmFound: npmFound() };
+  const version = location.mode === 'local' ? installedVersion(SDK_DIR()) ?? getConfig().claudeSdk.version : location.mode === 'bundled' ? bundledVersion() : null;
+  return { location, version, installDir: SDK_DIR(), npmFound: npmFound() };
 }
 
 let installing: Installation | null = null;
@@ -312,9 +312,9 @@ async function runVoice(action: VoiceAction, options: unknown): Promise<VoiceRun
 export const wizard: Module = (ctx) => {
   ctx.handle(C.availability, (): Promise<WizardAvailability> => availability());
 
-  ctx.handle(C.progressGet, (): WizardProgress => readProgress(ATAS));
-  ctx.handle(C.progressSet, (progress: unknown): WizardProgress => writeProgress(ATAS, progress));
-  ctx.handle(C.progressClear, (): void => clearProgress(ATAS));
+  ctx.handle(C.progressGet, (): WizardProgress => readProgress(atasDir()));
+  ctx.handle(C.progressSet, (progress: unknown): WizardProgress => writeProgress(atasDir(), progress));
+  ctx.handle(C.progressClear, (): void => clearProgress(atasDir()));
 
   ctx.handle(C.providerTest, (providerId: string, model?: string, opts?: { rich?: boolean }): Promise<ProviderTestResult> =>
     testProvider(String(providerId), typeof model === 'string' ? model : undefined, typeof opts?.rich === 'boolean' ? opts.rich : undefined),
@@ -324,7 +324,7 @@ export const wizard: Module = (ctx) => {
   ctx.handle(C.sdkInstall, (): { started: boolean } => {
     if (installing) return { started: false };
     const emit = (e: SdkEvent) => ctx.emit({ type: 'module', name: SDK_EVENT, payload: e });
-    const run = installSdk(SDK_DIR, {
+    const run = installSdk(SDK_DIR(), {
       spawnNpm: realSpawnNpm,
       readVersion: installedVersion,
       emit: (e) => {

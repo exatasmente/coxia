@@ -13,7 +13,7 @@ import { type Boot, type Repo, boot, doc, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 60_000 });
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -26,7 +26,7 @@ const { writesOf } = await import('./helpers/audit');
 const { onRunnerActionDone, onRunnerActionRefused } = await import('../src/main/runner/door');
 const { remoteReleaseOf } = await import('../src/main/runner/release');
 
-const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+const asReal = (test: boolean) => writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 
 let w: ReleaseWorld;
 let forge: Forge;
@@ -45,8 +45,8 @@ afterAll(() => {
   cleanWorlds();
 });
 beforeEach(() => {
-  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(ATAS, f), { force: true });
-  for (const d of ['runs', 'forum']) rmSync(join(ATAS, d), { recursive: true, force: true });
+  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(atasDir(), f), { force: true });
+  for (const d of ['runs', 'forum']) rmSync(join(atasDir(), d), { recursive: true, force: true });
   asReal(false);
   stop?.();
   stop = null;
@@ -75,7 +75,7 @@ const configureRelease = (extra: (c: Parameters<NonNullable<Parameters<typeof bo
 
 async function start(options: { autonomous?: boolean; soleMaintainer?: boolean; script?: (b: Boot) => void; version?: string; from?: string } = {}): Promise<{ b: Boot; run: Run }> {
   const b = await boot({
-    dir: ATAS,
+    dir: atasDir(),
     publish: true,
     repo: repoOf(),
     now: () => clock,
@@ -175,7 +175,7 @@ describe('starting a release', () => {
     await expect(b.runner.startRelease('0.5.0')).rejects.toThrow(/already/i);
     for (const version of ['0.5', 'v0.5.0', '0.5.0-beta.1', '0.05.0', '', '../0.5.0']) await expect(b.runner.startRelease(version), version).rejects.toThrow(/is not a version/);
     await expect(b.runner.startRelease('0.6.0', 'main')).rejects.toThrow(/is not a version/);
-    const bare = await boot({ dir: ATAS, repo: repoOf(), configure: (c) => (c.language = 'en') });
+    const bare = await boot({ dir: atasDir(), repo: repoOf(), configure: (c) => (c.language = 'en') });
     await expect(bare.runner.startRelease('0.6.0')).rejects.toThrow(/no release flow/);
   });
 
@@ -484,7 +484,7 @@ describe('the tool the Release manager asks for the steps with', () => {
     expect(call.prompt).toContain('release/0.5.0');
     expect(call.prompt).toContain('does not exist yet');
     // an issue run gets no such tool
-    const issueRun = await boot({ dir: ATAS, publish: true, repo: repoOf(), configure: (c) => (c.language = 'en') });
+    const issueRun = await boot({ dir: atasDir(), publish: true, repo: repoOf(), configure: (c) => (c.language = 'en') });
     issueRun.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     await issueRun.runner.start('app#101');
     await issueRun.settle();

@@ -17,7 +17,7 @@ import { type Boot, type FakeSandbox, type Repo, boot, doc, fakeSandbox, makeRep
 
 vi.setConfig({ testTimeout: 60_000 });
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -36,7 +36,7 @@ const { newAgent } = await import('../src/shared/config/team');
 const { AGENTS_FILE } = await import('../src/shared/harness/agentsMd');
 const { newProvider } = await import('../src/shared/config/defaults');
 
-const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+const asReal = (test: boolean) => writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 
 const clock = new Date('2026-10-06T12:00:00Z');
 const BRANCH = 'cycle/docs-app-20261006';
@@ -47,9 +47,9 @@ let stop: (() => void) | null = null;
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  rmSync(join(ATAS, 'acoes.json'), { force: true });
-  rmSync(join(ATAS, 'auditoria.jsonl'), { force: true });
-  for (const d of ['runs', 'forum']) rmSync(join(ATAS, d), { recursive: true, force: true });
+  rmSync(join(atasDir(), 'acoes.json'), { force: true });
+  rmSync(join(atasDir(), 'auditoria.jsonl'), { force: true });
+  for (const d of ['runs', 'forum']) rmSync(join(atasDir(), d), { recursive: true, force: true });
   asReal(false);
   stop?.();
   stop = null;
@@ -120,7 +120,7 @@ async function bootDocs(o: { repo?: Repo; flow?: boolean; shell?: 'sandbox' | 'h
     // The agent of the docs flow is an ordinary one of the team: the person may set its shell.
     if (o.shell) (c.agents.team.find((a) => a.id === 'docs-writer') as { shell: string }).shell = o.shell;
   };
-  const b = await boot({ dir: ATAS, publish: true, repo: o.repo ?? repoWithClaude(), now: () => clock, sandbox: o.sandbox, configure: o.flow === false ? (c) => (c.language = 'en') : configure });
+  const b = await boot({ dir: atasDir(), publish: true, repo: o.repo ?? repoWithClaude(), now: () => clock, sandbox: o.sandbox, configure: o.flow === false ? (c) => (c.language = 'en') : configure });
   stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
   return b;
 }

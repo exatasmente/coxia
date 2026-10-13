@@ -3,7 +3,7 @@ import type { WebSettings } from '../shared/settings';
 import type { AppEvent } from '../shared/types';
 import type { PairingCode, WebView } from '../shared/webAccess';
 import { getSettings, saveWebSettings } from './config';
-import { DATA_ROOT } from './env';
+import { dataRoot } from './env';
 import { handle, handleDevice, hasChannel, invoke } from './rpc';
 import { createWebApp, startListening, type Listening, type WebApp } from './web';
 import { createAuth, type Auth } from './webAuth';
@@ -14,7 +14,7 @@ let current: { app: WebApp; key: string } | null = null;
 let state: Listening = { listening: false, address: null, message: 'Desligado.' };
 let rendererDir = '';
 
-const theAuth = (): Auth => (auth ??= createAuth(join(DATA_ROOT, 'web-sessions.json')));
+const theAuth = (): Auth => (auth ??= createAuth(join(dataRoot(), 'web-sessions.json')));
 
 let push: PushService | null = null;
 
@@ -26,7 +26,7 @@ function vapidSubject(): string {
 
 const thePush = (): PushService =>
   (push ??= createPush({
-    dir: DATA_ROOT,
+    dir: dataRoot(),
     subject: vapidSubject(),
     deviceIds: () => theAuth().list().map((d) => d.id),
     notificationsOn: () => getSettings().notifications,

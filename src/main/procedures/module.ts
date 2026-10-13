@@ -1,7 +1,7 @@
 import { recordWrite } from '../auditoria';
 import { viaOf } from '../rpc';
 import { logError } from '../errorlog';
-import { ATAS } from '../env';
+import { atasDir } from '../env';
 import type { Module } from '../module';
 import { getConfig } from '../workspaceConfig';
 import { OFFERS_EVENT } from '../../shared/proceduresView';
@@ -29,7 +29,7 @@ export const proceduresModule: Module = (ctx) => {
   });
   const offers = procedureOffers();
   offers.onChange(() => ctx.emit({ type: 'module', name: OFFERS_EVENT, payload: null }));
-  const c = createProcedureChannels({ store: createProcedureStore(ATAS, { onError: (e) => logError('procedures', e) }), config: getConfig, audit: recordWrite, via: viaOf, offers });
+  const c = createProcedureChannels({ store: createProcedureStore(atasDir(), { onError: (e) => logError('procedures', e) }), config: getConfig, audit: recordWrite, via: viaOf, offers });
   ctx.handle('procedures:list', () => c.list());
   ctx.handle('procedures:get', (id: unknown) => c.get(id));
   ctx.handle('procedures:stats', () => c.stats());

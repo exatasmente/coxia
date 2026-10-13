@@ -10,7 +10,7 @@ vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0', whenReady: () => 
 
 const { bindIpc, callOrigin, handle, handleDevice, invoke, invokePersona, viaOf } = await import('../src/main/rpc');
 const { newActId, runAct, currentAct, openAct } = await import('../src/main/persona/act');
-const { DATA_ROOT } = await import('../src/main/env');
+const { dataRoot } = await import('../src/main/env');
 const { listAudit } = await import('../src/main/auditoria');
 const { register: turnAsksModule, turnAsks } = await import('../src/main/turnAsks');
 const { runsModule, screenAsks } = await import('../src/main/runner/module');
@@ -28,7 +28,7 @@ turnAsksModule(module);
 runsModule(module);
 memoryModule(module);
 
-const logs = () => readEntries(join(DATA_ROOT, 'logs'));
+const logs = () => readEntries(join(dataRoot(), 'logs'));
 const makeAct = (): Act => ({ open: true, id: newActId(), door: 'window', said: '', mask: (t) => t, wrote: { count: 0, kinds: new Set<AuditKind>() } });
 
 /** What the door does around a handler: an open act, the call, the act closed when the handler's promise settles. */

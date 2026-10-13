@@ -8,7 +8,7 @@ import { type Boot, type Repo, boot, doc, makeRepo, work } from './helpers/runne
 
 vi.setConfig({ testTimeout: 60_000 });
 
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { harnessSection } = await import('../src/main/harness/deliver');
@@ -16,7 +16,7 @@ const { harnessSection } = await import('../src/main/harness/deliver');
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  for (const dir of ['runs', 'forum']) rmSync(join(ATAS, dir), { recursive: true, force: true });
+  for (const dir of ['runs', 'forum']) rmSync(join(atasDir(), dir), { recursive: true, force: true });
 });
 
 const CONTENT = '# Project instructions\n\nUse the shared theme tokens.\n';
@@ -72,7 +72,7 @@ async function through(b: Boot, run: Run): Promise<Run> {
 }
 
 async function runIn(repo: Repo): Promise<{ run: Run; seen: Seen }> {
-  const b = await boot({ dir: ATAS, repo, configure: (config) => (config.language = 'en') });
+  const b = await boot({ dir: atasDir(), repo, configure: (config) => (config.language = 'en') });
   const seen = script(b);
   const started = await b.runner.start('app#101');
   return { run: await through(b, started), seen };
@@ -102,7 +102,7 @@ describe('project instructions in code runs', () => {
 
 describe('AGENTS.md during a mention', () => {
   it('hands the same universal instructions to an agent called in a run', async () => {
-    const b = await boot({ dir: ATAS, repo: documentedRepo(), configure: (config) => (config.language = 'en') });
+    const b = await boot({ dir: atasDir(), repo: documentedRepo(), configure: (config) => (config.language = 'en') });
     script(b);
     const run = await b.runner.start('app#101');
     await b.settle();

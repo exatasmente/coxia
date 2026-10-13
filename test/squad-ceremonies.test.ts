@@ -120,7 +120,7 @@ describe('the minutes of a ceremony for a squad', () => {
   const minutes = (over: Partial<Minutes> = {}): Minutes => ({ startedAt: new Date(`${DAY}T09:40:00`).toISOString(), endedAt: new Date(`${DAY}T09:50:00`).toISOString(), decisions: [], effects: [], unanswered: [], transcript: [], ...over });
 
   beforeAll(async () => {
-    ATAS = (await import('../src/main/env')).ATAS;
+    ATAS = (await import('../src/main/env')).atasDir();
     saver = await import('../src/main/store');
     state = await import('../src/main/state');
   });
@@ -174,7 +174,7 @@ describe('the retro for a squad', () => {
   beforeAll(async () => {
     ({ prepareRetro, latestRetro } = await import('../src/main/retro'));
     state = await import('../src/main/state');
-    ATAS = (await import('../src/main/env')).ATAS;
+    ATAS = (await import('../src/main/env')).atasDir();
     const { saveConfig } = await import('../src/main/workspaceConfig');
     saveConfig(withSquads(neutralConfig()));
   });

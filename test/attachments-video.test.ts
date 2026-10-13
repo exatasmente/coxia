@@ -14,7 +14,7 @@ const { attachmentStore, createAttachmentStore } = await import('../src/main/att
 const { attachmentPost, forumStore, threadAnchor } = await import('../src/main/forum');
 const { keepConversationRecording } = await import('../src/main/mentions/recording');
 const { applyRetention, conversationRecordingFiles, previewRetention, scan } = await import('../src/main/retention');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { detectAttachmentKind, attachmentExt, ATTACHMENT_LIMITS } = await import('../src/shared/attachments');
 const { RECORDING_MAX_BYTES } = await import('../src/shared/screen');
 const { threadText } = await import('../src/main/runner/prompt');
@@ -36,7 +36,7 @@ beforeEach(() => {
 
 const deps = () => ({ store: attachmentStore(), forum: forumStore(), anchor: threadAnchor, now: () => new Date(2026, 9, 9, 15, 30) });
 const post = () => forumStore().read(THREAD)?.messages ?? [];
-const files = () => conversationRecordingFiles(ATAS).filter((f) => f.path.includes(`/${THREAD}/`));
+const files = () => conversationRecordingFiles(atasDir()).filter((f) => f.path.includes(`/${THREAD}/`));
 
 describe('the video kind and its own door', () => {
   it('refuses a WebM a person attaches, as before: no kind recognises a video', () => {
@@ -89,7 +89,7 @@ describe('keeping the recording of a conversation\'s screen', () => {
     const [m] = post();
     expect(m).toMatchObject({ kind: 'system', author: { type: 'app' }, code: 'runner.screen.recording', params: { agent: 'web', from: '15:28', to: '15:30' }, anchor: `thread:${THREAD}` });
     expect(m.attachments).toEqual([expect.objectContaining({ kind: 'video', bytes: 512 })]);
-    expect(existsSync(join(ATAS, 'anexos', THREAD, `${m.attachments[0].id}.webm`))).toBe(true);
+    expect(existsSync(join(atasDir(), 'anexos', THREAD, `${m.attachments[0].id}.webm`))).toBe(true);
   });
 
   it('says the video keeps a hand-off when it does, with a code of its own, and the usual one otherwise', () => {
@@ -139,7 +139,7 @@ describe('deleting the post', () => {
     const [m] = post();
     const removed = forumStore().remove(THREAD, m.seq);
     attachmentStore().dropAll(THREAD, removed?.attachments ?? []);
-    expect(existsSync(join(ATAS, 'anexos', THREAD, `${m.attachments[0].id}.webm`))).toBe(false);
+    expect(existsSync(join(atasDir(), 'anexos', THREAD, `${m.attachments[0].id}.webm`))).toBe(false);
   });
 });
 
@@ -152,7 +152,7 @@ describe('the retention sweep', () => {
     keepConversationRecording(deps(), { thread: THREAD, agent: 'web' }, ok());
     const ref = post().at(-1)?.attachments[0];
     if (!ref) throw new Error('no ref');
-    const path = join(ATAS, 'anexos', THREAD, `${ref.id}.webm`);
+    const path = join(atasDir(), 'anexos', THREAD, `${ref.id}.webm`);
     return { id: ref.id, path };
   };
 
@@ -174,7 +174,7 @@ describe('the retention sweep', () => {
   });
 
   it('removes only that file, leaves the post and marks its ref removed', () => {
-    const other = join(ATAS, 'anexos', THREAD, 'cccccccccccccccc.txt');
+    const other = join(atasDir(), 'anexos', THREAD, 'cccccccccccccccc.txt');
     const { id, path } = keep();
     writeFileSync(other, 'a person\'s file\nstays\n');
     old(path, 40);
@@ -192,8 +192,8 @@ describe('the retention sweep', () => {
   });
 
   it('does not touch a file whose name is not one the app makes', () => {
-    mkdirSync(join(ATAS, 'anexos', THREAD), { recursive: true });
-    writeFileSync(join(ATAS, 'anexos', THREAD, 'notes.webm'), 'x');
+    mkdirSync(join(atasDir(), 'anexos', THREAD), { recursive: true });
+    writeFileSync(join(atasDir(), 'anexos', THREAD, 'notes.webm'), 'x');
     expect(files()).toEqual([]);
   });
 });

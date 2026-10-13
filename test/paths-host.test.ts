@@ -2,7 +2,7 @@
 // answers for every folder. A port may arrive after this module loads, so every one of these is a call and never a constant.
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { DATA_ROOT } from '../src/main/env';
+import { dataRoot } from '../src/main/env';
 import {
   claudeBin,
   isPackaged,
@@ -23,10 +23,10 @@ afterEach(() => setPathsPort(null));
 
 describe('without a host', () => {
   it('puts the user data under the data root and the voice folders inside it', () => {
-    expect(userDataDir()).toBe(join(DATA_ROOT, 'userData'));
-    expect(voiceVenvDir()).toBe(join(DATA_ROOT, 'userData', 'voice-venv'));
-    expect(voiceModelsDir()).toBe(join(DATA_ROOT, 'userData', 'voice-models'));
-    expect(voiceToolsDir()).toBe(join(DATA_ROOT, 'userData', 'voice-tools'));
+    expect(userDataDir()).toBe(join(dataRoot(), 'userData'));
+    expect(voiceVenvDir()).toBe(join(dataRoot(), 'userData', 'voice-venv'));
+    expect(voiceModelsDir()).toBe(join(dataRoot(), 'userData', 'voice-models'));
+    expect(voiceToolsDir()).toBe(join(dataRoot(), 'userData', 'voice-tools'));
   });
 
   it('reads the repository for what a development checkout ships', () => {
@@ -59,6 +59,6 @@ describe('with the port of a host filled in', () => {
     expect(isPackaged()).toBe(false);
     expect(playwrightMcpCli()).toBe(join(REPO, 'node_modules/@playwright/mcp/cli.js'));
     setPathsPort(null);
-    expect(userDataDir()).toBe(join(DATA_ROOT, 'userData'));
+    expect(userDataDir()).toBe(join(dataRoot(), 'userData'));
   });
 });

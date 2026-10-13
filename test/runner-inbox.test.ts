@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SECRET_GLOBS, agentHooks, obj, secretPath, str } from '../src/main/agents';
+import { secretGlobs, agentHooks, obj, secretPath, str } from '../src/main/agents';
 import { ChatClient } from '../src/main/engine/open/client';
 import { runOpen } from '../src/main/engine/open/loop';
 import { createForumStore } from '../src/main/forum-core';
@@ -111,7 +111,7 @@ describe('a stage on the open engine wired to its mailbox', () => {
       allowedTools: ['Read'],
       hooks: agentHooks(),
       isSecret: (p) => secretPath(p, dir),
-      secretGlobs: SECRET_GLOBS,
+      secretGlobs: secretGlobs(),
       maxTurns: 8,
       sessionsDir: join(dir, '.sessions'),
       ripgrep: 'off',

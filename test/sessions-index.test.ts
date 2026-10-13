@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ATAS } from '../src/main/env';
+import { atasDir } from '../src/main/env';
 import { selectRetention } from '../src/main/retention-core';
 import { noteSession } from '../src/main/sessions';
 import { SESSIONS_FILE, entryOf, parseIndex, readIndex, recordEntry, sessionOwners, sessionRefs } from '../src/main/sessions-core';
@@ -74,7 +74,7 @@ describe('noteSession', () => {
     noteSession(undefined, 'turn', 'x');
     noteSession('note-1', 'turn', 'Você é o agente da atividade web#9 na pré-daily por voz.');
     noteSession('note-1', 'turn', 'Você é o agente da atividade web#9 na pré-daily por voz.');
-    const mine = readIndex(ATAS).filter((e) => e.id === 'note-1');
+    const mine = readIndex(atasDir()).filter((e) => e.id === 'note-1');
     expect(mine).toHaveLength(1);
     expect(mine[0]).toMatchObject({ role: 'turn', kind: 'turn', ref: 'web#9' });
   });

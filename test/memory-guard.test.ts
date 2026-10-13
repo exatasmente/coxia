@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { SECRET_GLOBS, secretPath } from '../src/main/agents';
-import { ATAS } from '../src/main/env';
+import { secretGlobs, secretPath } from '../src/main/agents';
+import { atasDir } from '../src/main/env';
 import { DENIAL_CODES, checkPath } from '../src/main/engine/guard';
 import { ChatClient } from '../src/main/engine/open/client';
 import { type OpenRunParams, runOpen } from '../src/main/engine/open/loop';
@@ -139,8 +139,8 @@ describe('the Claude SDK\'s write hook', () => {
 
   it('keeps the workspace\'s own memory folder when no folder is named: the default is <workspace>/memory', async () => {
     const p = policy({ root, commands: [], anywhere: true });
-    expect(await p.pre('Write', { file_path: join(ATAS, 'memory', 'conversations', 'general', 'developer', 'm-3fa91c02.md'), content: 'x' }, root)).toMatch(/memória|memory/i);
-    expect(await p.pre('Write', { file_path: join(ATAS, 'memory', 'activities.json'), content: 'x' }, root)).toMatch(/memória|memory/i);
+    expect(await p.pre('Write', { file_path: join(atasDir(), 'memory', 'conversations', 'general', 'developer', 'm-3fa91c02.md'), content: 'x' }, root)).toMatch(/memória|memory/i);
+    expect(await p.pre('Write', { file_path: join(atasDir(), 'memory', 'activities.json'), content: 'x' }, root)).toMatch(/memória|memory/i);
     expect(await p.pre('Write', { file_path: join(outside, 'made.txt'), content: 'x' }, root)).toBeNull();
   });
 
@@ -163,7 +163,7 @@ describe('the Claude SDK\'s write hook', () => {
 });
 
 describe('the open engine\'s Write and Edit', () => {
-  const ctx = (over: Partial<ToolContext> = {}): ToolContext => ({ cwd: root, roots: [root], isSecret: (p) => secretPath(p, root), secretGlobs: SECRET_GLOBS, outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off', writeRoot: root, ...over });
+  const ctx = (over: Partial<ToolContext> = {}): ToolContext => ({ cwd: root, roots: [root], isSecret: (p) => secretPath(p, root), secretGlobs: secretGlobs(), outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off', writeRoot: root, ...over });
   const noteFile = (): string => join(kept, 'conversations/general/developer/m-3fa91c02.md');
 
   it('refuse the folder with the fence lifted, whether the file is there or not, and leave it as it was', async () => {

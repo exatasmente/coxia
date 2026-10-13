@@ -5,7 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SECRET_GLOBS, agentHooks, obj, secretPath, str } from '../src/main/agents';
+import { secretGlobs, agentHooks, obj, secretPath, str } from '../src/main/agents';
 import { ChatClient } from '../src/main/engine/open/client';
 import { type OpenRunParams, runOpen } from '../src/main/engine/open/loop';
 import type { ToolImpl } from '../src/main/engine/open/tools/types';
@@ -85,7 +85,7 @@ function params(f: Fake, over: Partial<OpenRunParams> = {}): OpenRunParams {
     allowedTools: ['Read'],
     hooks: agentHooks(),
     isSecret: (p) => secretPath(p, dir),
-    secretGlobs: SECRET_GLOBS,
+    secretGlobs: secretGlobs(),
     maxTurns: 8,
     sessionsDir: sessions,
     ripgrep: 'off',

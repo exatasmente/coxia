@@ -9,7 +9,7 @@ import type { PluginEvent } from '../../shared/plugins/events';
 import type { PluginDocumentType } from '../../shared/plugins/declaration';
 import type { Run } from '../../shared/runs';
 import type { ReleaseAction } from '../../shared/types';
-import { DATA_ROOT, HOME, WORKSPACE_ID } from '../env';
+import { dataRoot, HOME, workspaceId } from '../env';
 import type { Module, ModuleContext } from '../module';
 import { runStore } from '../runs';
 import { forumStore } from '../forum';
@@ -173,7 +173,7 @@ const pluginConfig = (): PluginsConfig => ({ ...neutralPlugins(), ...(getConfig(
  * The folder the plugins of the running workspace are read from: what its own configuration lists, else the `plugins` folder of the workspace's data
  * folder. The workspace is named by the registry, not guessed, so a config a service writes can never make the app read another workspace's plugins.
  */
-export const pluginsDir = (): string => pluginsDirOf(pluginConfig(), HOME, workspaceDir(DATA_ROOT, WORKSPACE_ID));
+export const pluginsDir = (): string => pluginsDirOf(pluginConfig(), HOME, workspaceDir(dataRoot(), workspaceId()));
 
 /** The cycle folder a plugin's document is written into: the run's own, as the runner keeps it. */
 const targetOf = (runId: string): PluginTarget | null => {
@@ -186,7 +186,7 @@ const targetOf = (runId: string): PluginTarget | null => {
  * Outside a run there is no worktree and the workspace's data cannot be handed to a sandbox; the plugin gets exactly what the conversation brought.
  */
 const chatTargetOf = (): PluginTarget => {
-  const dir = join(workspaceDir(DATA_ROOT, WORKSPACE_ID), 'sandbox', 'plugin-call');
+  const dir = join(workspaceDir(dataRoot(), workspaceId()), 'sandbox', 'plugin-call');
   mkdirSync(dir, { recursive: true });
   return { worktree: dir, cycleFolder: '', documents: false };
 };

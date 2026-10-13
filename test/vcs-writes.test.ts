@@ -12,7 +12,7 @@ import { GITLAB_SETTINGS, fakeGitlabRuntime } from './helpers/vcs';
 const DATA = mkdtempSync(join(tmpdir(), 'cerimonias-vcs-writes-'));
 process.env.CERIMONIAS_DATA_DIR = DATA;
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -23,7 +23,7 @@ const { listAudit: allAudit } = await import('../src/main/auditoria');
 const listAudit = () => writesOf(allAudit());
 const { writesOf } = await import('./helpers/audit');
 
-const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+const asReal = (test: boolean) => writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 
 const gl = (over: Partial<VcsCommand> = {}): VcsCommand => ({ via: 'glab', method: 'POST', endpoint: 'projects/acme%2Fweb/issues/101/notes', fields: { body: 'hello' }, ...over });
 const input = (command: VcsCommand, key = 'k1') => ({ key, issue: 101, issueTitle: 'Issue', summary: 'Comment', command });
@@ -32,8 +32,8 @@ let ran: { command: VcsCommand }[];
 let failWith: Error | null;
 
 beforeEach(() => {
-  rmSync(join(ATAS, 'acoes.json'), { force: true });
-  rmSync(join(ATAS, 'auditoria.jsonl'), { force: true });
+  rmSync(join(atasDir(), 'acoes.json'), { force: true });
+  rmSync(join(atasDir(), 'auditoria.jsonl'), { force: true });
   asReal(false);
   ran = [];
   failWith = null;
@@ -128,7 +128,7 @@ describe('confirming', () => {
     failWith = new Error('request failed: PRIVATE-TOKEN: glpat-abcdefghij0123456789 and ghp_abcdefghijklmnopqrstuvwxyz0123456789 and Authorization: Bearer abcdef0123456789');
     const a = actions.proposeVcsAction(input(gl())) as { id: string };
     await actions.approveAction(a.id);
-    const file = readFileSync(join(ATAS, 'auditoria.jsonl'), 'utf8');
+    const file = readFileSync(join(atasDir(), 'auditoria.jsonl'), 'utf8');
     expect(file).not.toMatch(/glpat-abcdef|ghp_abcdef|abcdef0123456789/);
   });
 
@@ -148,7 +148,7 @@ describe('confirming', () => {
     };
     setVcsRuntimeForTests(buildRuntime(GITLAB_SETTINGS, { token: () => 't', env: () => ({}), run }));
     const a = actions.proposeVcsAction(input(gl())) as { id: string };
-    const file = join(ATAS, 'acoes.json');
+    const file = join(atasDir(), 'acoes.json');
     const store = JSON.parse(readFileSync(file, 'utf8'));
     store.actions[0].command.endpoint = 'projects/acme%2Fweb/repository/files/x/../../../../../../user';
     writeFileSync(file, JSON.stringify(store));
@@ -167,7 +167,7 @@ describe('confirming', () => {
   });
 
   it('edits the QA note through the provider, audited as a note edit', async () => {
-    const file = join(ATAS, 'acoes.json');
+    const file = join(atasDir(), 'acoes.json');
     const base = actions.proposeVcsAction(input(gl(), 'seed')) as { id: string };
     const store = JSON.parse(readFileSync(file, 'utf8'));
     store.actions[0] = { ...store.actions[0], id: 'qa1', key: 'qa-comment:1', kind: 'qa-comment', command: null, noteId: 903, proposedBody: 'New body\nsecond line', currentBody: 'old', state: 'pending' };

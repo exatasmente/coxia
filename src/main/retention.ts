@@ -21,7 +21,7 @@ import { markRecordingRemoved } from '../shared/runs';
 import type { Run } from '../shared/runs';
 import { purgeTrash } from './minutesStore';
 import { firstPromptOf } from './custo-core';
-import { ATAS, DATA_ROOT, WORKSPACE_ID } from './env';
+import { atasDir, dataRoot, workspaceId } from './env';
 import { rc } from './workspaceConfig';
 import type { Module } from './module';
 import { sessionRefs } from './sessions-core';
@@ -44,11 +44,11 @@ const DATA_GROUPS: RetentionKind[] = ['historico', 'gates', 'qa', 'retros', 'ati
 const SESSION_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/;
 const DATA_FILE = /^[\w.-]+\.json$/;
 const HEAD_BYTES = 256 * 1024;
-const LOG = join(ATAS, 'retencao.log');
+const LOG = (): string => join(atasDir(), 'retencao.log');
 
 // Every attachment id a live forum message still references, by conversation: what the sweep must never delete. Read from the append-only thread
 // files, so a message that was deleted takes its files out of the keep set (and the folder of that message was emptied when it was deleted).
-export function referencedAttachments(base = ATAS): Set<string> {
+export function referencedAttachments(base = atasDir()): Set<string> {
   const keep = new Set<string>();
   const dir = join(base, 'forum');
   if (!existsSync(dir)) return keep;
@@ -71,12 +71,12 @@ export function referencedAttachments(base = ATAS): Set<string> {
   return keep;
 }
 
-/** The workspace's attachment store, over ATAS: the sweep removes a file it selected through the store, which refuses a name that is not one of ours. */
+/** The workspace's attachment store, over atasDir(): the sweep removes a file it selected through the store, which refuses a name that is not one of ours. */
 const attachmentFilesStore = createAttachmentStore();
 
 /** The attachment files: one folder per conversation under <workspace>/anexos, one file per attachment. A file a live message references is kept; the
  * rest is selected by age like the other data. A file that is already gone when the sweep reaches it is nothing to do, not a failure. */
-export function attachmentFiles(base = ATAS): RetentionFile[] {
+export function attachmentFiles(base = atasDir()): RetentionFile[] {
   const dir = join(base, 'anexos');
   if (!existsSync(dir)) return [];
   const keep = referencedAttachments(base);
@@ -106,7 +106,7 @@ export function attachmentFiles(base = ATAS): RetentionFile[] {
  * another piece of evidence can not be taken for one. A recording the sweep already removed (its record says so) or whose file is gone is not listed. Retention is
  * off by default and these follow the workspace's switch and days like the other groups.
  */
-export function screenRecordingFiles(base = ATAS, runs: Run[] = runStore().list()): RetentionFile[] {
+export function screenRecordingFiles(base = atasDir(), runs: Run[] = runStore().list()): RetentionFile[] {
   const files: RetentionFile[] = [];
   for (const run of runs) {
     for (const record of Object.values(run.evidence ?? {})) {
@@ -131,7 +131,7 @@ const RECORDING_EXT = '.webm';
  * The recordings of the agents' screens kept in the conversations (#177): the app's own `video` attachments, listed by the folder of the conversation they are in and
  * never kept for being named by a live message, since the message is where the sweep says it removed them. They follow the workspace's switch and days with the stages'.
  */
-export function conversationRecordingFiles(base = ATAS): RetentionFile[] {
+export function conversationRecordingFiles(base = atasDir()): RetentionFile[] {
   const dir = join(base, 'anexos');
   if (!existsSync(dir)) return [];
   const files: RetentionFile[] = [];
@@ -190,7 +190,7 @@ function sessionFiles(): RetentionFile[] {
   return files;
 }
 
-function dataFiles(refs: RetentionRef[], base = ATAS): RetentionFile[] {
+function dataFiles(refs: RetentionRef[], base = atasDir()): RetentionFile[] {
   const files: RetentionFile[] = [];
   for (const kind of DATA_GROUPS) {
     const dir = join(base, kind);
@@ -214,7 +214,7 @@ function dataFiles(refs: RetentionRef[], base = ATAS): RetentionFile[] {
 
 // acoes.json is one living file, so each action counts with its own last activity, not the file's.
 // null means the store exists but cannot be read: nothing is known about the sessions it references.
-function actionRefs(base = ATAS): RetentionRef[] | null {
+function actionRefs(base = atasDir()): RetentionRef[] | null {
   const file = join(base, 'acoes.json');
   if (!existsSync(file)) return [];
   try {
@@ -234,14 +234,14 @@ function actionRefs(base = ATAS): RetentionRef[] | null {
 // Transcripts are shared by every workspace: one that another workspace still uses is not unreferenced here.
 function otherWorkspaceRefs(): RetentionRef[] {
   const refs: RetentionRef[] = [];
-  const reg = readRegistry(DATA_ROOT);
+  const reg = readRegistry(dataRoot());
   for (const w of reg?.list ?? []) {
-    if (w.id === WORKSPACE_ID) continue;
-    const base = workspaceDir(DATA_ROOT, w.id);
+    if (w.id === workspaceId()) continue;
+    const base = workspaceDir(dataRoot(), w.id);
     refs.push(...(actionRefs(base) ?? []));
     dataFiles(refs, base);
   }
-  if (reg) refs.push(...sessionRefs(DATA_ROOT, reg, WORKSPACE_ID));
+  if (reg) refs.push(...sessionRefs(dataRoot(), reg, workspaceId()));
   return refs;
 }
 
@@ -321,8 +321,8 @@ export function removeScreenRecording(file: RetentionFile): void {
     const st = lstatSync(file.path);
     if (!st.isFile()) throw new Error(t('main.retention.notRegular'));
     if (st.mtimeMs !== file.mtimeMs) throw new Error(t('main.retention.changed'));
-    if (!inside(file.path, join(ATAS, 'evidence')) || evidencePath(ATAS, runId, record) !== file.path) throw new Error(t('main.retention.outside'));
-    dropEvidence(ATAS, runId, record);
+    if (!inside(file.path, join(atasDir(), 'evidence')) || evidencePath(atasDir(), runId, record) !== file.path) throw new Error(t('main.retention.outside'));
+    dropEvidence(atasDir(), runId, record);
     try {
       rmdirSync(dirname(file.path));
     } catch {
@@ -333,7 +333,7 @@ export function removeScreenRecording(file: RetentionFile): void {
 }
 
 /** Whether the file is in a conversation's folder of attachments, not in a run's evidence. */
-const isConversationRecording = (path: string): boolean => dirname(dirname(path)) === join(ATAS, 'anexos');
+const isConversationRecording = (path: string): boolean => dirname(dirname(path)) === join(atasDir(), 'anexos');
 
 /**
  * Removes the recording of a conversation: the file, through the attachment store's own door, and then the message that names it says so (the ref is marked `removed`, the
@@ -347,7 +347,7 @@ export function removeConversationRecording(file: RetentionFile): void {
     const st = lstatSync(file.path);
     if (!st.isFile()) throw new Error(t('main.retention.notRegular'));
     if (st.mtimeMs !== file.mtimeMs) throw new Error(t('main.retention.changed'));
-    if (!inside(file.path, join(ATAS, 'anexos'))) throw new Error(t('main.retention.outside'));
+    if (!inside(file.path, join(atasDir(), 'anexos'))) throw new Error(t('main.retention.outside'));
     attachmentFilesStore.dropFile(thread, name);
   }
   const id = name.slice(0, -RECORDING_EXT.length);
@@ -383,7 +383,7 @@ function removeOne(file: RetentionFile): void {
   const st = lstatSync(file.path);
   if (!st.isFile()) throw new Error(t('main.retention.notRegular'));
   if (st.mtimeMs !== file.mtimeMs) throw new Error(t('main.retention.changed'));
-  const root = file.kind === 'sessoes' ? sessionsDir() : join(ATAS, file.kind);
+  const root = file.kind === 'sessoes' ? sessionsDir() : join(atasDir(), file.kind);
   if (!inside(file.path, root)) throw new Error(t('main.retention.outside'));
   unlinkSync(file.path);
   if (file.kind === 'sessoes' && file.sessionId) {
@@ -406,8 +406,8 @@ export function applyRetention(days: number, expected: string | null, now = Date
       result.failed.push({ name: fileName(v.file.path), error: e instanceof Error ? e.message : String(e) });
     }
   }
-  mkdirSync(ATAS, { recursive: true });
-  appendFileSync(LOG, `${new Date(now).toISOString()} deleted=${result.deleted} bytes=${result.bytes} failed=${result.failed.length} days=${days}d${expected === null ? ' (daily)' : ''}\n`);
+  mkdirSync(atasDir(), { recursive: true });
+  appendFileSync(LOG(), `${new Date(now).toISOString()} deleted=${result.deleted} bytes=${result.bytes} failed=${result.failed.length} days=${days}d${expected === null ? ' (daily)' : ''}\n`);
   return result;
 }
 
@@ -421,7 +421,7 @@ export const retention: Module = (ctx) => {
     run: async () => {
       // The minutes trash has its own fixed term, whatever the retention setting says.
       const purged = purgeTrash();
-      if (purged) appendFileSync(LOG, `${new Date().toISOString()} lixeira das atas: ${purged} apagada(s)\n`);
+      if (purged) appendFileSync(LOG(), `${new Date().toISOString()} lixeira das atas: ${purged} apagada(s)\n`);
       const r = getSettings().retention;
       if (r.enabled) applyRetention(r.days, null);
     },

@@ -12,7 +12,7 @@ import { type Boot, boot, doc, issue, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -26,9 +26,9 @@ let stop: (() => void) | null = null;
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(ATAS, f), { force: true });
-  for (const d of ['runs', 'forum']) rmSync(join(ATAS, d), { recursive: true, force: true });
-  writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
+  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(atasDir(), f), { force: true });
+  for (const d of ['runs', 'forum']) rmSync(join(atasDir(), d), { recursive: true, force: true });
+  writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
   stop?.();
   stop = null;
 });
@@ -70,7 +70,7 @@ describe('an issue through the agent cycle', () => {
   it('is triaged, asks the reporter and waits for the reply, is refined with a proposed priority, goes through the engineering stages, waits for the merge and tells the reporter', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, flow: 'business', configure: configure() });
+    const b = await boot({ dir: atasDir(), publish: true, flow: 'business', configure: configure() });
     script(b);
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     b.deps.now = () => new Date('2026-10-03T11:00:00Z');
@@ -126,7 +126,7 @@ describe('an issue through the agent cycle', () => {
   it('with no customer success agent, ends after the merge without communicating, and says so', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, flow: 'business', configure: configure((c) => Object.assign(c, removeAgent(c, 'customer-success'))) });
+    const b = await boot({ dir: atasDir(), publish: true, flow: 'business', configure: configure((c) => Object.assign(c, removeAgent(c, 'customer-success'))) });
     script(b);
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     b.engine.script('support', () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')], comment: comment([['How it was understood', 'X.']]) }));
@@ -145,7 +145,7 @@ describe('an issue through the agent cycle', () => {
   it('asks the person on the issue only when a question reaches them, not at each step of the chain between the agents', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, flow: 'business', configure: configure() });
+    const b = await boot({ dir: atasDir(), publish: true, flow: 'business', configure: configure() });
     script(b);
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     b.engine.script('support', () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')] }));
@@ -165,7 +165,7 @@ describe('an issue through the agent cycle', () => {
   it('proposes the priority only from the stage that owns it: triage may suggest a level but its proposal is said not to have been taken', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, flow: 'business', configure: configure() });
+    const b = await boot({ dir: atasDir(), publish: true, flow: 'business', configure: configure() });
     script(b);
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     // the support agent returns a priority anyway (the schema does not ask for it); the product owner's, in the next stage, is the one that counts
@@ -186,7 +186,7 @@ describe('an issue through the agent cycle', () => {
   it('says so when the same stage would propose the same priority again, and keeps the first proposal', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, flow: 'business', configure: configure() });
+    const b = await boot({ dir: atasDir(), publish: true, flow: 'business', configure: configure() });
     script(b);
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     b.engine.script('support', () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')], comment: comment([['How it was understood', 'X.']]) }));
@@ -203,7 +203,7 @@ describe('an issue through the agent cycle', () => {
   it('looks at what the waiting runs wait for while another run\'s stage is still working, and never waits for that stage', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, flow: 'business', configure: configure() });
+    const b = await boot({ dir: atasDir(), publish: true, flow: 'business', configure: configure() });
     script(b);
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     b.engine.script('support', () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')], comment: comment([['How it was understood', 'X.']]) }));

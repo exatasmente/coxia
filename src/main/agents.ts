@@ -37,7 +37,7 @@ import { claudeSdkEnv, providerSecret } from './llm';
 import { loginPath, mergedPath } from './loginPath';
 import { noteSession } from './sessions';
 import { anyProfileDenyGlobs, isInsideAnyProfiles } from './browser/profile';
-import { ATAS, DATA_ROOT } from './env';
+import { atasDir, dataRoot } from './env';
 import { MEMORY_DIR } from './runner/activities';
 import { priorityChoices, priorityDecision, priorityRule } from './priority';
 import { cardContext, cycle, decisionLogRef, priorityLine, destinationLabels, investigationSources, meaningsLine, prompt as cp, text as cycleWord } from './cyclePrompts';
@@ -173,7 +173,8 @@ export const SECRET_PATH = new RegExp(`${NAME_RULE.source}|${KEY_RULE.source}`, 
 // extensions; the hook and the result filter apply the full rule. The ~/ rules cover the home, outside the cwd.
 const SECRET_WORDS = ['secret', 'credential', 'token'];
 const DATA_EXT = ['json', 'yml', 'yaml', 'txt', 'ini', 'cfg', 'conf', 'toml', 'properties', 'xml'];
-export const SECRET_GLOBS = [
+// A function, not a constant: the profile folders are under the data root, known once the core has booted.
+export const secretGlobs = (): string[] => [
   '**/.env*',
   '**/*.env',
   ...SECRET_WORDS.flatMap((w) => DATA_EXT.map((e) => `**/*${w}*.${e}`)),
@@ -210,9 +211,9 @@ export const SECRET_GLOBS = [
   '~/.claude/projects/**',
   // The logged-in browsers of the agents (cookies, local storage) live in the workspace's data, and an agent with no shell reads from that folder: its profile files
   // match none of the names above, so the folder itself is refused, by the absolute path the SDK's rules take, for every workspace of the data folder.
-  ...anyProfileDenyGlobs(DATA_ROOT),
+  ...anyProfileDenyGlobs(dataRoot()),
 ];
-export const SECRET_READ_DENY = SECRET_GLOBS.map((g) => `Read(${g})`);
+export const secretReadDeny = (): string[] => secretGlobs().map((g) => `Read(${g})`);
 
 // The Claude Code state in the home holds settings with keys and the transcript of every session.
 function inClaudeState(p: string): boolean {
@@ -224,7 +225,7 @@ function inClaudeState(p: string): boolean {
 
 // The profiles of the agents' browsers, of any workspace: nothing under them is read by an agent, whichever way the path is written.
 function inBrowserProfiles(p: string): boolean {
-  return isAbsolute(p) && isInsideAnyProfiles(DATA_ROOT, p);
+  return isAbsolute(p) && isInsideAnyProfiles(dataRoot(), p);
 }
 
 // The path as written, with ~ expanded, absolute against the cwd and with symlinks resolved:
@@ -514,7 +515,7 @@ function sdkOptions(req: EngineRequest): Options {
       'NotebookEdit',
       'WebFetch',
       'WebSearch',
-      ...SECRET_READ_DENY,
+      ...secretReadDeny(),
     ],
     hooks: req.activity ? reportBlocked(hooks, (call) => req.activity?.blocked(call)) : hooks,
     // A call with no schema answers in plain text: the SDK is asked for no structured output and the text is the answer.
@@ -683,15 +684,15 @@ async function runOpenEngine<T>(req: EngineRequest): Promise<Run<T>> {
     prompt: req.prompt,
     options: { ...sdkOptions({ ...req, allowedTools }), model: req.target.model },
     extraTools: extraTools.length ? extraTools : undefined,
-    sessionsDir: join(ATAS, 'open-sessions'),
-    secret: { isSecret: (p) => secretPath(p, req.cwd), globs: SECRET_GLOBS },
+    sessionsDir: join(atasDir(), 'open-sessions'),
+    secret: { isSecret: (p) => secretPath(p, req.cwd), globs: secretGlobs() },
     // An agent that writes runs the repository's own scripts: no code host credentials in their environment.
     shellEnv: { ...(req.confine ? {} : vcsShellEnv()), ...(await commandPath()) },
     writeRoot: req.confine?.writeRoot ?? req.confine?.root,
     writeReserved: req.confine?.writeReserved,
     writeAllow: req.confine?.writeAllow,
     writeAnywhere: req.confine?.anywhere && !req.confine.writeRoot,
-    writeKeep: req.confine ? [join(ATAS, MEMORY_DIR)] : undefined,
+    writeKeep: req.confine ? [join(atasDir(), MEMORY_DIR)] : undefined,
     signal: req.abort?.signal,
     tuning: tuningOf(req),
     describeTool: source,
@@ -1157,7 +1158,7 @@ async function run<T>(
  * resume. The session is kept like any other: the cost screen and the retention read it.
  */
 async function askBare<T>(role: ModelRole, prompt: string, schema: Schema, opts: { system: string; maxTurns?: number }): Promise<Run<T>> {
-  const activity = beginActivity(role, (p) => secretPath(p, ATAS));
+  const activity = beginActivity(role, (p) => secretPath(p, atasDir()));
   activity.status('started');
   try {
     // The env hook (COXIA_ENGINE=open) forces the open engine here too.
@@ -1168,7 +1169,7 @@ async function askBare<T>(role: ModelRole, prompt: string, schema: Schema, opts:
       schema,
       target,
       system: opts.system,
-      cwd: ATAS,
+      cwd: atasDir(),
       allowedTools: [],
       extraDirs: [],
       shell: { rules: [], patterns: [] },

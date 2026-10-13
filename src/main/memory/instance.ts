@@ -1,4 +1,4 @@
-import { ATAS } from '../env';
+import { atasDir } from '../env';
 import { logError } from '../errorlog';
 import { createMemoryStore, type MemoryStore, type MemoryWrite } from './store';
 
@@ -10,7 +10,7 @@ const listeners = new Set<() => void>();
 const writers = new Set<(write: MemoryWrite) => void>();
 
 export function memoryStore(): MemoryStore {
-  store ??= createMemoryStore(ATAS, {
+  store ??= createMemoryStore(atasDir(), {
     onError: (e) => logError('memory', e),
     onChange: () => {
       for (const fn of listeners) fn();

@@ -25,7 +25,7 @@ let forum: ForumStore;
 let ran: VcsCommand[];
 
 const actions = await import('../src/main/actions');
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { writeRegistry } = await import('../src/main/workspaces-core');
 const { installLegacyConfig } = await import('./helpers/config');
 const { setVcsRuntimeForTests, vcsProvider } = await import('../src/main/vcs');
@@ -56,9 +56,9 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'coxia-agent-chat-'));
   forum = createForumStore(dir);
   // A real workspace: the person approves the proposals of their own team, so the door is not the refusal of a test workspace. A test workspace is checked on its own.
-  writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
-  rmSync(join(ATAS, 'acoes.json'), { force: true });
-  rmSync(join(ATAS, 'auditoria.jsonl'), { force: true });
+  writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
+  rmSync(join(atasDir(), 'acoes.json'), { force: true });
+  rmSync(join(atasDir(), 'auditoria.jsonl'), { force: true });
   ran = [];
   installForge();
 });
@@ -345,7 +345,7 @@ describe('the writes an answer proposes', () => {
   });
 
   it('is refused whole in a test workspace: nothing is written', async () => {
-    writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: true }] });
+    writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: true }] });
     const outcomes = await propose([{ op: 'comment', issue: 101, body: 'Nope.' }], { autonomous: true });
     // The proposal waits either way; the door refuses the write when the person approves.
     const waiting = actions.listActions().find((a) => (a.unit as { purpose?: string } | null)?.purpose === 'mention-write');
@@ -412,7 +412,7 @@ describe('the direct conversation of a draft agent', () => {
   });
 
   it('is refused whole in a test workspace when the person approves what it proposed', async () => {
-    writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: true }] });
+    writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: true }] });
     const c = draftConfig();
     const thread = agentThread(c, 'trial');
     const engine = fakeEngine();

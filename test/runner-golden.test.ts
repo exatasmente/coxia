@@ -13,7 +13,7 @@ import { type Boot, boot, doc, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -29,11 +29,11 @@ let stop: (() => void) | null = null;
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  rmSync(join(ATAS, 'acoes.json'), { force: true });
-  rmSync(join(ATAS, 'auditoria.jsonl'), { force: true });
-  rmSync(join(ATAS, 'runs'), { recursive: true, force: true });
-  rmSync(join(ATAS, 'forum'), { recursive: true, force: true });
-  writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
+  rmSync(join(atasDir(), 'acoes.json'), { force: true });
+  rmSync(join(atasDir(), 'auditoria.jsonl'), { force: true });
+  rmSync(join(atasDir(), 'runs'), { recursive: true, force: true });
+  rmSync(join(atasDir(), 'forum'), { recursive: true, force: true });
+  writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
   stop?.();
   stop = null;
 });
@@ -108,7 +108,7 @@ function pin(name: string, got: Record<string, unknown>): void {
 async function scenario(configure: (c: WorkspaceConfig) => void = () => undefined): Promise<Boot> {
   forge = makeForge();
   setVcsRuntimeForTests(forge.runtime());
-  const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.runner.linkDependencies = false; configure(c); } });
+  const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; c.runner.linkDependencies = false; configure(c); } });
   script(b);
   return b;
 }

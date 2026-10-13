@@ -8,7 +8,7 @@ export interface ToolContext {
   roots: string[];
   // The secret-file rule shared with the Claude path (secretPath in agents.ts).
   isSecret: (path: string) => boolean;
-  // SECRET_GLOBS in gitignore syntax, handed to ripgrep so a path-less search never walks a secret file.
+  // secretGlobs() in gitignore syntax, handed to ripgrep so a path-less search never walks a secret file.
   secretGlobs: string[];
   signal?: AbortSignal;
   // The folder a Write or Edit may change (the run's worktree). null: the call is read-only and those tools refuse.

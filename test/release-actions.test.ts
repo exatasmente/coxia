@@ -13,7 +13,7 @@ import { type Repo, runnerConfig } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 60_000 });
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { writeRegistry } = await import('../src/main/workspaces-core');
 const actions = await import('../src/main/actions');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
@@ -24,7 +24,7 @@ const { writesOf } = await import('./helpers/audit');
 const { runStore } = await import('../src/main/runs');
 const { getConfig, updateConfig } = await import('../src/main/workspaceConfig');
 
-const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+const asReal = (test: boolean) => writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 const RUN = 'r-rel001-aaaa';
 const unit = (over: Record<string, unknown>) => ({ version: '0.5.0', runId: RUN, ...over });
 const input = (key: string, u: Record<string, unknown>) => ({ key, issue: 0, issueTitle: 'Release 0.5.0', summary: `Release step ${key}`, unit: u as never });
@@ -65,9 +65,9 @@ afterAll(() => {
 // The script runs with the process's own environment here (the door gives it none of its own): the stub `npx` of the world goes first on the PATH.
 const realPath = process.env.PATH;
 beforeEach(() => {
-  rmSync(join(ATAS, 'acoes.json'), { force: true });
-  rmSync(join(ATAS, 'auditoria.jsonl'), { force: true });
-  rmSync(join(ATAS, 'runs'), { recursive: true, force: true });
+  rmSync(join(atasDir(), 'acoes.json'), { force: true });
+  rmSync(join(atasDir(), 'auditoria.jsonl'), { force: true });
+  rmSync(join(atasDir(), 'runs'), { recursive: true, force: true });
   asReal(false);
   w = new ReleaseWorld();
   // where the steps of the run work: next to the run's own worktree, derived from it
@@ -256,7 +256,7 @@ describe('approving a step', () => {
 
   it('judges the stored unit again: an action edited on disk to name a path or a flag fails and runs nothing', async () => {
     const a = propose('release:r:beta', unit({ op: 'beta' }));
-    const file = join(ATAS, 'acoes.json');
+    const file = join(atasDir(), 'acoes.json');
     const store = JSON.parse(readFileSync(file, 'utf8')) as { actions: { id: string; unit: Record<string, unknown> }[] };
     store.actions.find((x) => x.id === a.id)!.unit = { ...store.actions[0].unit, cwd: '/etc', emergency: true };
     writeFileSync(file, JSON.stringify(store));

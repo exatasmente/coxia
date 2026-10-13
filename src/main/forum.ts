@@ -6,7 +6,7 @@ import { PERSON_WHO, type Who } from '../shared/runs';
 import { conversationCommand } from '../shared/plugins/calls';
 import { t } from '../shared/i18n';
 import { attachmentStore } from './attachments';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { redact } from './errorlog-core';
 import { ForumError, type ForumStore, createForumStore } from './forum-core';
 import { ensureAgentThread, ensureSquadChannels } from './forum-channels';
@@ -34,7 +34,7 @@ export function interceptPosts(fn: PostInterceptor | null): void {
 }
 
 export function forumStore(): ForumStore {
-  store ??= createForumStore(join(ATAS, 'forum'), { redact: (text) => redact(text) });
+  store ??= createForumStore(join(atasDir(), 'forum'), { redact: (text) => redact(text) });
   return store;
 }
 

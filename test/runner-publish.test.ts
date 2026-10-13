@@ -15,7 +15,7 @@ import { type Boot, boot, doc, fakeSandbox, keepQaEvidence, work } from './helpe
 
 vi.setConfig({ testTimeout: 30_000 });
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -27,7 +27,7 @@ const listAudit = () => writesOf(allAudit());
 const { writesOf } = await import('./helpers/audit');
 const { onRunnerActionDone } = await import('../src/main/runner/door');
 
-const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+const asReal = (test: boolean) => writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 const sha = (text: string): string => createHash('sha256').update(text).digest('hex');
 
 let forge: Forge;
@@ -36,11 +36,11 @@ let stop: (() => void) | null = null;
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  rmSync(join(ATAS, 'acoes.json'), { force: true });
-  rmSync(join(ATAS, 'auditoria.jsonl'), { force: true });
+  rmSync(join(atasDir(), 'acoes.json'), { force: true });
+  rmSync(join(atasDir(), 'auditoria.jsonl'), { force: true });
   // the runner's own stores are the workspace's: the push reads its run from there
-  rmSync(join(ATAS, 'runs'), { recursive: true, force: true });
-  rmSync(join(ATAS, 'forum'), { recursive: true, force: true });
+  rmSync(join(atasDir(), 'runs'), { recursive: true, force: true });
+  rmSync(join(atasDir(), 'forum'), { recursive: true, force: true });
   asReal(false);
   stop?.();
   stop = null;
@@ -93,7 +93,7 @@ describe('a run whose agents are all autonomous', () => {
   it('leaves one comment per stage on the issue, edits it in place, reviews on the lines and never approves', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     b.engine.script(
       'developer',
@@ -242,7 +242,7 @@ describe('a run whose agents are all autonomous', () => {
   it('asks the person in a comment of its own, and the decision of a rejected gate is a comment of its own too', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     b.engine.script('planner', () => work('One thing is missing.', { question: 'Should it also handle Y?' }), () => work('Plan written.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: PLAN }));
     b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: REFINE }), () => work('Spec again.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: comment([['What is asked', '> The thing must do X and not Y.'], ['What changes for the person using it', 'The thing does X, and now Y is said.']]) }));
@@ -272,7 +272,7 @@ describe('a run whose agents are all autonomous', () => {
     try {
       forge = makeForge();
       setVcsRuntimeForTests(forge.runtime());
-      const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'pt-BR') });
+      const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'pt-BR') });
       script(b);
       const run = await start(b);
       const end = await through(b, run);
@@ -292,7 +292,7 @@ describe('a run whose agents are all autonomous', () => {
   it('finds a stage comment by its marker when the run lost the note, and edits it instead of posting another', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     b.engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: REFINE }), () => work('Spec again.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], comment: comment([['What is asked', 'Rewritten.']]) }));
     const run = await start(b);
@@ -310,7 +310,7 @@ describe('a run whose agents are all autonomous', () => {
   it('says a stage that now ends differently in a short comment that links to the full one', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     b.engine.script(
       'qa',
@@ -335,7 +335,7 @@ describe('a QA failure that does not block', () => {
   it('is a section of the QA comment and its headline says nothing blocks, and the work is not sent back', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     b.engine.script('qa', () => work('Passes with a remark.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'a', result: 'pass', detail: '' }, { name: 'edge', result: 'fail', severity: 'non-blocking', detail: 'not in the spec' }], comment: comment([['Scenarios verified and their result', 'a: passed.']]) }));
     const run = await start(b);
@@ -354,7 +354,7 @@ describe('a QA scenario the app recorded as read', () => {
   it('is never called executed in the comment: the scenario lines come from the record', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, sandbox: fakeSandbox(), configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'qa')!.shell = 'sandbox'; c.runner.commands = []; } });
+    const b = await boot({ dir: atasDir(), publish: true, sandbox: fakeSandbox(), configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'qa')!.shell = 'sandbox'; c.runner.commands = []; } });
     script(b);
     // A sandbox with no command behind the claim: the app records the scenario as read, and the agent's own text still says it was executed.
     b.engine.script('qa', async (call) => work('Passes.', { artifacts: [doc('5_TEST_PLAN.md')], scenarios: [{ name: 'a', result: 'pass', detail: 'Opened it', evidence: 'executed', commands: [], evidenceIds: await keepQaEvidence(call) }], comment: comment([['Scenarios verified and their result', 'a: passed (executed).']]) }));
@@ -370,7 +370,7 @@ describe('a QA scenario the app recorded as read', () => {
   it('is called executed in the comment, and in the written test plan, when a command of the stage backs it', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, sandbox: fakeSandbox(), configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'qa')!.shell = 'sandbox'; c.runner.commands = []; } });
+    const b = await boot({ dir: atasDir(), publish: true, sandbox: fakeSandbox(), configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'qa')!.shell = 'sandbox'; c.runner.commands = []; } });
     script(b);
     // The round ends with the command the scenario is about, and the document and the comment are written from the record.
     b.engine.script('qa', async (call) => {
@@ -395,7 +395,7 @@ describe('what waits for the person', () => {
   it('keeps the comments of an agent that waits in Actions, posts them once approved, and edits them in place afterwards', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'planner')!.autonomous = false; } });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'planner')!.autonomous = false; } });
     script(b);
     b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: PLAN }), () => work('Plan again.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: comment([['Approach', 'A different way.']]) }));
     const run = await start(b);
@@ -440,7 +440,7 @@ describe('what waits for the person', () => {
   it('keeps only the latest text of a comment that waits: a newer one replaces the proposal that was never answered', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'planner')!.autonomous = false; } });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; c.agents.team.find((a) => a.id === 'planner')!.autonomous = false; } });
     script(b);
     b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: PLAN }), () => work('Plan again.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')], comment: comment([['Approach', 'Another way.']]) }));
     const run = await start(b);
@@ -460,7 +460,7 @@ describe('what waits for the person', () => {
   it('holds a comment that fails its check for a "yes" even when the agent is autonomous, after masking what it could', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     b.engine.script(
       'refiner',
@@ -488,7 +488,7 @@ describe('what waits for the person', () => {
   it('posts nothing for a stage whose cycle has no template for it', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; delete c.devCycle.comments.plan; delete c.devCycle.comments.gate; } });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; delete c.devCycle.comments.plan; delete c.devCycle.comments.gate; } });
     script(b);
     const run = await start(b);
     b.runner.gate(run.id, 'approve');
@@ -509,7 +509,7 @@ describe('a test workspace', () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
     asReal(true);
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', findings: [finding({})] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
     const run = await start(b);
@@ -535,7 +535,7 @@ describe('the push and the pull request', () => {
   it('go out by themselves when the autonomy block decides them, audited, and never as proposals', async () => {
     forge = makeForge({ pr: null, linked: false });
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.runner.autonomy = { ...c.runner.autonomy, cycle: true, push: true, pullRequest: true }; } });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; c.runner.autonomy = { ...c.runner.autonomy, cycle: true, push: true, pullRequest: true }; } });
     script(b);
     const run = await start(b);
     const end = await through(b, run);
@@ -566,7 +566,7 @@ describe('the push and the pull request', () => {
   it('says the flow as the level when the flow\'s own block let the push and the pull request out', async () => {
     forge = makeForge({ pr: null, linked: false });
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => {
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => {
       c.language = 'en';
       c.runner.autonomy = { ...c.runner.autonomy, cycle: false, push: false, pullRequest: false };
       c.devCycle.autonomy = { '': { useWorkspace: false, cycle: true, hostCommands: false, gates: false, push: true, pullRequest: true } };
@@ -583,7 +583,7 @@ describe('the push and the pull request', () => {
   it('still proposes the push when only the pull request choice is on, and the pull request waits for its own yes', async () => {
     forge = makeForge({ pr: null, linked: false });
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.runner.autonomy = { ...c.runner.autonomy, cycle: true, pullRequest: true }; } });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; c.runner.autonomy = { ...c.runner.autonomy, cycle: true, pullRequest: true }; } });
     script(b);
     const run = await start(b);
     const end = await through(b, run);
@@ -596,7 +596,7 @@ describe('the push and the pull request', () => {
     forge = makeForge({ pr: null, linked: false });
     setVcsRuntimeForTests(forge.runtime());
     asReal(true);
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; c.runner.autonomy = { ...c.runner.autonomy, cycle: true, push: true, pullRequest: true }; } });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; c.runner.autonomy = { ...c.runner.autonomy, cycle: true, push: true, pullRequest: true }; } });
     script(b);
     const run = await start(b);
     const end = await through(b, run);
@@ -611,7 +611,7 @@ describe('the push and the pull request', () => {
   it('are proposals only; approving the push pushes the branch and proposes the pull request, approving that opens it and the review that waited goes out', async () => {
     forge = makeForge({ pr: null, linked: false });
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Beyond the lines of the code', 'One.']]), findings: [finding({ suggestion: 'export const feature = 2;' })] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', comment: comment([['Beyond the lines of the code', 'None.']]), findings: [] }));
     b.engine.script(
@@ -672,7 +672,7 @@ describe('the push and the pull request', () => {
   it('asks for changes by commenting on a pull request of the person\'s own, which the hosts do not take a request for changes on', async () => {
     forge = makeForge({ author: 'runner-bot' });
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     b.engine.script('reviewer', () => work('A point.', { artifacts: [doc('4_REVIEW.md')], verdict: 'changes', comment: comment([['Beyond the lines of the code', 'One.']]), findings: [finding({})] }), () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', findings: [] }));
     const run = await start(b);
@@ -684,7 +684,7 @@ describe('the push and the pull request', () => {
   it('builds the proposal title from the issue when a stored pull request record has no title', async () => {
     forge = makeForge({ pr: null, linked: false });
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     const run = await start(b);
     const end = await through(b, run);
@@ -702,7 +702,7 @@ describe('the push and the pull request', () => {
   it('finds a pull request the person opened by hand, and reviews on it without proposing another', async () => {
     forge = makeForge({ pr: { branch: 'cycle/101-add-the-thing-101' }, linked: true });
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     b.engine.script('reviewer', () => work('Fine.', { artifacts: [doc('4_REVIEW.md')], verdict: 'approved', comment: comment([['Beyond the lines of the code', 'None.']]), findings: [finding({ severity: 'suggestion', body: 'Name it better.' })] }));
     const run = await start(b);
@@ -720,7 +720,7 @@ describe('the push and the pull request', () => {
   it('refuses a push whose run is gone or whose worktree is on another branch, and never pushes what is not committed', async () => {
     forge = makeForge({ pr: null });
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     const run = await start(b);
     const end = await through(b, run);
@@ -744,7 +744,7 @@ describe('the push asked for while the next stage works', () => {
   it('sends what is committed and leaves the cycle memory the next stage wrote for that stage to commit', async () => {
     forge = makeForge({ pr: null });
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     const run = await start(b);
     const end = await through(b, run);
@@ -767,7 +767,7 @@ describe('an agent whose autonomy is switched in the middle of its stage', () =>
   it('still posts that stage by itself, and waits from the next stage on', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => (c.language = 'en') });
     script(b);
     b.engine.script(
       'planner',

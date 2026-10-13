@@ -10,7 +10,7 @@ import { fakeBoardHost } from './helpers/boardHost';
 const DATA = mkdtempSync(join(tmpdir(), 'cerimonias-board-view-'));
 process.env.CERIMONIAS_DATA_DIR = DATA;
 
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { boardStore } = await import('../src/main/boardSource');
 const { boardView, setBoardHost } = await import('../src/main/board');
 const { realBoardHost } = await import('../src/main/boardHost');
@@ -38,7 +38,7 @@ let host = fakeBoardHost();
 const open = (id: string) => boardStore().create({ id, title: `Card ${id}`, body: '', column: 'backlog', squad: null, priority: null, labels: [], repo: 'app' });
 
 beforeEach(() => {
-  rmSync(join(ATAS, 'board.json'), { force: true });
+  rmSync(join(atasDir(), 'board.json'), { force: true });
   forgetHost();
   host = fakeBoardHost();
   setVcsRuntimeForTests(host.runtime);

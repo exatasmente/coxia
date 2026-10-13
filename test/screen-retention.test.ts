@@ -15,7 +15,7 @@ const { applyRetention, previewRetention, removeScreenRecording, retention, scan
 const { getSettings, saveSettings } = await import('../src/main/config');
 const { setLanguage } = await import('../src/shared/i18n');
 const { retentionLabel } = await import('../src/shared/retention');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { runStore } = await import('../src/main/runs');
 const { putRecording } = await import('../src/main/evidence/recording');
 const { evidencePath, putEvidence } = await import('../src/main/evidence/store');
@@ -31,8 +31,8 @@ const DAY = 86_400_000;
 // Every case starts with no runs and no evidence in the workspace.
 beforeEach(() => {
   setLanguage('en');
-  rmSync(join(ATAS, 'runs'), { recursive: true, force: true });
-  rmSync(join(ATAS, 'evidence'), { recursive: true, force: true });
+  rmSync(join(atasDir(), 'runs'), { recursive: true, force: true });
+  rmSync(join(atasDir(), 'evidence'), { recursive: true, force: true });
 });
 const flow = agentFlowStages();
 let counter = 0;
@@ -48,7 +48,7 @@ function newRun(): Run {
 
 function keepRecording(run: Run, ageDays: number): EvidenceRecord {
   const fresh = runStore().get(run.id) as Run;
-  const put = putRecording(ATAS, fresh, { bytes: webmHead(200), stage: 'qa', by: 'qa', title: 'Screen recording', meta: { durationMs: 5000, width: 8, height: 4, marks: [{ fromMs: 1000, toMs: 2000 }] }, at: at(1) });
+  const put = putRecording(atasDir(), fresh, { bytes: webmHead(200), stage: 'qa', by: 'qa', title: 'Screen recording', meta: { durationMs: 5000, width: 8, height: 4, marks: [{ fromMs: 1000, toMs: 2000 }] }, at: at(1) });
   if (!put.ok) throw new Error('not kept');
   runStore().update(run.id, (r) => recordEvidence(r, put.record, at(1)));
   age(run.id, put.record, ageDays);
@@ -60,7 +60,7 @@ function keepShot(run: Run, ageDays: number): EvidenceRecord {
   const dir = mkdtempSync(join(tmpdir(), 'coxia-retention-shot-'));
   const file = join(dir, 'shot.txt');
   writeFileSync(file, 'what the agent saw\n');
-  const put = putEvidence(ATAS, fresh, { path: file, name: 'shot.txt', title: 'A shot', description: '', stage: 'qa', by: 'qa', at: at(1) });
+  const put = putEvidence(atasDir(), fresh, { path: file, name: 'shot.txt', title: 'A shot', description: '', stage: 'qa', by: 'qa', at: at(1) });
   if (!put.ok) throw new Error('not kept');
   runStore().update(run.id, (r) => recordEvidence(r, put.record, at(1)));
   age(run.id, put.record, ageDays);
@@ -68,7 +68,7 @@ function keepShot(run: Run, ageDays: number): EvidenceRecord {
 }
 
 function age(runId: string, record: Pick<EvidenceRecord, 'id' | 'kind'>, days: number): void {
-  const path = evidencePath(ATAS, runId, record) as string;
+  const path = evidencePath(atasDir(), runId, record) as string;
   const when = new Date(Date.now() - days * DAY);
   utimesSync(path, when, when);
 }
@@ -81,7 +81,7 @@ describe('the screen recordings group of the retention sweep', () => {
     const rec = keepRecording(run, 40);
     keepShot(run, 40);
     // A file in the evidence folder that no record claims (a stray) is not a recording.
-    writeFileSync(join(ATAS, 'evidence', run.id, 'ev-9.webm'), webmHead(10));
+    writeFileSync(join(atasDir(), 'evidence', run.id, 'ev-9.webm'), webmHead(10));
     const files = screenRecordingFiles();
     expect(files.filter((f) => f.path.includes(run.id)).map((f) => [f.kind, f.path.split('/').slice(-1)[0], f.keep])).toEqual([['screens', `${rec.id}.webm`, false]]);
   });
@@ -111,8 +111,8 @@ describe('the screen recordings group of the retention sweep', () => {
     const elsewhere = mkdtempSync(join(tmpdir(), 'coxia-retention-cycle-'));
     mkdirSync(join(elsewhere, 'evidence'), { recursive: true });
     writeFileSync(join(elsewhere, 'evidence', `${rec.id}.webm`), webmHead(200));
-    const before = readFileSync(evidencePath(ATAS, run.id, shot) as string);
-    const recPath = evidencePath(ATAS, run.id, rec) as string;
+    const before = readFileSync(evidencePath(atasDir(), run.id, shot) as string);
+    const recPath = evidencePath(atasDir(), run.id, rec) as string;
     const preview = previewRetention(30);
     const result = applyRetention(30, preview.fingerprint);
     expect(result.failed).toEqual([]);
@@ -122,7 +122,7 @@ describe('the screen recordings group of the retention sweep', () => {
     expect(after.version).toBe(2);
     expect(after.history.at(-1)).toMatchObject({ type: 'evidence-removed', by: 'app', detail: `${rec.id}: retention` });
     // The agent's piece: the file and the record are as they were (it is not swept by this issue, whatever its age).
-    expect(Buffer.from(readFileSync(evidencePath(ATAS, run.id, shot) as string)).equals(before)).toBe(true);
+    expect(Buffer.from(readFileSync(evidencePath(atasDir(), run.id, shot) as string)).equals(before)).toBe(true);
     expect(after.evidence?.[shot.id]).toEqual(shot);
     expect(readdirSync(join(elsewhere, 'evidence'))).toEqual([`${rec.id}.webm`]);
     // Once marked it is no longer listed, and a second sweep has nothing to do.
@@ -154,7 +154,7 @@ describe('the screen recordings group of the retention sweep', () => {
 
     const other = newRun();
     const otherRec = keepRecording(other, 45);
-    const otherPath = evidencePath(ATAS, other.id, otherRec) as string;
+    const otherPath = evidencePath(atasDir(), other.id, otherRec) as string;
     const target = join(mkdtempSync(join(tmpdir(), 'coxia-retention-target-')), 'not-ours');
     writeFileSync(target, 'not ours');
     rmSync(otherPath);
@@ -176,12 +176,12 @@ describe('the screen recordings group of the retention sweep', () => {
     saveSettings({ ...settings, retention: { enabled: false, days: 30 } });
     expect(previewRetention(30).groups.some((g) => g.kind === 'screens')).toBe(true);
     await (job as unknown as { run(): Promise<void> }).run();
-    expect(existsSync(evidencePath(ATAS, run.id, rec) as string)).toBe(true);
+    expect(existsSync(evidencePath(atasDir(), run.id, rec) as string)).toBe(true);
     expect((runStore().get(run.id) as Run).evidence?.[rec.id]?.removed).toBeUndefined();
     // On, with the days past: the job removes the file and marks the record.
     saveSettings({ ...settings, retention: { enabled: true, days: 30 } });
     await (job as unknown as { run(): Promise<void> }).run();
-    expect(evidencePath(ATAS, run.id, rec)).toBeNull();
+    expect(evidencePath(atasDir(), run.id, rec)).toBeNull();
     expect((runStore().get(run.id) as Run).evidence?.[rec.id]?.removed).toBe('retention');
     saveSettings(settings);
   });
@@ -189,8 +189,8 @@ describe('the screen recordings group of the retention sweep', () => {
 
 describe('the logged-in browser profiles', () => {
   it('are in no retention group: a profile file older than the days is neither listed nor removed', () => {
-    const file = join(ATAS, 'browser', 'scout', 'Default', 'Cookies');
-    mkdirSync(join(ATAS, 'browser', 'scout', 'Default'), { recursive: true });
+    const file = join(atasDir(), 'browser', 'scout', 'Default', 'Cookies');
+    mkdirSync(join(atasDir(), 'browser', 'scout', 'Default'), { recursive: true });
     writeFileSync(file, 'a session');
     const old = new Date(Date.now() - 400 * DAY);
     utimesSync(file, old, old);
@@ -199,6 +199,6 @@ describe('the logged-in browser profiles', () => {
     expect(JSON.stringify(preview)).not.toContain('browser');
     applyRetention(7, null);
     expect(readFileSync(file, 'utf8')).toBe('a session');
-    rmSync(join(ATAS, 'browser'), { recursive: true, force: true });
+    rmSync(join(atasDir(), 'browser'), { recursive: true, force: true });
   });
 });

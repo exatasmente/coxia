@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import type { WorkspaceConfig } from '../../shared/config/types';
-import { ATAS, DATA_ROOT, HOME } from '../env';
+import { atasDir, dataRoot, HOME } from '../env';
 import type { Module } from '../module';
 import { sandbox } from '../sandbox/workspace';
 import { configLoadedCleanly, getConfig, onConfigChange } from '../workspaceConfig';
@@ -26,7 +26,7 @@ export function syncProfiles(config?: WorkspaceConfig): string[] {
       console.error('[browser] the config did not load as written: the profiles are left alone');
       return [];
     }
-    const { removed } = sweepProfiles(ATAS, agentIds(config ?? getConfig()));
+    const { removed } = sweepProfiles(atasDir(), agentIds(config ?? getConfig()));
     return removed;
   } catch (e) {
     console.error('[browser] could not sweep the profiles', e instanceof Error ? e.message : e);
@@ -39,9 +39,9 @@ function dropProfiles(ids: string[]): string[] {
   const held: string[] = [];
   for (const id of ids) {
     try {
-      const dir = profileDirOf(ATAS, id);
+      const dir = profileDirOf(atasDir(), id);
       if (profileLocks.holder(dir) !== null) held.push(id);
-      else deleteProfile(ATAS, id);
+      else deleteProfile(atasDir(), id);
     } catch (e) {
       console.error('[browser] could not delete a profile', e instanceof Error ? e.message : e);
     }
@@ -54,9 +54,9 @@ async function launchForSites(profile: string): ReturnType<typeof startBrowser> 
   const config = getConfig().runner.sandbox;
   const st = await sandbox.status(false);
   if (!st.available) throw new BrowserStartError('server', 'no sandbox');
-  const found = resolveBrowsers(config, HOME, [DATA_ROOT]);
+  const found = resolveBrowsers(config, HOME, [dataRoot()]);
   if (!found.ok) throw new BrowserStartError('server', `no browser: ${found.why}`);
-  return startBrowser({ dir: join(ATAS, 'sandbox'), config, network: { mode: 'off', hosts: [] }, profile, display: null, headless: true, browsers: found.browsers, chromium: found.chromium, seesImages: false });
+  return startBrowser({ dir: join(atasDir(), 'sandbox'), config, network: { mode: 'off', hosts: [] }, profile, display: null, headless: true, browsers: found.browsers, chromium: found.chromium, seesImages: false });
 }
 
 // What the last start subscribed to: a second start (a test, a reload) replaces it instead of adding another.
@@ -67,7 +67,7 @@ export const browserModule: Module = (ctx) => {
   // Settings lists the sites an agent's logged-in browser holds and revokes them. Both are the computer's own: a pattern over `screen:` keeps a paired browser out of them.
   const api = createSitesApi({
     agents: () => getConfig().agents.team.map((a) => a.id),
-    workspaceDir: () => ATAS,
+    workspaceDir: () => atasDir(),
     launch: launchForSites,
     locks: profileLocks,
     // A site that keeps a login in local storage alone has no cookie to name it: the hosts the agent may reach and reached before are asked about as well.

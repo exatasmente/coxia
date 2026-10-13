@@ -9,7 +9,7 @@ import { summarizeIssues, validateConfig } from '../shared/config/validate';
 import { recordWrite } from './auditoria';
 import { bootstrapConfigs, readConfigFile, writeConfigFile } from './config-bootstrap';
 import { type ResolvedConfig, type ResolvedDocs, resolveConfig, resolveDocs } from './config-resolve';
-import { ATAS, DATA_ROOT, EXISTING_INSTALL, HOME, WORKSPACE_ID } from './env';
+import { atasDir, dataRoot, existingInstall, HOME, workspaceId } from './env';
 import { loadLegacyProfile } from './legacy-profile';
 import { moveVerifyCommands } from './verify-move';
 import { secrets, seedLegacySecrets } from './secrets';
@@ -24,18 +24,18 @@ let bootstrapped = false;
 let legacyWorkspace = false;
 const listeners = new Set<(config: WorkspaceConfig) => void>();
 
-const context = () => ({ home: HOME, env: process.env, fallbackCwd: ATAS });
+const context = () => ({ home: HOME, env: process.env, fallbackCwd: atasDir() });
 
 function load(): NonNullable<typeof state> {
   const log = (m: string) => console.log(`[config] ${m}`);
   const profile = loadLegacyProfile(process.env, log);
   if (!bootstrapped) {
     bootstrapped = true;
-    legacyWorkspace = bootstrapConfigs({ root: DATA_ROOT, existingInstall: EXISTING_INSTALL, now: () => new Date(), log, profile }).marker.legacyWorkspaces.includes(WORKSPACE_ID);
+    legacyWorkspace = bootstrapConfigs({ root: dataRoot(), existingInstall: existingInstall(), now: () => new Date(), log, profile }).marker.legacyWorkspaces.includes(workspaceId());
     // After every config is at the current schema and before the active one is read: it may receive commands from the old shared file.
-    moveVerifyCommands({ root: DATA_ROOT, home: HOME, now: () => new Date(), log });
+    moveVerifyCommands({ root: dataRoot(), home: HOME, now: () => new Date(), log });
   }
-  const stored = readConfigFile(ATAS);
+  const stored = readConfigFile(atasDir());
   const checked = validateConfig(stored);
   const legacy = legacyWorkspace;
   const config = checked.config ?? migrateConfig(stored, { legacyInstall: legacy, profile }).config;
@@ -123,7 +123,7 @@ function auditPolicyChanges(before: WorkspaceConfig | undefined, after: Workspac
 export function saveConfig(next: unknown, by = 'person'): WorkspaceConfig {
   const config = checkConfig(next);
   const before = state?.config;
-  writeConfigFile(ATAS, config);
+  writeConfigFile(atasDir(), config);
   auditPolicyChanges(before, config, by);
   // A change of the screen step approvals is recorded here, the one door every save goes through; the first load of a workspace has nothing to compare with.
   if (before) auditScreenPolicyChanges(before, config);

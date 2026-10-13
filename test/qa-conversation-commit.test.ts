@@ -5,7 +5,7 @@ import { rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setLanguage } from '../src/shared/i18n';
-import { ATAS, DATA_ROOT, WORKSPACE_ID } from '../src/main/env';
+import { atasDir, dataRoot, workspaceId } from '../src/main/env';
 import { installLegacyConfig } from './helpers/config';
 import { writeRegistry } from '../src/main/workspaces-core';
 import { type Boot, boot, doc, fakeSandbox, work } from './helpers/runner';
@@ -19,8 +19,8 @@ beforeAll(async () => {
 });
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  for (const d of ['runs', 'forum']) rmSync(join(ATAS, d), { recursive: true, force: true });
-  writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
+  for (const d of ['runs', 'forum']) rmSync(join(atasDir(), d), { recursive: true, force: true });
+  writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
 });
 
 /** Approves gates until the run is waiting at the stage `id`. Expects the run object of `start`. */

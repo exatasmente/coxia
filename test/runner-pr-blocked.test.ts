@@ -15,7 +15,7 @@ import { type Boot, boot, doc, makeRepo, work } from './helpers/runner';
 import type { WorkspaceConfig } from '../src/shared/config/types';
 import { agentFlowConfig, drive, startInput } from './helpers/runs';
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -29,15 +29,15 @@ vi.setConfig({ testTimeout: 30_000 });
 process.env.GIT_CONFIG_GLOBAL = '/dev/null';
 process.env.GIT_CONFIG_NOSYSTEM = '1';
 
-const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+const asReal = (test: boolean) => writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 
 let stop: (() => void) | null = null;
 
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(ATAS, f), { force: true });
-  for (const d of ['runs', 'forum']) rmSync(join(ATAS, d), { recursive: true, force: true });
+  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(atasDir(), f), { force: true });
+  for (const d of ['runs', 'forum']) rmSync(join(atasDir(), d), { recursive: true, force: true });
   asReal(false);
   stop?.();
   stop = null;
@@ -112,7 +112,7 @@ describe('a run whose pull request the host refused to open', () => {
     failingOnce.hit = false;
     failingOnce.fail = true;
     refusedPullRequest(forge);
-    const b = await boot({ dir: ATAS, publish: true, flow: 'engineering', repo: releaseRepo(), configure: autonomy(['gates', 'push', 'pullRequest']) });
+    const b = await boot({ dir: atasDir(), publish: true, flow: 'engineering', repo: releaseRepo(), configure: autonomy(['gates', 'push', 'pullRequest']) });
     easy(b);
     // The reviewer's stage waits until the failure has stopped the run, so the question is the deterministic outcome; the stage answer lands afterwards and is held (the run is stopped).
     b.engine.script('reviewer', async () => {
@@ -140,7 +140,7 @@ describe('a run whose pull request the host refused to open', () => {
     failingOnce.hit = false;
     failingOnce.fail = true;
     refusedPullRequest(forge);
-    const b = await boot({ dir: ATAS, publish: true, flow: 'engineering', repo: releaseRepo(), configure: (c) => {
+    const b = await boot({ dir: atasDir(), publish: true, flow: 'engineering', repo: releaseRepo(), configure: (c) => {
       autonomy(['gates', 'push', 'pullRequest'])(c);
       const ready = c.devCycle.stages.find((s) => s.id === 'ready');
       if (ready) {
@@ -227,7 +227,7 @@ describe('the pr-merged wait never starts without a pull request recorded', () =
     const forge = makeForge({ pr: null });
     forge.linked = false;
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, flow: 'engineering', configure: (c) => {
+    const b = await boot({ dir: atasDir(), publish: true, flow: 'engineering', configure: (c) => {
       autonomy(['gates', 'push'])(c);
       const ready = c.devCycle.stages.find((s) => s.id === 'ready');
       if (ready) {
@@ -262,7 +262,7 @@ describe('the review waits aloud once, not once per sweep', () => {
     const forge = makeForge({ pr: null });
     forge.linked = false;
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, flow: 'engineering' });
+    const b = await boot({ dir: atasDir(), publish: true, flow: 'engineering' });
     easy(b);
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     const run = await b.runner.start('app#101');

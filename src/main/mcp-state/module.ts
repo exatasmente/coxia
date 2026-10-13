@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path';
 import type { Module } from '../module';
 import type { McpStateView } from '../../shared/mcpState';
-import { MCP_DATA_DIR_ENV, mergeMcpFile, serverEntryText, stateServerEntry } from './entry';
-import { ATAS, HOME, WORKSPACE_ID } from '../env';
+import { mergeMcpFile, serverEntryText, stateServerEntry } from './entry';
+import { atasDir, dataRoot, HOME, STANDARD_DATA_DIR, workspaceId } from '../env';
 import { appPath } from '../paths';
 import { getConfig, onConfigChange, updateConfig } from '../workspaceConfig';
 import { personaOf } from '../../shared/config/team';
@@ -23,15 +23,20 @@ import { t } from '../../shared/i18n';
 /** Whether the bridge should listen now: both switches on. The persona is checked at every call, so a workspace may turn this on before it has one. */
 const actOn = (config: WorkspaceConfig): boolean => config.mcpState?.enabled === true && config.mcpState.act === true;
 
-const bridge = createTerminalBridge({
-  dir: ATAS,
+// Made at the first use, not at import: its socket lives in the workspace's folder, known once the core has booted.
+let terminal: ReturnType<typeof createTerminalBridge> | null = null;
+const bridge = (): ReturnType<typeof createTerminalBridge> => (terminal ??= createTerminalBridge({
+  dir: atasDir(),
   door: personaDoor,
   persona: () => {
     const p = personaOf(getConfig().agents.team);
     return p ? { id: p.id, thread: agentThreadId(p.id) } : null;
   },
   on: () => actOn(getConfig()),
-});
+}));
+
+/** The data folder the state server must be told of: the one this process booted with, unless it is the standard one the server finds alone. */
+const dataRootOverride = (): string | null => (dataRoot() === STANDARD_DATA_DIR ? null : dataRoot());
 
 /** Where the state server is spawned from on this install: `out/main` of the app's own folder. */
 const cliPath = (): string => join(appPath(), 'out', 'main', 'mcp-state.js');
@@ -53,12 +58,12 @@ export function view(): McpStateView {
     enabled: config.mcpState?.enabled === true,
     act: actOn(config),
     persona: personaOf(config.agents.team) !== null,
-    listening: bridge.listening(),
-    workspaceId: WORKSPACE_ID,
+    listening: bridge().listening(),
+    workspaceId: workspaceId(),
     available: runnable,
     entry:
       config.mcpState?.enabled === true && runnable
-        ? serverEntryText(stateServerEntry({ workspaceId: WORKSPACE_ID, cliPath: cliPath(), dataRootOverride: process.env[MCP_DATA_DIR_ENV] ?? null }))
+        ? serverEntryText(stateServerEntry({ workspaceId: workspaceId(), cliPath: cliPath(), dataRootOverride: dataRootOverride() }))
         : null,
     path: runnable ? shrinkHome(cliPath(), HOME) : null,
     targets: targets(),
@@ -67,7 +72,7 @@ export function view(): McpStateView {
 
 /** Listens while both switches are on, and closes (removing the socket and the token) as soon as either is off. */
 async function sync(): Promise<void> {
-  await (actOn(getConfig()) ? bridge.start() : bridge.stop());
+  await (actOn(getConfig()) ? bridge().start() : bridge().stop());
 }
 
 export const mcpStateModule: Module = (ctx) => {
@@ -105,7 +110,7 @@ export const mcpStateModule: Module = (ctx) => {
         }
       },
       file,
-      stateServerEntry({ workspaceId: WORKSPACE_ID, cliPath: cliPath(), dataRootOverride: process.env[MCP_DATA_DIR_ENV] ?? null }),
+      stateServerEntry({ workspaceId: workspaceId(), cliPath: cliPath(), dataRootOverride: dataRootOverride() }),
     );
     if (!result.ok) throw new Error(t('main.mcpstate.mergeConflict'));
     if (result.status === 'written') {

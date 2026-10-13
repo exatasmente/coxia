@@ -20,14 +20,14 @@ vi.mock('../src/main/agents', async (orig) => ({
   },
 }));
 
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { saveConfig, getConfig } = await import('../src/main/workspaceConfig');
 const actions = await import('../src/main/actions');
 const suggestionMod = await import('../src/main/suggestionsModule');
 const { recordWrite } = await import('../src/main/auditoria');
 
-const RUNS = join(ATAS, 'runs');
-const HISTORY = join(ATAS, 'historico');
+const RUNS = join(atasDir(), 'runs');
+const HISTORY = join(atasDir(), 'historico');
 
 function useConfig(over: (c: WorkspaceConfig) => void = () => undefined): void {
   // The engineering agent flow: its stages (refine, plan, implement, review, qa...) are the ones an agent may cover.
@@ -79,8 +79,8 @@ function threeReturns(): void {
 }
 
 beforeEach(() => {
-  for (const f of ['acoes.json', 'auditoria.jsonl', 'suggestions.json']) rmSync(join(ATAS, f), { force: true });
-  for (const d of ['runs', 'retros', 'historico']) rmSync(join(ATAS, d), { recursive: true, force: true });
+  for (const f of ['acoes.json', 'auditoria.jsonl', 'suggestions.json']) rmSync(join(atasDir(), f), { force: true });
+  for (const d of ['runs', 'retros', 'historico']) rmSync(join(atasDir(), d), { recursive: true, force: true });
   asked.prompts.length = 0;
   asked.answer = { nome: 'Reviewer', papel: 'Reviews returns from review', etapa: 'review', prompt: 'You look at returns.' };
   useConfig();
@@ -304,7 +304,7 @@ describe('the workspace of a test', () => {
     expect(a.command).toBeNull();
     expect(a.unit).toMatchObject({ purpose: 'suggest-agent' });
     // No proposal reaches the host: the file holds only the local action.
-    const stored = JSON.parse(readFileSync(join(ATAS, 'acoes.json'), 'utf8')) as { actions: { kind: string; command: unknown }[] };
+    const stored = JSON.parse(readFileSync(join(atasDir(), 'acoes.json'), 'utf8')) as { actions: { kind: string; command: unknown }[] };
     expect(stored.actions.every((x) => x.command === null)).toBe(true);
   });
 });

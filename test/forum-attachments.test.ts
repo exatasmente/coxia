@@ -19,7 +19,9 @@ afterEach(() => {
 });
 
 const { forumModule, forumStore } = await import('../src/main/forum');
-const { ATAS } = await import('../src/main/env');
+const { atasDir, bootEnv } = await import('../src/main/env');
+// The modules read the data folder at the first use: it is fixed here, to this file's own (test/setup.ts), before a test switches the variable.
+bootEnv();
 type ModuleContext = import('../src/main/module').ModuleContext;
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
@@ -55,7 +57,7 @@ describe('sending a file to a conversation', () => {
   it('keeps the bytes under the conversation, by the id and the kind, never by the name', () => {
     const c = channels();
     const ref = c['forum:attachment-put'](THREAD, '../../etc/passwd.png', PNG) as { id: string };
-    const folder = join(ATAS, 'anexos', THREAD);
+    const folder = join(atasDir(), 'anexos', THREAD);
     expect(existsSync(folder)).toBe(true);
     expect(existsSync(join(folder, `${ref.id}.img`))).toBe(true);
     expect(existsSync(join(folder, 'passwd.png'))).toBe(false);
@@ -63,9 +65,9 @@ describe('sending a file to a conversation', () => {
 
   it('refuses a file of a kind that is not accepted, and writes nothing', () => {
     const c = channels();
-    const before = existsSync(join(ATAS, 'anexos', THREAD)) ? readdirSync(join(ATAS, 'anexos', THREAD)).length : 0;
+    const before = existsSync(join(atasDir(), 'anexos', THREAD)) ? readdirSync(join(atasDir(), 'anexos', THREAD)).length : 0;
     expect(() => c['forum:attachment-put'](THREAD, 'archive.zip', Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00]).toString('base64'))).toThrow();
-    const after = existsSync(join(ATAS, 'anexos', THREAD)) ? readdirSync(join(ATAS, 'anexos', THREAD)).length : 0;
+    const after = existsSync(join(atasDir(), 'anexos', THREAD)) ? readdirSync(join(atasDir(), 'anexos', THREAD)).length : 0;
     expect(after).toBe(before);
   });
 
@@ -73,7 +75,7 @@ describe('sending a file to a conversation', () => {
     const c = channels();
     const ref = c['forum:attachment-put'](THREAD, 'notes.txt', b64('hello\nworld\n')) as { id: string };
     c['forum:attachment-drop'](THREAD, [ref.id]);
-    expect(existsSync(join(ATAS, 'anexos', THREAD, `${ref.id}.txt`))).toBe(false);
+    expect(existsSync(join(atasDir(), 'anexos', THREAD, `${ref.id}.txt`))).toBe(false);
     // posting the id that no longer holds a file is refused, nothing is written
     expect(() => c['forum:attachment-post'](THREAD, 'x', [ref.id])).toThrow();
   });

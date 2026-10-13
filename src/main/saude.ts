@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import type { DepHealth, DepId, SaudeSnapshot, TaskHealth } from '../shared/saude';
 import { getSettings } from './config';
 import { logError } from './errorlog';
-import { DATA_ROOT } from './env';
+import { dataRoot } from './env';
 import { providerSecret } from './llm';
 import { secrets } from './secrets';
 import { t } from '../shared/i18n';
@@ -17,7 +17,7 @@ import { voiceStatus } from './voice';
 
 const run = promisify(execFile);
 
-const FILE = join(DATA_ROOT, 'saude.json');
+const FILE = (): string => join(dataRoot(), 'saude.json');
 const DEPS_EVERY_MIN = 30;
 const STREAK_ALERT = 3;
 
@@ -40,7 +40,7 @@ let checking: Promise<SaudeSnapshot> | null = null;
 function state(): Stored {
   if (stored) return stored;
   try {
-    stored = existsSync(FILE) ? (JSON.parse(readFileSync(FILE, 'utf8')) as Stored) : { tasks: {}, deps: {} };
+    stored = existsSync(FILE()) ? (JSON.parse(readFileSync(FILE(), 'utf8')) as Stored) : { tasks: {}, deps: {} };
   } catch {
     stored = { tasks: {}, deps: {} };
   }
@@ -49,9 +49,9 @@ function state(): Stored {
 
 function save(): void {
   try {
-    mkdirSync(DATA_ROOT, { recursive: true });
-    writeFileSync(`${FILE}.tmp`, JSON.stringify(state(), null, 2));
-    renameSync(`${FILE}.tmp`, FILE);
+    mkdirSync(dataRoot(), { recursive: true });
+    writeFileSync(`${FILE()}.tmp`, JSON.stringify(state(), null, 2));
+    renameSync(`${FILE()}.tmp`, FILE());
   } catch (e) {
     console.error('[saude] could not write saude.json', e);
   }

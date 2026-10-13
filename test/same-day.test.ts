@@ -43,9 +43,9 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  const { ATAS } = await import('../src/main/env');
+  const { atasDir } = await import('../src/main/env');
   const { rmSync, readdirSync } = await import('node:fs');
-  for (const name of readdirSync(ATAS)) if (!['config.json', 'secrets.json'].includes(name)) rmSync(join(ATAS, name), { recursive: true, force: true });
+  for (const name of readdirSync(atasDir())) if (!['config.json', 'secrets.json'].includes(name)) rmSync(join(atasDir(), name), { recursive: true, force: true });
   config.updateConfig((c) => {
     c.language = 'pt-BR';
     c.voice.enabled = true;

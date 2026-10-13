@@ -8,7 +8,7 @@ import { type RunActivity, beginCallActivity } from '../activity';
 import { runAgent, secretPath } from '../agents';
 import { ceremonyCommands } from '../ceremonyCommands';
 import { turnAsks } from '../turnAsks';
-import { ATAS, HOME } from '../env';
+import { atasDir, HOME } from '../env';
 import { forumStore } from '../forum';
 import { type Module } from '../module';
 import { runStore } from '../runs';
@@ -60,7 +60,7 @@ export function ownerOfThread(summary: ThreadSummary | null): string | null {
 
 /** The record of the activities of the running workspace, in the workspace's own folder: the mentions module only reads it. */
 let shared: ReturnType<typeof createSharedMemory> | null = null;
-export const sharedMemory = (): ReturnType<typeof createSharedMemory> => (shared ??= createSharedMemory(ATAS));
+export const sharedMemory = (): ReturnType<typeof createSharedMemory> => (shared ??= createSharedMemory(atasDir()));
 
 /** The takes of an activity reference a message carries: the number `#123`, or a whole reference `group/project#123`. */
 export function refsInMessage(message: ForumMessage): string[] {
@@ -80,7 +80,7 @@ export const mentionsModule: Module = () => {
       const asks = screenAsks();
       return sessions && asks ? { sessions, asks, handoff: handoffService() } : null;
     },
-    env: () => ({ fallbackCwd: rc().projectsRoot ?? ATAS }),
+    env: () => ({ fallbackCwd: rc().projectsRoot ?? atasDir() }),
     propose: proposeMention,
     // A sub-agent of an answer that uses its last turn asks the person, as the runner's do.
     turnAsks,
@@ -175,7 +175,7 @@ export const mentionsModule: Module = () => {
     // Every agent called gets its line as soon as the message is accepted, as in a run's thread: working, or waiting its turn behind an answer still going in
     // this conversation or an agent named before it in the same message. A message of a stopped persona waits for Resume, which is waiting its turn.
     const team = getConfig().agents.team;
-    const root = rc().projectsRoot ?? ATAS;
+    const root = rc().projectsRoot ?? atasDir();
     let ahead = !!prior || stopped;
     // The persona's answer keeps a session (what it read, the values it must never write back): made now, so the line of its call shares the mask.
     const persona = personaOf(team);

@@ -16,7 +16,7 @@ vi.mock('../src/main/agents', async (importOriginal) => ({
 
 const { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictHooks, conflictMergeMessage, conflictPrepare, conflictPropose, conflictReopen, listActions, skipAction } = await import('../src/main/actions');
 const { saveVerifyCommands } = await import('../src/main/conflictVerify');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 const { updateConfig } = await import('../src/main/workspaceConfig');
 await installLegacyConfig();
@@ -25,8 +25,8 @@ await installLegacyConfig();
 const RUNNER = { name: 'Runner Test', email: 'runner@example.test' };
 const setIdentity = (identity: { name: string; email: string }): void => void updateConfig((c) => ({ ...c, runner: { ...c.runner, identity } }));
 
-const ACTIONS = join(ATAS, 'acoes.json');
-const AUDIT = join(ATAS, 'auditoria.jsonl');
+const ACTIONS = join(atasDir(), 'acoes.json');
+const AUDIT = join(atasDir(), 'auditoria.jsonl');
 let f: Fixture;
 const qa = vi.fn();
 
@@ -55,7 +55,7 @@ function seed(fx: Fixture): string {
     command: null,
     unit: { project_path: fx.project, mr_iid: 1234, mr_ref: 'grp/proj!1234', source_branch: fx.branch, target_branch: 'main', repo: '/nonexistent/mirror/grp/proj.git' },
   };
-  mkdirSync(ATAS, { recursive: true });
+  mkdirSync(atasDir(), { recursive: true });
   writeFileSync(ACTIONS, JSON.stringify({ releaseSeen: null, actions: [action] }));
   return 'c1';
 }
@@ -88,7 +88,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  rmSync(ATAS, { recursive: true, force: true });
+  rmSync(atasDir(), { recursive: true, force: true });
   f = makeFixture();
   conflictHooks.cloneRoots = f.cloneRoots;
   conflictHooks.scheduleQaComment = qa;
@@ -109,7 +109,7 @@ describe('prepare', () => {
     const before = cloneSnapshot(f);
     const a = await conflictPrepare(id);
     const r = a.resolve;
-    expect(r?.worktree).toBe(join(ATAS, 'conflicts', 'proj-1234'));
+    expect(r?.worktree).toBe(join(atasDir(), 'conflicts', 'proj-1234'));
     expect(r?.clone).toBe(f.clone);
     expect(r?.syncBranch).toBe('sync/1234');
     expect(r?.originSha).toBe(originSha(f, f.branch));
@@ -142,7 +142,7 @@ describe('prepare', () => {
 
     git(f.clone, 'branch', 'sync/1234', 'HEAD');
     await expect(conflictPrepare(id)).rejects.toThrow(/não é deste app/);
-    expect(existsSync(join(ATAS, 'conflicts', 'proj-1234'))).toBe(false);
+    expect(existsSync(join(atasDir(), 'conflicts', 'proj-1234'))).toBe(false);
   });
 
   it('does not start the merge without an identity of the runner or the clone, whatever the machine has', async () => {
@@ -152,7 +152,7 @@ describe('prepare', () => {
     await withMachineIdentity(async () => {
       await expect(conflictPrepare(id)).rejects.toThrow(/Sem identidade para o commit do merge/);
     });
-    expect(existsSync(join(ATAS, 'conflicts', 'proj-1234'))).toBe(false);
+    expect(existsSync(join(atasDir(), 'conflicts', 'proj-1234'))).toBe(false);
     expect(cloneSnapshot(f)).toEqual(before);
     expect(get(id).state).toBe('pending');
   });
@@ -165,7 +165,7 @@ describe('propose and choose', () => {
     expect(proposeSpy).toHaveBeenCalledTimes(1);
     const sent = proposeSpy.mock.calls[0][0] as { hunks: { id: string; file: string; base: string | null }[]; worktree: string };
     expect(sent.hunks.map((h) => h.file).sort()).toEqual(['app.js', 'old.txt']);
-    expect(sent.worktree).toBe(join(ATAS, 'conflicts', 'proj-1234'));
+    expect(sent.worktree).toBe(join(atasDir(), 'conflicts', 'proj-1234'));
 
     const h = get(id).resolve?.files.find((x) => x.path === 'app.js')?.hunks[0];
     expect(h).toMatchObject({ proposal: 'register("from-branch");\nregister("from-main");\n', confidence: 'alta', explanation: 'combina os dois', choice: null });
@@ -421,7 +421,7 @@ describe('publish', () => {
     expect(originSha(f, f.branch)).toBe(moved);
     expect(moved).not.toBe(r?.commit);
     expect(listActions().find((x) => x.id === push.id)?.state).toBe('pending');
-    expect(existsSync(join(ATAS, 'auditoria.jsonl'))).toBe(false);
+    expect(existsSync(join(atasDir(), 'auditoria.jsonl'))).toBe(false);
     expect(qa).not.toHaveBeenCalled();
 
     // The way out is to discard and start over.

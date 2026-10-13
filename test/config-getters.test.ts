@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 const cfg = await import('../src/main/workspaceConfig');
 const { getSettings, saveSettings } = await import('../src/main/config');
-const { ATAS, HOME } = await import('../src/main/env');
+const { atasDir, HOME } = await import('../src/main/env');
 const { specInfo, phasePluginDocuments } = await import('../src/main/cards');
 const { stageWeight } = await import('../src/main/radar');
 const { installLegacyConfig } = await import('./helpers/config');
@@ -134,6 +134,6 @@ describe('after the previous app profile is applied', () => {
 
   it('the config file of the workspace is at the current schema on disk', async () => {
     const { readConfigFile } = await import('../src/main/config-bootstrap');
-    expect((readConfigFile(ATAS) as { schemaVersion: number }).schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
+    expect((readConfigFile(atasDir()) as { schemaVersion: number }).schemaVersion).toBe(CONFIG_SCHEMA_VERSION);
   });
 });

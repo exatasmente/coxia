@@ -17,7 +17,7 @@ import { grantsFor, withheldText } from '../browser/guard';
 import { createHostsTally, safeHost, summaryParams } from '../browser/hosts';
 import type { ProxyDecision } from '../sandbox/proxy';
 import { recordWrite } from '../auditoria';
-import { ATAS } from '../env';
+import { atasDir } from '../env';
 import { redact } from '../errorlog-core';
 import type { ForumStore } from '../forum-core';
 import { copyTracked } from '../sandbox/copy';
@@ -160,7 +160,7 @@ export interface MentionAnswer {
 }
 
 /** A folder of the workspace's own data where the throwaway copy of an answer's commands is made; the sandbox's own folders live beside it. */
-const draftDir = (thread: string, tag: string, agent: string): string => join(ATAS, 'sandbox', 'mention', thread.replace(/[^\w-]/g, '_').slice(0, 60), `${tag}-${agent}`);
+const draftDir = (thread: string, tag: string, agent: string): string => join(atasDir(), 'sandbox', 'mention', thread.replace(/[^\w-]/g, '_').slice(0, 60), `${tag}-${agent}`);
 
 /** The repository titles of a place on disk, in the config's order. */
 const repoTitles = (place: MentionPlace): string[] => reposOnDisk(place).map((r) => r.id);

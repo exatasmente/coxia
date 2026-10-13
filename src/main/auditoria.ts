@@ -2,12 +2,12 @@ import { createHash } from 'node:crypto';
 import { appendFileSync, closeSync, existsSync, fstatSync, mkdirSync, openSync, readFileSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 import { BASIS_LIMITS, type AuditBasis, type AuditEntry } from '../shared/auditoria';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { redact } from './errorlog-core';
 import type { Module } from './module';
 import { openAct, type Act } from './persona/act';
 
-const FILE = join(ATAS, 'auditoria.jsonl');
+const FILE = (): string => join(atasDir(), 'auditoria.jsonl');
 const FIELD_MAX = 300;
 const RESULT_MAX = 300;
 const LIST_MAX = 2000;
@@ -30,8 +30,8 @@ const link =(prev: string, body: string): string => createHash('sha256').update(
 
 /** The `chain` of the last line that has one, or `''` when the log has none yet (the chain starts there). */
 function lastChain(): string {
-  if (!existsSync(FILE)) return '';
-  const fd = openSync(FILE, 'r');
+  if (!existsSync(FILE())) return '';
+  const fd = openSync(FILE(), 'r');
   try {
     const size = fstatSync(fd).size;
     const len = Math.min(size, TAIL_BYTES);
@@ -96,10 +96,10 @@ export function recordWrite(entry: Omit<AuditEntry, 'at' | 'chain' | 'tampered'>
       act.wrote.count += 1;
       act.wrote.kinds.add(entry.kind);
     }
-    mkdirSync(ATAS, { recursive: true });
+    mkdirSync(atasDir(), { recursive: true });
     // Each line seals the one before it: an edit or a removal made afterwards, by anything that is not this writer, shows up on reading.
     const chain = link(lastChain(), JSON.stringify(line));
-    appendFileSync(FILE, `${JSON.stringify({ ...line, chain })}\n`);
+    appendFileSync(FILE(), `${JSON.stringify({ ...line, chain })}\n`);
   } catch (e) {
     // The write already happened; a failing log must not turn it into a reported failure.
     console.error('[auditoria]', e);
@@ -107,11 +107,11 @@ export function recordWrite(entry: Omit<AuditEntry, 'at' | 'chain' | 'tampered'>
 }
 
 export function listAudit(): AuditEntry[] {
-  if (!existsSync(FILE)) return [];
+  if (!existsSync(FILE())) return [];
   const rows: AuditEntry[] = [];
   let prev = '';
   let started = false;
-  for (const l of readFileSync(FILE, 'utf8').split('\n')) {
+  for (const l of readFileSync(FILE(), 'utf8').split('\n')) {
     if (!l.trim()) continue;
     let row: AuditEntry;
     try {

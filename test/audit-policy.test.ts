@@ -3,12 +3,12 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { AuditEntry } from '../src/shared/auditoria';
 import { listAudit, recordWrite, register } from '../src/main/auditoria';
-import { ATAS } from '../src/main/env';
+import { atasDir } from '../src/main/env';
 import { getConfig, saveConfig, updateConfig } from '../src/main/workspaceConfig';
 
 // The audit log keeps what the autonomy policy let go out and cannot be edited by the persona: it only appends, and a line changed or removed by hand shows up.
 
-const FILE = join(ATAS, 'auditoria.jsonl');
+const FILE = join(atasDir(), 'auditoria.jsonl');
 const POLICY = { cycle: true, hostCommands: true, gates: false, push: false, pullRequest: false, level: 'flow' as const, flow: 'platform' };
 
 const step = (target: string, extra: Partial<Omit<AuditEntry, 'at'>> = {}): Omit<AuditEntry, 'at'> => ({

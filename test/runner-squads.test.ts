@@ -308,8 +308,8 @@ describe('squads that are wrong', () => {
     (broken.squads ?? [])[0].liaison = null;
     const { writeConfigFile } = await import('../src/main/config-bootstrap');
     const { reloadConfig } = await import('../src/main/workspaceConfig');
-    const { ATAS } = await import('../src/main/env');
-    writeConfigFile(ATAS, broken);
+    const { atasDir } = await import('../src/main/env');
+    writeConfigFile(atasDir(), broken);
     reloadConfig();
     expect(b.deps.config().squads?.[0].liaison).toBeNull();
     await expect(b.runner.start('app#101', 'app')).rejects.toThrow(/no liaison/);

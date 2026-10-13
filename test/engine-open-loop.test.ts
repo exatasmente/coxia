@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SECRET_GLOBS, agentHooks, obj, secretPath, str } from '../src/main/agents';
+import { secretGlobs, agentHooks, obj, secretPath, str } from '../src/main/agents';
 import { ChatClient } from '../src/main/engine/open/client';
 import { EngineError } from '../src/main/engine/open/errors';
 import { type OpenRunParams, OpenMaxTurnsError, StructuredOutputError, runOpen } from '../src/main/engine/open/loop';
@@ -53,7 +53,7 @@ function params(f: Fake, over: Partial<OpenRunParams> = {}): OpenRunParams {
     allowedTools: ['Read', 'Grep', 'Glob', 'Skill'],
     hooks: agentHooks(),
     isSecret: (p) => secretPath(p, dir),
-    secretGlobs: SECRET_GLOBS,
+    secretGlobs: secretGlobs(),
     docs: { claudeMd: [join(dir, 'CLAUDE.md')], skillDirs: [join(dir, 'skills')], agentDirs: [join(dir, 'agents')] },
     maxTurns: 8,
     sessionsDir: sessions,

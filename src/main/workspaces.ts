@@ -1,6 +1,6 @@
 import type { WorkspacesView } from '../shared/workspaces';
 import { WORKSPACE_EVENT } from '../shared/workspaces';
-import { DATA_ROOT, WORKSPACE_ID } from './env';
+import { dataRoot, workspaceId } from './env';
 import { requireHost, restartProcess } from './host';
 import type { Module } from './module';
 import { stopWebAccess } from './webAccess';
@@ -10,12 +10,12 @@ import { t } from '../shared/i18n';
 const RESTART_DELAY_MS = 700;
 
 function view(): WorkspacesView {
-  const reg = readRegistry(DATA_ROOT);
+  const reg = readRegistry(dataRoot());
   if (!reg) throw new Error(t('main.workspaces.registryUnreadable'));
-  return { ...reg, running: WORKSPACE_ID };
+  return { ...reg, running: workspaceId() };
 }
 
-// Every module reads its paths at import time, so the only way to change workspace is a fresh process.
+// The workspace is fixed for the life of the process (env.ts), so the only way to change it is a fresh process.
 async function restart(): Promise<void> {
   try {
     await stopWebAccess();
@@ -31,28 +31,28 @@ export const workspaces: Module = (ctx) => {
   };
   ctx.handle('workspace:list', () => view());
   ctx.handle('workspace:create', (name: string, copySettings: boolean) => {
-    createWorkspace(DATA_ROOT, { name, copySettings: copySettings !== false });
+    createWorkspace(dataRoot(), { name, copySettings: copySettings !== false });
     return announce();
   });
   ctx.handle('workspace:rename', (id: string, name: string) => {
-    renameWorkspace(DATA_ROOT, id, name);
+    renameWorkspace(dataRoot(), id, name);
     return announce();
   });
   ctx.handle('workspace:test', (id: string, test: boolean) => {
-    setTestFlag(DATA_ROOT, id, test === true);
+    setTestFlag(dataRoot(), id, test === true);
     return announce();
   });
   ctx.handle('workspace:switch', (id: string) => {
-    if (id === WORKSPACE_ID && readRegistry(DATA_ROOT)?.current === id) return { restarting: false };
+    if (id === workspaceId() && readRegistry(dataRoot())?.current === id) return { restarting: false };
     // Switching takes a fresh process: a host that cannot start one refuses before the registry moves.
     requireHost('restart');
-    switchWorkspace(DATA_ROOT, id);
+    switchWorkspace(dataRoot(), id);
     setTimeout(() => void restart(), RESTART_DELAY_MS);
     return { restarting: true };
   });
   ctx.handle('workspace:delete', (id: string, typedName: string) => {
-    if (id === WORKSPACE_ID) throw new Error(t('main.workspaces.deleteCurrent'));
-    deleteWorkspace(DATA_ROOT, id, typedName);
+    if (id === workspaceId()) throw new Error(t('main.workspaces.deleteCurrent'));
+    deleteWorkspace(dataRoot(), id, typedName);
     return announce();
   });
 };

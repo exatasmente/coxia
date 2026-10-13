@@ -48,7 +48,7 @@ beforeAll(async () => {
   const { configModule } = await import('../src/main/configModule');
   const { mentionsModule } = await import('../src/main/mentions/module');
   const { personaModule } = await import('../src/main/persona/module');
-  mkdirSync(join((await import('../src/main/env')).ATAS, 'forum'), { recursive: true });
+  mkdirSync(join((await import('../src/main/env')).atasDir(), 'forum'), { recursive: true });
   ensureAgentThread(forumStore(), { id: 'me', name: 'Me' }, 'en');
   for (const register of [forumModule, configModule, mentionsModule, personaModule]) register(ctx as never);
 });

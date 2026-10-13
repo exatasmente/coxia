@@ -17,7 +17,7 @@ const { listAudit } = await import('../src/main/auditoria');
 const { forumStore } = await import('../src/main/forum');
 const { createForumStore } = await import('../src/main/forum-core');
 const { saveConfig } = await import('../src/main/workspaceConfig');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 
 const THREAD = agentThreadId('me');
 const session = (seq = 4) => createSession({ persona: 'me', thread: THREAD, seq, door: 'window' });
@@ -46,7 +46,7 @@ describe('the line of an act', () => {
     const audit = listAudit().find((e) => e.kind === 'act');
     expect(line.params).toEqual({ tool: 'Overview', op: 'markErrorsSeen', subject: '', result: 'ok', id: audit?.id });
     // Stored with the thread: a store opened on the same folder, as after a restart, reads it back.
-    const reopened = createForumStore(join(ATAS, 'forum'));
+    const reopened = createForumStore(join(atasDir(), 'forum'));
     expect(reopened.read(THREAD, 0, 2000)?.messages.find((m) => m.seq === line.seq)?.code).toBe('persona.act');
   });
 

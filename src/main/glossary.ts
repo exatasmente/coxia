@@ -3,19 +3,19 @@ import { join } from 'node:path';
 import { DEFAULT_GLOSSARY, type Term, sanitizeGlossary, spoken } from '../shared/glossary';
 import { learn } from '../shared/glossaryLearn';
 import { getSettings } from './config';
-import { DATA_ROOT } from './env';
+import { dataRoot } from './env';
 import type { Module } from './module';
 import { planSpeech, speakSegment, voicesFor } from './voice';
 import { t } from '../shared/i18n';
 
-const FILE = join(DATA_ROOT, 'glossario.json');
+const FILE = (): string => join(dataRoot(), 'glossario.json');
 
 let cached: Term[] | null = null;
 
 export function glossary(): Term[] {
   if (cached) return cached;
   try {
-    cached = existsSync(FILE) ? sanitizeGlossary(JSON.parse(readFileSync(FILE, 'utf8'))) : DEFAULT_GLOSSARY;
+    cached = existsSync(FILE()) ? sanitizeGlossary(JSON.parse(readFileSync(FILE(), 'utf8'))) : DEFAULT_GLOSSARY;
   } catch {
     cached = DEFAULT_GLOSSARY;
   }
@@ -24,9 +24,9 @@ export function glossary(): Term[] {
 
 function save(terms: unknown): Term[] {
   const next = sanitizeGlossary(terms);
-  mkdirSync(DATA_ROOT, { recursive: true });
-  writeFileSync(`${FILE}.tmp`, JSON.stringify(next, null, 2));
-  renameSync(`${FILE}.tmp`, FILE);
+  mkdirSync(dataRoot(), { recursive: true });
+  writeFileSync(`${FILE()}.tmp`, JSON.stringify(next, null, 2));
+  renameSync(`${FILE()}.tmp`, FILE());
   cached = next;
   return next;
 }

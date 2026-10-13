@@ -1,10 +1,10 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SavedCeremony } from '../shared/types';
-import { ATAS } from './env';
+import { atasDir } from './env';
 
 // One file per ceremony under historico/. Shared by the history, the minutes versions and the same-day context, which all read it.
-export const HISTORY = join(ATAS, 'historico');
+export const HISTORY = (): string => join(atasDir(), 'historico');
 export const CEREMONY_ID = /^\d{4}-\d{2}-\d{2}T\d{6}$/;
 
 export function today(): string {
@@ -14,7 +14,7 @@ export function today(): string {
 export function readCeremony(id: string): SavedCeremony | null {
   if (!CEREMONY_ID.test(id)) return null;
   try {
-    const state = JSON.parse(readFileSync(join(HISTORY, `${id}.json`), 'utf8')) as SavedCeremony;
+    const state = JSON.parse(readFileSync(join(HISTORY(), `${id}.json`), 'utf8')) as SavedCeremony;
     return state.version === 1 ? state : null;
   } catch {
     return null;
@@ -23,8 +23,8 @@ export function readCeremony(id: string): SavedCeremony | null {
 
 /** Ceremony ids, newest first. */
 export function ceremonyIds(): string[] {
-  if (!existsSync(HISTORY)) return [];
-  return readdirSync(HISTORY)
+  if (!existsSync(HISTORY())) return [];
+  return readdirSync(HISTORY())
     .map((f) => f.replace(/\.json$/, ''))
     .filter((id) => CEREMONY_ID.test(id))
     .sort()

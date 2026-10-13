@@ -12,7 +12,7 @@ process.env.CERIMONIAS_DATA_DIR = DATA;
 
 const { loadCards } = await import('../src/main/cards');
 const { boardStore } = await import('../src/main/boardSource');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
 const { forgetTracked } = await import('../src/main/vcs/boardRead');
 const { getConfig, saveConfig } = await import('../src/main/workspaceConfig');
@@ -131,7 +131,7 @@ describe('the day of a workspace with a code host', () => {
 
   beforeEach(() => {
     saveConfig(withHost);
-    rmSync(join(ATAS, 'board.json'), { force: true });
+    rmSync(join(atasDir(), 'board.json'), { force: true });
     forgetTracked();
     host = fakeBoardHost();
     setVcsRuntimeForTests(host.runtime);

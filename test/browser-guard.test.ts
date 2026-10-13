@@ -12,7 +12,7 @@ import { fakeEngine, fakeSandbox } from './helpers/runner';
 // A test workspace never reaches real sites (rule 41 of the spec): the agent's hosts, the logged-in profile and the app's browser for an agent on the computer are
 // withheld, with a line in the thread; what a test workspace already allowed (the workspace's own network, a display on the loopback) is untouched. The check fails closed.
 
-const { DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { dataRoot, workspaceId } = await import('../src/main/env');
 const { grantsFor, screenGrants, withheldText } = await import('../src/main/browser/guard');
 const { registryPath, setTestFlag } = await import('../src/main/workspaces-core');
 const { isTestWorkspace } = await import('../src/main/workspace');
@@ -48,24 +48,24 @@ describe('what a workspace lets an agent have', () => {
 });
 
 describe('the workspace that is running', () => {
-  afterEach(() => setTestFlag(DATA_ROOT, WORKSPACE_ID, false));
+  afterEach(() => setTestFlag(dataRoot(), workspaceId(), false));
 
   it('follows the flag of the registry', () => {
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
+    setTestFlag(dataRoot(), workspaceId(), false);
     expect(grantsFor(agent(all)).withheld).toEqual([]);
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
+    setTestFlag(dataRoot(), workspaceId(), true);
     expect(grantsFor(agent(all)).withheld).toEqual(['hosts', 'profile']);
   });
 
   it('fails closed: a registry that cannot be read counts as a test workspace', () => {
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
-    const kept = readFileSync(registryPath(DATA_ROOT), 'utf8');
+    setTestFlag(dataRoot(), workspaceId(), false);
+    const kept = readFileSync(registryPath(dataRoot()), 'utf8');
     try {
-      writeFileSync(registryPath(DATA_ROOT), 'broken');
+      writeFileSync(registryPath(dataRoot()), 'broken');
       expect(isTestWorkspace()).toBe(true);
       expect(grantsFor(agent(all))).toMatchObject({ allowedHosts: [], profile: false });
     } finally {
-      writeFileSync(registryPath(DATA_ROOT), kept);
+      writeFileSync(registryPath(dataRoot()), kept);
     }
   });
 });
@@ -81,7 +81,7 @@ describe('an agent answering in a conversation', () => {
     writeFileSync(join(root, 'repo', 'README.md'), '# repo\n');
   });
   afterEach(() => {
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
+    setTestFlag(dataRoot(), workspaceId(), false);
     rmSync(root, { recursive: true, force: true });
   });
 
@@ -103,14 +103,14 @@ describe('an agent answering in a conversation', () => {
   };
 
   it('gets its hosts in a real workspace, and the thread says nothing', async () => {
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
+    setTestFlag(dataRoot(), workspaceId(), false);
     const { sandbox, lines } = await ask('sandbox');
     expect(sandbox.opened[0].options.agent?.allowedHosts).toEqual(['app.example.com']);
     expect(lines).toEqual([]);
   });
 
   it('keeps the workspace\'s own network in a test workspace, and the thread says why', async () => {
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
+    setTestFlag(dataRoot(), workspaceId(), true);
     const { sandbox, lines } = await ask('sandbox');
     expect(sandbox.opened[0].options.agent?.allowedHosts).toEqual([]);
     expect(lines).toHaveLength(1);
@@ -118,7 +118,7 @@ describe('an agent answering in a conversation', () => {
   });
 
   it('has nothing to say to an agent on the computer, whose list was never used', async () => {
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
+    setTestFlag(dataRoot(), workspaceId(), true);
     const { sandbox, lines } = await ask('host');
     expect(sandbox.opened[0].host).toBe(true);
     expect(lines).toEqual([]);

@@ -21,7 +21,7 @@ import { returnedFromQa } from '../shared/cycles/stages';
 import { cycle, formatTime, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { loadCards } from './cards';
 import { getSettings } from './config';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { docsSources, isIssueRef, issueProjectKey, qaUser, rc } from './workspaceConfig';
 import { logError } from './errorlog';
 import type { Module } from './module';
@@ -35,8 +35,8 @@ import { forumStore } from './forum';
 import type { VcsComment, VcsThread } from './vcs/types';
 import { tv, t } from '../shared/i18n';
 
-const SEEN_FILE = join(ATAS, 'feedback.json');
-const DIR = join(ATAS, 'feedback');
+const SEEN_FILE = (): string => join(atasDir(), 'feedback.json');
+const DIR = (): string => join(atasDir(), 'feedback');
 // The team's pipeline skill (devCycle.pipelineSkill), when one of the configured skills folders has it.
 function pipelineSkill(): string | null {
   const name = cycle().pipelineSkill.trim();
@@ -112,7 +112,7 @@ function excerpt(body: string, max = 240): string {
 
 function readSeen(): Seen {
   try {
-    if (existsSync(SEEN_FILE)) return JSON.parse(readFileSync(SEEN_FILE, 'utf8')) as Seen;
+    if (existsSync(SEEN_FILE())) return JSON.parse(readFileSync(SEEN_FILE(), 'utf8')) as Seen;
   } catch {}
   return { version: 1, checkedAt: null, issues: {}, mrs: {} };
 }
@@ -240,7 +240,7 @@ export async function checkFeedback(deps: Deps, cards?: Card[]): Promise<DetectR
   checking = true;
   try {
     const { firstRun, events, checked, next } = await detectFeedback(cards ?? (await loadCards(100)).cards);
-    writeJson(SEEN_FILE, next);
+    writeJson(SEEN_FILE(), next);
     if (!firstRun && getSettings().notifications) for (const n of noticesFor(events)) deps.notify(n);
     return { firstRun, events, checked };
   } finally {
@@ -256,7 +256,7 @@ function now(): string {
 
 function reentryFile(iid: string): string {
   if (!/^\d+$/.test(iid)) throw new Error(t('main.feedback.badIssue'));
-  return join(DIR, 'reentry', `${iid}.json`);
+  return join(DIR(), 'reentry', `${iid}.json`);
 }
 
 export function getReentry(iid: string): Reentry | null {
@@ -371,7 +371,7 @@ interface StoredDiscussion {
 type DiscussionStore = Record<string, StoredDiscussion>;
 
 function discussionFile(mr: MrPath): string {
-  return join(DIR, 'discussions', `${mr.project.replace(/\//g, '_')}!${mr.iid}.json`);
+  return join(DIR(), 'discussions', `${mr.project.replace(/\//g, '_')}!${mr.iid}.json`);
 }
 
 function readStore(mr: MrPath): DiscussionStore {

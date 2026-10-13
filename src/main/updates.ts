@@ -22,7 +22,7 @@ import {
   type UpdateSettings,
   type UpdatesStatus,
 } from '../shared/updates';
-import { DATA_ROOT } from './env';
+import { dataRoot } from './env';
 import { logError } from './errorlog';
 import type { Module, ModuleContext } from './module';
 import { exitProcess } from './host';
@@ -47,14 +47,15 @@ import {
 } from './updates-core';
 import { readSourceState } from './updates-source';
 
-const SETTINGS_FILE = join(DATA_ROOT, 'updates.json');
+const SETTINGS_FILE = (): string => join(dataRoot(), 'updates.json');
 const EMIT_DELAY_MS = 250;
 const SOURCE_FIRST_CHECK_MS = 4_000;
 
 const requireModule = createRequire(import.meta.url);
 
 let ctx: ModuleContext | null = null;
-let settings: UpdateSettings = loadSettings();
+// Read when the module starts, not at import: the file is in the data folder, known once the core has booted.
+let settings: UpdateSettings = normalizeSettings(null);
 let release: ReleaseState = initialReleaseState();
 let source: SourceState = initialSourceState(sourceDir());
 let busy = false;
@@ -79,16 +80,16 @@ export function setUpdateHooks(next: Hooks): void {
 
 function loadSettings(): UpdateSettings {
   try {
-    return normalizeSettings(JSON.parse(readFileSync(SETTINGS_FILE, 'utf8')));
+    return normalizeSettings(JSON.parse(readFileSync(SETTINGS_FILE(), 'utf8')));
   } catch {
     return normalizeSettings(null);
   }
 }
 
 function writeSettings(next: UpdateSettings): void {
-  mkdirSync(dirname(SETTINGS_FILE), { recursive: true });
-  writeFileSync(`${SETTINGS_FILE}.tmp`, JSON.stringify(next, null, 2));
-  renameSync(`${SETTINGS_FILE}.tmp`, SETTINGS_FILE);
+  mkdirSync(dirname(SETTINGS_FILE()), { recursive: true });
+  writeFileSync(`${SETTINGS_FILE()}.tmp`, JSON.stringify(next, null, 2));
+  renameSync(`${SETTINGS_FILE()}.tmp`, SETTINGS_FILE());
 }
 
 // ---- mode -----------------------------------------------------------------------------------------------------------------------------------
@@ -297,6 +298,7 @@ const asBool = (v: unknown): boolean => v === true;
 
 export const updates: Module = (context) => {
   ctx = context;
+  settings = loadSettings();
   context.handle('update:status', () => status());
   context.handle('update:check', async (opts?: { allowDowngrade?: boolean }) => {
     const mode = currentMode().mode;

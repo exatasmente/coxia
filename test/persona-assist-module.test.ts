@@ -38,7 +38,7 @@ const { forumStore } = await import('../src/main/forum');
 const { attachmentStore } = await import('../src/main/attachments');
 const { memoryStore } = await import('../src/main/memory/instance');
 const { conversationsPath } = await import('../src/main/memory/store');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { callStops } = await import('../src/main/mentions/stop');
 const { listAudit } = await import('../src/main/auditoria');
 const { personaModule } = await import('../src/main/persona/module');
@@ -93,7 +93,7 @@ const last = (): Call => asked.calls[asked.calls.length - 1];
 beforeEach(() => {
   // Every case begins with no conversation of an agent and no audit: the data folder is the file's, not the case's.
   for (const s of forumStore().list()) if (s.kind === 'agent') forumStore().deleteThread(s.id);
-  rmSync(join(ATAS, 'auditoria.jsonl'), { force: true });
+  rmSync(join(atasDir(), 'auditoria.jsonl'), { force: true });
   asked.calls.length = 0;
   asked.answer = roundAnswer();
   asked.fail = null;
@@ -287,11 +287,11 @@ describe('concluding and discarding', () => {
     const { id } = (await window('persona:saveDraft', body())) as { id: string };
     say(id, 'trying it out');
     memoryStore().save({ scope: { conversation: agentThreadId(id), agent: id }, kind: 'note', title: 'Tried it', text: 'Written during the test.' });
-    expect(existsSync(join(conversationsPath(ATAS), agentThreadId(id)))).toBe(true);
+    expect(existsSync(join(conversationsPath(atasDir()), agentThreadId(id)))).toBe(true);
     expect(await window('persona:discard', id)).toEqual({ id });
     expect(agent(id)).toBeUndefined();
     expect(threadOf(id)).toBeNull();
-    expect(existsSync(join(conversationsPath(ATAS), agentThreadId(id)))).toBe(false);
+    expect(existsSync(join(conversationsPath(atasDir()), agentThreadId(id)))).toBe(false);
     reloadConfig();
     expect(agent(id)).toBeUndefined();
   });
@@ -421,7 +421,7 @@ describe('clearing and deleting', () => {
     expect(messages('me')).toEqual([]);
     expect(threadOf('me')?.kind).toBe('agent');
     expect(existsSync(attachmentStore().dirOf(agentThreadId('me')))).toBe(false);
-    expect(existsSync(join(conversationsPath(ATAS), agentThreadId('me')))).toBe(false);
+    expect(existsSync(join(conversationsPath(atasDir()), agentThreadId('me')))).toBe(false);
     expect(JSON.stringify(agent('me'))).toBe(before);
   });
 

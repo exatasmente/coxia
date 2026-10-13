@@ -16,7 +16,7 @@ import { type Boot, type BootOptions, boot, doc, fakeSandbox, work } from './hel
 vi.setConfig({ testTimeout: 60_000 });
 
 const { getConfig, updateConfig } = await import('../src/main/workspaceConfig');
-const { DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -30,7 +30,7 @@ afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
   updateConfig((c) => ({ ...c, language: 'en' }));
   dir = mkdtempSync(join(tmpdir(), 'procedures-stage-turn-'));
-  writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
+  writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
   lines = [];
   offers = createProcedureOffers({ store: createProcedureStore(dir), config: getConfig, note: (thread, code, params) => void lines.push({ thread, code, params }) });
 });

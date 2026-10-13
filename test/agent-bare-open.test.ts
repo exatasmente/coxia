@@ -20,7 +20,7 @@ const sandbox = vi.hoisted(() => {
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { askAgent, askBare, obj, str } from '../src/main/agents';
-import { ATAS } from '../src/main/env';
+import { atasDir } from '../src/main/env';
 import { newProvider } from '../src/shared/config/defaults';
 import { installEnvSecret, installLegacyConfig } from './helpers/config';
 import { type Fake, fakeOpenAI, toolStep } from './helpers/fakeOpenAI';
@@ -37,8 +37,8 @@ beforeAll(async () => {
   await installLegacyConfig();
   await installEnvSecret('llm.openrouter');
   // the working directory of the bare call holds what Claude Code and the agents would read
-  writeFileSync(join(ATAS, 'CLAUDE.md'), 'MARK-CWD-CLAUDE');
-  writeFileSync(join(ATAS, 'AGENTS.md'), '# Project instructions\n\nMARK-CWD-AGENTS\n');
+  writeFileSync(join(atasDir(), 'CLAUDE.md'), 'MARK-CWD-CLAUDE');
+  writeFileSync(join(atasDir(), 'AGENTS.md'), '# Project instructions\n\nMARK-CWD-AGENTS\n');
   mkdirSync(rulesDir, { recursive: true });
   writeFileSync(join(rulesDir, 'mark-rule-index.md'), 'MARK-RULE-BODY');
   fake = await fakeOpenAI(() => toolStep([{ id: 'f', name: 'final_answer', args: { fala: 'done' } }]));
@@ -46,7 +46,7 @@ beforeAll(async () => {
   updateConfig((c) => {
     c.llm.providers.push(newProvider({ id: 'local', kind: 'openai-compatible', baseUrl: fake.url, structured: 'tool' }));
     // the ceremonies work from the same folder, and list a folder of rules as documentation
-    c.projects.roots = [ATAS];
+    c.projects.roots = [atasDir()];
     c.docs.autoDetect = true;
     c.docs.rulesDirs = [rulesDir];
     return c;
@@ -120,7 +120,7 @@ describe('a bare call on the open engine, through the environment hook', () => {
   it('is told the folder it works in, which is the data folder', async () => {
     throughHook();
     await bare();
-    expect(sent().system).toContain(`Working directory: ${ATAS}`);
+    expect(sent().system).toContain(`Working directory: ${atasDir()}`);
   });
 });
 

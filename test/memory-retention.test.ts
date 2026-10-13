@@ -10,7 +10,7 @@ process.env.CERIMONIAS_TRANSCRIPTS_DIR = mkdtempSync(join(tmpdir(), 'coxia-memor
 vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0', whenReady: () => Promise.resolve() }, BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] } }));
 
 const { applyRetention, previewRetention, scan } = await import('../src/main/retention');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { MEMORY_DIR } = await import('../src/main/runner/activities');
 const { conversationsPath } = await import('../src/main/memory/store');
 const { memoryStore } = await import('../src/main/memory/instance');
@@ -31,7 +31,7 @@ describe('retention and the shared memory', () => {
     const a = store.save({ scope, kind: 'decision', title: 'Use the queue', text: 'Retries go through the queue.' });
     const b = store.save({ scope, kind: 'finding', title: 'Flaky test', text: 'The login test is flaky on slow machines.' });
     if (!a.ok || !b.ok) throw new Error('not saved');
-    const root = conversationsPath(ATAS);
+    const root = conversationsPath(atasDir());
     const folder = join(root, scope.conversation, scope.agent);
     const targets = readdirSync(folder).map((n) => join(folder, n));
     expect(targets).toHaveLength(3);
@@ -40,7 +40,7 @@ describe('retention and the shared memory', () => {
     const before = new Map(targets.map((t) => [t, readFileSync(t, 'utf8')]));
 
     const selection = scan(30);
-    const memory = join(ATAS, MEMORY_DIR);
+    const memory = join(atasDir(), MEMORY_DIR);
     expect([...selection.remove, ...selection.keep].filter((v) => v.file.path.startsWith(memory))).toEqual([]);
     expect(previewRetention(30).items.filter((i) => /^m-[0-9a-f]{8}\.md$|^_state\.json$/.test(i.name))).toEqual([]);
 
@@ -57,7 +57,7 @@ describe('retention and the shared memory', () => {
     const scope = { conversation: 'retention-old', agent: 'developer' };
     const made = store.save({ scope, kind: 'note', title: 'Ancient', text: 'Written long ago.' });
     if (!made.ok) throw new Error('not saved');
-    const file = join(conversationsPath(ATAS), scope.conversation, scope.agent, `${made.note.id}.md`);
+    const file = join(conversationsPath(atasDir()), scope.conversation, scope.agent, `${made.note.id}.md`);
     age(file, 1000);
     applyRetention(7, null);
     expect(existsSync(file)).toBe(true);

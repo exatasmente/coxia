@@ -17,7 +17,7 @@ const { register, setBoardHost } = await import('../src/main/board');
 const { realBoardHost } = await import('../src/main/boardHost');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
 const actions = await import('../src/main/actions');
-const { DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { dataRoot, workspaceId } = await import('../src/main/env');
 const { getConfig, saveConfig } = await import('../src/main/workspaceConfig');
 
 afterAll(() => rmSync(DATA, { recursive: true, force: true }));
@@ -68,8 +68,8 @@ const call = async (channel: string, ...args: unknown[]): Promise<any> => handle
 
 describe('the board in a workspace of test', () => {
   it('refuses opening a card first, before anything of the board is written', async () => {
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
-    expect(readRegistry(DATA_ROOT)?.list.find((w) => w.id === WORKSPACE_ID)?.test).toBe(true);
+    setTestFlag(dataRoot(), workspaceId(), true);
+    expect(readRegistry(dataRoot())?.list.find((w) => w.id === workspaceId())?.test).toBe(true);
 
     await expect(call('board:create', { title: 'A card', column: 'backlog' })).rejects.toThrow(REFUSED);
     // A test workspace has no board at all: the refusal is the guard, not a card that is missing or a column nobody has.
@@ -99,7 +99,7 @@ describe('the board in a workspace of test', () => {
   });
 
   it('writes the same calls once the workspace is not one of test, so it is the guard that refuses and not the channel', async () => {
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
+    setTestFlag(dataRoot(), workspaceId(), false);
     const card = (await call('board:create', { title: 'Another card', column: 'backlog' })) as { id: string };
     expect(boardStore().get(card.id)?.state).toBe('open');
     expect(await call('board:update', card.id, { column: 'doing' })).toMatchObject({ column: 'doing' });
@@ -198,9 +198,9 @@ describe('a workspace of test with a host that is ready', () => {
     for (const autonomy of [true, false]) {
       hosted.runner.autonomy.board = autonomy;
       saveConfig(hosted);
-      setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
+      setTestFlag(dataRoot(), workspaceId(), false);
       const card = boardStore().create({ id: `host000${autonomy ? 1 : 2}`, title: 'Not sent', body: '', column: 'backlog', squad: null, priority: null, labels: [], repo: 'app' });
-      setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
+      setTestFlag(dataRoot(), workspaceId(), true);
       const issue = { project: 'acme/app', iid: 7 };
       const linked = boardStore().create({ id: `link000${autonomy ? 1 : 2}`, title: 'Sent', body: '', column: 'backlog', squad: null, priority: null, labels: [], repo: 'app' });
       boardStore().link(linked.id, { vcs: 'gitlab', project: 'acme/app', iid: 7, url: 'https://git.acme.test/acme/app/-/issues/7', linkedAt: '2026-10-07T09:00:00.000Z' });
@@ -225,6 +225,6 @@ describe('a workspace of test with a host that is ready', () => {
     }
     expect(actions.listActions()).toEqual([]);
     expect(host.commands).toEqual([]);
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
+    setTestFlag(dataRoot(), workspaceId(), false);
   });
 });

@@ -8,7 +8,7 @@ import { listActions, onActionDone, onActionRefused, onActionSkipped } from '../
 import { activityLog } from '../activity';
 import { getSettings } from '../config';
 import { cycleOn } from '../cycle-core';
-import { ATAS } from '../env';
+import { atasDir } from '../env';
 import { forumStore } from '../forum';
 import { wakePersona } from '../mentions/module';
 import type { Module } from '../module';
@@ -86,7 +86,7 @@ function refuseFromSchedule(): void {
 }
 
 export const schedulesModule: Module = (ctx) => {
-  const store = createScheduleStore(join(ATAS, 'schedules.json'));
+  const store = createScheduleStore(join(atasDir(), 'schedules.json'));
   // A direct action is the persona door's own operation, in an act of the `schedule` door: what the persona may not do, the schedule may not either.
   const direct = createDirectRunner({
     call: (s, message, tool, input) => personaDoor.run(createSession({ persona: s.persona, thread: s.thread, seq: message.seq, door: SCHEDULE_DOOR }), tool, input),

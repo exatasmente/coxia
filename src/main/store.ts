@@ -4,7 +4,7 @@ import { basename } from 'node:path';
 import { promisify } from 'node:util';
 import { norm } from '../shared/minutesVersions';
 import type { Decision, Minutes, SaveResult, WrittenDecision } from '../shared/types';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { invalidateReport } from './report';
 import { ceremonyLabel, decisionLogHeading, formatClock, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { dateOfId } from './historyFiles';
@@ -150,7 +150,7 @@ function earlierWrite(d: Decision, earlier: { n: number; written: WrittenDecisio
 }
 
 export async function saveMinutes(m: Minutes, teams: string, selected: number[], ceremonyId?: string): Promise<SaveResult> {
-  mkdirSync(ATAS, { recursive: true });
+  mkdirSync(atasDir(), { recursive: true });
   const date = ceremonyId ? dateOfId(ceremonyId) : today();
   const version = openVersion(date, ceremonyId, m);
   const ataPath = writeVersionFile(date, version.n, minutesMarkdown(m, teams));

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { SECRET_GLOBS, obj, secretPath, str } from '../src/main/agents';
+import { secretGlobs, obj, secretPath, str } from '../src/main/agents';
 import { checkPath, scrubbedEnv } from '../src/main/engine/guard';
 import { ChatClient } from '../src/main/engine/open/client';
 import { type OpenRunParams, runOpen } from '../src/main/engine/open/loop';
@@ -160,7 +160,7 @@ describe('the path guard of a reading agent of a run', () => {
         allowedTools: ['Read'],
         hooks: hooksForReader,
         isSecret: (q) => secretPath(q, root),
-        secretGlobs: SECRET_GLOBS,
+        secretGlobs: secretGlobs(),
         docs: {},
         maxTurns: 3,
         sessionsDir: null,
@@ -264,7 +264,7 @@ describe('the hooks of the confinement', () => {
 });
 
 describe('Write and Edit of the open engine', () => {
-  const ctx = (writeRoot: string | null): ToolContext => ({ cwd: root, roots: [root], isSecret: (p) => secretPath(p, root), secretGlobs: SECRET_GLOBS, outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off', writeRoot });
+  const ctx = (writeRoot: string | null): ToolContext => ({ cwd: root, roots: [root], isSecret: (p) => secretPath(p, root), secretGlobs: secretGlobs(), outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off', writeRoot });
   const run = async (tool: typeof writeTool, input: Record<string, unknown>, c = ctx(root)) => {
     const r = await tool.run(input, c);
     return r.render(r.response);
@@ -343,7 +343,7 @@ describe('through the loop of the open engine', () => {
       writeRoot: root,
       hooks: confinedHooks({ root, commands: ['npm test'], onDenied: (d) => denials.push(d) }),
       isSecret: (q) => secretPath(q, root),
-      secretGlobs: SECRET_GLOBS,
+      secretGlobs: secretGlobs(),
       docs: {},
       maxTurns: 4,
       sessionsDir: sessions,
@@ -425,7 +425,7 @@ describe('a workspace that lifted the fence of its runs (runner.unconfined)', ()
   });
 
   it('the open engine\'s Write writes outside the worktree only with the switch on', async () => {
-    const ctx = (writeAnywhere: boolean): ToolContext => ({ cwd: root, roots: [root], isSecret: (p) => secretPath(p, root), secretGlobs: SECRET_GLOBS, outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off', writeRoot: root, writeAnywhere });
+    const ctx = (writeAnywhere: boolean): ToolContext => ({ cwd: root, roots: [root], isSecret: (p) => secretPath(p, root), secretGlobs: secretGlobs(), outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off', writeRoot: root, writeAnywhere });
     const target = join(outside, 'open-engine.txt');
     await expect(writeTool.run({ file_path: target, content: 'x' }, ctx(false))).rejects.toThrow(/outside|fora/i);
     expect(existsSync(target)).toBe(false);

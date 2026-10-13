@@ -26,7 +26,7 @@ import type { Card, Minutes, SavedCeremony, WrittenDecision } from '../shared/ty
 import { recordWrite } from './auditoria';
 import { voiceText } from '../shared/cycles/text';
 import { language, text as word } from './cyclePrompts';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { HISTORY, ceremonyIds, dateOfId, isLive, readCeremony, today } from './historyFiles';
 
 // Minutes of the day, by version. Every pre-daily of a day is one version: <date>-pre-daily.v<N>.md holds its minutes, and
@@ -34,12 +34,12 @@ import { HISTORY, ceremonyIds, dateOfId, isLive, readCeremony, today } from './h
 // the generated document with every version, kept so anything that read the old single file still finds the day there.
 // Deleting moves files and ceremony records to <workspace>/.trash/atas/<timestamp>/ for TRASH_DAYS days.
 
-export const TRASH_ROOT = join(ATAS, '.trash', 'atas');
+export const TRASH_ROOT = (): string => join(atasDir(), '.trash', 'atas');
 const DAY_MS = 86_400_000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const LEGACY_SECTION = /^## Pré-daily (\d{2}:\d{2}:\d{2}) às (\d{2}:\d{2}:\d{2})\s*$/;
 
-const pathOf = (name: string): string => join(ATAS, name);
+const pathOf = (name: string): string => join(atasDir(), name);
 
 function atomicWrite(file: string, content: string): void {
   mkdirSync(join(file, '..'), { recursive: true });
@@ -178,7 +178,7 @@ function writeDayFile(index: DayIndex): void {
 /** Every date that has minutes: an index, a ceremony that started a call, or the old single file. */
 export function minutesDates(): string[] {
   const dates = new Set<string>();
-  for (const name of existsSync(ATAS) ? readdirSync(ATAS) : []) {
+  for (const name of existsSync(atasDir()) ? readdirSync(atasDir()) : []) {
     const m = /^(\d{4}-\d{2}-\d{2})-pre-daily\.(versions\.json|md)$/.exec(name);
     if (m) dates.add(m[1]);
   }
@@ -193,7 +193,7 @@ let trashedCache: Set<string> | null = null;
 export function trashedCeremonyIds(): Set<string> {
   if (trashedCache) return trashedCache;
   const ids = new Set<string>();
-  for (const dir of existsSync(TRASH_ROOT) ? readdirSync(TRASH_ROOT) : []) {
+  for (const dir of existsSync(TRASH_ROOT()) ? readdirSync(TRASH_ROOT()) : []) {
     const m = readManifest(dir);
     for (const v of m?.versions ?? []) if (v.ceremonyId) ids.add(v.ceremonyId);
     for (const id of m?.ceremonyIds ?? []) ids.add(id);
@@ -367,7 +367,7 @@ interface Manifest {
 
 function readManifest(dir: string): Manifest | null {
   try {
-    const m = JSON.parse(readFileSync(join(TRASH_ROOT, dir, 'manifest.json'), 'utf8')) as Manifest;
+    const m = JSON.parse(readFileSync(join(TRASH_ROOT(), dir, 'manifest.json'), 'utf8')) as Manifest;
     return m.version === 1 ? m : null;
   } catch {
     return null;
@@ -411,7 +411,7 @@ export function previewDelete(date: string, which: number[] | 'all'): DeletePrev
     scope: which === 'all' ? 'day' : 'versions',
     versions: chosen.map((v) => ({ n: v.n, startedAt: v.startedAt, endedAt: v.endedAt, file: v.file })),
     files,
-    ceremonies: ceremonyIds.filter((id) => existsSync(join(HISTORY, `${id}.json`))).length,
+    ceremonies: ceremonyIds.filter((id) => existsSync(join(HISTORY(), `${id}.json`))).length,
     blocked: !chosen.length && !drafts.length ? word('minutes.delete.nothing') : live ? voiceText('minutes.delete.live', language()) : null,
     kept: keptOf(chosen),
     trashDays: TRASH_DAYS,
@@ -432,7 +432,7 @@ export function deleteMinutes(date: string, which: number[] | 'all', now = new D
   if (preview.blocked) throw new Error(preview.blocked);
   const { index, chosen, drafts } = selection(date, which);
   const id = stamp(now);
-  const dir = join(TRASH_ROOT, id);
+  const dir = join(TRASH_ROOT(), id);
   const ceremonyIds = [...chosen.map((v) => v.ceremonyId).filter(Boolean), ...drafts];
   const moved: string[] = [];
   const take = (name: string) => {
@@ -482,7 +482,7 @@ function trashEntry(id: string, m: Manifest, files: string[], now: number): Tras
 
 export function listTrash(now = Date.now()): TrashEntry[] {
   const out: TrashEntry[] = [];
-  for (const dir of existsSync(TRASH_ROOT) ? readdirSync(TRASH_ROOT) : []) {
+  for (const dir of existsSync(TRASH_ROOT()) ? readdirSync(TRASH_ROOT()) : []) {
     const m = readManifest(dir);
     if (!m) continue;
     const entry = trashEntry(dir, m, m.files, now);
@@ -498,12 +498,12 @@ export interface Restored {
 
 export function restoreMinutes(id: string, now = Date.now()): Restored {
   if (!/^[\w-]+$/.test(id)) throw new Error(word('minutes.restore.missing'));
-  const dir = join(TRASH_ROOT, id);
+  const dir = join(TRASH_ROOT(), id);
   const m = readManifest(id);
   if (!m) throw new Error(word('minutes.restore.missing'));
   if (now - Date.parse(m.trashedAt) > TRASH_DAYS * DAY_MS) throw new Error(word('minutes.restore.expired', { days: TRASH_DAYS }));
   // A ceremony file that is back already means the id is taken: nothing is restored over it.
-  for (const cid of m.ceremonyIds) if (existsSync(join(HISTORY, `${cid}.json`))) throw new Error(word('minutes.restore.exists', { id: cid }));
+  for (const cid of m.ceremonyIds) if (existsSync(join(HISTORY(), `${cid}.json`))) throw new Error(word('minutes.restore.exists', { id: cid }));
   const index = readIndex(m.date) ?? { version: 1 as const, date: m.date, versions: [], dayTeams: null };
   const taken = new Set(index.versions.map((v) => v.n));
   const renumbered: Restored['versions'] = [];
@@ -539,11 +539,11 @@ export function restoreMinutes(id: string, now = Date.now()): Restored {
 /** Removes what stayed in the trash past its time. Run by the retention job. */
 export function purgeTrash(now = Date.now()): number {
   let purged = 0;
-  for (const dir of existsSync(TRASH_ROOT) ? readdirSync(TRASH_ROOT) : []) {
+  for (const dir of existsSync(TRASH_ROOT()) ? readdirSync(TRASH_ROOT()) : []) {
     const m = readManifest(dir);
-    const at = m ? Date.parse(m.trashedAt) : statSync(join(TRASH_ROOT, dir)).mtimeMs;
+    const at = m ? Date.parse(m.trashedAt) : statSync(join(TRASH_ROOT(), dir)).mtimeMs;
     if (now - at <= TRASH_DAYS * DAY_MS) continue;
-    rmSync(join(TRASH_ROOT, dir), { recursive: true, force: true });
+    rmSync(join(TRASH_ROOT(), dir), { recursive: true, force: true });
     purged += 1;
   }
   if (purged) trashedCache = null;

@@ -7,7 +7,7 @@ import { loadCards } from './cards';
 import { getSettings } from './config';
 import { ceremonyLabel, formatTime } from './cyclePrompts';
 import { cycleOn } from './cycle-core';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import type { Job } from './module';
 import { knownTask, track } from './saude';
 import { rc } from './workspaceConfig';
@@ -31,21 +31,21 @@ interface Deps {
   emit(ev: AppEvent): void;
 }
 
-const FILE = join(ATAS, 'status.json');
+const FILE = (): string => join(atasDir(), 'status.json');
 const TICK_MS = 60_000;
 const PRE_DAILY_WINDOW_MIN = 30;
 
 function read(): Snapshot {
   try {
-    if (existsSync(FILE)) return JSON.parse(readFileSync(FILE, 'utf8')) as Snapshot;
+    if (existsSync(FILE())) return JSON.parse(readFileSync(FILE(), 'utf8')) as Snapshot;
   } catch {}
   return { checkedAt: null, items: {}, preDailyNotified: null };
 }
 
 function write(s: Snapshot): void {
-  mkdirSync(ATAS, { recursive: true });
-  writeFileSync(`${FILE}.tmp`, JSON.stringify(s));
-  renameSync(`${FILE}.tmp`, FILE);
+  mkdirSync(atasDir(), { recursive: true });
+  writeFileSync(`${FILE()}.tmp`, JSON.stringify(s));
+  renameSync(`${FILE()}.tmp`, FILE());
 }
 
 function minutes(hhmm: string): number {
