@@ -12,11 +12,15 @@ const MAIN = join(REPO, 'src/main');
 // records the agents' screen. Nothing else may import them.
 const SHELL = ['src/main/index.ts', 'src/main/electronPorts.ts', 'src/main/screen/encoderWindow.ts'];
 
-const coreFiles = (): string[] =>
-  readdirSync(MAIN, { recursive: true, encoding: 'utf8' })
+// The headless entry is a host of the core like the desktop is, and runs on plain Node: it is held to the same rule.
+const HEADLESS = join(REPO, 'src/headless');
+
+const filesUnder = (dir: string): string[] =>
+  readdirSync(dir, { recursive: true, encoding: 'utf8' })
     .filter((f) => /\.tsx?$/.test(f) && !f.endsWith('.d.ts'))
-    .map((f) => relative(REPO, join(MAIN, f)).replaceAll('\\', '/'))
-    .filter((f) => !SHELL.includes(f));
+    .map((f) => relative(REPO, join(dir, f)).replaceAll('\\', '/'));
+
+const coreFiles = (): string[] => [...filesUnder(MAIN), ...filesUnder(HEADLESS)].filter((f) => !SHELL.includes(f));
 
 describe('the core without the desktop runtime', () => {
   it('has no file that reaches electron or a file of the desktop shell, and the walk covers the whole core', () => {
@@ -26,6 +30,7 @@ describe('the core without the desktop runtime', () => {
     expect(offenders).toEqual([]);
     // Not vacuous: the core is most of src/main, and the files that used to reach the runtime are in it.
     expect(roots.length).toBeGreaterThan(200);
+    expect(roots).toContain('src/headless/main.ts');
     expect([...seen].map((f) => relative(REPO, f).replaceAll('\\', '/'))).toEqual(
       expect.arrayContaining(['src/main/runner/module.ts', 'src/main/workspaces.ts', 'src/main/update.ts', 'src/main/updates.ts', 'src/main/wizard.ts', 'src/main/modules.ts']),
     );
