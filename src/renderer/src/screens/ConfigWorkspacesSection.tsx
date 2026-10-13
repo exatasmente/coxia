@@ -8,6 +8,7 @@ import { ConfigExport, ConfigImport } from '../wizard/ConfigTransfer';
 import { Notice } from '../wizard/ui';
 import { RestartOverlay, WorkspacesSection } from './WorkspacesSection';
 import { McpStateSection } from './McpStateSection';
+import { AutonomySection } from './AutonomySection';
 import { BudgetSection } from './BudgetSection';
 import { ClaudeSessionsSection } from './ClaudeSessionsSection';
 
@@ -81,6 +82,7 @@ export function ConfigWorkspacesSection({ go }: { go: (s: Screen) => void }) {
           <McpStateSection />
           <ClaudeSessionsSection />
           <BudgetSection />
+          <AutonomySection />
         </>
       )}
       <WorkspacesSection />
