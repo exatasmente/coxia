@@ -392,6 +392,8 @@ export interface Runner {
    * (working), so the next `resume` starts it over, exactly as after a kill. Resolves when the work has unwound, a few seconds after the deadline at most.
    */
   stop(deadlineMs: number): Promise<void>;
+  /** Undoes `stop` in a process that goes on (the workspace came back after a handover that did not complete): stages may start again. */
+  unstop(): void;
 }
 
 /** How one plugin call ended, as the runner reads it from what `pluginEvent` returns. */
@@ -1557,6 +1559,9 @@ export function createRunner(deps: RunnerDeps): Runner {
         if (!all.length) return;
         await Promise.allSettled(all);
       }
+    },
+    unstop() {
+      stopping = false;
     },
     async stop(deadlineMs) {
       stopping = true;

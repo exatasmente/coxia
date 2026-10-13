@@ -171,6 +171,12 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
     if (!door.listening) throw new Error(door.message);
     const signals = installSignalHandlers(core, { exit });
     out(t('main.headless.ready', { address: `${door.address}${door.basePath}`, workspace: workspaceId() }));
+    // A client says who owns the workspace: the line a service's log shows when the second instance of a workspace refuses to run it.
+    const own = core.ownership();
+    if (own && own.role === 'client' && own.owner) {
+      const owner = `${own.owner.host} (${own.owner.instanceId.slice(0, 8)}, pid ${own.owner.pid})`;
+      out(t(own.expired ? 'main.ownership.readyExpired' : 'main.ownership.readyClient', { workspace: workspaceId(), owner }));
+    }
     const admin = core.adminDoor();
     if (admin) out(admin.listening ? t('main.headless.adminOpen', { path: admin.path }) : t('main.headless.adminClosed', { reason: admin.reason }));
     return { core, signals, workspace: workspaceId(), address: door.address ?? '' };

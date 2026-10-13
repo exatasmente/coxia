@@ -41,6 +41,7 @@
   "ui.audit.kind.push": "Push de branch",
   "ui.audit.kind.release": "Passo da release",
   "ui.audit.kind.remoteControl": "Sessão exibida em claude.ai/code",
+  "ui.audit.kind.ownership": "Posse do workspace",
   "ui.audit.kind.screenAutonomous": "Passo dado numa tela sem perguntar",
   "ui.audit.kind.screenClose": "Tela fechada",
   "ui.audit.kind.screenConfirm": "Confirmação na tela",

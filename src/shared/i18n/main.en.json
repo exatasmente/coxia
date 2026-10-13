@@ -2153,5 +2153,18 @@
   "main.passkey.tooMany": "Too many passkeys or pending requests. Remove one or wait a minute.",
   "main.passkey.duplicate": "This passkey is already registered.",
   "main.passkey.badKind": "Unknown kind of sensitive change.",
-  "main.passkey.none": "This device has no passkey registered."
+  "main.passkey.none": "This device has no passkey registered.",
+  "main.ownership.notOwner": "this workspace is owned by {owner}: this instance is a client and does not run it",
+  "main.ownership.notOwnerNone": "this instance does not own the workspace: it is a client and does not run it",
+  "main.ownership.lost": "another instance took the workspace: this one stopped running it",
+  "main.ownership.badTarget": "a handover needs the id of another instance (its ownership status shows it)",
+  "main.ownership.alreadyOwner": "this instance already owns the workspace",
+  "main.ownership.adminOnly": "the lease of {owner} expired: only an admin can take the workspace over",
+  "main.ownership.notHandedToYou": "the workspace is owned by {owner} and was not handed to this instance",
+  "main.ownership.unhealthy": "this instance did not pass its health check: the workspace stays with its owner",
+  "main.ownership.neverConfirmed": "{owner} did not confirm the handover in time: the workspace is back here",
+  "main.ownership.readyClient": "this instance is a client of workspace {workspace}: owned by {owner}, it does not run the runner or the scheduler",
+  "main.ownership.readyExpired": "this instance is a client of workspace {workspace}: the lease of {owner} expired, an admin can take it over with ownership:claim",
+  "main.ownership.noticeTitle": "Workspace owned by another instance",
+  "main.ownership.noticeBody": "{owner} owns this workspace. This window only shows it: nothing runs here."
 }

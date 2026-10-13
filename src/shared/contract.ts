@@ -95,6 +95,8 @@ export const CHANNELS = [
   'minutes:day', 'minutes:day-teams', 'minutes:delete', 'minutes:delete-preview', 'minutes:restore', 'minutes:trash', 'minutes:version-teams',
   // passkey
   'passkey:assert', 'passkey:assert-options', 'passkey:enroll-allow', 'passkey:list', 'passkey:register', 'passkey:register-options', 'passkey:remove',
+  // ownership
+  'ownership:claim', 'ownership:release', 'ownership:status',
   // persona
   'persona:clear', 'persona:conclude', 'persona:delete', 'persona:discard', 'persona:finish', 'persona:live-read', 'persona:resume', 'persona:review', 'persona:round', 'persona:save', 'persona:saveDraft', 'persona:state', 'persona:stop',
   // plugins
@@ -178,7 +180,7 @@ export const inContract = (channel: string): channel is Channel => KNOWN.has(cha
 
 // Error codes. A channel that fails answers { code, message }: the code is for the program, the message is translated text for the person. The list is closed:
 // a code outside it never leaves the instance (it becomes 'internal'). The domain codes are written with their domain in front, so two domains may use one word.
-const GENERIC = ['internal', 'invalid-input', 'not-found', 'forbidden', 'unauthorized', 'rate-limited', 'conflict', 'unknown-channel', 'browser-only', 'contract-mismatch', 'host-unavailable', 'voice-off', 'passkey-required', 'budget-exceeded'] as const;
+const GENERIC = ['internal', 'invalid-input', 'not-found', 'forbidden', 'unauthorized', 'rate-limited', 'conflict', 'unknown-channel', 'browser-only', 'contract-mismatch', 'host-unavailable', 'voice-off', 'passkey-required', 'budget-exceeded', 'not-owner'] as const;
 export const DOMAIN_CODES = {
   sandbox: ['unavailable', 'no-node', 'copy-too-big', 'path-missing', 'path-refused', 'start-failed', 'hostile-link', 'copy-failed', 'git-untrusted'],
   runner: ['bad-version', 'no-release-flow', 'no-docs-flow', 'bad-docs-mode', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'no-host', 'worktree-gone', 'memory-busy', 'docs-folder-unsafe'],

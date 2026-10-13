@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import type { HunkChoice } from '../shared/conflict';
 import type { Settings } from '../shared/settings';
 import type { AgentTurn, AppEvent, Card, Minutes, SavedCeremony, SpeechSegment, TurnOptions, Voice } from '../shared/types';
+import { t } from '../shared/i18n';
 import { ACTIVITY_EVENT, ACTIVITY_GET, reasoningOn } from '../shared/activity';
 import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, freeReleaseCheckout, listActions, previewAction, skipAction, startActions } from './actions';
 import { type AdminDoor, type AdminDoorState, createAdminDoor } from './adminDoor';
@@ -20,10 +21,12 @@ import { type HostPort, setHostPort } from './host';
 import { MODULES } from './modules';
 import { disarmAll } from './plugins/module';
 import { type PathsPort, setPathsPort } from './paths';
+import { recordWrite } from './auditoria';
 import { askQa, getQa, prepareQa, writeQaChecklist } from './qa';
 import { askRetro, latestRetro, prepareRetro } from './retro';
-import { stopRunner } from './runner/module';
-import { handle, hello } from './rpc';
+import { type Ownership, type OwnershipStatus, OwnershipError, createOwnership, instanceIdOf, setOwnership } from './ownership';
+import { pauseRunner, startRunner, stopRunner } from './runner/module';
+import { handle, hello, viaOf } from './rpc';
 import { type Notice, checkStatus, registerJob, startScheduler, stopScheduler } from './scheduler';
 import { setCryptoPort } from './secrets';
 import type { CryptoPort } from './secrets-core';
@@ -31,7 +34,7 @@ import { stopUpdates } from './updates';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { cancelSpeech, planSpeech, speakSegment, startVoice, stopVoice, transcribe, voicesFor } from './voice';
-import { broadcast, pushNotice, registerWebAccess, setWebOverride, stopWebAccess, syncWebAccess } from './webAccess';
+import { broadcast, pushNotice, registerWebAccess, setWebOverride, stopWebAccess, syncWebAccess, webListening } from './webAccess';
 import { getConfig } from './workspaceConfig';
 
 // The core as a value: everything the app does that is not the window, the tray or the runtime, started and stopped by whoever owns the process.
@@ -77,6 +80,8 @@ export interface Coxia {
   stop(options?: StopOptions): Promise<void>;
   /** Whether the admin socket listens and, when it does not, why; meaningful after `start`. */
   adminDoor(): AdminDoorState | null;
+  /** Who owns the workspace and whether this instance does (#209); null before `start`. A client runs neither the runner nor the scheduler. */
+  ownership(): OwnershipStatus | null;
 }
 
 /** Long enough for a short stage to end by itself, short enough for a service manager that kills after a while. */
@@ -154,6 +159,14 @@ function handlers(emit: (ev: AppEvent) => void): void {
   handle(ACTIVITY_GET, (id?: string | null) => activityLog.get(typeof id === 'string' ? id : null));
 }
 
+// The channels of the ownership of the workspace (#209). Handing over and taking over are admin acts: the window, the admin door, or a paired device with a passkey, which
+// the web door lets through only with a fresh assertion of kind `ownership` (webPolicy.ts STEP_UP); a paired device without one never reaches these handlers.
+function ownershipHandlers(o: Ownership): void {
+  handle('ownership:status', () => o.status());
+  handle('ownership:release', (to: unknown, deadlineMs?: unknown) => o.release(String(to ?? ''), { by: viaOf(), ...(typeof deadlineMs === 'number' ? { deadlineMs } : {}) }));
+  handle('ownership:claim', () => o.claim({ admin: true, by: viaOf() }));
+}
+
 /**
  * Fixes the data folder and fills the ports; starts nothing. The ports are process-wide, like the data folder: one core per process.
  * A second `start` after a `stop` is refused: the modules keep their registrations and listeners for the life of the process, so a new run of the core is a new process.
@@ -166,6 +179,7 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
   if (options.host) setHostPort(options.host);
 
   let started = false;
+  let owns: Ownership;
   let stopping: Promise<void> | null = null;
   let dropProcessHandlers: (() => void) | null = null;
 
@@ -187,7 +201,37 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
     if (started) throw new Error('the core was already started in this process');
     started = true;
     dropProcessHandlers = installProcessHandlers();
+    // Before the modules register: the runner reads it to know whether it starts.
+    owns = createOwnership({
+      dir: atasDir(),
+      instanceId: instanceIdOf(dataRoot()),
+      audit: recordWrite,
+      hooks: {
+        pause: async (deadlineMs) => {
+          stopScheduler();
+          await pauseRunner(deadlineMs);
+        },
+        resume: () => {
+          startScheduler({ notify, emit });
+          startRunner();
+        },
+        // The checks a new owner can make of itself in process: the workspace's configuration reads, the runner exists, and the web door is up when it is on.
+        health: async () => {
+          try {
+            getConfig();
+            const door = webListening();
+            return getSettings().web.enabled || options.web ? door.listening : true;
+          } catch {
+            return false;
+          }
+        },
+      },
+    });
+    setOwnership(owns);
+    const first = owns.acquire();
+    if (!first.expired && first.owner && first.role === 'client') console.error('[ownership]', t('main.ownership.notOwner', { owner: `${first.owner.host} (${first.owner.instanceId.slice(0, 8)}, pid ${first.owner.pid})` }));
     handlers(emit);
+    ownershipHandlers(owns);
     setActivitySink((entry) => emit({ type: 'module', name: ACTIVITY_EVENT, payload: entry }));
     // Read when a thought is made, so the switch of the workspace takes effect from the next one.
     setThoughtsGate(() => reasoningOn(getConfig()));
@@ -201,8 +245,11 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
     for (const register of MODULES) {
       register({ handle, notify, emit, ...(win ? { emitWindow: win.emitWindow } : {}), job: registerJob });
     }
-    startScheduler({ notify, emit });
+    // Only the owner of the workspace runs the scheduler and the runner; a client serves the channels and the doors (#209).
+    if (owns.running()) startScheduler({ notify, emit });
     await syncWebAccess().catch((e) => fail('[web]', 'module:web', e));
+    // A window that is only a client says so, once, with the notice every other event of the desktop uses.
+    if (!owns.running() && first.owner) notify({ title: t('main.ownership.noticeTitle'), body: t('main.ownership.noticeBody', { owner: first.owner.host }), onClick: { type: 'navigate', to: 'actions' } });
     // Last, so every channel is registered when the first client connects. A door that cannot open says why and the core goes on.
     if (options.adminDoor) {
       admin = createAdminDoor(atasDir(), workspaceId);
@@ -215,6 +262,7 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
       const deadlineMs = stopOptions.deadlineMs ?? DEFAULT_STOP_DEADLINE_MS;
       // The door first: no new call arrives while the running work ends.
       await admin?.stop().catch((e) => fail('[stop]', 'core:stop', e));
+      // The lease is let go after the work ends, below, so a next start does not find it held by a dead process.
       // The timers next, so nothing new starts while the running work ends.
       stopScheduler();
       stopUpdates();
@@ -224,6 +272,8 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
       } catch (e) {
         fail('[stop]', 'core:stop', e);
       }
+      owns?.stop();
+      setOwnership(null);
       stopVoice();
       await stopWebAccess().catch((e) => fail('[stop]', 'core:stop', e));
       setActivitySink(null);
@@ -233,5 +283,5 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
     return stopping;
   }
 
-  return { start, stop, adminDoor: () => admin?.state() ?? null };
+  return { start, stop, adminDoor: () => admin?.state() ?? null, ownership: () => (started ? owns.status() : null) };
 }
