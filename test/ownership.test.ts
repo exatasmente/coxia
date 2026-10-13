@@ -9,6 +9,8 @@ import { boot, doc, fakeEngine, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
+const B = `bbbbbbbb-2:${process.pid}`;
+const A = `aaaaaaaa-1:${process.pid}`;
 const folder = (): string => mkdtempSync(join(tmpdir(), 'cerimonias-owner-'));
 const leaseOf = (dir: string): Lease => JSON.parse(readFileSync(join(dir, 'owner.json'), 'utf8')) as Lease;
 
@@ -27,7 +29,7 @@ describe('the lease', () => {
     const clock = { t: Date.parse('2026-10-01T10:00:00Z') };
     const a = instance(dir, 'aaaaaaaa-1', clock);
     const b = instance(dir, 'bbbbbbbb-2', clock, hooks(), undefined, 'machine-b');
-    expect(a.acquire()).toMatchObject({ role: 'owner', self: 'aaaaaaaa-1', owner: { instanceId: 'aaaaaaaa-1', host: 'machine-a' } });
+    expect(a.acquire()).toMatchObject({ role: 'owner', self: 'aaaaaaaa-1:100', owner: { instanceId: 'aaaaaaaa-1', host: 'machine-a' } });
     const second = b.acquire();
     expect(second).toMatchObject({ role: 'client', owner: { instanceId: 'aaaaaaaa-1', host: 'machine-a' }, expired: false });
     expect(b.running()).toBe(false);
@@ -41,6 +43,28 @@ describe('the lease', () => {
     expect((refused as Error).message).toContain('machine-a');
     a.stop();
     b.stop();
+  });
+
+  it('names a second process of the same instance as a client while the first lives, and lets a restart retake the lease', async () => {
+    const dir = folder();
+    const clock = { t: Date.parse('2026-10-01T10:00:00Z') };
+    const make = (pid: number, h: OwnershipHooks = hooks(), alive = true) => createOwnership({ dir, instanceId: 'same-id', hooks: h, now: () => new Date(clock.t), host: 'machine-a', pid, alive: () => alive, timings: { tick: 1_000_000 } });
+    const first = make(100);
+    expect(first.acquire()).toMatchObject({ role: 'owner', self: 'same-id:100' });
+    const second = make(200);
+    expect(second.acquire()).toMatchObject({ role: 'client', owner: { pid: 100 }, self: 'same-id:200' });
+    expect(() => second.require()).toThrow(/pid 100/);
+    // A handover works between two processes of one data folder.
+    await first.release('same-id:200');
+    expect(await second.claim({ admin: false })).toMatchObject({ role: 'owner' });
+    first.stop();
+    second.stop();
+    // The owner was killed and its pid is gone: the restarted process of the same instance takes the lease at once.
+    const killed = make(300);
+    killed.acquire();
+    const restarted = make(400, hooks(), false);
+    expect(restarted.acquire().role).toBe('owner');
+    restarted.stop();
   });
 
   it('holds the fields of the format and nothing of the user', () => {
@@ -179,10 +203,10 @@ describe('a handover', () => {
     try {
       a.acquire();
       b.acquire();
-      await a.release('bbbbbbbb-2');
+      await a.release(B);
       expect(ha.log).toEqual(['pause']);
       expect(a.running()).toBe(false);
-      expect(leaseOf(dir).handingOver?.to).toBe('bbbbbbbb-2');
+      expect(leaseOf(dir).handingOver?.to).toBe(B);
       // Not handed to anyone else.
       const c = createOwnership({ dir, instanceId: 'cccccccc-3', hooks: hooks(), now: () => new Date(clock.t) });
       c.acquire();
@@ -190,7 +214,7 @@ describe('a handover', () => {
 
       expect(await b.claim({ admin: false })).toMatchObject({ role: 'owner' });
       expect(hb.log).toEqual(['resume']);
-      expect(leaseOf(dir)).toMatchObject({ instanceId: 'bbbbbbbb-2', claim: { from: 'aaaaaaaa-1' } });
+      expect(leaseOf(dir)).toMatchObject({ instanceId: 'bbbbbbbb-2', claim: { from: A } });
       expect(leaseOf(dir).claim?.confirmedAt).not.toBeNull();
 
       // The old owner sees the confirmation and does not take the workspace back.
@@ -212,7 +236,7 @@ describe('a handover', () => {
       const failing = createOwnership({ dir, instanceId: 'bbbbbbbb-2', hooks: hb, now: () => new Date(clock.t), audit: ((e: { target: string }) => lines.push(e.target)) as never, timings: { tick: 1_000 } });
       a.acquire();
       failing.acquire();
-      await a.release('bbbbbbbb-2');
+      await a.release(B);
       await expect(failing.claim({ admin: false })).rejects.toMatchObject({ code: 'conflict' });
       expect(hb.log).toEqual([]);
       expect(failing.running()).toBe(false);
@@ -234,10 +258,10 @@ describe('a handover', () => {
     const { lines, ha, a, dir, clock } = setup();
     try {
       a.acquire();
-      await a.release('bbbbbbbb-2');
+      await a.release(B);
       // The new owner wrote its claim and died before it confirmed.
       const lease = leaseOf(dir);
-      writeFileSync(join(dir, 'owner.json'), JSON.stringify({ ...lease, instanceId: 'bbbbbbbb-2', handingOver: undefined, claim: { from: 'aaaaaaaa-1', at: lease.renewedAt, confirmBy: new Date(clock.t + 60_000).toISOString(), confirmedAt: null } }));
+      writeFileSync(join(dir, 'owner.json'), JSON.stringify({ ...lease, instanceId: 'bbbbbbbb-2', handingOver: undefined, claim: { from: A, at: lease.renewedAt, confirmBy: new Date(clock.t + 60_000).toISOString(), confirmedAt: null } }));
       vi.advanceTimersByTime(1_000);
       expect(a.running()).toBe(false);
       clock.t += 61_000;
@@ -256,7 +280,7 @@ describe('a handover', () => {
     const { ha, a, clock, dir } = setup();
     try {
       a.acquire();
-      await a.release('bbbbbbbb-2');
+      await a.release(B);
       clock.t += 121_000;
       vi.advanceTimersByTime(1_000);
       expect(a.running()).toBe(true);
@@ -274,7 +298,7 @@ describe('a handover', () => {
       const broken = hooks({ pause: async () => Promise.reject(new Error('stuck')) });
       const x = createOwnership({ dir, instanceId: 'xxxxxxxx-9', hooks: broken, timings: { tick: 1_000 } });
       x.acquire();
-      await expect(x.release('bbbbbbbb-2')).rejects.toThrow('stuck');
+      await expect(x.release(B)).rejects.toThrow('stuck');
       expect(x.running()).toBe(true);
       expect(broken.log).toEqual(['resume']);
       x.stop();
@@ -315,7 +339,7 @@ describe('a run interrupted by a handover', () => {
     });
     a.acquire();
     b.acquire();
-    await a.release('bbbbbbbb-2', { deadlineMs: 20 });
+    await a.release(B, { deadlineMs: 20 });
     expect(first.runner.get(run.id)).toMatchObject({ status: 'working', stage: 'refine' });
 
     next = await boot({ repo: first.repo, dir: first.dir, engine: second.engine, issues: first.issues });

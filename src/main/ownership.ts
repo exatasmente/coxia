@@ -45,7 +45,7 @@ export interface Lease {
 export interface OwnershipStatus {
   /** Who holds the lease; null when nobody does. */
   owner: { instanceId: string; host: string; pid: number } | null;
-  /** This instance's own id, the one `ownership:release` is told to hand over to. */
+  /** This process's own holder id (the instance id and the pid), the one `ownership:release` is told to hand over to. */
   self: string;
   expiresAt: string | null;
   role: 'owner' | 'client';
@@ -86,6 +86,8 @@ export interface OwnershipOptions {
   now?: () => Date;
   host?: string;
   pid?: number;
+  /** Whether a process of this machine still runs; for a test. */
+  alive?: (pid: number) => boolean;
   /** For a test: the intervals of the timer, the claim and the confirmation. */
   timings?: Partial<{ ttl: number; renew: number; tick: number; claim: number; confirm: number }>;
 }
@@ -104,6 +106,16 @@ export interface Ownership {
   claim(options: { admin: boolean; by?: string }): Promise<OwnershipStatus>;
   /** Clears the timer; an owner's lease is removed so the next start takes it at once. */
   stop(): void;
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    // Not allowed to signal it still means it exists.
+    return (e as NodeJS.ErrnoException).code === 'EPERM';
+  }
 }
 
 const sleep = (ms: number): void => void Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -126,10 +138,15 @@ export function instanceIdOf(root: string, host: string = hostname()): string {
 }
 
 export function createOwnership(options: OwnershipOptions): Ownership {
-  const { dir, instanceId: self, hooks } = options;
+  const { dir, instanceId, hooks } = options;
   const now = (): Date => options.now?.() ?? new Date();
   const host = options.host ?? hostname();
   const pid = options.pid ?? process.pid;
+  // One process: the id of the instance is stable across restarts, and two processes of one data folder share it, so a holder is the id with its pid.
+  const self = `${instanceId}:${pid}`;
+  const holder = (l: Lease): string => `${l.instanceId}:${l.pid}`;
+  const mine = (l: Lease): boolean => holder(l) === self;
+  const alive = options.alive ?? processAlive;
   const ttl = options.timings?.ttl ?? LEASE_TTL_MS;
   const renewEvery = options.timings?.renew ?? LEASE_RENEW_MS;
   const tickEvery = options.timings?.tick ?? LEASE_TICK_MS;
@@ -191,7 +208,7 @@ export function createOwnership(options: OwnershipOptions): Ownership {
     }
   }
 
-  const fresh = (extra: Partial<Lease> = {}, startedAt = iso(at())): Lease => ({ instanceId: self, host, pid, startedAt, renewedAt: iso(at()), expiresAt: iso(at() + ttl), ...extra });
+  const fresh = (extra: Partial<Lease> = {}, startedAt = iso(at())): Lease => ({ instanceId, host, pid, startedAt, renewedAt: iso(at()), expiresAt: iso(at() + ttl), ...extra });
   const expired = (lease: Lease): boolean => Date.parse(lease.expiresAt) <= at();
   const who = (lease: Lease): string => `${lease.host} (${lease.instanceId.slice(0, 8)}, pid ${lease.pid})`;
 
@@ -217,7 +234,7 @@ export function createOwnership(options: OwnershipOptions): Ownership {
 
   const notOwner = (): OwnershipError => {
     const lease = read();
-    return new OwnershipError('not-owner', lease && lease.instanceId !== self ? t('main.ownership.notOwner', { owner: who(lease) }) : t('main.ownership.notOwnerNone'));
+    return new OwnershipError('not-owner', lease && !mine(lease) ? t('main.ownership.notOwner', { owner: who(lease) }) : t('main.ownership.notOwnerNone'));
   };
 
   function beat(): void {
@@ -237,18 +254,18 @@ export function createOwnership(options: OwnershipOptions): Ownership {
         const lease = read();
         if (state === 'owner') {
           // Another instance holds the lease (this one was paused too long and the lease passed): the work stops, so two owners never run at once.
-          if (!lease || lease.instanceId !== self) {
+          if (!lease || !mine(lease)) {
             state = 'client';
             unbeat();
             void hooks.pause(0).catch(() => undefined);
-            audit('lost', { owner: lease?.instanceId ?? '' }, false, t('main.ownership.lost'));
+            audit('lost', { owner: lease ? holder(lease) : '' }, false, t('main.ownership.lost'));
             return;
           }
           if (at() - Date.parse(lease.renewedAt) >= renewEvery) write({ ...lease, renewedAt: iso(at()), expiresAt: iso(at() + ttl) });
           return;
         }
         if (state !== 'handing' || pausing) return;
-        if (lease?.instanceId === self) {
+        if (lease && mine(lease)) {
           if (lease.handingOver && Date.parse(lease.handingOver.until) <= at()) {
             // Nobody claimed in time: the handover is off and the work goes on here.
             const { handingOver: _gone, ...own } = lease;
@@ -264,13 +281,13 @@ export function createOwnership(options: OwnershipOptions): Ownership {
             // The new owner passed its health check: only now does this instance let go.
             state = 'client';
             unbeat();
-            audit('release-confirmed', { to: lease.instanceId });
+            audit('release-confirmed', { to: holder(lease) });
             return;
           }
           if (Date.parse(lease.claim.confirmBy) <= at() || expired(lease)) {
             // The new owner did not confirm: the workspace comes back, with nothing changed since the pause.
             write(fresh({}, undefined));
-            audit('take-back', { from: lease.instanceId }, true, t('main.ownership.neverConfirmed', { owner: who(lease) }));
+            audit('take-back', { from: holder(lease) }, true, t('main.ownership.neverConfirmed', { owner: who(lease) }));
             return back('', {});
           }
           return;
@@ -295,9 +312,10 @@ export function createOwnership(options: OwnershipOptions): Ownership {
       if (stopped) return status();
       locked(() => {
         const lease = read();
-        if (!lease || lease.instanceId === self) {
-          // A process of this instance that restarts takes its own lease again, whatever was left in it.
-          write(fresh({}, lease && lease.instanceId === self ? lease.startedAt : undefined));
+        // A process of this instance that restarts takes its own lease again, whatever was left in it; the lease of a live process of the same folder is not its to take.
+        const restart = lease !== null && lease.instanceId === instanceId && (lease.pid === pid || expired(lease) || (lease.host === host && !alive(lease.pid)));
+        if (!lease || restart) {
+          write(fresh({}, lease && restart ? lease.startedAt : undefined));
           state = 'owner';
         } else state = 'client';
       });
@@ -327,7 +345,7 @@ export function createOwnership(options: OwnershipOptions): Ownership {
       pausing = null;
       locked(() => {
         const lease = read();
-        if (!lease || lease.instanceId !== self) throw notOwner();
+        if (!lease || !mine(lease)) throw notOwner();
         write({ ...lease, renewedAt: iso(at()), expiresAt: iso(at() + ttl), handingOver: { to, at: iso(at()), until: iso(at() + claimWindow) } });
       });
       audit('release', { to }, true, '', o.by);
@@ -338,7 +356,7 @@ export function createOwnership(options: OwnershipOptions): Ownership {
       let kind = 'free' as 'handover' | 'takeover' | 'free';
       locked(() => {
         const lease = read();
-        if (lease && lease.instanceId === self) throw new OwnershipError('conflict', t('main.ownership.alreadyOwner'));
+        if (lease && mine(lease)) throw new OwnershipError('conflict', t('main.ownership.alreadyOwner'));
         if (lease && lease.handingOver?.to === self && Date.parse(lease.handingOver.until) > at() && !expired(lease)) kind = 'handover';
         else if (lease && expired(lease)) {
           // The owner is gone: only an admin takes the workspace (a paired device has passed the passkey at the web door before it gets here).
@@ -346,9 +364,9 @@ export function createOwnership(options: OwnershipOptions): Ownership {
           kind = 'takeover';
         } else if (lease) throw new OwnershipError('forbidden', t('main.ownership.notHandedToYou', { owner: who(lease) }));
         previous = lease;
-        write(fresh(kind === 'handover' && lease ? { claim: { from: lease.instanceId, at: iso(at()), confirmBy: iso(at() + confirmWindow), confirmedAt: null } } : {}));
+        write(fresh(kind === 'handover' && lease ? { claim: { from: holder(lease), at: iso(at()), confirmBy: iso(at() + confirmWindow), confirmedAt: null } } : {}));
       });
-      const from = (previous as Lease | null)?.instanceId ?? '';
+      const from = previous ? holder(previous as Lease) : '';
       audit(kind === 'takeover' ? 'takeover' : 'claim', { from, ...(previous ? { fromHost: (previous as Lease).host, expiredAt: (previous as Lease).expiresAt } : {}) }, true, '', o.by);
 
       let healthy = false;
@@ -361,7 +379,7 @@ export function createOwnership(options: OwnershipOptions): Ownership {
         // The old owner keeps the workspace: its own lease goes back, with the handover cleared, and it resumes on its next look.
         locked(() => {
           const lease = read();
-          if (lease?.instanceId !== self) return;
+          if (!lease || !mine(lease)) return;
           if (kind === 'handover' && previous) {
             const { handingOver: _gone, claim: _claim, ...old } = previous;
             write({ ...old, renewedAt: iso(at()), expiresAt: iso(at() + ttl) });
@@ -374,7 +392,7 @@ export function createOwnership(options: OwnershipOptions): Ownership {
       hooks.resume();
       locked(() => {
         const lease = read();
-        if (lease?.instanceId === self && lease.claim) write({ ...lease, claim: { ...lease.claim, confirmedAt: iso(at()) } });
+        if (lease && mine(lease) && lease.claim) write({ ...lease, claim: { ...lease.claim, confirmedAt: iso(at()) } });
       });
       beat();
       return status();
@@ -386,7 +404,8 @@ export function createOwnership(options: OwnershipOptions): Ownership {
       state = 'client';
       try {
         locked(() => {
-          if (read()?.instanceId === self) rmSync(leaseFile, { force: true });
+          const held = read();
+          if (held && mine(held)) rmSync(leaseFile, { force: true });
         });
       } catch {
         // The lease expires by itself.

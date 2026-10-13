@@ -84,7 +84,7 @@ describe('a core on a workspace another instance owns', () => {
     const core = createCoxia({ dataDir });
     await core.start();
     expect(core.ownership()).toMatchObject({ role: 'owner' });
-    expect(JSON.parse(readFileSync(join(env.atasDir(), 'owner.json'), 'utf8')).instanceId).toBe(core.ownership()?.self);
+    expect(JSON.parse(readFileSync(join(env.atasDir(), 'owner.json'), 'utf8')).instanceId).toBe(core.ownership()?.self.split(':')[0]);
     await core.stop({ deadlineMs: 500 });
     expect(() => readFileSync(join(env.atasDir(), 'owner.json'))).toThrow();
   });
