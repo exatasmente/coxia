@@ -75,6 +75,7 @@
   "ui.webGate.deviceName": "Name of this device",
   "ui.webGate.expired": "This pairing link has expired or was already used. Generate another one in the desktop app.",
   "ui.webGate.intro": "Scan the QR code in the desktop app (Settings › Browser access) or type the pairing code.",
+  "ui.webGate.mismatch.title": "This app and the instance do not match",
   "ui.webGate.offline.body": "I could not reach the app on the computer. Check that it is open and that browser access is on.",
   "ui.webGate.offline.title": "No connection",
   "ui.webGate.pairing": "Pairing this device…",

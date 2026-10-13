@@ -18,6 +18,7 @@ export class SecretError extends Error {
     message: string,
   ) {
     super(message);
+    this.name = 'SecretError';
   }
 }
 

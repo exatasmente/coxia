@@ -75,6 +75,7 @@
   "ui.webGate.deviceName": "Nome deste aparelho",
   "ui.webGate.expired": "Este link de pareamento expirou ou já foi usado. Gere outro no app do computador.",
   "ui.webGate.intro": "Escaneie o QR code do app do computador (Configurações › Acesso pelo navegador) ou digite o código de pareamento.",
+  "ui.webGate.mismatch.title": "Este app e a instância não combinam",
   "ui.webGate.offline.body": "Não consegui falar com o app no computador. Confira se ele está aberto e com o acesso pelo navegador ligado.",
   "ui.webGate.offline.title": "Sem conexão",
   "ui.webGate.pairing": "Pareando este aparelho…",

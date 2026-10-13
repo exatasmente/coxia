@@ -1,5 +1,6 @@
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
-import { errorText } from './api';
+import { contractHello, errorText } from './api';
+import { ContractError } from '../../shared/contract';
 import { normalizeLanguage, setLanguage } from '../../shared/i18n';
 import { useT, t } from './i18n';
 import { AskStack } from './AskStack';
@@ -9,7 +10,7 @@ import { isWeb } from './platform';
 import { HttpStatusError, UNAUTHORIZED, post, sessionCheck } from './webApi';
 import './web.css';
 
-type State = 'checking' | 'pairing' | 'login' | 'offline' | 'ready';
+type State = 'checking' | 'pairing' | 'login' | 'offline' | 'mismatch' | 'ready';
 
 // Read once, at load: the QR link carries the code in the fragment, and it leaves the address bar right away.
 const pairCode = isWeb() ? consumePairFragment(window) : null;
@@ -98,12 +99,15 @@ function Login({ notice, onDone }: { notice: string | null; onDone: () => void }
 // The Electron window renders the app directly.
 export function WebGate({ children }: { children: ReactNode }) {
   const t = useT();
-  const [state, setState] = useState<State>(!isWeb() ? 'ready' : pairCode ? 'pairing' : 'checking');
+  const [state, setState] = useState<State>(pairCode && isWeb() ? 'pairing' : 'checking');
   const [notice, setNotice] = useState<string | null>(null);
 
   const check = () => {
     setState('checking');
-    void sessionCheck().then((s) => setState(s === 'ok' ? 'ready' : s));
+    void sessionCheck().then((s) => {
+      if (typeof s === 'object') setNotice(s.mismatch);
+      setState(typeof s === 'object' ? 'mismatch' : s === 'ok' ? 'ready' : s);
+    });
   };
 
   const pairWith = (code: string) => {
@@ -118,7 +122,19 @@ export function WebGate({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    if (!isWeb()) return;
+    if (!isWeb()) {
+      // The window and the instance are built together, so a mismatch here is a half-finished update; any other failure of the handshake is not a reason to block the app.
+      contractHello().then(
+        () => setState('ready'),
+        (e) => {
+          if (e instanceof ContractError && e.code === 'contract-mismatch') {
+            setNotice(e.message);
+            setState('mismatch');
+          } else setState('ready');
+        },
+      );
+      return;
+    }
     if (pairCode && !pairStarted) {
       pairStarted = true;
       pairWith(pairCode);
@@ -147,6 +163,17 @@ export function WebGate({ children }: { children: ReactNode }) {
     );
   }
   if (state === 'login') return <Login notice={notice} onDone={() => location.reload()} />;
+  if (state === 'mismatch') {
+    return (
+      <div className="web-center">
+        <div className="panel web-card">
+          <h1 style={{ fontSize: 22, fontWeight: 700 }}>{t('ui.webGate.mismatch.title')}</h1>
+          <p className="muted" role="alert">{notice}</p>
+          <button type="button" className="btn btn-dark" onClick={() => location.reload()}>{t('ui.webGate.retry')}</button>
+        </div>
+      </div>
+    );
+  }
   if (state === 'offline') {
     return (
       <div className="web-center">
