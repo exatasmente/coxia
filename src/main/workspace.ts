@@ -1,4 +1,5 @@
 import { dataRoot, workspaceId } from './env';
+import { requireOwner } from './ownership';
 import { type WorkspaceInfo, externalWriteRefusal, readRegistry } from './workspaces-core';
 
 export function currentWorkspace(): WorkspaceInfo | null {
@@ -18,6 +19,8 @@ export function externalRefusal(what: string): string | null {
 }
 
 export function assertExternalWrite(what: string): void {
+  // A client of the workspace never writes outside the machine: only its owner does (#209).
+  requireOwner();
   const message = externalRefusal(what);
   if (message) throw new Error(message);
 }

@@ -14,6 +14,7 @@ import { viaOf } from '../rpc';
 import { whoNow } from '../persona/who';
 import { recordWrite } from '../auditoria';
 import { modelRefusal, recordModelUsage } from '../budget';
+import { ownsWorkspace } from '../ownership';
 import { createRemoteControlPort, loadBridgeApi, readClaudeToken } from '../remoteBridge';
 import { memoryAuditEntry, type MemoryAuditInput } from '../memory/audit';
 import { attachmentStore } from '../attachments';
@@ -467,19 +468,35 @@ export const runsModule: Module = (ctx) => {
     name: 'runner',
     everyMin: 5,
     workHoursOnly: false,
-    enabled: () => getConfig().runner.enabled && isFlowCycle(getConfig().devCycle.stages) && vcsReady(),
+    enabled: () => ownsWorkspace() && getConfig().runner.enabled && isFlowCycle(getConfig().devCycle.stages) && vcsReady(),
     // Looks for new issues, for what the waiting runs wait for (a merged pull request, a reply, a label, the time) and for the reviews that waited for their pull
     // request. It never waits for a stage to end, and a sweep that is still going is not started twice.
     run: () => r.sweep(),
   });
   // A run that was in the middle of a stage when the app closed starts that stage over; the others go on where they were.
-  resumeTimer = setTimeout(() => {
-    resumeTimer = null;
-    r.resume();
-  }, 2_000);
+  // A client of the workspace (#209) has the runner registered, so the channels answer, and stopped: it starts nothing until the lease is its own.
+  if (ownsWorkspace()) {
+    resumeTimer = setTimeout(() => {
+      resumeTimer = null;
+      r.resume();
+    }, 2_000);
+  } else void r.stop(0);
 };
 
 let resumeTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** The workspace is this instance's again (a claim passed its health check, or a handover came back): stages may start, and the runs the last owner left working are taken over. */
+export function startRunner(): void {
+  current?.unstop();
+  current?.resume();
+}
+
+/** The runner stops at a safe point and the screens stay as they are: for a handover that may still come back. */
+export async function pauseRunner(deadlineMs: number): Promise<void> {
+  if (resumeTimer) clearTimeout(resumeTimer);
+  resumeTimer = null;
+  await current?.stop(deadlineMs);
+}
 
 /**
  * The process is going: the delayed resume is dropped, no stage starts, a running one gets `deadlineMs` to end and is then interrupted, and the open screens end. The runs it

@@ -30,6 +30,7 @@
   "ui.audit.kind.memory": "Memória compartilhada",
   "ui.audit.kind.minutes": "Atas",
   "ui.audit.kind.noteEdit": "Edição de nota",
+  "ui.audit.kind.ownership": "Posse do workspace",
   "ui.audit.kind.persona": "Mudança na persona",
   "ui.audit.kind.pluginCall": "Chamada de plugin",
   "ui.audit.kind.pluginDecision": "Decisão sobre um plugin",

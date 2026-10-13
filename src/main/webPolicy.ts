@@ -136,6 +136,10 @@ const BUDGET_WRITE = /^budget:(?!(get|ledger)$)/;
 // default cannot close it by accident. test/contract.test.ts pins it.
 export const CONTRACT_CHANNELS = new Set([HELLO_CHANNEL]);
 
+// Who owns the workspace (#209): a paired browser reads `ownership:status` (the phone shows who owns it); handing over or taking over is an admin act: the computer,
+// the admin door, or a passkey device that is asked for it at that moment. A pattern with the one read as an exception, so a channel added under `ownership:` later starts closed.
+const OWNERSHIP_ADMIN = /^ownership:(?!status$)/;
+
 // Passkeys (#210). A paired browser whose device has registered a passkey is an admin device: the channels the rules above close to every browser open to it, except the ones
 // that act on the machine itself (below), and each sensitive one asks for the passkey at that moment (STEP_UP). The channels that register and use a passkey are open to any paired
 // browser, since a device has to be able to enroll; enrolling from a paired browser needs the computer's allowance (passkey:enroll-allow), so the pairing code alone never makes an
@@ -161,6 +165,7 @@ export const STEP_UP: ReadonlyMap<string, SensitiveKind> = new Map<string, Sensi
   ['config:testenv-confirm', 'secret'], ['config:testenv-revoke', 'secret'], ['plugins:set-secret', 'secret'],
   ['workspace:delete', 'infrastructure'],
   ['budget:set', 'budget'],
+  ['ownership:claim', 'ownership'], ['ownership:release', 'ownership'],
   ['web:pair', 'pairing'], ['web:configure', 'pairing'], ['web:revoke', 'pairing'],
   ['passkey:remove', 'passkey'],
 ]);
@@ -168,7 +173,7 @@ export const STEP_UP: ReadonlyMap<string, SensitiveKind> = new Map<string, Sensi
 /** What a paired browser may call. `admin` is true for a device with a registered passkey. */
 export function webAccess(channel: string, admin = false): WebAccess {
   if (PASSKEY_CHANNELS.has(channel)) return 'allow';
-  const closed = DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || BUDGET_WRITE.test(channel);
+  const closed = DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || BUDGET_WRITE.test(channel) || OWNERSHIP_ADMIN.test(channel);
   if (closed && !(admin && !ADMIN_STILL_CLOSED(channel))) return 'deny';
   if (PASSKEY_DESKTOP.test(channel) || MEMORY_UNLISTED.test(channel) || TURN_ASKS_UNLISTED.test(channel) || PERSONA_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel) || CLAUDE_SESSIONS.test(channel) || REMOTE_CONTROL_ADMIN.test(channel)) return 'deny';
   if (CONTRACT_CHANNELS.has(channel) || MEMORY_CHANNELS.has(channel) || TURN_ASK_CHANNELS.has(channel) || PERSONA_CHANNELS.has(channel)) return 'allow';

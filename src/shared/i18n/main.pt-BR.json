@@ -2153,5 +2153,18 @@
   "main.passkey.tooMany": "Passkeys ou pedidos pendentes demais. Remova uma ou espere um minuto.",
   "main.passkey.duplicate": "Esta passkey já está registrada.",
   "main.passkey.badKind": "Tipo de mudança sensível desconhecido.",
-  "main.passkey.none": "Este aparelho não tem passkey registrada."
+  "main.passkey.none": "Este aparelho não tem passkey registrada.",
+  "main.ownership.notOwner": "este workspace é de {owner}: esta instância é cliente e não o executa",
+  "main.ownership.notOwnerNone": "esta instância não é dona do workspace: é cliente e não o executa",
+  "main.ownership.lost": "outra instância tomou o workspace: esta parou de executá-lo",
+  "main.ownership.badTarget": "a transferência pede o id de outra instância (o estado de posse dela mostra)",
+  "main.ownership.alreadyOwner": "esta instância já é dona do workspace",
+  "main.ownership.adminOnly": "a posse de {owner} expirou: só um administrador pode assumir o workspace",
+  "main.ownership.notHandedToYou": "o workspace é de {owner} e não foi transferido para esta instância",
+  "main.ownership.unhealthy": "esta instância não passou na verificação de saúde: o workspace continua com o dono",
+  "main.ownership.neverConfirmed": "{owner} não confirmou a transferência a tempo: o workspace voltou para cá",
+  "main.ownership.readyClient": "esta instância é cliente do workspace {workspace}: de {owner}, não executa o runner nem o agendador",
+  "main.ownership.readyExpired": "esta instância é cliente do workspace {workspace}: a posse de {owner} expirou, um administrador pode assumir com ownership:claim",
+  "main.ownership.noticeTitle": "Workspace de outra instância",
+  "main.ownership.noticeBody": "{owner} é dona deste workspace. Esta janela só o mostra: nada roda aqui."
 }
