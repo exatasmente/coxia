@@ -17,7 +17,7 @@ export const CONTRACT_HEADER = 'x-coxia-contract';
 export const HELLO_CHANNEL = 'contract:hello';
 
 /** The channels the desktop shell registers itself (they act on the window's machine); every other channel is registered by the core. */
-export const DESKTOP_CHANNELS = ['clipboard:copy', 'jobs:notify'] as const;
+export const DESKTOP_CHANNELS = ['clipboard:copy', 'jobs:notify', 'instances:accept-insecure', 'instances:add', 'instances:list', 'instances:remove', 'instances:select', 'instances:test', 'instances:trust'] as const;
 
 /** Every channel of the contract. A test fails when the instance registers one that is not here, or this names one nobody registers. */
 export const CHANNELS = [
@@ -83,6 +83,8 @@ export const CHANNELS = [
   'glossary:get', 'glossary:hear', 'glossary:learn', 'glossary:save',
   // history
   'history:get', 'history:list',
+  // instances
+  'instances:accept-insecure', 'instances:add', 'instances:list', 'instances:remove', 'instances:select', 'instances:test', 'instances:trust',
   // jobs
   'jobs:notify',
   // log
@@ -180,7 +182,7 @@ export const inContract = (channel: string): channel is Channel => KNOWN.has(cha
 
 // Error codes. A channel that fails answers { code, message }: the code is for the program, the message is translated text for the person. The list is closed:
 // a code outside it never leaves the instance (it becomes 'internal'). The domain codes are written with their domain in front, so two domains may use one word.
-const GENERIC = ['internal', 'invalid-input', 'not-found', 'forbidden', 'unauthorized', 'rate-limited', 'conflict', 'unknown-channel', 'browser-only', 'contract-mismatch', 'host-unavailable', 'voice-off', 'passkey-required', 'budget-exceeded', 'not-owner'] as const;
+const GENERIC = ['internal', 'invalid-input', 'not-found', 'forbidden', 'unauthorized', 'rate-limited', 'conflict', 'unknown-channel', 'browser-only', 'contract-mismatch', 'host-unavailable', 'voice-off', 'passkey-required', 'budget-exceeded', 'not-owner', 'connection-lost'] as const;
 export const DOMAIN_CODES = {
   sandbox: ['unavailable', 'no-node', 'copy-too-big', 'path-missing', 'path-refused', 'start-failed', 'hostile-link', 'copy-failed', 'git-untrusted'],
   runner: ['bad-version', 'no-release-flow', 'no-docs-flow', 'bad-docs-mode', 'nothing-to-undo', 'not-agent-flow', 'bad-ref', 'no-issue-project', 'issue-closed', 'repo-ambiguous', 'no-clone', 'no-identity', 'unknown-agent', 'bad-action', 'branch-exists', 'dest-exists', 'not-worktree', 'no-sandbox', 'no-command', 'no-host', 'worktree-gone', 'memory-busy', 'docs-folder-unsafe'],

@@ -2166,5 +2166,20 @@
   "main.ownership.readyClient": "esta instância é cliente do workspace {workspace}: de {owner}, não executa o runner nem o agendador",
   "main.ownership.readyExpired": "esta instância é cliente do workspace {workspace}: a posse de {owner} expirou, um administrador pode assumir com ownership:claim",
   "main.ownership.noticeTitle": "Workspace de outra instância",
-  "main.ownership.noticeBody": "{owner} é dona deste workspace. Esta janela só o mostra: nada roda aqui."
+  "main.ownership.noticeBody": "{owner} é dona deste workspace. Esta janela só o mostra: nada roda aqui.",
+  "main.instances.badName": "Dê ao servidor um nome de até 60 caracteres.",
+  "main.instances.badTarget": "O endereço SSH deve ser como usuario@host ou usuario@host:porta.",
+  "main.instances.badDataDir": "A pasta de dados no servidor deve ser um caminho absoluto, sem \":\" nem caracteres de controle.",
+  "main.instances.badWorkspace": "O id do workspace só pode ter letras minúsculas, dígitos e hífens.",
+  "main.instances.nameTaken": "Já existe um servidor chamado {name}.",
+  "main.instances.unknown": "Nenhum servidor tem o id {id}.",
+  "main.instances.removeRunning": "Este é o servidor em uso: troque para outro antes de removê-lo.",
+  "main.instances.connectionLost": "A conexão com o servidor caiu antes da resposta, então o que você pediu pode ou não ter rodado: confira antes de pedir de novo. {detail}",
+  "main.instances.sshMissing": "Não foi possível rodar o ssh neste computador: {detail}",
+  "main.instances.sshFailed": "A conexão SSH falhou. {detail}",
+  "main.instances.timeout": "A conexão SSH demorou demais para abrir.",
+  "main.instances.noDoor": "O servidor respondeu, mas o workspace dele não tem o soquete de administração (a instância está rodando esse workspace?). {detail}",
+  "main.instances.tooBig": "Este pedido é grande demais para enviar ao servidor.",
+  "main.instances.scanFailed": "Não foi possível ler a chave de host de {host}.",
+  "main.instances.fingerprintChanged": "O servidor não apresenta mais a chave que você confirmou. Nada foi aceito."
 }

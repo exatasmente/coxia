@@ -2166,5 +2166,20 @@
   "main.ownership.readyClient": "this instance is a client of workspace {workspace}: owned by {owner}, it does not run the runner or the scheduler",
   "main.ownership.readyExpired": "this instance is a client of workspace {workspace}: the lease of {owner} expired, an admin can take it over with ownership:claim",
   "main.ownership.noticeTitle": "Workspace owned by another instance",
-  "main.ownership.noticeBody": "{owner} owns this workspace. This window only shows it: nothing runs here."
+  "main.ownership.noticeBody": "{owner} owns this workspace. This window only shows it: nothing runs here.",
+  "main.instances.badName": "Give the instance a name of up to 60 characters.",
+  "main.instances.badTarget": "The SSH address must look like user@host or user@host:port.",
+  "main.instances.badDataDir": "The data folder on the server must be an absolute path without \":\" or control characters.",
+  "main.instances.badWorkspace": "The workspace id may use lowercase letters, digits and hyphens.",
+  "main.instances.nameTaken": "There is already an instance called {name}.",
+  "main.instances.unknown": "No instance has the id {id}.",
+  "main.instances.removeRunning": "This is the instance in use: switch to another one before removing it.",
+  "main.instances.connectionLost": "The connection to the instance was lost before the answer arrived, so what you asked may or may not have run: check before asking again. {detail}",
+  "main.instances.sshMissing": "Could not run ssh on this computer: {detail}",
+  "main.instances.sshFailed": "The SSH connection failed. {detail}",
+  "main.instances.timeout": "The SSH connection took too long to open.",
+  "main.instances.noDoor": "The server answered, but its workspace has no admin socket to talk to (is the instance running that workspace?). {detail}",
+  "main.instances.tooBig": "This request is too large to send to the instance.",
+  "main.instances.scanFailed": "Could not read the host key of {host}.",
+  "main.instances.fingerprintChanged": "The server no longer presents the key you confirmed. Nothing was trusted."
 }
