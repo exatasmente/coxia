@@ -94,6 +94,7 @@ export function neutralConfig(): WorkspaceConfig {
     claudeSessions: { enabled: false },
     budget: { currency: 'USD', monthly: null, categories: {} },
     effects: { offerAfter: 5, perKind: {} },
+    accounts: [],
   };
 }
 
