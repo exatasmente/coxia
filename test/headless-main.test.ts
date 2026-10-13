@@ -238,6 +238,9 @@ describe('main --init', () => {
     expect(exit).toHaveBeenCalledExactlyOnceWith(0);
     expect(out).toEqual(['principal']);
     expect(JSON.parse(readFileSync(join(dataDir, 'workspaces.json'), 'utf8'))).toMatchObject({ current: 'principal' });
+    // The config is made as a fresh install's, here and not by the next process, which would take the registry for an older install.
+    expect(JSON.parse(readFileSync(join(dataDir, 'config-migration.json'), 'utf8'))).toMatchObject({ existingInstall: false });
+    expect(tree(dataDir)).toContain(join('workspaces', 'principal', 'config.json'));
     expect(tree(dataDir).some((f) => f.endsWith('admin.sock'))).toBe(false);
   });
 

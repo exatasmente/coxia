@@ -6,6 +6,7 @@ import { NEUTRAL_WEB } from '../shared/settings';
 import { validateWeb } from '../main/config';
 import { type Coxia, createCoxia } from '../main/core';
 import { bootEnv, workspaceId } from '../main/env';
+import { getConfig } from '../main/workspaceConfig';
 import type { HostPort } from '../main/host';
 import { masterKeyPort } from '../main/masterKey';
 import { type SignalHandlers, installSignalHandlers } from '../main/signals';
@@ -137,6 +138,9 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
   if (opts.init) {
     try {
       bootEnv({ dataDir: opts.dataDir });
+      // The config bootstrap must run in this same process: it reads whether the folder held an install before the registry existed, and a
+      // later process would see the registry this one just made and take a fresh folder for an old install.
+      getConfig();
     } catch (e) {
       return failed(e instanceof Error ? e.message : String(e));
     }
