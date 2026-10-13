@@ -34,6 +34,7 @@ export function doorWords(door: string | undefined): { key: string } | { raw: st
   if (!door) return null;
   if (door === 'window') return { key: 'ui.audit.door.window' };
   if (door === 'paired') return { key: 'ui.audit.door.paired' };
+  if (door === 'admin') return { key: 'ui.audit.door.admin' };
   if (door === 'terminal') return { key: 'ui.audit.door.terminal' };
   return { raw: door };
 }

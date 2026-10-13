@@ -1,5 +1,5 @@
-/** How a call reached the app: the window, a paired browser, or the persona acting on the person's behalf. One name for what `callOrigin()` says, whichever audit line or answer carries it. */
-export type Through = 'window' | 'paired' | 'persona';
+/** How a call reached the app: the window, a paired browser, the persona acting on the person's behalf, or the local admin socket. One name for what `callOrigin()` says, whichever audit line or answer carries it. */
+export type Through = 'window' | 'paired' | 'persona' | 'admin';
 
 export type AuditKind = 'gitlab' | 'github' | 'bitbucket' | 'graphql' | 'sync' | 'publish' | 'note-edit' | 'push' | 'minutes' | 'exec' | 'release' | 'worktree' | 'plugin-write' | 'plugin-request' | 'plugin-call' | 'screen-open' | 'screen-close' | 'screen-hold' | 'screen-confirm' | 'screen-use' | 'procedure' | 'screen-handoff' | 'test-env' | 'memory' | 'turn-limit' | 'persona' | 'config' | 'secret' | 'plugin-decision' | 'act' | 'auto-step' | 'decision' | 'policy-change' | 'screen-autonomous' | 'screen-policy' | 'claude-session' | 'remote-control';
 

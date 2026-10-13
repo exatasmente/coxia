@@ -5,7 +5,8 @@ import { t } from '../shared/i18n';
 import { NEUTRAL_WEB } from '../shared/settings';
 import { validateWeb } from '../main/config';
 import { type Coxia, createCoxia } from '../main/core';
-import { workspaceId } from '../main/env';
+import { bootEnv, workspaceId } from '../main/env';
+import { getConfig } from '../main/workspaceConfig';
 import type { HostPort } from '../main/host';
 import { masterKeyPort } from '../main/masterKey';
 import { type SignalHandlers, installSignalHandlers } from '../main/signals';
@@ -37,16 +38,21 @@ const FLAGS = {
   host: { type: 'string' },
   port: { type: 'string' },
   'renderer-dir': { type: 'string' },
+  'no-admin-door': { type: 'boolean' },
+  init: { type: 'boolean' },
   help: { type: 'boolean' },
 } as const;
 
 interface Options {
+  /** Only prepare the data folder (the workspace registry) and exit: for an installer, before anything supervises the cores. */
+  init?: true;
   dataDir: string;
   workspace?: string;
   keyFile: string;
   host: string;
   port: number;
   rendererDir?: string;
+  adminDoor: boolean;
 }
 
 // The bundle sits in out/headless and the sources in src/headless: both are two folders under the app's own, where package.json and the built renderer are.
@@ -67,6 +73,7 @@ function options(argv: string[], env: NodeJS.ProcessEnv): Options | null {
   };
   // The data folder has no default here: a service must never fall back to the desktop's folder by forgetting a flag.
   const dataDir = resolve(need(v['data-dir'] ?? env.COXIA_DATA_DIR ?? env.CERIMONIAS_DATA_DIR, '--data-dir', 'COXIA_DATA_DIR'));
+  if (v.init) return { init: true, dataDir, keyFile: '', host: '', port: 0, adminDoor: false };
   const keyFile = resolve(need(v['master-key-file'] ?? env.COXIA_MASTER_KEY_FILE, '--master-key-file', 'COXIA_MASTER_KEY_FILE'));
   const rawPort = need(v.port ?? env.COXIA_PORT, '--port', 'COXIA_PORT');
   const port = /^\d{1,5}$/.test(rawPort) ? Number(rawPort) : NaN;
@@ -79,7 +86,9 @@ function options(argv: string[], env: NodeJS.ProcessEnv): Options | null {
   }
   const workspace = v.workspace ?? env.COXIA_WORKSPACE;
   const rendererDir = v['renderer-dir'] ?? env.COXIA_RENDERER_DIR;
-  return { dataDir, keyFile, host, port, ...(workspace ? { workspace } : {}), ...(rendererDir ? { rendererDir: resolve(rendererDir) } : {}) };
+  // On unless it is turned off: a server's shell and CLI reach the core through it. COXIA_ADMIN_DOOR=0 is the same as the flag.
+  const adminDoor = !v['no-admin-door'] && env.COXIA_ADMIN_DOOR !== '0';
+  return { dataDir, keyFile, host, port, adminDoor, ...(workspace ? { workspace } : {}), ...(rendererDir ? { rendererDir: resolve(rendererDir) } : {}) };
 }
 
 function packageVersion(): string {
@@ -126,6 +135,21 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
     return null;
   }
 
+  if (opts.init) {
+    try {
+      bootEnv({ dataDir: opts.dataDir });
+      // The config bootstrap must run in this same process: it reads whether the folder held an install before the registry existed, and a
+      // later process would see the registry this one just made and take a fresh folder for an old install.
+      getConfig();
+    } catch (e) {
+      return failed(e instanceof Error ? e.message : String(e));
+    }
+    // The workspace the registry runs first, one line, for the installer's log; nothing else of the data.
+    out(workspaceId());
+    exit(0);
+    return null;
+  }
+
   const host: HostPort = { version: packageVersion, exit };
   let core: Coxia | null = null;
   try {
@@ -135,6 +159,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
       dataDir: opts.dataDir,
       ...(opts.workspace ? { workspace: opts.workspace } : {}),
       web: { host: opts.host, port: opts.port },
+      adminDoor: opts.adminDoor,
       secrets,
       host,
       ...(rendererDir ? { rendererDir } : {}),
@@ -146,6 +171,8 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
     if (!door.listening) throw new Error(door.message);
     const signals = installSignalHandlers(core, { exit });
     out(t('main.headless.ready', { address: `${door.address}${door.basePath}`, workspace: workspaceId() }));
+    const admin = core.adminDoor();
+    if (admin) out(admin.listening ? t('main.headless.adminOpen', { path: admin.path }) : t('main.headless.adminClosed', { reason: admin.reason }));
     return { core, signals, workspace: workspaceId(), address: door.address ?? '' };
   } catch (e) {
     await core?.stop({ deadlineMs: 1_000 }).catch(() => undefined);

@@ -28,6 +28,8 @@ O pacote reúne o código do próprio app; as dependências do npm ficam fora e 
 | `--port <porta>` | `COXIA_PORT` | A porta da porta web (1024 a 65535). **Obrigatória.** |
 | `--host <endereço>` | `COXIA_HOST` | O endereço (IPv4 ou `localhost`). Padrão `127.0.0.1`. |
 | `--workspace <id>` | `COXIA_WORKSPACE` | O workspace que este processo roda. Padrão: o que o registro marca como atual. |
+| `--no-admin-door` | `COXIA_ADMIN_DOOR=0` | Não abre o soquete de administração. Padrão: aberto. |
+| `--init` | | Só cria o registro de workspaces da pasta de dados (com o primeiro workspace), imprime o id dele e sai com 0. Precisa só de `--data-dir`. Para o instalador, antes de o supervisor subir os núcleos. |
 | `--renderer-dir <pasta>` | `COXIA_RENDERER_DIR` | O renderer compilado. Padrão: `out/renderer` ao lado do pacote; sem ele a porta responde a API e nenhuma página. |
 
 ### A chave mestra
@@ -44,7 +46,7 @@ Um processo roda um workspace. Para vários, suba vários processos com `--works
 
 ### Saúde
 
-`GET <caminho base>/healthz` (padrão `/cerimonias/healthz`) responde sem autenticação `{"ok":true,"version":"…","workspace":"<id>"}`: só isso, sem nome nem caminho. Serve ao gerenciador de serviço e à verificação de saúde de uma atualização.
+`GET /healthz`, e também `GET <caminho base>/healthz` (padrão `/cerimonias/healthz`), responde sem autenticação `{"ok":true,"version":"…","workspace":"<id>"}`: só isso, sem nome nem caminho. Serve ao gerenciador de serviço e à verificação de saúde de uma atualização.
 
 ### Sinais e saída
 
@@ -55,6 +57,18 @@ SIGTERM e SIGINT param o núcleo (timers, porta web, voz, etapa em andamento com
 ExecStart=/usr/bin/node /opt/coxia/out/headless/coxia.mjs --data-dir /var/lib/coxia --master-key-file /etc/coxia/master.key --workspace principal --port 4330
 Restart=on-failure
 ```
+
+### A porta de administração
+
+Com o processo rodando, o núcleo escuta num soquete Unix na pasta do workspace, `<pasta de dados>/workspaces/<id>/admin.sock`, com modo `0600`, e o apaga ao parar. Quem consegue conectar é o usuário dono do processo (é o SSH que leva alguém remoto até lá): não há token. É por ali que o shell do servidor, a CLI e o SDK chamam os canais do núcleo, com os direitos da janela; a auditoria nomeia a porta como `admin`. As regras do navegador pareado não valem (não é um navegador), e os canais que só a janela serve (`clipboard:copy`, `jobs:notify`) respondem `unknown-channel`. Fica ligada por padrão; `--no-admin-door` (ou `COXIA_ADMIN_DOOR=0`) a desliga. No desktop ela não existe. Se o caminho passa de 107 caracteres, a pasta não aceita o soquete ou outro processo vivo já escuta ali, a porta fica fechada com o motivo no log e na linha de pronto, e o núcleo sobe do mesmo jeito; só um arquivo que ninguém atende (de um processo morto) é substituído. A linha de pronto traz `porta de administração: <caminho>`, sem segredo.
+
+O protocolo (versão 1; as constantes e os tipos estão em `src/shared/adminDoor.ts`) é JSON, uma linha por objeto, UTF-8, no máximo 8 MiB por linha (uma linha maior fecha a conexão):
+
+1. O cliente abre com `{"hello": <CONTRACT_VERSION>}`. O núcleo responde `{"hello": {"version": 1, "workspace": "<id>"}}`, ou `{"error": {"code": "contract-mismatch", "message": "…"}}` (a mensagem traz as duas versões) e fecha. Qualquer outra primeira linha: `invalid-input` e fecha.
+2. Pedido: `{"id": 1, "channel": "web:pair", "args": []}`. Resposta única: `{"id": 1, "ok": true, "value": …}` ou `{"id": 1, "ok": false, "error": {"code": "…", "message": "…"}}`. Vários pedidos podem estar em curso e as respostas vêm em qualquer ordem.
+3. Depois do hello o núcleo envia cada evento que emite como `{"event": …}`, o mesmo objeto que a janela recebe. Um cliente que não os quer os ignora. Um cliente que para de ler e deixa mais de 8 MiB sem ser enviado é desconectado (o núcleo nunca espera por ele); ele pode conectar de novo.
+
+`scripts/admin-call.mjs <soquete> <canal> [argumentos em JSON]` faz uma chamada e imprime o valor (ou o código do erro, com saída 1); `web:pair` com ele imprime o código de pareamento.
 
 ### O que falta
 
@@ -86,6 +100,8 @@ The bundle holds the app's own code; npm dependencies stay outside and are read 
 | `--port <port>` | `COXIA_PORT` | The web door's port (1024 to 65535). **Required.** |
 | `--host <address>` | `COXIA_HOST` | The address (IPv4 or `localhost`). Default `127.0.0.1`. |
 | `--workspace <id>` | `COXIA_WORKSPACE` | The workspace this process runs. Default: the one the registry marks as current. |
+| `--no-admin-door` | `COXIA_ADMIN_DOOR=0` | Do not open the admin socket. Default: open. |
+| `--init` | | Only create the data folder's workspace registry (with its first workspace), print its id and exit 0. Needs only `--data-dir`. For an installer, before the supervisor starts the cores. |
 | `--renderer-dir <dir>` | `COXIA_RENDERER_DIR` | The built renderer. Default: `out/renderer` next to the bundle; without it the door answers the API and no page. |
 
 ### The master key
@@ -102,7 +118,7 @@ A process runs one workspace. For several, start several processes with `--works
 
 ### Health
 
-`GET <base path>/healthz` (default `/cerimonias/healthz`) answers without authentication `{"ok":true,"version":"…","workspace":"<id>"}`: nothing else, no name, no path. It is for the service manager and an update's health check.
+`GET /healthz`, and also `GET <base path>/healthz` (default `/cerimonias/healthz`), answers without authentication `{"ok":true,"version":"…","workspace":"<id>"}`: nothing else, no name, no path. It is for the service manager and an update's health check.
 
 ### Signals and exit
 
@@ -113,6 +129,18 @@ SIGTERM and SIGINT stop the core (timers, web door, voice, a running stage withi
 ExecStart=/usr/bin/node /opt/coxia/out/headless/coxia.mjs --data-dir /var/lib/coxia --master-key-file /etc/coxia/master.key --workspace principal --port 4330
 Restart=on-failure
 ```
+
+### The admin door
+
+While the process runs, the core listens on a Unix socket in the workspace's folder, `<data dir>/workspaces/<id>/admin.sock`, mode `0600`, and removes it when it stops. Whoever can connect is the user the process runs as (SSH is what brings a remote person there): there is no token. The server's shell, the CLI and the SDK call the core's channels through it, with the window's rights; the audit names the door `admin`. The paired-browser rules do not apply (it is not a browser), and the channels only a window serves (`clipboard:copy`, `jobs:notify`) answer `unknown-channel`. It is on by default; `--no-admin-door` (or `COXIA_ADMIN_DOOR=0`) turns it off. The desktop does not have it. When the path is longer than 107 characters, the folder cannot take the socket, or another live process already listens there, the door stays closed with the reason in the log and on the ready line, and the core starts all the same; only a file nobody answers (left by a dead process) is replaced. The ready output carries `admin door: <path>`, no secret.
+
+The protocol (version 1; the constants and types are in `src/shared/adminDoor.ts`) is JSON, one object per line, UTF-8, at most 8 MiB a line (a longer line closes the connection):
+
+1. The client opens with `{"hello": <CONTRACT_VERSION>}`. The core answers `{"hello": {"version": 1, "workspace": "<id>"}}`, or `{"error": {"code": "contract-mismatch", "message": "…"}}` (the message names both versions) and closes. Any other first line: `invalid-input` and close.
+2. A request: `{"id": 1, "channel": "web:pair", "args": []}`. One answer: `{"id": 1, "ok": true, "value": …}` or `{"id": 1, "ok": false, "error": {"code": "…", "message": "…"}}`. Several requests may be in flight and the answers come in any order.
+3. After the hello the core sends every event it emits as `{"event": …}`, the same object the window gets. A client that does not want them ignores them. A client that stops reading and leaves more than 8 MiB unsent is disconnected (the core never waits for it); it can connect again.
+
+`scripts/admin-call.mjs <socket> <channel> [JSON arguments]` makes one call and prints the value (or the error code, exit 1); `web:pair` through it prints the pairing code.
 
 ### What is missing
 

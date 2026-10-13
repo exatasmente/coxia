@@ -346,11 +346,22 @@ export function createWebApp(deps: WebDeps): WebApp {
     res.end(req.method === 'HEAD' ? undefined : data);
   }
 
+  // For a service manager and the update check: unauthenticated, so only that the process answers, its version and the workspace id. No name, no path.
+  function health(req: IncomingMessage, res: ServerResponse): boolean {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+    const body = JSON.stringify({ ok: true, version: appVersion(), workspace: workspaceId() });
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(body) });
+    res.end(req.method === 'HEAD' ? undefined : body);
+    return true;
+  }
+
   const server = createServer((req, res) => {
     securityHeaders(res);
     void (async () => {
       try {
         const url = new URL(req.url ?? '/', 'http://local');
+        // Also at the root, whatever the base path: a probe outside the app should not have to know a setting a client can change.
+        if (url.pathname === '/healthz' && health(req, res)) return;
         const base = deps.settings().basePath;
         if (url.pathname === base.slice(0, -1)) {
           res.writeHead(308, { Location: base });
@@ -364,13 +375,7 @@ export function createWebApp(deps: WebDeps): WebApp {
         } catch {
           throw new HttpError(400, t('main.web.badPath'));
         }
-        if (rel === 'healthz' && (req.method === 'GET' || req.method === 'HEAD')) {
-          // For a service manager and the update check: unauthenticated, so only that the process answers, its version and the workspace id. No name, no path.
-          const body = JSON.stringify({ ok: true, version: appVersion(), workspace: workspaceId() });
-          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(body) });
-          res.end(req.method === 'HEAD' ? undefined : body);
-          return;
-        }
+        if (rel === 'healthz' && health(req, res)) return;
         if (rel.startsWith('api/')) await api(req, res, rel);
         else serveStatic(req, res, rel);
       } catch (e) {

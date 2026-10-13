@@ -76,6 +76,17 @@ describe('createCoxia', () => {
     expect(await settled()).toEqual(before);
   });
 
+  it('closes the admin door it opened', async () => {
+    const { createCoxia } = await load();
+    const before = await settled();
+    const core = createCoxia({ dataDir, adminDoor: true });
+    await core.start();
+    expect(core.adminDoor()?.listening).toBe(true);
+    expect((await settled()).PipeWrap ?? 0).toBeGreaterThan(before.PipeWrap ?? 0);
+    await core.stop({ deadlineMs: 2_000 });
+    expect(await settled()).toEqual(before);
+  });
+
   it('can be stopped twice, and before it was started', async () => {
     const { createCoxia } = await load();
     const core = createCoxia({ dataDir });

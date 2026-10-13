@@ -13,6 +13,7 @@
   "ui.audit.choice.pullRequest": "{crLong}",
   "ui.audit.choice.push": "push",
   "ui.audit.door": "Asked from {door}",
+  "ui.audit.door.admin": "the admin socket of the server",
   "ui.audit.door.paired": "a paired browser",
   "ui.audit.door.terminal": "a terminal session",
   "ui.audit.door.window": "the window",

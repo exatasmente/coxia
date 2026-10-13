@@ -17,7 +17,7 @@ const table = new Map<string, Handler>();
 const deviceTable = new Map<string, (deviceId: string, ...args: never[]) => unknown>();
 let bind: Binder | null = null;
 
-type Via = 'ipc' | 'web' | 'persona';
+type Via = 'ipc' | 'web' | 'persona' | 'admin';
 
 // Which door a call came through, for a handler that must say who answered (a held step is answered from the window, from a paired browser or by the persona). It travels with
 // the call, across the awaits of the handler, and is 'ipc' when no call is running. 'persona' holds only while the persona's act is open: work its handler leaves running is
@@ -28,10 +28,10 @@ export const callOrigin = (): Via => {
   return via === 'persona' && !openAct() ? 'ipc' : via;
 };
 
-/** The door of the current call as the audit and the answers name it: `paired` for the HTTP door, `persona` inside the persona's act, `window` otherwise. */
+/** The door of the current call as the audit and the answers name it: `paired` for the HTTP door, `persona` inside the persona's act, `admin` for the local admin socket, `window` otherwise. */
 export const viaOf = (): Through => {
   const via = callOrigin();
-  return via === 'web' ? 'paired' : via === 'persona' ? 'persona' : 'window';
+  return via === 'web' ? 'paired' : via === 'persona' ? 'persona' : via === 'admin' ? 'admin' : 'window';
 };
 
 // What leaves a channel is always a ContractError: the code is the one the failure's class carries, or 'internal'; the message is the text the person already read.
@@ -123,4 +123,14 @@ export function invokePersona(channel: string, args: unknown[]): unknown {
   const fn = table.get(channel);
   if (!fn) throw new ContractError('unknown-channel', t('main.rpc.unknownChannel', { channel }));
   return guarded(channel, 'persona', fn, args as never[]);
+}
+
+/**
+ * A call from the local admin socket: the same table the window uses, with the window's rights (the person at the socket is the user the core runs as; the paired-browser rules
+ * are the device's limit and do not apply). The origin is its own so the audit can say the call came by that door. The channels only a window or a paired device serves are not here.
+ */
+export function invokeAdmin(channel: string, args: unknown[]): Promise<unknown> {
+  const fn = table.get(channel);
+  if (!fn) return Promise.reject(new ContractError('unknown-channel', t('main.rpc.unknownChannel', { channel })));
+  return Promise.resolve().then(() => guarded(channel, 'admin', fn, args as never[]));
 }

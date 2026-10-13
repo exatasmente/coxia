@@ -70,7 +70,8 @@ describe('main', () => {
     running = started;
     expect(exit).not.toHaveBeenCalled();
     // Said in the workspace's language, which is applied by the time the core is up.
-    expect(lines).toHaveLength(1);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toMatch(/^(admin door|porta de administração): .*admin\.sock$/);
     expect(lines[0]).toMatch(new RegExp(`^coxia (ready: listening on|pronto: escutando em) 127\\.0\\.0\\.1:${port}/cerimonias/, workspace principal$`));
 
     const health = await get('/cerimonias/healthz');
@@ -79,6 +80,9 @@ describe('main', () => {
     expect(health.headers['cache-control']).toBe('no-store');
     expect(health.body).not.toContain(dataDir);
     expect((await get('/cerimonias/healthz', 'HEAD')).status).toBe(200);
+    // At the root too, for a probe that does not know the base path; a POST is no health check.
+    expect(JSON.parse((await get('/healthz')).body)).toMatchObject({ ok: true, workspace: 'principal' });
+    expect((await get('/healthz', 'POST')).status).toBe(404);
     // Not a route of the API: nothing else is open without a session.
     expect((await get('/cerimonias/api/rpc/state:load', 'POST')).status).toBeGreaterThanOrEqual(400);
 
@@ -107,6 +111,7 @@ describe('main', () => {
     const saved = JSON.parse(readFileSync(join(dataDir, 'web.json'), 'utf8')) as { enabled: boolean; port: number; basePath: string };
     expect(saved).toMatchObject({ enabled: false, port: 4330, basePath: '/other/' });
     expect((await get('/other/healthz')).status).toBe(200);
+    expect((await get('/healthz')).status).toBe(200);
   });
 
   it('runs the workspace it is told to and leaves the registry current one alone', async () => {
@@ -221,5 +226,28 @@ describe('main refuses to start', () => {
     await main(['--help'], {}, { exit, out: (l) => out.push(l), err: () => undefined });
     expect(exit).toHaveBeenCalledExactlyOnceWith(0);
     expect(out.join('\n')).toContain('--master-key-file');
+  });
+});
+
+describe('main --init', () => {
+  it('creates the workspace registry of an empty data folder, says its first workspace and exits 0, with no key, port or door', async () => {
+    const { main } = await entry();
+    const exit = vi.fn();
+    const out: string[] = [];
+    expect(await main(['--init', '--data-dir', dataDir], {}, { exit, out: (l) => out.push(l), err: () => undefined })).toBeNull();
+    expect(exit).toHaveBeenCalledExactlyOnceWith(0);
+    expect(out).toEqual(['principal']);
+    expect(JSON.parse(readFileSync(join(dataDir, 'workspaces.json'), 'utf8'))).toMatchObject({ current: 'principal' });
+    // The config is made as a fresh install's, here and not by the next process, which would take the registry for an older install.
+    expect(JSON.parse(readFileSync(join(dataDir, 'config-migration.json'), 'utf8'))).toMatchObject({ existingInstall: false });
+    expect(tree(dataDir)).toContain(join('workspaces', 'principal', 'config.json'));
+    expect(tree(dataDir).some((f) => f.endsWith('admin.sock'))).toBe(false);
+  });
+
+  it('still needs the data folder', async () => {
+    const { main } = await entry();
+    const exit = vi.fn();
+    expect(await main(['--init'], {}, { exit, out: () => undefined, err: () => undefined })).toBeNull();
+    expect(exit).toHaveBeenCalledExactlyOnceWith(1);
   });
 });
