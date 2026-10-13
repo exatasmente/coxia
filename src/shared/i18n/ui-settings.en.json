@@ -300,6 +300,7 @@
   "ui.verify.unclaimed.title": "Commands from the earlier shared list",
   "ui.verify.unclaimed.use": "Use here",
   "ui.verify.webNote": "Only the app window can change these commands: the browser cannot choose what Apply runs.",
+  "ui.webAccess.addressFixed": "This process listens at the address its host gave it, and enabling, disabling or moving it here changes nothing.",
   "ui.webAccess.advanced.apply": "Apply",
   "ui.webAccess.advanced.basePath": "Path",
   "ui.webAccess.advanced.discard": "Discard",

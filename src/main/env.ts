@@ -1,7 +1,8 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { detectExistingInstall } from './config-bootstrap';
-import { ensureWorkspaces, workspaceDir } from './workspaces-core';
+import { t } from '../shared/i18n';
+import { ensureWorkspaces, readRegistry, workspaceDir } from './workspaces-core';
 
 // Where things live on disk. Nothing here depends on a company or a project: what a workspace decides (repos, hosts, tools, models)
 // is in its WorkspaceConfig, read through workspaceConfig.ts.
@@ -23,8 +24,12 @@ interface Env {
 
 let env: Env | null = null;
 
-/** Fixes the data folder of this process, creating or migrating the workspace registry in it. Once per process: a second boot with another folder is refused. */
-export function bootEnv(options: { dataDir?: string } = {}): void {
+/**
+ * Fixes the data folder of this process, creating or migrating the workspace registry in it. Once per process: a second boot with another folder is refused.
+ * `workspace` runs that workspace instead of the registry's current one, and leaves `current` as it is: it is the desktop's choice, and several processes
+ * (one per workspace) share the folder. An id the registry does not list is refused before anything is chosen.
+ */
+export function bootEnv(options: { dataDir?: string; workspace?: string } = {}): void {
   const root = options.dataDir ?? defaultDataDir();
   if (env) {
     // i18n-ignore: developer error: the data folder is fixed once per process
@@ -33,8 +38,17 @@ export function bootEnv(options: { dataDir?: string } = {}): void {
   }
   // Must be decided before the registry is created: afterwards a fresh root and an existing install look alike.
   const existingInstall = detectExistingInstall(root);
+  const wanted = options.workspace;
+  // Checked before ensureWorkspaces so a refusal leaves a folder that already has its registry untouched.
+  if (wanted !== undefined) {
+    const known = readRegistry(root);
+    if (known && !known.list.some((w) => w.id === wanted)) throw new Error(t('main.workspaces.missing', { id: wanted }));
+  }
   const resolved = ensureWorkspaces(root);
-  env = { root, existingInstall, workspaceId: resolved.registry.current, workspaceDir: workspaceDir(root, resolved.registry.current) };
+  const id = wanted ?? resolved.registry.current;
+  // A folder that had no registry yet (a fresh or an old layout) gets one from ensureWorkspaces; the id must be in it too.
+  if (!resolved.registry.list.some((w) => w.id === id)) throw new Error(t('main.workspaces.missing', { id }));
+  env = { root, existingInstall, workspaceId: id, workspaceDir: workspaceDir(root, id) };
 }
 
 // A process that never called bootEnv (a test, a script) gets the default folder at the first read, never at import.
