@@ -93,6 +93,7 @@ export function neutralConfig(): WorkspaceConfig {
     mcpState: { enabled: false, act: false },
     claudeSessions: { enabled: false },
     budget: { currency: 'USD', monthly: null, categories: {} },
+    effects: { offerAfter: 5, perKind: {} },
   };
 }
 

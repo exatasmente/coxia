@@ -1,10 +1,10 @@
-// WorkspaceConfig (schema 37): everything a workspace decides, in one versioned document.
+// WorkspaceConfig (schema 38): everything a workspace decides, in one versioned document.
 // The JSON schema (schema.ts) and the defaults (defaults.ts) mirror this file; test/config-schema.test.ts fails when they drift apart.
 // Paths are stored with a leading "~/" when they live under the home folder, so an exported config stays portable.
 
 import type { ScreenPolicy } from './screenPolicy';
 
-export const CONFIG_SCHEMA_VERSION = 37;
+export const CONFIG_SCHEMA_VERSION = 38;
 
 /**
  * The operating budget the person sets (#198): a monthly total and a limit per category, in one currency. A missing or null limit means no limit, so a workspace
@@ -18,6 +18,17 @@ export interface BudgetConfig {
   monthly: number | null;
   /** A limit per category (`model`, `infrastructure`, `domains`, and the ones added later); a category with no entry has no limit of its own. */
   categories: Record<string, number>;
+}
+
+/**
+ * How the app earns autonomy per kind of external effect (#199): after `offerAfter` proposals of a kind approved in a row with none reverted, it offers autonomy for it. The
+ * grant itself is never here: it is the person's, kept apart with its audit (<workspace>/autonomy/).
+ */
+export interface EffectsConfig {
+  /** N for every kind that has no entry in `perKind`. */
+  offerAfter: number;
+  /** N for one kind, by name (`push`, `pull-request`, `comment`, ...). */
+  perKind: Record<string, number>;
 }
 
 /** The machine's Claude Code sessions in the app (desktop only): off unless the person turned it on. */
@@ -1225,6 +1236,8 @@ export interface WorkspaceConfig {
   claudeSessions?: ClaudeSessionsConfig;
   /** The operating budget (#198). Optional: a workspace stored without it has no limit and behaves exactly as before. Changed only on the computer. */
   budget?: BudgetConfig;
+  /** When the app offers autonomy per kind of effect (#199). Optional: absent reads as 5 for every kind. */
+  effects?: EffectsConfig;
 }
 
 /** A secret the config needs, found by walking the secretRef fields. */

@@ -644,6 +644,10 @@ export const CONFIG_SCHEMA: JsonSchema = {
         monthly: { type: ['number', 'null'], description: 'The most the instance may spend in a calendar month (UTC), across categories. Null: no limit.', minimum: 0, maximum: 1e9 },
         categories: { type: 'object', description: 'A limit per category (model, infrastructure, domains and the ones added later), by name. A category with no entry has no limit of its own.', additionalProperties: { type: 'number', minimum: 0, maximum: 1e9 }, maxProperties: 30 } as JsonSchema,
       }),
+      effects: object('When the app offers autonomy for a kind of external effect (a push, a pull request, a comment ...): after N proposals of the kind approved in a row with none reverted. The grant itself is the person\'s and is never here.', {
+        offerAfter: { type: 'integer', description: 'N for every kind with no entry of its own.', minimum: 1, maximum: 1000 } as JsonSchema,
+        perKind: { type: 'object', description: 'N for one kind, by name.', additionalProperties: { type: 'integer', minimum: 1, maximum: 1000 }, maxProperties: 40 } as JsonSchema,
+      }),
     },
     ['schemaVersion'],
   ),
