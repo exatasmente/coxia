@@ -36,6 +36,8 @@ import { hasMarkers } from './conflictHunks';
 import { verifyCommandFor } from './conflictVerify';
 import { cycle, formatTime, prompt as cp } from './cyclePrompts';
 import { atasDir } from './env';
+import { authorize, consume, effectOf, grantFor, grantRef, noteDecision, noteProposed } from './effectGrants';
+import { type EffectGrant, effectOfCommand } from '../shared/effects';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
 import { VcsError, scrubSecrets } from './vcs/errors';
@@ -215,6 +217,7 @@ export function proposeVcsAction(input: {
   });
   write({ ...store, actions: [action, ...supersede(store.actions, input.unit)] });
   if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  afterPropose(action);
   return action;
 }
 
@@ -244,6 +247,7 @@ export function proposeVcsGroup(input: Omit<Parameters<typeof proposeVcsAction>[
   });
   write({ ...store, actions: [action, ...supersede(store.actions, input.unit)] });
   if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  afterPropose(action);
   return action;
 }
 
@@ -503,15 +507,20 @@ export interface AuditOrigin {
   bodyHash?: string;
   /** The autonomy policy that let the write out with no "yes"; absent on what a person approved and on what the policy does not decide (a plugin, an agent's own switch). */
   policy?: AuditPolicy;
+  /** The grant of autonomy (#199) that let the write out with no "yes", as `grant:<id>`. */
+  grant?: string;
   /** The proposal was made under the persona's door: the line of approving it says so, and the Audit screen tells a persona that approved its own proposal. */
   proposedBy?: 'persona';
 }
 
-const originOf = (a: ReleaseAction): AuditOrigin => ({ issue: a.issue, actionId: a.id, kind: a.kind, key: a.key, summary: a.summary, ...(a.proposedBy ? { proposedBy: a.proposedBy } : {}) });
+const originOf = (a: ReleaseAction, grant?: EffectGrant): AuditOrigin => ({ issue: a.issue, actionId: a.id, kind: a.kind, key: a.key, summary: a.summary, ...(a.proposedBy ? { proposedBy: a.proposedBy } : {}), ...(grant ? { grant: grantRef(grant) } : {}) });
 
 /** The decision on a held step, in the log beside the write it let out (the same action id ties them): approved, or refused and never run. The persona's decision is worded as its own. */
-function recordDecision(a: ReleaseAction, decision: 'approved' | 'refused', result = ''): void {
-  recordWrite({ kind: 'decision', issue: a.issue, target: a.summary ?? a.key, via: 'app', fields: { decision, step: a.kind }, ok: true, code: null, result, origin: { actionId: a.id, kind: a.kind, key: a.key, summary: a.summary }, by: openAct() ? 'persona' : PERSON_WHO.by });
+function recordDecision(a: ReleaseAction, decision: 'approved' | 'refused', result = '', grant?: EffectGrant): void {
+  // The track record (#199) counts the person's decisions on a first look; a retry of a failed step and a step a grant let through are not new ones.
+  const kind = effectOf(a);
+  if (kind && !grant && a.state === 'pending') noteDecision(kind, a.id, decision);
+  recordWrite({ kind: 'decision', issue: a.issue, target: a.summary ?? a.key, via: 'app', fields: { decision, step: a.kind, ...(grant ? { grant: grantRef(grant) } : {}) }, ok: true, code: null, result, origin: { actionId: a.id, kind: a.kind, key: a.key, summary: a.summary }, by: grant ? null : openAct() ? 'persona' : PERSON_WHO.by });
 }
 
 // Every real write goes through here: one line in auditoria.jsonl, whatever the outcome.
@@ -525,6 +534,7 @@ async function audited(from: AuditOrigin, base: AuditBase, write: (meta: ExecMet
     ...(from.by ? { by: from.by } : {}),
     ...(from.bodyHash ? { bodyHash: from.bodyHash } : {}),
     ...(from.policy ? { policy: from.policy } : {}),
+    ...(from.grant ? { grant: from.grant } : {}),
     ...(from.proposedBy ? { proposedBy: from.proposedBy } : {}),
   };
   try {
@@ -550,11 +560,24 @@ export interface AutoWrite {
   policy?: AuditPolicy;
 }
 
+/**
+ * The grant behind a push or a pull request the autonomy block lets out (#199): the block's switch is read as a grant of the kind, so the exit asks for it here too and the
+ * audit line names it. Revoking it turned the switch off, so a write already on its way stops here instead of going out. Null for a write the block does not decide.
+ */
+function legacyGrantOf(kind: 'push' | 'pull-request', w: AutoWrite): EffectGrant | null {
+  if (!w.policy) return null;
+  const g = grantFor(kind);
+  if (!g) throw new Error(t('main.autonomy.notGranted', { kind }));
+  consume(kind, `auto:${w.key}`, g);
+  return g;
+}
+
 export async function runVcsAuto(w: AutoWrite, c: VcsCommand): Promise<unknown> {
   validateVcsCommand(c);
   assertNoTestEnvLeak(c);
+  const grant = !w.policy?.board && effectOfCommand(c) === 'pull-request' ? legacyGrantOf('pull-request', w) : null;
   let response: unknown;
-  await audited({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by, bodyHash: w.bodyHash, policy: w.policy }, { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
+  await audited({ issue: w.issue, actionId: `auto:${w.key}`, kind: 'auto', key: w.key, summary: w.summary, by: w.by, bodyHash: w.bodyHash, policy: w.policy, ...(grant ? { grant: grantRef(grant) } : {}) }, { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
     const out = await runVcs(c, meta);
     response = meta.response;
     return out;
@@ -562,7 +585,26 @@ export async function runVcsAuto(w: AutoWrite, c: VcsCommand): Promise<unknown> 
   return response;
 }
 
-export async function approveAction(id: string): Promise<ReleaseAction> {
+/**
+ * A proposal was just made (#199): it enters the track record and, when a grant of its kind covers it, it runs at once under that grant (audited with the grant's id)
+ * instead of waiting. No grant, a grant whose threshold is used up, a proposal of the persona and the steps that never leave on their own (a release's, a conflict's
+ * push) wait for the person as ever. A failure to look never lets it through.
+ */
+function afterPropose(a: ReleaseAction): void {
+  const kind = effectOf(a);
+  if (!kind) return;
+  noteProposed(kind);
+  if (a.proposedBy === 'persona' || a.kind === 'release-git' || a.kind === 'conflict-push') return;
+  const auth = authorize(kind);
+  if (!auth.ok) return;
+  consume(kind, a.id, auth.grant);
+  void approve(a.id, auth.grant).catch((e) => console.error('[actions] autonomy', e instanceof Error ? e.message : e));
+}
+
+/** The person's "sim". A grant of autonomy (#199) reaches the same body through `autoRun`, never through here: the channel passes the id and nothing else. */
+export const approveAction = (id: string): Promise<ReleaseAction> => approve(id);
+
+async function approve(id: string, grant?: EffectGrant): Promise<ReleaseAction> {
   assertExternalWrite(t('vcs.write.guard'));
   const a = read().actions.find((x) => x.id === id);
   if (!a) throw new Error(t('main.actions.missing', { id }));
@@ -581,7 +623,7 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
   }
   update(id, (x) => ({ ...x, state: 'running' }));
   // The decision is the person's "yes", taken here; what the step then did is the line of its own write.
-  recordDecision(a, 'approved');
+  recordDecision(a, 'approved', '', grant);
   const responses: unknown[] = [];
   let nothingSent = false;
   try {
@@ -589,13 +631,13 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
     if (a.kind === 'conflict-push') {
       output = await publishConflict(a);
     } else if (a.kind === 'run-push') {
-      output = await publishRunBranch(a);
+      output = await publishRunBranch(a, grant);
     } else if (a.kind === 'suggest-agent') {
       // Accepting creates an ordinary agent in the team: local work, nothing leaves the machine, so no `assertExternalWrite` here.
       if (!suggestionHooks.accept) throw new Error(t('main.suggestions.noHook'));
       output = suggestionHooks.accept(a).output;
     } else if (a.kind === 'release-git') {
-      const r = await runRelease(originOf(a), a.unit);
+      const r = await runRelease(originOf(a, grant), a.unit);
       output = r.output;
       nothingSent = r.sent === false;
     } else if (isVcsAction(a)) {
@@ -614,7 +656,7 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
         let response: unknown;
         try {
           outputs.push(
-            await audited(originOf(a), { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
+            await audited(originOf(a, grant), { kind: auditKindOf(c), target: `${c.method} ${c.endpoint}`, via: c.via, fields: auditFieldsOf(c) }, async (meta) => {
               const out = await runVcs(c, meta);
               response = meta.response;
               return out;
@@ -636,17 +678,17 @@ export async function approveAction(id: string): Promise<ReleaseAction> {
       output = outputs.join('\n');
     } else if (a.kind === 'sync') {
       const args = ['sync', '--apply', '--issue', String(a.issue)];
-      output = await audited(originOf(a), { kind: 'sync', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
+      output = await audited(originOf(a, grant), { kind: 'sync', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     } else if (a.noteId && a.proposedBody) {
       const body = a.proposedBody;
       const [cmd] = await vcsProvider().planWrite({ op: 'editIssueNote', project: issueProjectKey(), iid: a.issue, noteId: a.noteId, body });
-      output = await audited(originOf(a), { kind: 'note-edit', target: `${cmd.method} ${cmd.endpoint}`, via: cmd.via, fields: { body } }, async (meta) => {
+      output = await audited(originOf(a, grant), { kind: 'note-edit', target: `${cmd.method} ${cmd.endpoint}`, via: cmd.via, fields: { body } }, async (meta) => {
         await runVcs(cmd, meta);
         return t('main.actions.noteEdited', { note: a.noteId ?? '', issue: a.issue });
       });
     } else {
       const args = ['publish', '--publish', '--issue', String(a.issue)];
-      output = await audited(originOf(a), { kind: 'publish', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
+      output = await audited(originOf(a, grant), { kind: 'publish', target: `release-sync ${args.join(' ')}`, via: 'cli', fields: {} }, () => cli(args));
     }
     const done = update(id, (x) => ({ ...x, state: 'done', finishedAt: new Date().toISOString(), output, ...(nothingSent ? { nothingSent: true } : {}) }));
     // The push pipeline takes a moment to appear; the comment draft waits for it.
@@ -1107,6 +1149,7 @@ export function proposeRunPush(input: { key: string; issue: number; issueTitle?:
   });
   write({ ...store, actions: [action, ...replaced] });
   if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  afterPropose(action);
   return action;
 }
 
@@ -1164,18 +1207,19 @@ export async function pushRunBranchAuto(w: AutoWrite, runId: string, branch: str
     const hit = (await git(run.worktree, ['grep', '--fixed-strings', '--files-with-matches', '-I', f.value, 'HEAD'])).stdout.trim();
     if (hit) throw new Error(t('main.testEnv.refusal.commit', { what: t(`main.testEnv.form.${f.kind}`) }));
   }
+  const grant = legacyGrantOf('push', w);
   const a = blank({ key: w.key, kind: 'run-push', issue: w.issue, summary: w.summary, unit: { runId, branch } });
   // A push of this run that still waited is replaced: what goes out is the branch as it is now, not the state the proposal was made for.
   const store = read();
   const replaced = store.actions.map((x) => (x.kind === 'run-push' && x.state === 'pending' && x.unit?.runId === runId ? { ...x, state: 'skipped' as const, finishedAt: now, output: t('main.actions.replaced') } : x));
   write({ ...store, actions: replaced });
   const fields = { repo: run.repo, branch: run.branch, run: run.id, head: (await git(run.worktree, ['rev-parse', 'HEAD'])).stdout.trim() };
-  await audited({ ...originOf(a), kind: 'auto', by: w.by, policy: w.policy }, { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
+  await audited({ ...originOf(a, grant ?? undefined), kind: 'auto', by: w.by, policy: w.policy }, { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
   // The branch is on the host: the same notice a person's "sim" gives, so the pull request follows the push by itself too.
   told(a, []);
 }
 
-async function publishRunBranch(a: ReleaseAction): Promise<string> {
+async function publishRunBranch(a: ReleaseAction, grant?: EffectGrant): Promise<string> {
   const runId = String((a.unit ?? {}).runId ?? '');
   const run = runStore().get(runId);
   if (!run || run.branch !== (a.unit ?? {}).branch) throw new Error(t('main.actions.pushNoRun', { run: runId.slice(0, 40) }));
@@ -1189,7 +1233,7 @@ async function publishRunBranch(a: ReleaseAction): Promise<string> {
   if ((await git(run.worktree, ['status', '--porcelain', '--untracked-files=no', '--', '.', memory])).stdout.trim()) throw new Error(t('main.conflictGit.dirty'));
   const fields = { repo: run.repo, branch: run.branch, run: run.id, head: (await git(run.worktree, ['rev-parse', 'HEAD'])).stdout.trim() };
   // i18n-ignore: a git command line shown as it runs
-  return audited(originOf(a), { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
+  return audited(originOf(a, grant), { kind: 'push', target: `git push origin HEAD:refs/heads/${run.branch}`, via: 'git', fields }, () => pushBranch(run.worktree, run.branch));
 }
 
 // ---- the steps of a release -----------------------------------------------------------------------------------------------------------------
@@ -1216,6 +1260,7 @@ export function proposeRelease(input: { key: string; issue: number; issueTitle?:
   });
   write({ ...store, actions: [action, ...store.actions] });
   if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  afterPropose(action);
   return action;
 }
 

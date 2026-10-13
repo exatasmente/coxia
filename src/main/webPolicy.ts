@@ -140,6 +140,11 @@ export const CONTRACT_CHANNELS = new Set([HELLO_CHANNEL]);
 // the admin door, or a passkey device that is asked for it at that moment. A pattern with the one read as an exception, so a channel added under `ownership:` later starts closed.
 const OWNERSHIP_ADMIN = /^ownership:(?!status$)/;
 
+// Autonomy per kind of external effect (#199): a paired browser reads `autonomy:status` (the phone shows the track record, the offers and the grants). Granting, revoking, reporting an
+// incident and marking an action reverted are admin acts: the computer, the admin door, or a passkey device asked at that moment. A pattern with the one read as an exception, so a
+// channel added under `autonomy:` later starts closed.
+const AUTONOMY_ADMIN = /^autonomy:(?!status$)/;
+
 // Passkeys (#210). A paired browser whose device has registered a passkey is an admin device: the channels the rules above close to every browser open to it, except the ones
 // that act on the machine itself (below), and each sensitive one asks for the passkey at that moment (STEP_UP). The channels that register and use a passkey are open to any paired
 // browser, since a device has to be able to enroll; enrolling from a paired browser needs the computer's allowance (passkey:enroll-allow), so the pairing code alone never makes an
@@ -158,13 +163,14 @@ const ADMIN_LIFTED = new Set(['workspace:test', 'workspace:delete', 'plugins:set
 
 // Channels that ask a paired browser for the passkey whatever their handler does (the web door checks them before the handler runs). The handlers that know more than
 // the channel name, such as the permission raise inside config:cycle-save and the secret channels, call requireSensitive themselves (passkeyStepUp.ts) and are not listed here.
-// The window and the admin socket are never asked.
+// The window and the admin socket are never asked. `autonomy:grant` asks inside its handler, with the passkey kind of the effect it grants (`stepUpOfEffect`).
 export const STEP_UP: ReadonlyMap<string, SensitiveKind> = new Map<string, SensitiveKind>([
   ['config:save', 'permission'], ['config:import-apply', 'permission'], ['config:prompt-set', 'permission'], ['cycle:apply', 'permission'], ['agents:apply', 'permission'],
   ['workspace:test', 'permission'], ['plugins:set-enabled', 'permission'], ['plugins:set-setting', 'permission'], ['plugins:revoke', 'permission'], ['plugins:revoke-write', 'permission'],
   ['config:testenv-confirm', 'secret'], ['config:testenv-revoke', 'secret'], ['plugins:set-secret', 'secret'],
   ['workspace:delete', 'infrastructure'],
   ['budget:set', 'budget'],
+  ['autonomy:revoke', 'permission'], ['autonomy:incident', 'permission'], ['autonomy:mark-reverted', 'permission'],
   ['ownership:claim', 'ownership'], ['ownership:release', 'ownership'],
   ['web:pair', 'pairing'], ['web:configure', 'pairing'], ['web:revoke', 'pairing'],
   ['passkey:remove', 'passkey'],
@@ -173,7 +179,7 @@ export const STEP_UP: ReadonlyMap<string, SensitiveKind> = new Map<string, Sensi
 /** What a paired browser may call. `admin` is true for a device with a registered passkey. */
 export function webAccess(channel: string, admin = false): WebAccess {
   if (PASSKEY_CHANNELS.has(channel)) return 'allow';
-  const closed = DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || BUDGET_WRITE.test(channel) || OWNERSHIP_ADMIN.test(channel);
+  const closed = DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || BUDGET_WRITE.test(channel) || OWNERSHIP_ADMIN.test(channel) || AUTONOMY_ADMIN.test(channel);
   if (closed && !(admin && !ADMIN_STILL_CLOSED(channel))) return 'deny';
   if (PASSKEY_DESKTOP.test(channel) || MEMORY_UNLISTED.test(channel) || TURN_ASKS_UNLISTED.test(channel) || PERSONA_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel) || CLAUDE_SESSIONS.test(channel) || REMOTE_CONTROL_ADMIN.test(channel)) return 'deny';
   if (CONTRACT_CHANNELS.has(channel) || MEMORY_CHANNELS.has(channel) || TURN_ASK_CHANNELS.has(channel) || PERSONA_CHANNELS.has(channel)) return 'allow';

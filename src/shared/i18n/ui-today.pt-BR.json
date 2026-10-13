@@ -23,6 +23,7 @@
   "ui.audit.flowMain": "fluxo principal",
   "ui.audit.kind.act": "Ato da persona",
   "ui.audit.kind.autoStep": "Passo autônomo",
+  "ui.audit.kind.autonomy": "Autonomia",
   "ui.audit.kind.claudeSession": "Sessão do Claude Code",
   "ui.audit.kind.config": "Mudança na configuração",
   "ui.audit.kind.decision": "Decisão sobre passo retido",

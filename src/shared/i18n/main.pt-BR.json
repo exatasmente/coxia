@@ -2166,5 +2166,17 @@
   "main.ownership.readyClient": "esta instância é cliente do workspace {workspace}: de {owner}, não executa o runner nem o agendador",
   "main.ownership.readyExpired": "esta instância é cliente do workspace {workspace}: a posse de {owner} expirou, um administrador pode assumir com ownership:claim",
   "main.ownership.noticeTitle": "Workspace de outra instância",
-  "main.ownership.noticeBody": "{owner} é dona deste workspace. Esta janela só o mostra: nada roda aqui."
+  "main.ownership.noticeBody": "{owner} é dona deste workspace. Esta janela só o mostra: nada roda aqui.",
+  "main.autonomy.incidentTitle": "Incidente em {kind}: autonomia retirada",
+  "main.autonomy.incidentRevoked": "A autonomia para {kind} foi revogada e a próxima ação desse tipo volta a perguntar. {note}",
+  "main.autonomy.incidentNoGrant": "Um incidente foi registrado para {kind}, que não tinha autonomia: continua perguntando e o histórico recomeça. {note}",
+  "main.autonomy.unknownAction": "Nenhuma ação {id} no histórico.",
+  "main.autonomy.revertedNote": "a ação {id} foi desfeita",
+  "main.autonomy.badKind": "Tipo de efeito externo desconhecido.",
+  "main.autonomy.personaRefused": "A autonomia é da pessoa para conceder e retirar: a persona não pode.",
+  "main.autonomy.alreadyGranted": "A autonomia para {kind} já está concedida.",
+  "main.autonomy.notOffered": "A autonomia para {kind} ainda não é oferecida: precisa de {n} propostas aprovadas seguidas, nenhuma desfeita.",
+  "main.autonomy.badThreshold": "O limite deve ser um número de zero ou mais.",
+  "main.autonomy.amountNeeded": "Uma concessão para gasto precisa do maior valor que um gasto pode ter.",
+  "main.autonomy.notGranted": "Nenhuma autonomia concedida para {kind}: espera um sim."
 }
