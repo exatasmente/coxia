@@ -1,3 +1,4 @@
+import { accountsModule } from './accounts';
 import { agentAssist } from './agentAssist';
 import { agentPrep } from './agentPrep';
 import { autostart } from './autostart';
@@ -47,6 +48,7 @@ import type { Module } from './module';
 
 // Feature modules register here, one per line. Keep this list sorted.
 const ALL: Module[] = [
+  accountsModule,
   agentAssist,
   agentPrep,
   auditoria,

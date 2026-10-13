@@ -2178,5 +2178,12 @@
   "main.autonomy.notOffered": "Autonomy for {kind} is not offered yet: it needs {n} approved proposals in a row with none reverted.",
   "main.autonomy.badThreshold": "The threshold must be a number of zero or more.",
   "main.autonomy.amountNeeded": "A grant for a spend needs the most one spend may be.",
-  "main.autonomy.notGranted": "No autonomy is granted for {kind}: it waits for a yes."
+  "main.autonomy.notGranted": "No autonomy is granted for {kind}: it waits for a yes.",
+  "main.accounts.unknownProvider": "{provider} is not in the registry of external accounts: add the account first.",
+  "main.accounts.invalid": "The account is not valid: check {field}.",
+  "main.accounts.tooMany": "The registry holds at most 100 accounts.",
+  "main.accounts.exists": "An account {id} already exists.",
+  "main.accounts.missing": "No account {id} in the registry.",
+  "main.accounts.personaRefused": "The person opens, changes and closes external accounts: the persona cannot.",
+  "main.autonomy.unknownAccount": "That account is not in the registry."
 }

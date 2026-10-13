@@ -82,7 +82,12 @@ function legacyGrant(kind: EffectKind): EffectGrant | null {
 }
 
 /** The grant that stands for a kind now, or null: it asks. */
-export const grantFor = (kind: EffectKind): EffectGrant | null => readGrants().find((g) => g.kind === kind) ?? legacyGrant(kind);
+export const grantFor = (kind: EffectKind): EffectGrant | null => readGrants().find((g) => g.kind === kind && accountStands(g)) ?? legacyGrant(kind);
+
+/** A grant tied to an account stands only while that account is in the registry: removing it through a config save drops the grant's effect too. */
+function accountStands(g: EffectGrant): boolean {
+  return !g.accountId || (getConfig().accounts ?? []).some((a) => a.id === g.accountId);
+}
 
 /** How the audit names a grant. */
 export const grantRef = (g: Pick<EffectGrant, 'id'>): string => `grant:${g.id}`;
@@ -184,7 +189,7 @@ function dropLegacy(kind: EffectKind): void {
 }
 
 /** Takes the grant of a kind away at once (also the configuration's switch that stood for one). The streak starts over. Returns whether something stood. */
-export function revokeKind(kind: EffectKind, why: 'revoke' | 'incident' | 'account', note = ''): boolean {
+export function revokeKind(kind: EffectKind, why: 'revoke' | 'incident', note = ''): boolean {
   const grants = readGrants();
   const explicit = grants.filter((g) => g.kind === kind);
   const legacy = legacyGrant(kind);
@@ -200,12 +205,21 @@ export function revokeKind(kind: EffectKind, why: 'revoke' | 'incident' | 'accou
   return had;
 }
 
-/** Revokes every grant tied to an account of the registry (#200). */
-export function revokeForAccount(accountId: string): EffectKind[] {
-  const tied = readGrants().filter((g) => g.accountId === accountId);
-  const kinds = [...new Set(tied.map((g) => g.kind))];
-  for (const k of kinds) revokeKind(k, 'account', `account ${accountId}`);
-  return kinds;
+/** Revokes every grant tied to an account of the registry (#200), audited; the grants of other accounts and the untied ones stay. Returns the grants dropped. */
+export function revokeForAccount(accountId: string): EffectGrant[] {
+  const all = readGrants();
+  const tied = all.filter((g) => g.accountId === accountId);
+  if (!tied.length) return [];
+  writeGrants(all.filter((g) => g.accountId !== accountId));
+  for (const g of tied) {
+    bump(g.kind, (r) => {
+      r.streak = 0;
+      r.lastRevokedAt = new Date().toISOString();
+    });
+    audit('account', g.kind, { grant: grantRef(g), account: accountId });
+    emitter?.(g.kind);
+  }
+  return tied;
 }
 
 function incident(kind: EffectKind, note: string): boolean {
@@ -247,7 +261,7 @@ const kindArg = (v: unknown): EffectKind => {
   return v;
 };
 
-function grant(kindIn: unknown, thresholdIn: unknown, extra: { accountId?: string } = {}): EffectGrant {
+function grant(kindIn: unknown, thresholdIn: unknown, accountIn?: unknown): EffectGrant {
   // An agent never grants itself autonomy: the persona's door does not carry this channel and, should a call reach it, it is refused here as well.
   if (viaOf() === 'persona') throw new ContractError('forbidden', t('main.autonomy.personaRefused'));
   const kind = kindArg(kindIn);
@@ -262,8 +276,13 @@ function grant(kindIn: unknown, thresholdIn: unknown, extra: { accountId?: strin
     threshold = AMOUNT_KINDS.includes(kind) ? Math.round(thresholdIn * 100) / 100 : Math.floor(thresholdIn);
   }
   if (AMOUNT_KINDS.includes(kind) && threshold === undefined) throw new ContractError('invalid-input', t('main.autonomy.amountNeeded'));
+  let accountId: string | undefined;
+  if (accountIn !== undefined && accountIn !== null && accountIn !== '') {
+    if (typeof accountIn !== 'string' || !(getConfig().accounts ?? []).some((a) => a.id === accountIn)) throw new ContractError('not-found', t('main.autonomy.unknownAccount'));
+    accountId = accountIn;
+  }
   const via = viaOf();
-  const g: EffectGrant = { id: randomBytes(5).toString('hex'), kind, ...(threshold !== undefined ? { threshold } : {}), ...(extra.accountId ? { accountId: extra.accountId } : {}), grantedAt: new Date().toISOString(), grantedBy: 'person', via: via === 'persona' ? 'window' : via };
+  const g: EffectGrant = { id: randomBytes(5).toString('hex'), kind, ...(threshold !== undefined ? { threshold } : {}), ...(accountId ? { accountId } : {}), grantedAt: new Date().toISOString(), grantedBy: 'person', via: via === 'persona' ? 'window' : via };
   writeGrants([...readGrants(), g]);
   audit('grant', kind, { grant: grantRef(g), ...(threshold !== undefined ? { threshold: String(threshold) } : {}), ...(g.accountId ? { account: g.accountId } : {}), via });
   emitter?.(kind);
@@ -274,7 +293,7 @@ export const effectGrantsModule: Module = (ctx) => {
   notifier = ctx.notify;
   emitter = (kind) => ctx.emit({ type: 'module', name: 'autonomy:changed', payload: { kind } });
   ctx.handle('autonomy:status', () => statusOf());
-  ctx.handle('autonomy:grant', (kind: unknown, threshold?: unknown) => grant(kind, threshold));
+  ctx.handle('autonomy:grant', (kind: unknown, threshold?: unknown, accountId?: unknown) => grant(kind, threshold, accountId));
   // Taking autonomy back is asked for like the grant (STEP_UP in webPolicy.ts): the window and the admin socket are never asked.
   ctx.handle('autonomy:revoke', (kind: unknown) => {
     if (viaOf() === 'persona') throw new ContractError('forbidden', t('main.autonomy.personaRefused'));
@@ -289,6 +308,3 @@ export const effectGrantsModule: Module = (ctx) => {
     return { kind: markReverted(String(actionId ?? '')) };
   });
 };
-
-/** For a test and for the accounts registry: the same grant path with an account attached. */
-export const grantForAccount = (kind: unknown, threshold: unknown, accountId: string): EffectGrant => grant(kind, threshold, { accountId });

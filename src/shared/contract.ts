@@ -95,6 +95,8 @@ export const CHANNELS = [
   'minutes:day', 'minutes:day-teams', 'minutes:delete', 'minutes:delete-preview', 'minutes:restore', 'minutes:trash', 'minutes:version-teams',
   // passkey
   'passkey:assert', 'passkey:assert-options', 'passkey:enroll-allow', 'passkey:list', 'passkey:register', 'passkey:register-options', 'passkey:remove',
+  // accounts
+  'accounts:add', 'accounts:export', 'accounts:list', 'accounts:remove', 'accounts:update',
   // autonomy
   'autonomy:grant', 'autonomy:incident', 'autonomy:mark-reverted', 'autonomy:revoke', 'autonomy:status',
   // ownership
