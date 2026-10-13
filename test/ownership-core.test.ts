@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { errorCodeOf } from '../src/shared/contract';
-import { webAccess } from '../src/main/webPolicy';
+import { STEP_UP, webAccess } from '../src/main/webPolicy';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -96,5 +96,10 @@ describe('the web policy of the ownership channels', () => {
     expect(webAccess('ownership:claim')).toBe('deny');
     expect(webAccess('ownership:release')).toBe('deny');
     expect(webAccess('ownership:anything-later')).toBe('deny');
+    // A device with a passkey may hand over or take over, and is asked for the passkey at that moment.
+    expect(webAccess('ownership:claim', true)).toBe('allow');
+    expect(webAccess('ownership:release', true)).toBe('allow');
+    expect(STEP_UP.get('ownership:claim')).toBe('ownership');
+    expect(STEP_UP.get('ownership:release')).toBe('ownership');
   });
 });
