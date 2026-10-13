@@ -12,6 +12,8 @@ export interface PathsPort {
   resources(): string;
   /** Where the app keeps the person's data (the desktop's userData folder). */
   userData(): string;
+  /** The app's own folder: the repository in development, the packaged app otherwise. */
+  appPath(): string;
 }
 
 let port: PathsPort | null = null;
@@ -25,7 +27,11 @@ export const isPackaged = (): boolean => port?.isPackaged() ?? false;
 
 // Packaged: the host's resources folder holds resources/ and sidecar/ next to app.asar (extraResources).
 // Dev and everything without a host: they live in the repository, two levels above out/main.
-const base = (): string => (isPackaged() ? port?.resources() ?? '' : join(import.meta.dirname, '../..'));
+const checkout = (): string => join(import.meta.dirname, '../..');
+const base = (): string => (isPackaged() ? port?.resources() ?? '' : checkout());
+
+// Where the app's own files are (out/main, package.json, the bundled SDK): what the desktop runtime calls the app path.
+export const appPath = (): string => port?.appPath() ?? checkout();
 
 export const resourcesDir = (): string => join(base(), 'resources');
 export const sidecarDir = (): string => join(base(), 'sidecar');

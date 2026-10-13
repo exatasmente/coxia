@@ -1,7 +1,7 @@
-import { app } from 'electron';
 import type { WorkspacesView } from '../shared/workspaces';
 import { WORKSPACE_EVENT } from '../shared/workspaces';
 import { DATA_ROOT, WORKSPACE_ID } from './env';
+import { requireHost, restartProcess } from './host';
 import type { Module } from './module';
 import { stopWebAccess } from './webAccess';
 import { createWorkspace, deleteWorkspace, readRegistry, renameWorkspace, setTestFlag, switchWorkspace } from './workspaces-core';
@@ -20,9 +20,7 @@ async function restart(): Promise<void> {
   try {
     await stopWebAccess();
   } catch {}
-  app.relaunch();
-  app.quit();
-  setTimeout(() => app.exit(0), 5000).unref();
+  restartProcess();
 }
 
 export const workspaces: Module = (ctx) => {
@@ -46,6 +44,8 @@ export const workspaces: Module = (ctx) => {
   });
   ctx.handle('workspace:switch', (id: string) => {
     if (id === WORKSPACE_ID && readRegistry(DATA_ROOT)?.current === id) return { restarting: false };
+    // Switching takes a fresh process: a host that cannot start one refuses before the registry moves.
+    requireHost('restart');
     switchWorkspace(DATA_ROOT, id);
     setTimeout(() => void restart(), RESTART_DELAY_MS);
     return { restarting: true };

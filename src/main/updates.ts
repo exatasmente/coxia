@@ -5,7 +5,6 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import type { AppUpdater, ProgressInfo, UpdateInfo as FoundInfo } from 'electron-updater';
-import { app } from 'electron';
 import { t } from '../shared/i18n';
 import {
   UPDATES_EVENT,
@@ -26,9 +25,10 @@ import {
 import { DATA_ROOT } from './env';
 import { logError } from './errorlog';
 import type { Module, ModuleContext } from './module';
+import { exitProcess } from './host';
 import { isPackaged } from './paths';
 import { updateEnv } from './update-core';
-import { BUILD, sourceDir, sourceRecord, terminateChildren, updateLogPath, writeReleaseMarker } from './update';
+import { buildInfo, sourceDir, sourceRecord, terminateChildren, updateLogPath, writeReleaseMarker } from './update';
 import {
   RELAUNCH_SCRIPT,
   SOURCE_POLL_MS,
@@ -118,7 +118,7 @@ export function currentMode(): ModeInfo {
 function status(): UpdatesStatus {
   const mode = currentMode();
   return {
-    build: BUILD,
+    build: buildInfo(),
     platform: process.platform,
     packaged: isPackaged(),
     mode,
@@ -127,7 +127,7 @@ function status(): UpdatesStatus {
     source,
     busy,
     badge: hasUpdateBadge(mode.mode, release, source),
-    canDowngrade: mode.mode === 'release' && settings.channel === 'stable' && isPrerelease(BUILD.version),
+    canDowngrade: mode.mode === 'release' && settings.channel === 'stable' && isPrerelease(buildInfo().version),
     logPath: updateLogPath(),
   };
 }
@@ -234,7 +234,7 @@ export async function installRelease(force: boolean): Promise<InstallResult> {
   const target = installedPath ?? process.env.APPIMAGE;
   if (process.platform === 'linux' && target) relaunchWhenGone(target);
   console.log(`[update] stopped ${terminateChildren()} child process(es)`);
-  setTimeout(() => app.exit(0), 8000).unref();
+  setTimeout(() => exitProcess(0), 8000).unref();
   return { ok: true };
 }
 
@@ -250,7 +250,7 @@ export async function checkSource(): Promise<void> {
   if (currentMode().mode !== 'source') return;
   sourceChecking ??= (async () => {
     try {
-      source = await readSourceState(sourceDir(), BUILD.commit, { fetch: settings.fetchSource });
+      source = await readSourceState(sourceDir(), buildInfo().commit, { fetch: settings.fetchSource });
     } catch (e) {
       logError('update:source', e);
     } finally {

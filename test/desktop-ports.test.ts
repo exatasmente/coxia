@@ -1,5 +1,5 @@
-// What the desktop alone gives, with its runtime replaced by a stand-in: a fake keychain behind the encryption port and the runtime's folders behind
-// the paths port. A desktop with no usable keychain refuses exactly as it always has, wording included.
+// What the desktop alone gives, with its runtime replaced by a stand-in: a fake keychain behind the encryption port, the runtime's folders behind
+// the paths port, and the process it owns (version, exit, relaunch, file dialogs, the screen encoder) behind the host port. A desktop with no usable keychain refuses exactly as it always has, wording included.
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,13 +7,14 @@ import { setLanguage } from '../src/shared/i18n';
 import { DATA_ROOT } from '../src/main/env';
 import { SECRETS_FILE } from '../src/main/secrets-core';
 import { secrets } from '../src/main/secrets';
-import { isPackaged, resourcesDir, setPathsPort, userDataDir, voiceVenvDir } from '../src/main/paths';
+import { appPath, isPackaged, resourcesDir, setPathsPort, userDataDir, voiceVenvDir } from '../src/main/paths';
+import { appVersion, exitProcess, pickPath, restartProcess, screenPort, setHostPort } from '../src/main/host';
 import { installElectronPorts, keychain } from '../src/main/electronPorts';
 
 const RESOURCES_BASE = '/opt/example/resources-base';
 const USER_DATA = '/home/example/data';
 
-const fake = vi.hoisted(() => ({ packaged: true, userData: '/home/example/data', backend: 'gnome_libsecret', available: true, throwOnCheck: false }));
+const fake = vi.hoisted(() => ({ packaged: true, userData: '/home/example/data', backend: 'gnome_libsecret', available: true, throwOnCheck: false, calls: [] as string[] }));
 
 vi.mock('electron', () => ({
   app: {
@@ -21,7 +22,19 @@ vi.mock('electron', () => ({
       return fake.packaged;
     },
     getPath: (name: string) => (name === 'userData' ? fake.userData : join('/opt/example/runtime', name)),
+    getAppPath: () => '/opt/example/app.asar',
+    getVersion: () => '1.2.3-desktop',
+    exit: (code: number) => fake.calls.push(`exit:${code}`),
+    relaunch: () => fake.calls.push('relaunch'),
+    quit: () => fake.calls.push('quit'),
   },
+  BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] },
+  dialog: {
+    showSaveDialog: async (options: { defaultPath?: string }) => ({ canceled: false, filePath: join('/home/example', options.defaultPath ?? 'x') }),
+    showOpenDialog: async (options: { properties: string[] }) => ({ canceled: false, filePaths: [`/home/example/${options.properties.join('+')}`] }),
+  },
+  nativeImage: { createFromBitmap: () => ({}) },
+  ipcMain: { on: () => undefined, removeListener: () => undefined },
   safeStorage: {
     isEncryptionAvailable: () => {
       if (fake.throwOnCheck) throw new Error('no keyring here');
@@ -41,6 +54,7 @@ beforeAll(() => {
 });
 afterAll(() => {
   setPathsPort(null);
+  setHostPort(null);
   setLanguage('pt-BR');
 });
 
@@ -52,6 +66,18 @@ describe('the ports the desktop fills', () => {
     expect(userDataDir()).toBe(USER_DATA);
     expect(voiceVenvDir()).toBe(join(USER_DATA, 'voice-venv'));
     expect(resourcesDir()).toBe(join(RESOURCES_BASE, 'resources'));
+    expect(appPath()).toBe('/opt/example/app.asar');
+  });
+
+  it("take the version, the exit, the relaunch, the dialogs and the screen from the runtime", async () => {
+    expect(appVersion()).toBe('1.2.3-desktop');
+    exitProcess(2);
+    restartProcess();
+    expect(fake.calls).toEqual(['exit:2', 'relaunch', 'quit']);
+    await expect(pickPath({ mode: 'save', title: 'Export', defaultPath: 'coxia.json' })).resolves.toBe('/home/example/coxia.json');
+    await expect(pickPath({ mode: 'open-dir', title: 'Folder' })).resolves.toBe('/home/example/openDirectory+createDirectory');
+    await expect(pickPath({ mode: 'open-file', title: 'Key', showHidden: true })).resolves.toBe('/home/example/openFile+showHiddenFiles');
+    expect(screenPort()).not.toBeNull();
   });
 
   it('write and read a stored secret through the simulated keychain, keeping ciphertext on disk', () => {

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **The core no longer reaches Electron.** Besides the secrets and the folders, what only the owner of the process does (the app's version, the exit, the relaunch that changes workspace, the file dialogs, and the encoder of the agents' screen) is now asked of the host through one port, which the desktop fills from its runtime. Only the desktop shell imports Electron, and a test walks the imports of every other file under `src/main` to keep it so. On a host without a desktop these features are absent, not broken: changing workspace, picking a file and the agent's screen answer with the stable code `host-unavailable`. Nothing changes on the desktop.
+
 ## [0.11.0-beta.7] - 2026-10-12
 
 ### Added

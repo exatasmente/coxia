@@ -1,5 +1,5 @@
 import { existsSync, writeFileSync } from 'node:fs';
-import { app, BrowserWindow, dialog } from 'electron';
+import { appVersion, pickPath } from './host';
 import { CONFIG_SCHEMA } from '../shared/config/schema';
 import { TEST_ENV_REF_PREFIX, type Language, type WorkspaceConfig } from '../shared/config/types';
 import { collectSecretRequirements, validateConfig } from '../shared/config/validate';
@@ -37,8 +37,6 @@ function view(): ConfigView {
     workspaceId: WORKSPACE_ID,
   };
 }
-
-const parentWindow = (): BrowserWindow | undefined => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
 
 function transferDeps() {
   return { root: DATA_ROOT, home: HOME, secrets: secrets(), exists: existsSync, now: () => new Date() };
@@ -148,22 +146,17 @@ export const configModule: Module = (ctx) => {
 
   ctx.handle('config:export', async (): Promise<ExportResult> => {
     const config = getConfig();
-    const win = parentWindow();
-    const options = { title: t('main.config.exportTitle'), defaultPath: `coxia-${WORKSPACE_ID}.json`, filters: [{ name: t('main.config.fileFilter'), extensions: ['json'] }] };
-    const picked = win ? await dialog.showSaveDialog(win, options) : await dialog.showSaveDialog(options);
+    const picked = await pickPath({ mode: 'save', title: t('main.config.exportTitle'), defaultPath: `coxia-${WORKSPACE_ID}.json`, filters: [{ name: t('main.config.fileFilter'), extensions: ['json'] }] });
     const requiredSecrets = collectSecretRequirements(config);
-    if (picked.canceled || !picked.filePath) return { path: null, requiredSecrets };
-    writeFileSync(picked.filePath, exportText(config, { workspaceName: workspaceName(WORKSPACE_ID), appVersion: app.getVersion(), now: new Date() }));
-    return { path: picked.filePath, requiredSecrets };
+    if (!picked) return { path: null, requiredSecrets };
+    writeFileSync(picked, exportText(config, { workspaceName: workspaceName(WORKSPACE_ID), appVersion: appVersion(), now: new Date() }));
+    return { path: picked, requiredSecrets };
   });
 
   ctx.handle('config:import-pick', async (): Promise<string | null> => {
     // Test hook: the isolated UI tests cannot drive a native file dialog.
     if (process.env.COXIA_TEST_IMPORT_FILE) return process.env.COXIA_TEST_IMPORT_FILE;
-    const options = { title: t('main.config.importTitle'), properties: ['openFile' as const], filters: [{ name: t('main.config.fileFilter'), extensions: ['json'] }] };
-    const win = parentWindow();
-    const picked = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
-    return picked.canceled ? null : (picked.filePaths[0] ?? null);
+    return pickPath({ mode: 'open-file', title: t('main.config.importTitle'), filters: [{ name: t('main.config.fileFilter'), extensions: ['json'] }] });
   });
   ctx.handle('config:import-preview', (source: ImportSource, target: ImportTarget): ImportPreview => previewImport(transferDeps(), source, target));
   ctx.handle('config:import-apply', (req: ImportApply): ImportResult => {
