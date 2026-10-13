@@ -291,6 +291,8 @@ export const EXCLUDED: Readonly<Record<string, ExclusionReason>> = Object.fromEn
   // The machine's Claude Code sessions (#280): only the person sends to them, answers their permission requests, stops or starts one.
   ...group('machine', ['claudeSessions:enabled', 'claudeSessions:set-enabled', 'claudeSessions:list', 'claudeSessions:read', 'claudeSessions:follow', 'claudeSessions:folders', 'claudeSessions:send', 'claudeSessions:asks', 'claudeSessions:answer', 'claudeSessions:stop', 'claudeSessions:end', 'claudeSessions:start']),
   ...group('budget', ['budget:get', 'budget:ledger', 'budget:set']),
+  // Who owns the workspace and handing it over (#209): the person's, from the window or the admin door; the persona neither hands the workspace over nor takes it.
+  ...group('machine', ['ownership:claim', 'ownership:release', 'ownership:status']),
   ...group('update', ['update:busy', 'update:check', 'update:flushed', 'update:info', 'update:install', 'update:run', 'update:seen', 'update:settings-save', 'update:status']),
   ...group('voice', ['voice:cancel', 'voice:check', 'voice:enable', 'voice:install', 'voice:install-cancel', 'voice:list', 'voice:plan', 'voice:segment', 'voice:status', 'voice:test', 'voice:transcribe', 'voice:uninstall']),
   ...group('wizard', [
