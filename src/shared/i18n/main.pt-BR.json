@@ -2138,5 +2138,15 @@
   "main.admin.pathTooLong": "a pasta do workspace é funda demais para um soquete local ({path})",
   "main.admin.inUse": "outro processo já escuta em {path}",
   "main.admin.notASocket": "{path} existe e não é um soquete que possa ser substituído",
-  "main.admin.listenFailed": "não foi possível escutar em {path}: {detail}"
+  "main.admin.listenFailed": "não foi possível escutar em {path}: {detail}",
+  "main.passkey.required": "Esta mudança pede a sua passkey ({context}). Confirme com a digital, o rosto ou o PIN deste aparelho e tente de novo.",
+  "main.passkey.badOrigin": "O endereço da página não é o que esta instância serve, então a passkey não pode ser usada dela.",
+  "main.passkey.badChallenge": "O pedido da passkey expirou ou já foi usado. Comece de novo.",
+  "main.passkey.badCredential": "A resposta da passkey está malformada.",
+  "main.passkey.refused": "A passkey não foi aceita.",
+  "main.passkey.enrollNotAllowed": "O registro de passkey neste aparelho precisa ser permitido antes, na janela do app (Configurações › Acesso pelo navegador).",
+  "main.passkey.tooMany": "Passkeys ou pedidos pendentes demais. Remova uma ou espere um minuto.",
+  "main.passkey.duplicate": "Esta passkey já está registrada.",
+  "main.passkey.badKind": "Tipo de mudança sensível desconhecido.",
+  "main.passkey.none": "Este aparelho não tem passkey registrada."
 }

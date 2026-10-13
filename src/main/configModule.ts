@@ -18,7 +18,8 @@ import { secretAuditEntry, type SecretOp } from './decisionAudit';
 import { viaOf } from './rpc';
 import { secrets, testEnvLedger } from './secrets';
 import { readRegistry } from './workspaces-core';
-import { keepStoredTurns, refusedPaths, remoteControlRaised } from './configScope';
+import { keepStoredTurns, outsideEditable, raisedPaths, refusedPaths, remoteControlRaised } from './configScope';
+import { isAdminDevice, requireSensitive } from './passkeyStepUp';
 import { checkConfig, getConfig, reloadConfig, saveConfig, updateConfig } from './workspaceConfig';
 import { t } from '../shared/i18n';
 
@@ -96,7 +97,10 @@ export const configModule: Module = (ctx) => {
   // the team, the squads, the flow, the comment templates and the runner's plain settings (configScope.ts). The diff is against the stored config, not the client's word.
   ctx.handle('config:cycle-save', (next: WorkspaceConfig) => {
     const config = checkConfig(keepStoredTurns(next, getConfig()));
-    const refused = refusedPaths(getConfig(), config);
+    // A device with a passkey may raise a permission after the step-up; what is outside the editable paths stays refused to it (config:save is its door for those).
+    const admin = isAdminDevice();
+    const refused = admin ? outsideEditable(getConfig(), config) : refusedPaths(getConfig(), config);
+    if (admin && !refused.length && raisedPaths(getConfig(), config).length) requireSensitive('permission', 'agent permissions');
     if (refused.length) throw new Error(t('main.config.webScope', { paths: refused.slice(0, 4).join(', ') }));
     recordedConfig('cycle-save', () => saveConfig(config));
     return announce();
@@ -113,17 +117,20 @@ export const configModule: Module = (ctx) => {
   });
 
   ctx.handle('config:secret-set', (input: SecretInput): SecretInfo => {
+    requireSensitive('secret', 'config:secret-set');
     const info = recordedSecret('set', input?.ref, input?.source, () => secrets().set(input));
     announce();
     return info;
   });
   ctx.handle('config:secret-remove', (ref: string) => {
+    requireSensitive('secret', 'config:secret-remove');
     // The kind of source is read before the entry goes.
     recordedSecret('remove', ref, secrets().list().find((x) => x.ref === ref)?.source, () => secrets().remove(ref));
     return announce();
   });
   ctx.handle('config:secret-check', (ref: string) => secrets().check(ref));
   ctx.handle('config:secrets-accept-insecure', (): SecretsStorageStatus => {
+    requireSensitive('secret', 'config:secrets-accept-insecure');
     recordedSecret('accept-insecure', undefined, undefined, () => secrets().acceptInsecureStorage());
     announce();
     return secrets().storage();

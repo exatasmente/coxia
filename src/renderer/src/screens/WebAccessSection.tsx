@@ -21,7 +21,7 @@ function Countdown({ until }: { until: number }) {
   return <>{left > 0 ? t('ui.webAccess.countdown.left', { time: `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}` }) : t('ui.webAccess.countdown.expired')}</>;
 }
 
-function DeviceRow({ id, name, createdAt, lastSeenAt, onRename, onRevoke }: { id: string; name: string; createdAt: string; lastSeenAt: string; onRename: (id: string, name: string) => void; onRevoke: (id: string) => void }) {
+function DeviceRow({ id, name, createdAt, lastSeenAt, onRename, onRevoke, onAllowPasskey }: { id: string; name: string; createdAt: string; lastSeenAt: string; onRename: (id: string, name: string) => void; onRevoke: (id: string) => void; onAllowPasskey: (id: string, name: string) => void }) {
   const t = useT();
   const [draft, setDraft] = useState<string | null>(null);
   return (
@@ -43,6 +43,7 @@ function DeviceRow({ id, name, createdAt, lastSeenAt, onRename, onRevoke }: { id
             <button type="button" className="btn" onClick={() => setDraft(null)}>{t('ui.webAccess.device.cancel')}</button>
           </>
         )}
+        <button type="button" className="btn" onClick={() => onAllowPasskey(id, name)}>{t('ui.webAccess.device.allowPasskey')}</button>
         <button type="button" className="btn" onClick={() => onRevoke(id)}>{t('ui.webAccess.device.revoke')}</button>
       </div>
     </div>
@@ -57,6 +58,7 @@ export function WebAccessSection() {
   const [paired, setPaired] = useState(false);
   const [draft, setDraft] = useState<WebSettings | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [copied, setCopied] = useState<'link' | null>(null);
 
   useEffect(() => {
@@ -111,6 +113,16 @@ export function WebAccessSection() {
     }
   };
 
+  const allow = async (id: string, device: string) => {
+    setError(null);
+    try {
+      await webAccessApi.allowPasskey(id);
+      setNotice(t('ui.webAccess.device.allowPasskeyDone', { device }));
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+
   const copyLink = async (link: string) => {
     await api.copy(link);
     setCopied('link');
@@ -133,6 +145,7 @@ export function WebAccessSection() {
         </p>
       </div>
       {error && <div className="error">{error}</div>}
+      {notice && <div className="small" style={{ color: 'var(--teal-ink)' }} role="status">{notice}</div>}
 
       {view.addressFixed && <div className="small muted" role="status">{t('ui.webAccess.addressFixed')}</div>}
 
@@ -178,7 +191,7 @@ export function WebAccessSection() {
             <div style={{ fontWeight: 600, marginBottom: 4 }}>{t('ui.webAccess.devices.title')}</div>
             {devices.length === 0 && <p className="small muted">{t('ui.webAccess.devices.none')}</p>}
             {devices.map((d) => (
-              <DeviceRow key={`${d.id}:${d.name}`} {...d} onRename={(id, name) => void run(webAccessApi.rename(id, name))} onRevoke={(id) => void run(webAccessApi.revoke(id))} />
+              <DeviceRow key={`${d.id}:${d.name}`} {...d} onRename={(id, name) => void run(webAccessApi.rename(id, name))} onRevoke={(id) => void run(webAccessApi.revoke(id))} onAllowPasskey={(id, device) => void allow(id, device)} />
             ))}
           </div>
 

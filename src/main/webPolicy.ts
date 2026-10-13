@@ -1,5 +1,6 @@
 import { HELLO_CHANNEL } from '../shared/contract';
 import { t } from '../shared/i18n';
+import type { SensitiveKind } from './passkeyStepUp';
 // What a browser session may call. The desktop window has no such limits (IPC does not go through here).
 export type WebAccess = 'allow' | 'deny' | 'external';
 
@@ -130,15 +131,47 @@ const REMOTE_CONTROL_ADMIN = /^remoteControl:/;
 // default cannot close it by accident. test/contract.test.ts pins it.
 export const CONTRACT_CHANNELS = new Set([HELLO_CHANNEL]);
 
-export function webAccess(channel: string): WebAccess {
-  if (DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || MEMORY_UNLISTED.test(channel) || TURN_ASKS_UNLISTED.test(channel) || PERSONA_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel) || CLAUDE_SESSIONS.test(channel) || REMOTE_CONTROL_ADMIN.test(channel)) return 'deny';
+// Passkeys (#210). A paired browser whose device has registered a passkey is an admin device: the channels the rules above close to every browser open to it, except the ones
+// that act on the machine itself (below), and each sensitive one asks for the passkey at that moment (STEP_UP). The channels that register and use a passkey are open to any paired
+// browser, since a device has to be able to enroll; enrolling from a paired browser needs the computer's allowance (passkey:enroll-allow), so the pairing code alone never makes an
+// admin. test/passkey-policy.test.ts pins the lists.
+export const PASSKEY_CHANNELS = new Set(['passkey:register-options', 'passkey:register', 'passkey:assert-options', 'passkey:assert', 'passkey:list', 'passkey:remove']);
+// The computer's side of the enrollment: letting a paired device register its first passkey is the maintainer's act at the window or the admin socket, never a browser's.
+const PASSKEY_DESKTOP = /^passkey:(?!(register-options|register|assert-options|assert|list|remove)$)/;
+
+// What an admin device still cannot do: the channels that act on the machine the app runs on (terminal, clipboard, login items, file deletion, the update, shell commands
+// of conflict resolutions, the setup wizard, the voice install, the machine's Claude Code sessions, Remote Control, the state server and the agent's own screen input). They
+// stay desktop-only (or the admin socket's) for every browser. The maintainer decides if any of them opens to a passkey device later.
+const ADMIN_STILL_CLOSED = (channel: string): boolean =>
+  (DESKTOP_ONLY.has(channel) && !ADMIN_LIFTED.has(channel)) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || SCREEN_INPUT.test(channel) || MCP_STATE_ADMIN.test(channel) || CLAUDE_SESSIONS.test(channel) || REMOTE_CONTROL_ADMIN.test(channel);
+// Desktop-only channels that decide what the app may do, not what the machine does: a passkey device may call them (each one asks for the step-up).
+const ADMIN_LIFTED = new Set(['workspace:test', 'workspace:delete', 'plugins:set-enabled', 'plugins:settings', 'plugins:set-setting', 'plugins:set-secret', 'plugins:revoke', 'plugins:revoke-write']);
+
+// Channels that ask a paired browser for the passkey whatever their handler does (the web door checks them before the handler runs). The handlers that know more than
+// the channel name, such as the permission raise inside config:cycle-save and the secret channels, call requireSensitive themselves (passkeyStepUp.ts) and are not listed here.
+// The window and the admin socket are never asked.
+export const STEP_UP: ReadonlyMap<string, SensitiveKind> = new Map<string, SensitiveKind>([
+  ['config:save', 'permission'], ['config:import-apply', 'permission'], ['config:prompt-set', 'permission'], ['cycle:apply', 'permission'], ['agents:apply', 'permission'],
+  ['workspace:test', 'permission'], ['plugins:set-enabled', 'permission'], ['plugins:set-setting', 'permission'], ['plugins:revoke', 'permission'], ['plugins:revoke-write', 'permission'],
+  ['config:testenv-confirm', 'secret'], ['config:testenv-revoke', 'secret'], ['plugins:set-secret', 'secret'],
+  ['workspace:delete', 'infrastructure'],
+  ['web:pair', 'pairing'], ['web:configure', 'pairing'], ['web:revoke', 'pairing'],
+  ['passkey:remove', 'passkey'],
+]);
+
+/** What a paired browser may call. `admin` is true for a device with a registered passkey. */
+export function webAccess(channel: string, admin = false): WebAccess {
+  if (PASSKEY_CHANNELS.has(channel)) return 'allow';
+  const closed = DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel);
+  if (closed && !(admin && !ADMIN_STILL_CLOSED(channel))) return 'deny';
+  if (PASSKEY_DESKTOP.test(channel) || MEMORY_UNLISTED.test(channel) || TURN_ASKS_UNLISTED.test(channel) || PERSONA_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel) || CLAUDE_SESSIONS.test(channel) || REMOTE_CONTROL_ADMIN.test(channel)) return 'deny';
   if (CONTRACT_CHANNELS.has(channel) || MEMORY_CHANNELS.has(channel) || TURN_ASK_CHANNELS.has(channel) || PERSONA_CHANNELS.has(channel)) return 'allow';
   if (EXTERNAL_EFFECT.has(channel)) return 'external';
   return 'allow';
 }
 
-export function webRefusal(channel: string, allowExternal: boolean): string | null {
-  const access = webAccess(channel);
+export function webRefusal(channel: string, allowExternal: boolean, admin = false): string | null {
+  const access = webAccess(channel, admin);
   if (access === 'allow') return null;
   if (access === 'external' && allowExternal) return null;
   return access === 'external'

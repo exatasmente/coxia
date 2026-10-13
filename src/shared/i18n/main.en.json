@@ -2138,5 +2138,15 @@
   "main.admin.pathTooLong": "the workspace folder is too deep for a local socket ({path})",
   "main.admin.inUse": "another process already listens on {path}",
   "main.admin.notASocket": "{path} exists and is not a socket that can be replaced",
-  "main.admin.listenFailed": "could not listen on {path}: {detail}"
+  "main.admin.listenFailed": "could not listen on {path}: {detail}",
+  "main.passkey.required": "This change needs your passkey ({context}). Confirm with this device's fingerprint, face or PIN and try again.",
+  "main.passkey.badOrigin": "The page's address is not the one this instance serves, so a passkey cannot be used from it.",
+  "main.passkey.badChallenge": "The passkey request expired or was already used. Start again.",
+  "main.passkey.badCredential": "The passkey answer is malformed.",
+  "main.passkey.refused": "The passkey was not accepted.",
+  "main.passkey.enrollNotAllowed": "Registering a passkey on this device must be allowed first, in the app window (Settings › Browser access).",
+  "main.passkey.tooMany": "Too many passkeys or pending requests. Remove one or wait a minute.",
+  "main.passkey.duplicate": "This passkey is already registered.",
+  "main.passkey.badKind": "Unknown kind of sensitive change.",
+  "main.passkey.none": "This device has no passkey registered."
 }

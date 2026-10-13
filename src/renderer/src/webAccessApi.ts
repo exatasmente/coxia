@@ -9,4 +9,5 @@ export const webAccessApi = {
   cancelPair: () => api.invoke<void>('web:unpair'),
   rename: (id: string, name: string) => api.invoke<WebView>('web:rename', id, name),
   revoke: (id: string) => api.invoke<WebView>('web:revoke', id),
+  allowPasskey: (id: string) => api.invoke<{ expiresAt: number }>('passkey:enroll-allow', id),
 };

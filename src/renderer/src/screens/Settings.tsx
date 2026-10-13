@@ -17,6 +17,7 @@ import { ConflictVerifySection } from './ConflictVerifySection';
 import { RetentionSection } from './RetentionSection';
 import { PluginsSection } from './PluginsSection';
 import { PushSection } from './PushSection';
+import { PasskeySection } from './PasskeySection';
 import { WebAccessSection } from './WebAccessSection';
 import { UpdateSection } from './UpdateSection';
 import { DocsSection } from './DocsSection';
@@ -390,6 +391,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
 
         <UpdateSection />
         <PushSection />
+        <PasskeySection />
         <WebAccessSection />
       </div>
     </div>

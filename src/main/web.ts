@@ -58,7 +58,9 @@ export interface WebDeps {
   settings(): WebSettings;
   rendererDir: string;
   auth: Auth;
-  invoke(channel: string, args: unknown[], deviceId?: string): Promise<unknown>;
+  invoke(channel: string, args: unknown[], deviceId?: string, step?: { assertionId?: string; origin?: string }): Promise<unknown>;
+  // True for a device with a registered passkey: an admin device (webPolicy.ts). Absent: no device is.
+  isAdmin?(deviceId: string): boolean;
   hasChannel(channel: string): boolean;
   // Called when a device logs out or is revoked (push subscriptions go with it).
   onDeviceGone?(id: string): void;
@@ -163,6 +165,8 @@ class HttpError extends Error {
     readonly status: number,
     message: string,
     code?: ErrorCode,
+    // For passkey-required: the kind of step-up the page must ask the person for.
+    readonly kind?: string,
   ) {
     super(message);
     this.code = code ?? codeForStatus(status);
@@ -293,7 +297,7 @@ export function createWebApp(deps: WebDeps): WebApp {
       guardWrite(req);
       const channel = rel.slice('api/rpc/'.length);
       if (!deps.hasChannel(channel)) throw new HttpError(404, t('main.rpc.unknownChannel', { channel }), 'unknown-channel');
-      const refusal = webRefusal(channel, deps.settings().allowExternalEffects);
+      const refusal = webRefusal(channel, deps.settings().allowExternalEffects, deps.isAdmin?.(device.id) === true);
       if (refusal) throw new HttpError(403, refusal);
       let args: unknown;
       try {
@@ -307,12 +311,16 @@ export function createWebApp(deps: WebDeps): WebApp {
       if (key !== undefined && (typeof key !== 'string' || !IDEMPOTENCY_KEY.test(key))) throw new HttpError(400, t('main.web.idemKey'));
       let result: unknown;
       try {
-        const run = () => deps.invoke(channel, args, device.id);
+        // The passkey step-up: the assertion the page got for this call, and the origin it was served from (the challenge is checked against it).
+        const assertion = req.headers['x-coxia-assertion'];
+        const origin = req.headers.origin;
+        const run = () => deps.invoke(channel, args, device.id, { assertionId: typeof assertion === 'string' ? assertion.slice(0, 128) : undefined, origin: typeof origin === 'string' ? origin : undefined });
         result = typeof key === 'string' && isQueueable(channel) ? await idem.run(device.id, channel, key, run) : await run();
       } catch (e) {
         if (e instanceof IdempotencyConflict) throw new HttpError(409, e.message);
         console.error('[web]', channel, e instanceof Error ? e.message : e);
-        throw new HttpError(500, e instanceof Error ? e.message : String(e), errorCodeOf(e));
+        const code = errorCodeOf(e);
+        throw new HttpError(code === 'passkey-required' ? 403 : 500, e instanceof Error ? e.message : String(e), code, code === 'passkey-required' ? String((e as { kind?: unknown }).kind ?? '') : undefined);
       }
       json(res, 200, { result: encodeWire(result) });
       return;
@@ -386,7 +394,7 @@ export function createWebApp(deps: WebDeps): WebApp {
         if (e instanceof AuthError) {
           json(res, e.status, { error: e.message, code: codeForStatus(e.status) }, e.retryAfterSec ? { 'Retry-After': String(e.retryAfterSec) } : {});
         } else if (e instanceof HttpError) {
-          json(res, e.status, { error: e.message, code: e.code });
+          json(res, e.status, { error: e.message, code: e.code, ...(e.kind ? { kind: e.kind } : {}) });
         } else {
           console.error('[web]', e);
           json(res, 500, { error: t('main.web.internal'), code: 'internal' });

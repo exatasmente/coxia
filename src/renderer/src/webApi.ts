@@ -7,6 +7,7 @@ import { t } from '../../shared/i18n';
 import type { AppEvent } from '../../shared/types';
 import { isQueueable, IDEMPOTENCY_HEADER } from '../../shared/outbox';
 import { decodeWire, encodeWire } from '../../shared/wire';
+import { ASSERTION_HEADER, assertPasskey } from './passkeyClient';
 import { enqueue, isTransientFailure, randomId, startOutbox, waitFor } from './outbox';
 
 export const UNAUTHORIZED = 'cerimonias:unauthorized';
@@ -19,6 +20,8 @@ export class HttpStatusError extends Error {
     message: string,
     /** The stable code of the failure, when the instance sent one from the closed list. */
     readonly code?: ErrorCode,
+    /** For passkey-required: the kind of step-up the instance asks for. */
+    readonly kind?: string,
   ) {
     super(message);
   }
@@ -34,9 +37,9 @@ export async function post(path: string, body: unknown, headers: Record<string, 
     headers: { 'Content-Type': 'application/json', 'X-Cerimonias': '1', ...CONTRACT, ...headers },
     body: JSON.stringify(body),
   });
-  const data = (await res.json().catch(() => ({}))) as { error?: string; code?: unknown; result?: unknown };
+  const data = (await res.json().catch(() => ({}))) as { error?: string; code?: unknown; kind?: unknown; result?: unknown };
   if (res.status === 401 && path !== 'api/login') window.dispatchEvent(new Event(UNAUTHORIZED));
-  if (!res.ok) throw new HttpStatusError(res.status, data.error ?? t('ui.error.http', { status: res.status }), isErrorCode(data.code) ? data.code : undefined);
+  if (!res.ok) throw new HttpStatusError(res.status, data.error ?? t('ui.error.http', { status: res.status }), isErrorCode(data.code) ? data.code : undefined, typeof data.kind === 'string' ? data.kind : undefined);
   return data;
 }
 
@@ -102,14 +105,25 @@ async function copy(text: string): Promise<void> {
   }
 }
 
+// A call the instance refuses with passkey-required asks the person for the passkey once and is sent again with the assertion; a second refusal is the answer.
 async function rpc(channel: string, ...args: unknown[]): Promise<unknown> {
+  try {
+    return await rpcOnce(channel, args, {});
+  } catch (e) {
+    if (!(e instanceof HttpStatusError) || e.code !== 'passkey-required' || !e.kind) throw e;
+    const assertion = await assertPasskey((c, ...a) => rpcOnce(c, a, {}), e.kind);
+    return rpcOnce(channel, args, { [ASSERTION_HEADER]: assertion });
+  }
+}
+
+async function rpcOnce(channel: string, args: unknown[], extra: Record<string, string>): Promise<unknown> {
   const path = `api/rpc/${encodeURIComponent(channel)}`;
-  if (!isQueueable(channel)) return decodeWire(((await post(path, encodeWire(args))) as { result?: unknown }).result);
+  if (!isQueueable(channel)) return decodeWire(((await post(path, encodeWire(args), extra)) as { result?: unknown }).result);
   // A send that fails for lack of network waits in the outbox and is replayed with the same id (the server runs it once).
   const id = randomId();
   const wire = encodeWire(args);
   try {
-    return decodeWire(((await post(path, wire, { [IDEMPOTENCY_HEADER]: id })) as { result?: unknown }).result);
+    return decodeWire(((await post(path, wire, { ...extra, [IDEMPOTENCY_HEADER]: id })) as { result?: unknown }).result);
   } catch (e) {
     if (!isTransientFailure(e)) throw e;
   }
