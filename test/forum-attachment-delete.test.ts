@@ -20,7 +20,9 @@ afterEach(() => {
 });
 
 const { forumModule, forumStore } = await import('../src/main/forum');
-const { ATAS } = await import('../src/main/env');
+const { atasDir, bootEnv } = await import('../src/main/env');
+// The modules read the data folder at the first use: it is fixed here, to this file's own (test/setup.ts), before a test switches the variable.
+bootEnv();
 type ModuleContext = import('../src/main/module').ModuleContext;
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
@@ -33,7 +35,7 @@ function channels(): Record<string, (...args: unknown[]) => unknown> {
 }
 
 const THREAD = 'g-a-conversation';
-const folder = (): string => join(ATAS, 'anexos', THREAD);
+const folder = (): string => join(atasDir(), 'anexos', THREAD);
 
 beforeEach(() => {
   forumStore().ensureThread({ id: THREAD, kind: 'general', title: 'A conversation' });

@@ -16,7 +16,7 @@ const { createSession } = await import('../src/main/persona/session');
 const { listAudit } = await import('../src/main/auditoria');
 const { forumStore } = await import('../src/main/forum');
 const { getConfig, saveConfig } = await import('../src/main/workspaceConfig');
-const { DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { dataRoot, workspaceId } = await import('../src/main/env');
 const { writeRegistry } = await import('../src/main/workspaces-core');
 const { memoryStore } = await import('../src/main/memory/instance');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
@@ -25,7 +25,7 @@ const actions = await import('../src/main/actions');
 const THREAD = agentThreadId('me');
 const session = () => createSession({ persona: 'me', thread: THREAD, seq: 2, door: 'window' });
 const why = 'Because the person asked me to.';
-const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+const asReal = (test: boolean) => writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 const newest = (kind: AuditEntry['kind']): AuditEntry => listAudit().filter((e) => e.kind === kind)[0];
 const ran: string[] = [];
 

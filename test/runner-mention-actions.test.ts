@@ -11,7 +11,7 @@ import { type Boot, boot, doc, fakeSandbox, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -25,9 +25,9 @@ let stop: (() => void) | null = null;
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(ATAS, f), { force: true });
-  for (const d of ['runs', 'forum']) rmSync(join(ATAS, d), { recursive: true, force: true });
-  writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
+  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(atasDir(), f), { force: true });
+  for (const d of ['runs', 'forum']) rmSync(join(atasDir(), d), { recursive: true, force: true });
+  writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
   stop?.();
   stop = null;
 });
@@ -50,7 +50,7 @@ describe('an issue proposed in a mention', () => {
   it('waits in Actions for the person and, once approved, is created and linked in the thread', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; agent(c, 'planner').tracker = 'read'; } });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; agent(c, 'planner').tracker = 'read'; } });
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     easy(b);
     const run = await b.runner.start('app#101');
@@ -80,7 +80,7 @@ describe('an issue proposed in a mention', () => {
   it('registers a proposal made in a run on the run\'s issue, naming the run', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; agent(c, 'planner').tracker = 'read'; agent(c, 'planner').autonomous = false; } });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; agent(c, 'planner').tracker = 'read'; agent(c, 'planner').autonomous = false; } });
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     easy(b);
     const run = await b.runner.start('app#101');
@@ -96,7 +96,7 @@ describe('an issue proposed in a mention', () => {
   it('is not offered to an agent that does not read the code host, and what it sends anyway is dropped', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; agent(c, 'planner').tracker = 'none'; } });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; agent(c, 'planner').tracker = 'none'; } });
     easy(b);
     const run = await b.runner.start('app#101');
     await b.settle();

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, writeFileSync 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { SECRET_GLOBS, agentHooks, secretPath } from '../src/main/agents';
+import { secretGlobs, agentHooks, secretPath } from '../src/main/agents';
 import { policyFromHooks } from '../src/main/engine/open/policy';
 import { bashDescription, bashTool, bashToolFor, parseCommand, prefixAllows, splitArgs } from '../src/main/engine/open/tools/bash';
 import { readTool } from '../src/main/engine/open/tools/read';
@@ -41,7 +41,7 @@ beforeAll(() => {
     cwd: root,
     roots: [root],
     isSecret: (p) => secretPath(p, root),
-    secretGlobs: SECRET_GLOBS,
+    secretGlobs: secretGlobs(),
     outputMax: 30_000,
     env: { PATH: process.env.PATH ?? '' },
     bashPrefixes: [],

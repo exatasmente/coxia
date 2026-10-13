@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import type { AppEvent } from '../shared/types';
 import { t } from '../shared/i18n';
 import { FLUSH_EVENT, type BuildInfo, type UpdateInfo } from '../shared/update';
-import { DATA_ROOT, HOME } from './env';
+import { dataRoot, HOME } from './env';
 import type { Module } from './module';
 import { appVersion } from './host';
 import { isPackaged } from './paths';
@@ -42,7 +42,7 @@ const STATE = stateDir(process.env, HOME);
 const LOG = join(STATE, updateLogName);
 const MARKER = join(STATE, updatedMarkerName);
 // The running instance reports itself here; scripts/update.sh reads it to say what is installed now.
-const RUN_FILE = join(DATA_ROOT, 'run.json');
+const RUN_FILE = (): string => join(dataRoot(), 'run.json');
 
 export const updateLogPath = (): string => LOG;
 
@@ -114,14 +114,14 @@ async function run(): Promise<{ logPath: string }> {
 // Only the running instance's pid file is ours to remove.
 function clearRunInfo(): void {
   try {
-    if ((JSON.parse(readFileSync(RUN_FILE, 'utf8')) as { pid?: number }).pid === process.pid) rmSync(RUN_FILE, { force: true });
+    if ((JSON.parse(readFileSync(RUN_FILE(), 'utf8')) as { pid?: number }).pid === process.pid) rmSync(RUN_FILE(), { force: true });
   } catch {}
 }
 
 export function announceRunning(): void {
   if (!isPackaged()) return;
   try {
-    writeFileSync(RUN_FILE, JSON.stringify(runInfo(process.pid, buildInfo(), new Date().toISOString()), null, 1));
+    writeFileSync(RUN_FILE(), JSON.stringify(runInfo(process.pid, buildInfo(), new Date().toISOString()), null, 1));
   } catch (e) {
     console.error('[update] run.json', e);
   }

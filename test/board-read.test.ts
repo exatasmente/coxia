@@ -12,7 +12,7 @@ import { existsSync } from 'node:fs';
 const DATA = mkdtempSync(join(tmpdir(), 'cerimonias-board-read-'));
 process.env.CERIMONIAS_DATA_DIR = DATA;
 
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { boardStore } = await import('../src/main/boardSource');
 const { BOARD_ISSUES_PER_PROJECT, BOARD_PROJECTS_MAX, TRACKED_MAX, forgetHost, forgetTracked, mirrorTracked, readBoard, readTracked, trackedCards } = await import('../src/main/vcs/boardRead');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
@@ -49,7 +49,7 @@ const linked = (iid: number, over: Partial<Parameters<ReturnType<typeof boardSto
 };
 
 beforeEach(() => {
-  rmSync(join(ATAS, 'board.json'), { force: true });
+  rmSync(join(atasDir(), 'board.json'), { force: true });
   forgetHost();
   saveConfig(config);
   host = fakeBoardHost();
@@ -310,7 +310,7 @@ describe('the project\'s issues, for the board', () => {
     host.add('acme/app', 9, { title: 'Only on the host', labels: ['board:doing'] });
     const read = (await readBoard(true))!;
     expect(read.items).toHaveLength(1);
-    expect(existsSync(join(ATAS, 'board.json'))).toBe(false);
+    expect(existsSync(join(atasDir(), 'board.json'))).toBe(false);
   });
 
   it('reuses the listing for five minutes, asks again on refresh, and again once a write cleared it', async () => {

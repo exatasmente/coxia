@@ -9,23 +9,23 @@ import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 const DATA = mkdtempSync(join(tmpdir(), 'cerimonias-plugin-write-'));
 process.env.CERIMONIAS_DATA_DIR = DATA;
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
 const actions = await import('../src/main/actions');
 const { listAudit } = await import('../src/main/auditoria');
 
-const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+const asReal = (test: boolean) => writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 const unit = (over: Partial<import('../src/main/actions').PluginAskUnit> = {}) => ({ plugin: 'web-search', name: 'Web search', need: 'write' as const, reversible: true, runId: 'r1', thread: null, asked: '', event: 'stage-finished', stage: 'implement', hosts: [], to: 'results', text: 'the result of the search', ...over });
 const ask = (key: string, over = {}) => actions.proposePluginAsk({ key, issue: 123, issueTitle: 'Plugin platform', summary: 'The plugin Web search asks to write', unit: unit(over) });
 const write = { plugin: 'web-search', to: 'results', text: 'the result of the search' };
 const outbox = () => actions.pluginOutboxFile('web-search', 'results');
 
 beforeEach(() => {
-  rmSync(join(ATAS, 'acoes.json'), { force: true });
-  rmSync(join(ATAS, 'auditoria.jsonl'), { force: true });
-  rmSync(join(ATAS, 'plugins-out'), { recursive: true, force: true });
+  rmSync(join(atasDir(), 'acoes.json'), { force: true });
+  rmSync(join(atasDir(), 'auditoria.jsonl'), { force: true });
+  rmSync(join(atasDir(), 'plugins-out'), { recursive: true, force: true });
   asReal(false);
 });
 

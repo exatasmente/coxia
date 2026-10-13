@@ -241,12 +241,12 @@ describe('saving the config', () => {
   it('does not count a draft that comes or goes as a change to the flow: a flow with an old problem still lets the person try an agent', async () => {
     const { writeConfigFile } = await import('../src/main/config-bootstrap');
     const { reloadConfig, updateConfig } = await import('../src/main/workspaceConfig');
-    const { ATAS } = await import('../src/main/env');
+    const { atasDir } = await import('../src/main/env');
     // A flow the app opened with a stage that lost its agent: saving one is refused, a stored one is kept as it was.
     const stored = agentFlowConfig();
     stored.agents.team = stored.agents.team.filter((a) => a.id !== 'developer');
     delete stored.devCycle.stages.find((s) => s.id === 'implement')!.agentId;
-    writeConfigFile(ATAS, stored);
+    writeConfigFile(atasDir(), stored);
     reloadConfig();
     const add = (extra: AgentDef) => updateConfig((c) => ({ ...c, agents: { ...c.agents, team: [...c.agents.team, extra] } }));
     expect(() => add(newAgent({ id: 'trial', draft: true }))).not.toThrow();

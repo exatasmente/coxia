@@ -6,7 +6,7 @@ import { agentThreadId } from '../../shared/forum';
 import { t } from '../../shared/i18n';
 import { recordWrite } from '../auditoria';
 import { callStops } from '../mentions/stop';
-import { ATAS } from '../env';
+import { atasDir } from '../env';
 import { viaOf } from '../rpc';
 import { ceremonyLabel } from '../cyclePrompts';
 import { listActions } from '../actions';
@@ -67,7 +67,7 @@ let sessions: PersonaSessions | null = null;
 
 /** The engine session each conversation of the persona continues (#279), from its file in the workspace's folder, read the first time an answer asks. */
 export function personaSessions(): PersonaSessions {
-  sessions ??= { keep: createSessionKeep(join(ATAS, SESSIONS_FILE)), target: engineTargetOf };
+  sessions ??= { keep: createSessionKeep(join(atasDir(), SESSIONS_FILE)), target: engineTargetOf };
   return sessions;
 }
 
@@ -91,7 +91,7 @@ export const personaThreadNow = (): string | null => {
  */
 export function personaStop(): PersonaStop {
   stop ??= createPersonaStop({
-    latch: createLatch(join(ATAS, LATCH_FILE)),
+    latch: createLatch(join(atasDir(), LATCH_FILE)),
     thread: personaThreadNow,
     running: (thread) => callStops.running(thread),
     abort: (thread, agent) => callStops.stop(thread, agent),

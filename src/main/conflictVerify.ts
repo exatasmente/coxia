@@ -1,4 +1,4 @@
-import { DATA_ROOT } from './env';
+import { dataRoot } from './env';
 import { getConfig, rc, updateConfig } from './workspaceConfig';
 import type { Module } from './module';
 import { t } from '../shared/i18n';
@@ -48,7 +48,7 @@ export function verifyConfig(): VerifyConfig {
   const commands = activeVerifyCommands(config);
   const mirrors = mirroredProjects(rc().releaseSync?.mirrorsDir);
   const projects = [...new Set([...ownVerifyProjects(config, mirrors), ...Object.keys(commands)])].sort();
-  const unclaimed = Object.fromEntries(Object.entries(readUnclaimed(DATA_ROOT)).filter(([project]) => !(project in commands)));
+  const unclaimed = Object.fromEntries(Object.entries(readUnclaimed(dataRoot())).filter(([project]) => !(project in commands)));
   return { commands, projects, unclaimed };
 }
 

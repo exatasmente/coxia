@@ -3,9 +3,9 @@ import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
-  SECRET_GLOBS,
+  secretGlobs,
   SECRET_PATH,
-  SECRET_READ_DENY,
+  secretReadDeny,
   agentHooks,
   gitMirrorRead,
   noSecrets,
@@ -52,21 +52,21 @@ function globRegex(glob: string): RegExp {
 }
 function deniedByGlobs(path: string): boolean {
   const parts = path.split('/');
-  const regexes = SECRET_GLOBS.filter((g) => !g.startsWith('~/')).map(globRegex);
+  const regexes = secretGlobs().filter((g) => !g.startsWith('~/')).map(globRegex);
   return parts.some((_, i) => regexes.some((re) => re.test(parts.slice(0, i + 1).join('/'))));
 }
 
 describe('secret globs (the Read deny rules that reach Grep and Glob)', () => {
   it('turns every glob into a Read rule', () => {
-    expect(SECRET_READ_DENY).toEqual(SECRET_GLOBS.map((g) => `Read(${g})`));
-    expect(SECRET_READ_DENY).toContain('Read(**/.env*)');
-    expect(SECRET_READ_DENY).toContain('Read(**/*credential*.json)');
-    expect(SECRET_READ_DENY).toContain('Read(**/*token*.txt)');
-    expect(SECRET_READ_DENY).toContain('Read(~/.ssh/**)');
+    expect(secretReadDeny()).toEqual(secretGlobs().map((g) => `Read(${g})`));
+    expect(secretReadDeny()).toContain('Read(**/.env*)');
+    expect(secretReadDeny()).toContain('Read(**/*credential*.json)');
+    expect(secretReadDeny()).toContain('Read(**/*token*.txt)');
+    expect(secretReadDeny()).toContain('Read(~/.ssh/**)');
   });
 
   it('uses no character the SDK drops or escapes in a deny pattern', () => {
-    for (const g of SECRET_GLOBS) expect(g).not.toMatch(/[[\]{}\\]/);
+    for (const g of secretGlobs()) expect(g).not.toMatch(/[[\]{}\\]/);
   });
 
   const secret = [

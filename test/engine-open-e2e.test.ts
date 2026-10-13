@@ -99,7 +99,7 @@ describe('deepAsk on the open engine', () => {
     expect(JSON.stringify(second)).not.toContain('should-never-leak');
 
     // the transcript is where the cost panel and resume expect it
-    expect(existsSync(join(env.ATAS, 'open-sessions', `${r.sessionId}.jsonl`))).toBe(true);
+    expect(existsSync(join(env.atasDir(), 'open-sessions', `${r.sessionId}.jsonl`))).toBe(true);
   });
 
   it('resumes the same session on the next question', async () => {

@@ -20,7 +20,7 @@ vi.mock('../src/main/agents', async (orig) => ({
   },
 }));
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { saveConfig } = await import('../src/main/workspaceConfig');
 const actions = await import('../src/main/actions');
 const retro = await import('../src/main/retro');
@@ -34,7 +34,7 @@ const minutes = await import('../src/main/minutesStore');
 const suggestionMod = await import('../src/main/suggestionsModule');
 const { ceremony } = await import('./helpers/ceremony');
 
-const DIR = join(ATAS, 'retros');
+const DIR = join(atasDir(), 'retros');
 const day = (): string => new Date().toLocaleDateString('sv-SE');
 
 let forge: Forge;
@@ -56,7 +56,7 @@ const withHost = (c: WorkspaceConfig): void => {
 };
 
 const asReal = (test: boolean): void => {
-  writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+  writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 };
 
 /** The retro the conversation adds to, as the app stores it. */
@@ -90,8 +90,8 @@ const proposals = (): ReleaseAction[] => actions.listActions().filter(isRetroIss
 const note = (r: Retro, text: string): boolean => r.talk.some((m) => !m.me && m.text.includes(text));
 
 beforeEach(() => {
-  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(ATAS, f), { force: true });
-  for (const d of ['retros', 'runs', 'forum']) rmSync(join(ATAS, d), { recursive: true, force: true });
+  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(atasDir(), f), { force: true });
+  for (const d of ['retros', 'runs', 'forum']) rmSync(join(atasDir(), d), { recursive: true, force: true });
   stop?.();
   stop = null;
   asked.prompts.length = 0;
@@ -290,7 +290,7 @@ describe('the issue a retro improvement opens', () => {
   async function running(): Promise<Boot> {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: withHost });
+    const b = await boot({ dir: atasDir(), publish: true, configure: withHost });
     b.engine.script('support', () => work('Triado.', { artifacts: [doc('0_TRIAGE.md')] }));
     b.engine.script('dev-a', () => work('Feito.', { artifacts: [doc('3_IMPLEMENTATION.md')] }));
     stop = onRunnerActionDone((a, responses) => retroIssueDone(a, responses, (ref) => b.runner.start(ref)));
@@ -328,7 +328,7 @@ describe('the issue a retro improvement opens', () => {
     asReal(true);
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: withHost });
+    const b = await boot({ dir: atasDir(), publish: true, configure: withHost });
     stop = onRunnerActionDone((a, responses) => retroIssueDone(a, responses, (ref) => b.runner.start(ref)));
     retro.writeRetro(stored());
     asked.answer = answer([improvement('Encurtar o ciclo de revisão')]);

@@ -3,13 +3,13 @@ import { dirname, join } from 'node:path';
 import { applySettings, settingsFromConfig } from '../shared/config/settingsView';
 import { RETENTION_MAX_DAYS, RETENTION_MIN_DAYS } from '../shared/retention';
 import { type Settings, type WebSettings, withDefaults } from '../shared/settings';
-import { DATA_ROOT } from './env';
+import { dataRoot } from './env';
 import { WEB_FILE } from './workspaces-core';
 import { getConfig, onConfigChange, saveConfig } from './workspaceConfig';
 import { t } from '../shared/i18n';
 
 // Settings is the flat view of the workspace config (shared/config/settingsView.ts); browser access lives in the data root, shared by every workspace.
-const WEB = join(DATA_ROOT, WEB_FILE);
+const WEB = (): string => join(dataRoot(), WEB_FILE);
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MODEL = /^\S{1,200}$/;
 
@@ -27,7 +27,7 @@ function readJson(file: string): Record<string, unknown> | null {
 }
 
 function readWeb(): WebSettings {
-  return withDefaults({ web: readJson(WEB) ?? undefined } as Partial<Settings>).web;
+  return withDefaults({ web: readJson(WEB()) ?? undefined } as Partial<Settings>).web;
 }
 
 export function getSettings(): Settings {
@@ -82,7 +82,7 @@ export function saveSettings(next: Settings): Settings {
 }
 
 export function saveWebSettings(web: WebSettings): Settings {
-  writeAtomic(WEB, validateWeb(web));
+  writeAtomic(WEB(), validateWeb(web));
   cached = null;
   return getSettings();
 }

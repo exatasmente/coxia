@@ -273,9 +273,9 @@ describe('runAgent on the open engine', () => {
     const resumed = fake.chats().slice(before).map((c) => JSON.stringify(c.body?.messages)).join('\n');
     expect(resumed).toContain('keep the evidence or point at the command');
     // The round adds no session of its own, and it answers in the session the first call opened: the two report one and the same session.
-    const { ATAS } = await import('../src/main/env');
+    const { atasDir } = await import('../src/main/env');
     const { readIndex } = await import('../src/main/sessions-core');
-    const index = readIndex(ATAS);
+    const index = readIndex(atasDir());
     expect(index.filter((e) => e.id === first.sessionId)).toHaveLength(1);
     // And the round recorded no session of its own: the sessions the index lists are the ones the file's calls opened, the round not among them.
     expect(index.map((e) => e.id)).not.toContain(round.sessionId ?? '');

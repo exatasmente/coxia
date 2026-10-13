@@ -1,6 +1,6 @@
 import { recordWrite } from '../auditoria';
 import { secretPath } from '../agents';
-import { ATAS } from '../env';
+import { atasDir } from '../env';
 import { logError } from '../errorlog';
 import { runStore } from '../runs';
 import { createSharedMemory } from '../runner/activities';
@@ -25,7 +25,7 @@ export function memoryFacts(): Facts {
 }
 
 export function memoryIndex(): MemoryIndex {
-  index ??= createMemoryIndex({ store: memoryStore(), runs: runStore(), activities: createSharedMemory(ATAS), facts: memoryFacts(), language: () => getConfig().language });
+  index ??= createMemoryIndex({ store: memoryStore(), runs: runStore(), activities: createSharedMemory(atasDir()), facts: memoryFacts(), language: () => getConfig().language });
   return index;
 }
 

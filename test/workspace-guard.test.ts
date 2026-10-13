@@ -14,7 +14,7 @@ process.env.COXIA_LEGACY_PROFILE = EXAMPLE_PROFILE_FILE;
 
 const { approveAction, listActions, proposeGitlabAction } = await import('../src/main/actions');
 const { getSettings, saveSettings, saveWebSettings } = await import('../src/main/config');
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { insertGateVisual, recordGate } = await import('../src/main/gate');
 const { writeQaChecklist } = await import('../src/main/qa');
 const { saveMinutes } = await import('../src/main/store');
@@ -40,9 +40,9 @@ function minutes(dest: string): Minutes {
 
 describe('a data dir from before workspaces', () => {
   it('opens as the "Testes" workspace with the test flag on', () => {
-    expect(WORKSPACE_ID).toBe('testes');
-    expect(ATAS).toBe(join(ROOT, 'workspaces', 'testes'));
-    expect(DATA_ROOT).toBe(ROOT);
+    expect(workspaceId()).toBe('testes');
+    expect(atasDir()).toBe(join(ROOT, 'workspaces', 'testes'));
+    expect(dataRoot()).toBe(ROOT);
     expect(currentWorkspace()).toMatchObject({ id: 'testes', name: 'Testes', test: true });
     expect(isTestWorkspace()).toBe(true);
   });
@@ -52,10 +52,10 @@ describe('a data dir from before workspaces', () => {
     expect(JSON.parse(readFileSync(join(ROOT, 'web.json'), 'utf8'))).toMatchObject({ enabled: true, port: 4999 });
     const saved = saveSettings({ ...getSettings(), notifications: true });
     expect(saved.web.port).toBe(4999);
-    expect(JSON.parse(readFileSync(join(ATAS, 'config.json'), 'utf8')).web).toBeUndefined();
+    expect(JSON.parse(readFileSync(join(atasDir(), 'config.json'), 'utf8')).web).toBeUndefined();
     saveWebSettings({ ...getSettings().web, port: 4998 });
     expect(JSON.parse(readFileSync(join(ROOT, 'web.json'), 'utf8')).port).toBe(4998);
-    expect(JSON.parse(readFileSync(join(ATAS, 'config.json'), 'utf8')).web).toBeUndefined();
+    expect(JSON.parse(readFileSync(join(atasDir(), 'config.json'), 'utf8')).web).toBeUndefined();
   });
 });
 
@@ -80,7 +80,7 @@ describe('external writes in a test workspace', () => {
     expect(result.written.map((w) => [w.ref, w.ok])).toEqual([['web#1', false], ['web#2', false], ['web#3', true]]);
     expect(result.written[0].detail).toMatch(/workspace de testes/);
     expect(existsSync(result.ataPath)).toBe(true);
-    expect(result.ataPath.startsWith(ATAS)).toBe(true);
+    expect(result.ataPath.startsWith(atasDir())).toBe(true);
   });
 
   it('gate and QA files in the specs are refused', () => {
@@ -92,7 +92,7 @@ describe('external writes in a test workspace', () => {
 
 describe('the same calls once the flag is off', () => {
   it('pass the guard (they fail later on what they need, not on the workspace)', async () => {
-    setTestFlag(DATA_ROOT, 'testes', false);
+    setTestFlag(dataRoot(), 'testes', false);
     expect(isTestWorkspace()).toBe(false);
     await expect(approveAction('missing')).rejects.toThrow(/não existe/);
     expect(() => writeQaChecklist('missing')).toThrow(/não preparada/);

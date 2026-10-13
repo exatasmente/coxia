@@ -3,10 +3,10 @@ import { join, relative } from 'node:path';
 import type { AgentTurn, Card, CardSeen } from '../shared/types';
 import { seenOf } from '../shared/sameDay';
 import { rc } from './workspaceConfig';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { type Artifact, type Saved, fingerprint, isReusable, reusedTurn } from './falas-core';
 
-const FILE = join(ATAS, 'falas.json');
+const FILE = (): string => join(atasDir(), 'falas.json');
 const KEEP_REUSES_MS = 60 * 86_400_000;
 
 interface Store {
@@ -17,8 +17,8 @@ interface Store {
 
 function read(): Store {
   try {
-    if (existsSync(FILE)) {
-      const s = JSON.parse(readFileSync(FILE, 'utf8')) as Store;
+    if (existsSync(FILE())) {
+      const s = JSON.parse(readFileSync(FILE(), 'utf8')) as Store;
       if (s.version === 1) return { version: 1, turns: s.turns ?? {}, reuses: s.reuses ?? [] };
     }
   } catch {}
@@ -26,9 +26,9 @@ function read(): Store {
 }
 
 function write(s: Store): void {
-  mkdirSync(ATAS, { recursive: true });
-  writeFileSync(`${FILE}.tmp`, JSON.stringify(s));
-  renameSync(`${FILE}.tmp`, FILE);
+  mkdirSync(atasDir(), { recursive: true });
+  writeFileSync(`${FILE()}.tmp`, JSON.stringify(s));
+  renameSync(`${FILE()}.tmp`, FILE());
 }
 
 function artifactsOf(dir: string): Artifact[] {

@@ -7,10 +7,10 @@ process.env.CERIMONIAS_DATA_DIR = mkdtempSync(join(tmpdir(), 'cerimonias-errors-
 
 const { bindIpc, callOrigin, handle, handleDevice, invoke } = await import('../src/main/rpc');
 const { errorsView, errorlog } = await import('../src/main/errorlog');
-const { DATA_ROOT } = await import('../src/main/env');
+const { dataRoot } = await import('../src/main/env');
 const { readEntries, rpcContext } = await import('../src/main/errorlog-core');
 
-const logs = () => readEntries(join(DATA_ROOT, 'logs'));
+const logs = () => readEntries(join(dataRoot(), 'logs'));
 
 const ipc = new Map<string, (...args: unknown[]) => unknown>();
 bindIpc((channel, fn) => ipc.set(channel, fn as (...args: unknown[]) => unknown));

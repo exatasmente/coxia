@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - **The core no longer reaches Electron.** Besides the secrets and the folders, what only the owner of the process does (the app's version, the exit, the relaunch that changes workspace, the file dialogs, and the encoder of the agents' screen) is now asked of the host through one port, which the desktop fills from its runtime. Only the desktop shell imports Electron, and a test walks the imports of every other file under `src/main` to keep it so. On a host without a desktop these features are absent, not broken: changing workspace, picking a file and the agent's screen answer with the stable code `host-unavailable`. Nothing changes on the desktop.
+- **The core is given its data folder at boot.** Importing a module of the core no longer reads `CERIMONIAS_DATA_DIR`, creates the workspace registry or computes a path: the desktop fixes the data folder first thing when it starts, a host without a desktop names it, and every folder and file is worked out when it is used. A test imports every file of the core with an empty data folder and finds it still empty. The folders on disk are the same as before, with no migration.
 
 ## [0.11.0-beta.7] - 2026-10-12
 

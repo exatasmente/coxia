@@ -11,7 +11,7 @@ import { fakeGitlabRuntime } from './helpers/vcs';
 const DATA = mkdtempSync(join(tmpdir(), 'cerimonias-actions-group-'));
 process.env.CERIMONIAS_DATA_DIR = DATA;
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -20,7 +20,7 @@ const { setVcsRuntimeForTests } = await import('../src/main/vcs');
 const { listAudit } = await import('../src/main/auditoria');
 const { runAct } = await import('../src/main/persona/act');
 
-const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+const asReal = (test: boolean) => writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 const note = (body: string): VcsCommand => ({ via: 'glab', method: 'POST', endpoint: 'projects/acme%2Fweb/issues/101/notes', fields: { body } });
 const input = (key: string) => ({ key, issue: 101, issueTitle: 'Issue', summary: 'A review round', detail: 'Read this first.' });
 
@@ -29,8 +29,8 @@ let failAt: string | null;
 let failUpload: string | null;
 
 beforeEach(() => {
-  rmSync(join(ATAS, 'acoes.json'), { force: true });
-  rmSync(join(ATAS, 'auditoria.jsonl'), { force: true });
+  rmSync(join(atasDir(), 'acoes.json'), { force: true });
+  rmSync(join(atasDir(), 'auditoria.jsonl'), { force: true });
   asReal(false);
   ran = [];
   failAt = null;

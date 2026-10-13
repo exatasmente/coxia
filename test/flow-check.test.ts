@@ -198,13 +198,13 @@ describe('saving a config whose flow has a problem', () => {
   it('is refused when the change is to the flow, and allowed when it is to something else', async () => {
     const { getConfig, reloadConfig, saveConfig, updateConfig } = await import('../src/main/workspaceConfig');
     const { writeConfigFile } = await import('../src/main/config-bootstrap');
-    const { ATAS } = await import('../src/main/env');
+    const { atasDir } = await import('../src/main/env');
     saveConfig(config());
     // a change to the flow is held to the checks
     expect(() => updateConfig((c) => { orphan(c, 'plan'); return c; })).toThrow(/no agent/i);
     expect(byId(getConfig(), 'plan').agentId).toBe('planner');
     // a flow that already had the problem when the app opened it is kept, and does not make an unrelated change unsavable
-    writeConfigFile(ATAS, config((x) => orphan(x, 'plan')));
+    writeConfigFile(atasDir(), config((x) => orphan(x, 'plan')));
     reloadConfig();
     expect(byId(getConfig(), 'plan').agentId).toBeUndefined();
     expect(agent(getConfig(), 'planner').stages).toEqual([]);

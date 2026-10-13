@@ -21,7 +21,7 @@ const { createSession } = await import('../src/main/persona/session');
 const { listAudit } = await import('../src/main/auditoria');
 const { forumStore } = await import('../src/main/forum');
 const { saveConfig } = await import('../src/main/workspaceConfig');
-const { DATA_ROOT, ATAS } = await import('../src/main/env');
+const { dataRoot, atasDir } = await import('../src/main/env');
 const { readEntries } = await import('../src/main/errorlog-core');
 
 const THREAD = agentThreadId('me');
@@ -102,7 +102,7 @@ describe('reading a value', () => {
     expect(line?.said).toBe('The key [secret] was fine.');
     expect(JSON.stringify(messages().slice(before))).not.toContain(VALUE);
     // The error log, the audit file and the forum file hold it nowhere.
-    const files = [readFileSync(join(ATAS, 'auditoria.jsonl'), 'utf8'), readFileSync(join(ATAS, 'forum', `${THREAD}.jsonl`), 'utf8'), JSON.stringify(readEntries(join(DATA_ROOT, 'logs')))];
+    const files = [readFileSync(join(atasDir(), 'auditoria.jsonl'), 'utf8'), readFileSync(join(atasDir(), 'forum', `${THREAD}.jsonl`), 'utf8'), JSON.stringify(readEntries(join(dataRoot(), 'logs')))];
     for (const text of files) expect(text).not.toContain(VALUE);
   });
 

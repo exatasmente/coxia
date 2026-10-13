@@ -4,14 +4,14 @@ import { CHECK_KINDS, type CheckKind, type CheckSpec, type EffectEntry, type Efe
 import type { Card, Effect } from '../shared/types';
 import { askAgent, obj, str, strOrNull } from './agents';
 import { prompt as cp } from './cyclePrompts';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { rc } from './workspaceConfig';
 import type { Module } from './module';
 import { getHistory, listHistory } from './state';
 import { vcsProvider, vcsReady } from './vcs';
 import { getTerms, t } from '../shared/i18n';
 
-const FILE = join(ATAS, 'efeitos.json');
+const FILE = (): string => join(atasDir(), 'efeitos.json');
 const DAY_MS = 86_400_000;
 const PRUNE_MS = 30 * DAY_MS;
 const MAX_CLASSIFY_PER_RUN = 8;
@@ -37,15 +37,15 @@ let deps: Deps | null = null;
 
 function read(): Store {
   try {
-    if (existsSync(FILE)) return { checkedAt: null, entries: {}, ...(JSON.parse(readFileSync(FILE, 'utf8')) as Partial<Store>) };
+    if (existsSync(FILE())) return { checkedAt: null, entries: {}, ...(JSON.parse(readFileSync(FILE(), 'utf8')) as Partial<Store>) };
   } catch {}
   return { checkedAt: null, entries: {} };
 }
 
 function write(s: Store): void {
-  mkdirSync(ATAS, { recursive: true });
-  writeFileSync(`${FILE}.tmp`, JSON.stringify(s, null, 1));
-  renameSync(`${FILE}.tmp`, FILE);
+  mkdirSync(atasDir(), { recursive: true });
+  writeFileSync(`${FILE()}.tmp`, JSON.stringify(s, null, 1));
+  renameSync(`${FILE()}.tmp`, FILE());
 }
 
 // Every await in the job may overlap a manual mark: patch one entry on a fresh read instead of writing a stale copy.

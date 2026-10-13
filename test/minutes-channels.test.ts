@@ -28,7 +28,7 @@ describe('the minutes channels', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-02T15:00:00'));
     await installLegacyConfig();
-    ATAS = (await import('../src/main/env')).ATAS;
+    ATAS = (await import('../src/main/env')).atasDir();
     state = await import('../src/main/state');
     const { minutes } = await import('../src/main/minutes');
     minutes({ handle: (channel, fn) => void handlers.set(channel, fn as never), notify: () => {}, emit: (e) => void events.push(e), job: () => {} });

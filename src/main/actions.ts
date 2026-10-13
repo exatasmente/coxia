@@ -35,7 +35,7 @@ import { assertResolvable, resolveMr } from './conflictFromMr';
 import { hasMarkers } from './conflictHunks';
 import { verifyCommandFor } from './conflictVerify';
 import { cycle, formatTime, prompt as cp } from './cyclePrompts';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
 import { VcsError, scrubSecrets } from './vcs/errors';
@@ -63,7 +63,7 @@ import { tv } from '../shared/i18n';
 const crWord = (): string => getTerms().words.cr;
 
 const exec = promisify(execFile);
-const FILE = join(ATAS, 'acoes.json');
+const FILE = (): string => join(atasDir(), 'acoes.json');
 const PIPELINE_WAIT_MS = 30_000;
 // The GitLab status mutation lives with its provider; re-exported for the callers and tests that knew it here.
 export { STATUS_MUTATION };
@@ -99,15 +99,15 @@ let detecting = false;
 
 function read(): Store {
   try {
-    if (existsSync(FILE)) return JSON.parse(readFileSync(FILE, 'utf8')) as Store;
+    if (existsSync(FILE())) return JSON.parse(readFileSync(FILE(), 'utf8')) as Store;
   } catch {}
   return { releaseSeen: null, actions: [] };
 }
 
 function write(s: Store): void {
-  mkdirSync(ATAS, { recursive: true });
-  writeFileSync(`${FILE}.tmp`, JSON.stringify(s, null, 1));
-  renameSync(`${FILE}.tmp`, FILE);
+  mkdirSync(atasDir(), { recursive: true });
+  writeFileSync(`${FILE()}.tmp`, JSON.stringify(s, null, 1));
+  renameSync(`${FILE()}.tmp`, FILE());
   deps?.emit({ type: 'actions', actions: s.actions });
 }
 
@@ -727,7 +727,7 @@ export async function conflictTalk(id: string, question: string): Promise<Releas
 // dir. The one external step is the push, a separate `conflict-push` action that waits for its own "sim".
 
 const stepLocks = new Set<string>();
-const CONFLICTS = join(ATAS, 'conflicts');
+const CONFLICTS = (): string => join(atasDir(), 'conflicts');
 const FENCE = /^```[\w-]*\r?\n([\s\S]*?)\r?\n?```\s*$/;
 
 // Tests replace these: the clone search roots and what runs after a publish.
@@ -871,7 +871,7 @@ export async function conflictPrepare(id: string): Promise<ReleaseAction> {
     const clone = await findClone(project, conflictHooks.cloneRoots, requireVcsHost());
     if (!clone) throw new Error(t('main.actions.noClone', { project, roots: conflictHooks.cloneRoots.join(', ') }));
     const target = u.target_branch ?? 'main';
-    const p = await prepareWorktree({ clone, branch, target, iid, dest: join(CONFLICTS, `${basename(clone)}-${iid}`), identity: await mergeIdentity(clone) });
+    const p = await prepareWorktree({ clone, branch, target, iid, dest: join(CONFLICTS(), `${basename(clone)}-${iid}`), identity: await mergeIdentity(clone) });
     for (const f of p.files) for (const h of f.hunks) h.sensitive = secretPath(f.path);
     return update(id, (x) => ({
       ...x,
@@ -962,7 +962,7 @@ export function conflictChoose(id: string, hunkId: string, choice: HunkChoice, e
 }
 
 function verifyLog(r: ConflictResolve, iid: string): string {
-  return join(CONFLICTS, 'logs', `${basename(r.clone)}-${iid}-${new Date().toISOString().replace(/[:.]/g, '-')}.log`);
+  return join(CONFLICTS(), 'logs', `${basename(r.clone)}-${iid}-${new Date().toISOString().replace(/[:.]/g, '-')}.log`);
 }
 
 async function writeAndVerify(id: string, skipTests: boolean): Promise<ReleaseAction> {
@@ -1051,7 +1051,7 @@ async function discardConflict(id: string): Promise<ReleaseAction> {
   if (r.publishedAt) throw new Error(t('main.actions.alreadyPublished'));
   const push = r.pushId ? read().actions.find((x) => x.id === r.pushId) : null;
   if (push?.state === 'running') throw new Error(t('main.actions.pushRunning'));
-  await removeWorktree(r.clone, r.worktree, r.syncBranch, CONFLICTS);
+  await removeWorktree(r.clone, r.worktree, r.syncBranch, CONFLICTS());
   if (push && push.state !== 'done') update(push.id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString(), output: t('main.actions.discarded') }));
   // The conflict action stays pending: the problem is still there.
   return update(id, (x) => ({ ...x, resolve: null }));
@@ -1344,7 +1344,7 @@ async function afterPublish(push: ReleaseAction): Promise<ReleaseAction> {
   const notes: string[] = [];
   if (r) {
     try {
-      await removeWorktree(r.clone, r.worktree, r.syncBranch, CONFLICTS);
+      await removeWorktree(r.clone, r.worktree, r.syncBranch, CONFLICTS());
     } catch (e) {
       notes.push(t('main.actions.worktreeLeft', { reason: (e as Error).message }));
     }
@@ -1435,7 +1435,7 @@ export interface PluginWriteInput {
 const pluginWriteOf = (a: ReleaseAction): PluginWriteInput => ({ plugin: String((a.unit ?? {}).plugin ?? ''), to: String((a.unit ?? {}).to ?? ''), text: String((a.unit ?? {}).text ?? '') });
 
 /** Where a plugin's neutral destination lands: an outbox of this workspace, one file per destination the plugin declared. */
-export const pluginOutboxFile = (plugin: string, to: string): string => join(ATAS, 'plugins-out', plugin, `${to}.md`);
+export const pluginOutboxFile = (plugin: string, to: string): string => join(atasDir(), 'plugins-out', plugin, `${to}.md`);
 
 const PLAIN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 

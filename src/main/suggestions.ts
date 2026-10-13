@@ -5,7 +5,7 @@ import type { AuditEntry } from '../shared/auditoria';
 import type { StageDef, WorkspaceConfig } from '../shared/config/types';
 import type { HistoryType, Run } from '../shared/runs';
 import type { Decision, SavedCeremony } from '../shared/types';
-import { ATAS } from './env';
+import { atasDir } from './env';
 
 // What the cycle has been repeating, read from the files the app already writes (runs, the audit log and the minutes). Nothing new is
 // recorded to feed this: `gatherEvidence` is pure (it takes the rows, it does no I/O) so the reading stays where it already is and a test
@@ -323,10 +323,10 @@ export function blockedByRejection(store: SuggestionsStore, impression: string, 
 
 const evidenceRef = (e: Pick<Evidence, 'source' | 'ref' | 'subject'>): string => `${e.source}:${e.ref}:${e.subject}`;
 
-const FILE = join(ATAS, 'suggestions.json');
+const FILE = (): string => join(atasDir(), 'suggestions.json');
 
 /** The decision record of the workspace, or an empty one when the file does not exist yet (nothing is created until the first decision). */
-export function readSuggestions(suggestionsFile: string = FILE): SuggestionsStore {
+export function readSuggestions(suggestionsFile: string = FILE()): SuggestionsStore {
   try {
     if (existsSync(suggestionsFile)) return JSON.parse(readFileSync(suggestionsFile, 'utf8')) as SuggestionsStore;
   } catch {}
@@ -334,7 +334,7 @@ export function readSuggestions(suggestionsFile: string = FILE): SuggestionsStor
 }
 
 /** Writes the record atomically, the way `acoes.json` is written. */
-export function writeSuggestions(store: SuggestionsStore, suggestionsFile: string = FILE): void {
+export function writeSuggestions(store: SuggestionsStore, suggestionsFile: string = FILE()): void {
   mkdirSync(join(suggestionsFile, '..'), { recursive: true });
   writeFileSync(`${suggestionsFile}.tmp`, JSON.stringify(store, null, 1));
   renameSync(`${suggestionsFile}.tmp`, suggestionsFile);

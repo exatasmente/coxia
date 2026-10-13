@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync,
 import { join } from 'node:path';
 import type { CustoKey, CustoKind, CustoScope, CustoSummary } from '../shared/custo';
 import { DEFAULT_GOAL, type GenRef, type GenStat, classify, firstPromptOf, gensOf, inScope, parseGeneration, parseKey, summarize } from './custo-core';
-import { ATAS, DATA_ROOT, WORKSPACE_ID } from './env';
+import { atasDir, dataRoot, workspaceId } from './env';
 import { openRouterKey } from './llm';
 import { reuseTimes } from './falas';
 import type { Module } from './module';
@@ -11,7 +11,7 @@ import { readRegistry } from './workspaces-core';
 import { rc } from './workspaceConfig';
 import { t } from '../shared/i18n';
 
-const FILE = join(ATAS, 'custo.json');
+const FILE = (): string => join(atasDir(), 'custo.json');
 const API = 'https://openrouter.ai/api/v1';
 const transcriptsDir = (): string => rc().transcriptsDir;
 const PARALLEL = 6;
@@ -38,8 +38,8 @@ interface Cache {
 
 function read(): Cache {
   try {
-    if (existsSync(FILE)) {
-      const c = JSON.parse(readFileSync(FILE, 'utf8')) as Cache;
+    if (existsSync(FILE())) {
+      const c = JSON.parse(readFileSync(FILE(), 'utf8')) as Cache;
       if (c.version === 1) return c;
     }
   } catch {}
@@ -47,20 +47,20 @@ function read(): Cache {
 }
 
 function write(c: Cache): void {
-  mkdirSync(ATAS, { recursive: true });
-  writeFileSync(`${FILE}.tmp`, JSON.stringify(c));
-  renameSync(`${FILE}.tmp`, FILE);
+  mkdirSync(atasDir(), { recursive: true });
+  writeFileSync(`${FILE()}.tmp`, JSON.stringify(c));
+  renameSync(`${FILE()}.tmp`, FILE());
 }
 
 function view(c: Cache, scope: CustoScope = 'current', keyError: string | null = null): CustoSummary {
   const modelOf = new Map(Object.values(c.files).flatMap((f) => f.gens.flatMap((g) => (g.model ? [[g.id, g.model] as const] : []))));
   const stats = Object.entries(c.gens).flatMap(([id, g]) => ('gone' in g ? [] : [g.model || !modelOf.has(id) ? g : { ...g, model: modelOf.get(id) }]));
   const known = new Set(Object.keys(c.gens));
-  const reg = readRegistry(DATA_ROOT);
-  const owners = reg ? sessionOwners(DATA_ROOT, reg) : new Map<string, string>();
-  const mine = inScope(scope, WORKSPACE_ID, owners);
+  const reg = readRegistry(dataRoot());
+  const owners = reg ? sessionOwners(dataRoot(), reg) : new Map<string, string>();
+  const mine = inScope(scope, workspaceId(), owners);
   const pending = Object.values(c.files).flatMap((f) => f.gens).filter((g) => !known.has(g.id) && mine(g.session)).length;
-  const current = reg?.list.find((w) => w.id === WORKSPACE_ID) ?? { id: WORKSPACE_ID, name: WORKSPACE_ID, createdAt: '', test: false };
+  const current = reg?.list.find((w) => w.id === workspaceId()) ?? { id: workspaceId(), name: workspaceId(), createdAt: '', test: false };
   return summarize({ gens: stats, pending, goal: c.goal, key: c.key, keyError, refreshedAt: c.refreshedAt, reuses: reuseTimes(), scope, owners, workspaces: reg?.list ?? [current], current });
 }
 

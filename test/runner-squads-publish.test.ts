@@ -14,7 +14,7 @@ import { withSquads } from './helpers/squads';
 
 vi.setConfig({ testTimeout: 30_000 });
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -25,13 +25,13 @@ const { onRunnerActionDone } = await import('../src/main/runner/door');
 
 let forge: Forge;
 let stop: (() => void) | null = null;
-const asReal = (test: boolean) => writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
+const asReal = (test: boolean) => writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test }] });
 
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(ATAS, f), { force: true });
-  for (const d of ['runs', 'forum']) rmSync(join(ATAS, d), { recursive: true, force: true });
+  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(atasDir(), f), { force: true });
+  for (const d of ['runs', 'forum']) rmSync(join(atasDir(), d), { recursive: true, force: true });
   asReal(false);
   stop?.();
   stop = null;
@@ -41,7 +41,7 @@ async function started(configure: (c: WorkspaceConfig) => void = () => undefined
   forge = makeForge();
   setVcsRuntimeForTests(forge.runtime());
   asReal(test);
-  const b = await boot({ dir: ATAS, publish: true, configure: (c) => { c.language = 'en'; withSquads(c); configure(c); } });
+  const b = await boot({ dir: atasDir(), publish: true, configure: (c) => { c.language = 'en'; withSquads(c); configure(c); } });
   b.engine.script('support', () => work('Triaged.', { artifacts: [doc('0_TRIAGE.md')] }));
   b.engine.script('dev-a', () => work('Built.', { artifacts: [doc('3_IMPLEMENTATION.md')] }));
   stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
@@ -90,7 +90,7 @@ async function requested(edit: (c: WorkspaceConfig) => void = () => undefined, t
   forge = makeForge();
   setVcsRuntimeForTests(forge.runtime());
   asReal(test);
-  const s = await bootSquads(edit, { dir: ATAS, publish: true });
+  const s = await bootSquads(edit, { dir: atasDir(), publish: true });
   const { b } = s;
   // the issue the forge will make is the first it numbers: 200
   b.issues.add(issue(200, { title: 'Expose the totals', labels: ['squad-b'] }));

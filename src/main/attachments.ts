@@ -13,13 +13,13 @@ import {
   detectAttachmentKind,
 } from '../shared/attachments';
 import { t } from '../shared/i18n';
-import { ATAS } from './env';
+import { atasDir } from './env';
 
 // The person's attachments of the running workspace: <workspace>/anexos/<thread>/<id><ext>. One folder per conversation, one file per attachment.
 // The id and the extension come from the app (the kind the content revealed), never from the name the person gave the file, so the name is data
 // only. An agent called in a conversation is handed the id and reaches the file through the tool, never a path on the computer.
 //
-// Electron-free: the folder comes from ATAS (or an argument, for a test), the bytes come from the caller, and a refused file leaves nothing behind.
+// Electron-free: the folder comes from atasDir() (or an argument, for a test), the bytes come from the caller, and a refused file leaves nothing behind.
 
 const ID_BYTES = 16;
 const HEAD = 64 * 1024;
@@ -28,7 +28,7 @@ const HEAD = 64 * 1024;
 const newId = (): string => randomUUID().replace(/-/g, '').slice(0, ID_BYTES);
 
 export interface AttachmentStoreDeps {
-  /** The workspace's data folder; the live app uses ATAS, a test points it at its own temporary folder. */
+  /** The workspace's data folder; the live app uses atasDir(), a test points it at its own temporary folder. */
   base?: string;
   limits?: () => AttachmentLimits;
 }
@@ -55,7 +55,7 @@ function kindOfExt(path: string): AttachmentKind {
 }
 
 export function createAttachmentStore(deps: AttachmentStoreDeps = {}) {
-  const base = (): string => join(deps.base ?? ATAS, 'anexos');
+  const base = (): string => join(deps.base ?? atasDir(), 'anexos');
   const limits = (): AttachmentLimits => deps.limits?.() ?? ATTACHMENT_LIMITS;
 
   const dirOf = (thread: string): string => join(base(), safeThread(thread));
@@ -250,7 +250,7 @@ export function createAttachmentStore(deps: AttachmentStoreDeps = {}) {
 
 export type AttachmentStore = ReturnType<typeof createAttachmentStore>;
 
-// The workspace's live store: one per process, over ATAS. The limits come from the configuration, so a change reaches the next upload.
+// The workspace's live store: one per process, over atasDir(). The limits come from the configuration, so a change reaches the next upload.
 // workspaceConfig is imported lazily: it pulls the whole config layer, and this module stays usable by a test with its own folder and limits.
 let live: AttachmentStore | null = null;
 

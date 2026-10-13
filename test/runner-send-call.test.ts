@@ -11,7 +11,7 @@ import { type Boot, boot, doc, fakeSandbox, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -26,8 +26,8 @@ const { runThreadId } = await import('../src/shared/forum');
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  for (const d of ['runs', 'forum']) rmSync(join(ATAS, d), { recursive: true, force: true });
-  writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
+  for (const d of ['runs', 'forum']) rmSync(join(atasDir(), d), { recursive: true, force: true });
+  writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
 });
 
 function easy(b: Boot): void {

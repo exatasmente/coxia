@@ -16,7 +16,7 @@ import { type BootOptions, boot, doc, work, type Boot } from './helpers/runner';
 vi.setConfig({ testTimeout: 30_000 });
 
 const { getConfig, updateConfig } = await import('../src/main/workspaceConfig');
-const { DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -123,7 +123,7 @@ describe('from a stage that read a procedure to its record', () => {
   beforeEach(() => {
     updateConfig((c) => ({ ...c, language: 'en' }));
     dir = mkdtempSync(join(tmpdir(), 'procedures-run-'));
-    writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
+    writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

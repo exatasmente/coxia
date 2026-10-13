@@ -14,7 +14,7 @@ import { type Boot, boot, doc, issue, work } from './helpers/runner';
 
 vi.setConfig({ testTimeout: 30_000 });
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -29,9 +29,9 @@ let stop: (() => void) | null = null;
 beforeAll(() => setLanguage('en'));
 afterAll(() => setLanguage('pt-BR'));
 beforeEach(() => {
-  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(ATAS, f), { force: true });
-  for (const d of ['runs', 'forum']) rmSync(join(ATAS, d), { recursive: true, force: true });
-  writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
+  for (const f of ['acoes.json', 'auditoria.jsonl']) rmSync(join(atasDir(), f), { force: true });
+  for (const d of ['runs', 'forum']) rmSync(join(atasDir(), d), { recursive: true, force: true });
+  writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
   stop?.();
   stop = null;
 });
@@ -159,7 +159,7 @@ describe('a flow that is edited', () => {
     at(stored, 'review').returnsTo = 'ghost';
     const { writeConfigFile } = await import('../src/main/config-bootstrap');
     const { reloadConfig } = await import('../src/main/workspaceConfig');
-    writeConfigFile(ATAS, stored);
+    writeConfigFile(atasDir(), stored);
     reloadConfig();
     await expect(b.runner.start('app#101')).rejects.toMatchObject({ code: 'invalid-flow' });
     await expect(b.runner.start('app#101')).rejects.toThrow(/ghost/);
@@ -185,7 +185,7 @@ describe('stages that wait', () => {
   it('waits for the pull request to be merged, looking at the code host on each tick, and then goes on to the stage after it', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: withWait({ kind: 'pr-merged' }) });
+    const b = await boot({ dir: atasDir(), publish: true, configure: withWait({ kind: 'pr-merged' }) });
     easy(b);
     const run = await reachWait(b);
     expect(run).toMatchObject({ status: 'waiting', stage: 'ready', wait: { kind: 'pr-merged' } });
@@ -203,7 +203,7 @@ describe('stages that wait', () => {
   it('a pull request closed without a merge is not a merge', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: withWait({ kind: 'pr-merged' }) });
+    const b = await boot({ dir: atasDir(), publish: true, configure: withWait({ kind: 'pr-merged' }) });
     easy(b);
     const run = await reachWait(b);
     forge.pr = null;
@@ -239,7 +239,7 @@ describe('stages that wait', () => {
   it('waits for a label on the issue, whatever its case', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: withWait({ kind: 'label', label: 'shipped' }) });
+    const b = await boot({ dir: atasDir(), publish: true, configure: withWait({ kind: 'label', label: 'shipped' }) });
     easy(b);
     const run = await reachWait(b);
     expect(run.status).toBe('waiting');
@@ -312,7 +312,7 @@ describe('an agent that asks the person who reported the issue', () => {
   it('posts the question on the issue, waits for the reply of a person (not for what the app itself wrote), and goes on with the reply', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => void (c.language = 'en') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => void (c.language = 'en') });
     easy(b);
     b.engine.script('refiner', () => work('I need one more thing.', { reporterQuestion: 'Which browser do you use?' }), () => work('Spec, with the browser.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')] }));
     const run = await start(b);
@@ -369,7 +369,7 @@ describe('the label a stage sets on the tracker', () => {
   it('is set when the run enters the stage and taken off when it leaves, by an agent that runs by itself, and audited', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: labelled });
+    const b = await boot({ dir: atasDir(), publish: true, configure: labelled });
     easy(b);
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     const labelsSeen: string[][] = [];
@@ -393,7 +393,7 @@ describe('the label a stage sets on the tracker', () => {
   it('waits for a "yes" when the stage entered is a gate, and says so', async () => {
     forge = makeForge();
     setVcsRuntimeForTests(forge.runtime());
-    const b = await boot({ dir: ATAS, publish: true, configure: (c) => void (at(c, 'gate1').trackerStatus = 'needs-review') });
+    const b = await boot({ dir: atasDir(), publish: true, configure: (c) => void (at(c, 'gate1').trackerStatus = 'needs-review') });
     easy(b);
     stop = onRunnerActionDone((a, responses) => b.runner.actionDone(a, responses));
     const run = await b.runner.start('app#101');

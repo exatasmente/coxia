@@ -26,7 +26,7 @@ beforeAll(async () => {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date('2026-10-02T15:00:00'));
   await installLegacyConfig();
-  ATAS = (await import('../src/main/env')).ATAS;
+  ATAS = (await import('../src/main/env')).atasDir();
   SPECS = process.env.CERIMONIAS_SPECS_DIR as string;
   store = await import('../src/main/minutesStore');
   state = await import('../src/main/state');

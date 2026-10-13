@@ -5,7 +5,7 @@ import { stageRank } from '../shared/config/stages';
 import type { Card } from '../shared/types';
 import { loadCards } from './cards';
 import { getSettings } from './config';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { primaryKind, rc } from './workspaceConfig';
 import { vcsProvider } from './vcs';
 import type { Module, ModuleContext } from './module';
@@ -13,7 +13,7 @@ import { fetchRepos, worktreeHealth } from './worktrees';
 import { t } from '../shared/i18n';
 import { crRef } from '../shared/vcs';
 
-const FILE = join(ATAS, 'radar.json');
+const FILE = (): string => join(atasDir(), 'radar.json');
 // The collision check treats 40 lines (about one method) as "same place".
 const WINDOW = 40;
 
@@ -260,15 +260,15 @@ interface Stored extends RadarResult {
 
 export function readRadar(): Stored | null {
   try {
-    if (existsSync(FILE)) return JSON.parse(readFileSync(FILE, 'utf8')) as Stored;
+    if (existsSync(FILE())) return JSON.parse(readFileSync(FILE(), 'utf8')) as Stored;
   } catch {}
   return null;
 }
 
 function writeRadar(s: Stored): void {
-  mkdirSync(ATAS, { recursive: true });
-  writeFileSync(`${FILE}.tmp`, JSON.stringify(s, null, 2));
-  renameSync(`${FILE}.tmp`, FILE);
+  mkdirSync(atasDir(), { recursive: true });
+  writeFileSync(`${FILE()}.tmp`, JSON.stringify(s, null, 2));
+  renameSync(`${FILE()}.tmp`, FILE());
 }
 
 let running: Promise<{ result: RadarResult; fresh: RadarFinding[]; first: boolean }> | null = null;

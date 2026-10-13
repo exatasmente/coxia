@@ -9,7 +9,7 @@ import type { ExportResult, ImportApply, ImportPreview, ImportResult, ImportSour
 import type { SecretInput, SecretInfo, SecretsStorageStatus } from '../shared/secrets';
 import { syncProfiles } from './browser/module';
 import { applyImport, exportText, previewImport } from './config-transfer';
-import { DATA_ROOT, HOME, WORKSPACE_ID } from './env';
+import { dataRoot, HOME, workspaceId } from './env';
 import { locateSdk } from './claudeSdk';
 import type { Module } from './module';
 import { recordWrite } from './auditoria';
@@ -34,16 +34,16 @@ function view(): ConfigView {
     storage: store.storage(),
     requirements: collectSecretRequirements(config).map((r) => ({ ...r, configured: store.has(r.ref) })),
     claudeSdk: locateSdk(config.claudeSdk, HOME),
-    workspaceId: WORKSPACE_ID,
+    workspaceId: workspaceId(),
   };
 }
 
 function transferDeps() {
-  return { root: DATA_ROOT, home: HOME, secrets: secrets(), exists: existsSync, now: () => new Date() };
+  return { root: dataRoot(), home: HOME, secrets: secrets(), exists: existsSync, now: () => new Date() };
 }
 
 function workspaceName(id: string): string {
-  return readRegistry(DATA_ROOT)?.list.find((w) => w.id === id)?.name ?? id;
+  return readRegistry(dataRoot())?.list.find((w) => w.id === id)?.name ?? id;
 }
 
 /** Runs a change of the configuration and writes the line that says what changed, for whoever made it. A refused save changed nothing and has none. */
@@ -146,10 +146,10 @@ export const configModule: Module = (ctx) => {
 
   ctx.handle('config:export', async (): Promise<ExportResult> => {
     const config = getConfig();
-    const picked = await pickPath({ mode: 'save', title: t('main.config.exportTitle'), defaultPath: `coxia-${WORKSPACE_ID}.json`, filters: [{ name: t('main.config.fileFilter'), extensions: ['json'] }] });
+    const picked = await pickPath({ mode: 'save', title: t('main.config.exportTitle'), defaultPath: `coxia-${workspaceId()}.json`, filters: [{ name: t('main.config.fileFilter'), extensions: ['json'] }] });
     const requiredSecrets = collectSecretRequirements(config);
     if (!picked) return { path: null, requiredSecrets };
-    writeFileSync(picked, exportText(config, { workspaceName: workspaceName(WORKSPACE_ID), appVersion: appVersion(), now: new Date() }));
+    writeFileSync(picked, exportText(config, { workspaceName: workspaceName(workspaceId()), appVersion: appVersion(), now: new Date() }));
     return { path: picked, requiredSecrets };
   });
 
@@ -161,7 +161,7 @@ export const configModule: Module = (ctx) => {
   ctx.handle('config:import-preview', (source: ImportSource, target: ImportTarget): ImportPreview => previewImport(transferDeps(), source, target));
   ctx.handle('config:import-apply', (req: ImportApply): ImportResult => {
     const before = getConfig();
-    const result = applyImport(transferDeps(), req, WORKSPACE_ID);
+    const result = applyImport(transferDeps(), req, workspaceId());
     if (result.appliedToRunning) {
       reloadConfig();
       const line = configAuditEntry(before, getConfig(), { op: 'import-apply', via: viaOf() });

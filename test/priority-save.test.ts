@@ -34,7 +34,7 @@ const minutes = (decisions: Decision[]): Minutes => ({ startedAt: '2026-10-02T09
 beforeAll(async () => {
   const { saveConfig } = await import('../src/main/workspaceConfig');
   saveConfig(neutralConfig());
-  ATAS = (await import('../src/main/env')).ATAS;
+  ATAS = (await import('../src/main/env')).atasDir();
   store = await import('../src/main/store');
   actions = await import('../src/main/actions');
   vcs = await import('../src/main/vcs');

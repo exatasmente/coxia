@@ -1,8 +1,8 @@
-import { DATA_ROOT, WORKSPACE_ID } from './env';
+import { dataRoot, workspaceId } from './env';
 import { type WorkspaceInfo, externalWriteRefusal, readRegistry } from './workspaces-core';
 
 export function currentWorkspace(): WorkspaceInfo | null {
-  return readRegistry(DATA_ROOT)?.list.find((w) => w.id === WORKSPACE_ID) ?? null;
+  return readRegistry(dataRoot())?.list.find((w) => w.id === workspaceId()) ?? null;
 }
 
 // Fails closed: a registry that cannot be read counts as a test workspace.
@@ -12,7 +12,7 @@ export function isTestWorkspace(): boolean {
 
 /** The refusal for a write that leaves the machine (GitLab, pushes, spec files, card notes), or null when allowed. */
 export function externalRefusal(what: string): string | null {
-  return externalWriteRefusal(readRegistry(DATA_ROOT), what);
+  return externalWriteRefusal(readRegistry(dataRoot()), what);
 }
 
 export function assertExternalWrite(what: string): void {

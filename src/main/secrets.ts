@@ -4,7 +4,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { LegacySecretSeed } from '../shared/config/legacy';
 import { t } from '../shared/i18n';
-import { DATA_ROOT } from './env';
+import { dataRoot } from './env';
 import { SecretError, type CryptoPort, type SecretsStore, createSecretsStore } from './secrets-core';
 import { type TestEnvLedger, createTestEnvLedger } from './testEnv';
 
@@ -43,7 +43,7 @@ let ledger: TestEnvLedger | null = null;
 
 export function secrets(): SecretsStore {
   store ??= createSecretsStore({
-    root: DATA_ROOT,
+    root: dataRoot(),
     crypto: cryptoForwarder,
     env: process.env,
     home: homedir(),
@@ -56,7 +56,7 @@ export function secrets(): SecretsStore {
 
 /** The person's once-per-entry confirmations of the test environment, in this computer's data folder (never in the configuration or an export). */
 export function testEnvLedger(): TestEnvLedger {
-  ledger ??= createTestEnvLedger(join(DATA_ROOT, 'test-env-approvals.json'));
+  ledger ??= createTestEnvLedger(join(dataRoot(), 'test-env-approvals.json'));
   return ledger;
 }
 

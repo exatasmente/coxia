@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { DATA_ROOT } from './env';
+import { dataRoot } from './env';
 
 // The folders the app works in, as the host gives them: the desktop fills them from its runtime (electronPorts.ts), a host without a
 // desktop gives plain folders (or leaves them out and gets the defaults below). Read at every call, never captured at module load:
@@ -47,7 +47,7 @@ export const playwrightMcpCli = (): string => (isPackaged() ? join(base(), 'app.
 // Where the voice setup puts what it installs: the Python environment, the speech models and the uv it may fetch, all under userData.
 // A development checkout may still use its own sidecar/.venv (legacyVenvDir); the setup never writes there.
 // Without a host the userData folder is under the data root, the same rule the desktop applies when the data folder is set.
-export const userDataDir = (): string => port?.userData() ?? join(DATA_ROOT, 'userData');
+export const userDataDir = (): string => port?.userData() ?? join(dataRoot(), 'userData');
 export const voiceVenvDir = (): string => join(userDataDir(), 'voice-venv');
 export const voiceModelsDir = (): string => join(userDataDir(), 'voice-models');
 export const voiceToolsDir = (): string => join(userDataDir(), 'voice-tools');

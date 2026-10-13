@@ -1,4 +1,4 @@
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { recordEntry, entryOf } from './sessions-core';
 
 const noted = new Set<string>();
@@ -11,7 +11,7 @@ export function noteSession(id: string | undefined, role: string, prompt: string
   if (!id || resumed || noted.has(id)) return;
   noted.add(id);
   try {
-    recordEntry(ATAS, entryOf(id, role, prompt));
+    recordEntry(atasDir(), entryOf(id, role, prompt));
   } catch (e) {
     console.error('[sessions] could not record the session', e instanceof Error ? e.message : String(e));
   }

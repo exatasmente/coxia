@@ -24,7 +24,7 @@ const { listAudit, recordWrite } = await import('../src/main/auditoria');
 const { forumStore } = await import('../src/main/forum');
 const { getConfig, saveConfig } = await import('../src/main/workspaceConfig');
 const { ToolError } = await import('../src/main/engine/open/tools/types');
-const { DATA_ROOT, ATAS, WORKSPACE_ID } = await import('../src/main/env');
+const { dataRoot, atasDir, workspaceId } = await import('../src/main/env');
 const { writeRegistry } = await import('../src/main/workspaces-core');
 const actions = await import('../src/main/actions');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
@@ -51,7 +51,7 @@ beforeAll(async () => {
     agents: { ...base.agents, team: [...base.agents.team, newAgent({ id: 'me', name: 'Me', kind: 'persona', instructions: 'about the person' })] },
     devCycle: { ...base.devCycle, stages: [{ id: 'backlog', label: 'Backlog', match: [], kind: 'backlog', rank: 0 }, { id: 'doing', label: 'Doing', match: [], kind: 'development', rank: 1 }] },
   });
-  mkdirSync(join(ATAS, 'forum'), { recursive: true });
+  mkdirSync(join(atasDir(), 'forum'), { recursive: true });
   const { ensureAgentThread } = await import('../src/main/forum-channels');
   ensureAgentThread(forumStore(), { id: 'me', name: 'Me' }, 'en');
   const { configModule } = await import('../src/main/configModule');

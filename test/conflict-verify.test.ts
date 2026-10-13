@@ -7,7 +7,7 @@ import type { WorkspaceConfig } from '../src/shared/config/types';
 import { DESKTOP_ONLY } from '../src/main/webPolicy';
 
 // The data folder is the one test/setup.ts made for this file; the other workspace and the mirrors are created below, in temp folders.
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { isTestWorkspace } = await import('../src/main/workspace');
 const { saveConfig } = await import('../src/main/workspaceConfig');
 const { register, saveVerifyCommands, verifyCommandFor, verifyCommands, verifyConfig } = await import('../src/main/conflictVerify');
@@ -25,7 +25,7 @@ function configure(change: (c: WorkspaceConfig) => void): void {
 
 beforeEach(() => {
   mirrors = mkdtempSync(join(tmpdir(), 'cerimonias-mirrors-'));
-  rmSync(join(DATA_ROOT, VERIFY_UNCLAIMED_FILE), { force: true });
+  rmSync(join(dataRoot(), VERIFY_UNCLAIMED_FILE), { force: true });
   configure(() => undefined);
 });
 
@@ -42,20 +42,20 @@ describe('the conflict flow reads the active workspace', () => {
   });
 
   it('is not changed by the old shared file or by another workspace', () => {
-    writeFileSync(join(DATA_ROOT, VERIFY_FILE), JSON.stringify({ 'acme/web': 'from the shared file' }));
-    const reg = createWorkspace(DATA_ROOT, { name: 'Other', copySettings: false }, { log: () => undefined });
+    writeFileSync(join(dataRoot(), VERIFY_FILE), JSON.stringify({ 'acme/web': 'from the shared file' }));
+    const reg = createWorkspace(dataRoot(), { name: 'Other', copySettings: false }, { log: () => undefined });
     const other = reg.list[reg.list.length - 1].id;
     const c = neutralConfig();
     c.projects.verifyCommands = { 'acme/web': 'from the other workspace' };
-    writeFileSync(join(workspaceDir(DATA_ROOT, other), 'config.json'), JSON.stringify(c));
+    writeFileSync(join(workspaceDir(dataRoot(), other), 'config.json'), JSON.stringify(c));
     expect(verifyCommandFor('acme/web')).toBeNull();
-    rmSync(join(DATA_ROOT, VERIFY_FILE));
+    rmSync(join(dataRoot(), VERIFY_FILE));
   });
 
   it('is stored in the workspace config file, with the rest of the config intact', () => {
     configure((c) => { c.projects.repos = [repo('web', 'acme/web')]; c.userName = 'Ana'; });
     saveVerifyCommands({ 'acme/web': 'npm test' });
-    const stored = JSON.parse(readFileSync(join(ATAS, 'config.json'), 'utf8')) as WorkspaceConfig;
+    const stored = JSON.parse(readFileSync(join(atasDir(), 'config.json'), 'utf8')) as WorkspaceConfig;
     expect(stored.projects.verifyCommands).toEqual({ 'acme/web': 'npm test' });
     expect(stored.projects.repos.map((r) => r.id)).toEqual(['web']);
     expect(stored.userName).toBe('Ana');
@@ -108,28 +108,28 @@ describe('what the screen lists', () => {
   });
 
   it('does not list a project another workspace has a command for', () => {
-    writeFileSync(join(DATA_ROOT, VERIFY_FILE), JSON.stringify({ 'acme/elsewhere': 'x' }));
+    writeFileSync(join(dataRoot(), VERIFY_FILE), JSON.stringify({ 'acme/elsewhere': 'x' }));
     expect(verifyConfig().projects).toEqual([]);
-    rmSync(join(DATA_ROOT, VERIFY_FILE));
+    rmSync(join(dataRoot(), VERIFY_FILE));
   });
 
   it('offers the unclaimed commands, minus those this workspace has a command for now', () => {
-    writeFileSync(join(DATA_ROOT, VERIFY_UNCLAIMED_FILE), JSON.stringify({ 'acme/gone': 'make gone', 'acme/adopted': 'make adopted' }));
+    writeFileSync(join(dataRoot(), VERIFY_UNCLAIMED_FILE), JSON.stringify({ 'acme/gone': 'make gone', 'acme/adopted': 'make adopted' }));
     expect(verifyConfig().unclaimed).toEqual({ 'acme/gone': 'make gone', 'acme/adopted': 'make adopted' });
     saveVerifyCommands({ 'acme/adopted': 'make adopted' });
     expect(verifyConfig().unclaimed).toEqual({ 'acme/gone': 'make gone' });
-    expect(existsSync(join(DATA_ROOT, VERIFY_UNCLAIMED_FILE))).toBe(true);
+    expect(existsSync(join(dataRoot(), VERIFY_UNCLAIMED_FILE))).toBe(true);
   });
 
   it('keeps a test workspace as it was: reading, writing and the lookup do not look at the flag', () => {
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
+    setTestFlag(dataRoot(), workspaceId(), true);
     try {
       expect(isTestWorkspace()).toBe(true);
       saveVerifyCommands({ 'acme/web': 'npm test' });
       expect(verifyCommandFor('acme/web')).toBe('npm test');
       expect(verifyConfig().commands).toEqual({ 'acme/web': 'npm test' });
     } finally {
-      setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
+      setTestFlag(dataRoot(), workspaceId(), false);
     }
   });
 });

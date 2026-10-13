@@ -14,6 +14,8 @@ const { callsOf, mentionsIdle, mentionsModule } = await import('../src/main/ment
 const { forumStore } = await import('../src/main/forum');
 const { activityLog } = await import('../src/main/activity');
 const { mentionJob } = await import('../src/shared/activity');
+// The modules read the data folder at the first use: it is fixed here, to this file's own (test/setup.ts), before a test switches the variable.
+(await import('../src/main/env')).bootEnv();
 type ModuleContext = import('../src/main/module').ModuleContext;
 
 const realData = process.env.CERIMONIAS_DATA_DIR;
@@ -21,7 +23,6 @@ let dir: string;
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'coxia-mentions-module-'));
-  // The module resolves the workspace's own stores at import; a test points them at a throwaway folder before that happens.
   process.env.CERIMONIAS_DATA_DIR = dir;
 });
 

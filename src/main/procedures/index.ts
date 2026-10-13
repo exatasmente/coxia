@@ -1,6 +1,6 @@
 import { recordWrite } from '../auditoria';
 import { logError } from '../errorlog';
-import { ATAS } from '../env';
+import { atasDir } from '../env';
 import { pluginNotes } from '../plugins/module';
 import { getConfig, rc } from '../workspaceConfig';
 import { createProcedureOffers, type ProcedureOffers } from './offers';
@@ -23,7 +23,7 @@ export function contextWindowOf(model: Parameters<ReturnType<typeof rc>['agentMo
 let port: ProceduresPort | null = null;
 
 /** The running workspace's door to its procedures, over its own folder. One for the process, as the shared activities memory is. */
-export const proceduresPort = (): ProceduresPort => (port ??= createProceduresPort({ config: getConfig, dir: ATAS, pluginNames: () => pluginNotes().map((p) => p.name), audit: recordWrite, contextWindow: contextWindowOf, onError: logError }));
+export const proceduresPort = (): ProceduresPort => (port ??= createProceduresPort({ config: getConfig, dir: atasDir(), pluginNames: () => pluginNotes().map((p) => p.name), audit: recordWrite, contextWindow: contextWindowOf, onError: logError }));
 
 let screens: () => ScreenMarks | null = () => null;
 let notes: ((thread: string, code: string, params: Record<string, string | number>) => void) | null = null;
@@ -38,7 +38,7 @@ export function wireOffers(w: { screens: () => ScreenMarks | null; note: (thread
 /** The workspace's offers to keep a procedure, in memory. One for the process, as the port is: a workspace switch restarts the app. */
 export const procedureOffers = (): ProcedureOffers =>
   (offers ??= createProcedureOffers({
-    store: createProcedureStore(ATAS, { onError: (e) => logError('procedures', e) }),
+    store: createProcedureStore(atasDir(), { onError: (e) => logError('procedures', e) }),
     config: getConfig,
     sessions: () => screens(),
     audit: recordWrite,

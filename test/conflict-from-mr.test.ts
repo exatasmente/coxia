@@ -20,7 +20,7 @@ const DATA = mkdtempSync(join(tmpdir(), 'cerimonias-from-mr-data-'));
 process.env.CERIMONIAS_DATA_DIR = DATA;
 
 const { conflictDiscard, conflictFromMr, conflictHooks, conflictPrepare, listActions } = await import('../src/main/actions');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { setVcsRuntimeForTests } = await import('../src/main/vcs');
 const { fakeGitlabRuntime } = await import('./helpers/vcs');
 const { installLegacyConfig } = await import('./helpers/config');
@@ -56,7 +56,7 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
-  rmSync(ATAS, { recursive: true, force: true });
+  rmSync(atasDir(), { recursive: true, force: true });
   f = makeFixture();
   conflictHooks.cloneRoots = f.cloneRoots;
   reads = [];
@@ -195,7 +195,7 @@ describe('Preparar on an action from conflict:fromMr (no mirror)', () => {
     expect(r?.originSha).toBe(originSha(f, f.branch));
     expect(r?.mainSha).toBe(originSha(f, 'main'));
     expect(r?.files.map((x) => x.path).sort()).toEqual(['app.js', 'old.txt']);
-    expect(r?.worktree).toBe(join(ATAS, 'conflicts', 'proj-1234'));
+    expect(r?.worktree).toBe(join(atasDir(), 'conflicts', 'proj-1234'));
     expect(existsSync(r?.worktree as string)).toBe(true);
     expect(git(r?.worktree as string, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).toBeTruthy();
     expect(cloneSnapshot(f)).toEqual(before);

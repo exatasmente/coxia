@@ -5,7 +5,7 @@ import type { PluginDocumentType } from '../shared/plugins/declaration';
 import { askAgent, obj, str } from './agents';
 import { answerCeremonyMentions } from './mentions/ceremony';
 import { cycle, formatTime, language, prompt as cp, text as cycleWord } from './cyclePrompts';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { rc } from './workspaceConfig';
 import { assertExternalWrite } from './workspace';
 import { t } from '../shared/i18n';
@@ -51,7 +51,7 @@ interface Gate {
   createdAt: string;
 }
 
-const DIR = join(ATAS, 'gates');
+const DIR = (): string => join(atasDir(), 'gates');
 const ID = /^[\w-]+$/;
 export const LETTERS = ['A', 'B', 'C', 'D'];
 
@@ -66,12 +66,12 @@ function now(): string {
 
 function read(id: string): Gate {
   if (!ID.test(id)) throw new Error(t('main.gate.invalid'));
-  return JSON.parse(readFileSync(join(DIR, `${id}.json`), 'utf8')) as Gate;
+  return JSON.parse(readFileSync(join(DIR(), `${id}.json`), 'utf8')) as Gate;
 }
 
 function write(g: Gate): Gate {
-  mkdirSync(DIR, { recursive: true });
-  const file = join(DIR, `${g.id}.json`);
+  mkdirSync(DIR(), { recursive: true });
+  const file = join(DIR(), `${g.id}.json`);
   writeFileSync(`${file}.tmp`, JSON.stringify(g, null, 1));
   renameSync(`${file}.tmp`, file);
   return g;

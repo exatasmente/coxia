@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setLanguage } from '../src/shared/i18n';
-import { DATA_ROOT } from '../src/main/env';
+import { dataRoot } from '../src/main/env';
 import { masterKeyPort } from '../src/main/masterKey';
 import { SECRETS_FILE, type SecretsStore, createSecretsStore } from '../src/main/secrets-core';
 
@@ -120,7 +120,7 @@ describe('a key file that does not pass the checks', () => {
 
   it('is refused inside the data root: the key must not travel with the data', () => {
     const key = hexKey();
-    const file = join(DATA_ROOT, 'key.hex');
+    const file = join(dataRoot(), 'key.hex');
     writeFileSync(file, `${key}\n`, { mode: 0o600 });
     chmodSync(file, 0o600);
     expectClosed(file, [key]);

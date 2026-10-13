@@ -7,7 +7,7 @@ import { loadCards, specInfo } from './cards';
 import { cycle } from './cyclePrompts';
 import { cycleOn } from './cycle-core';
 import { getSettings } from './config';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { issueProjectKey, rc } from './workspaceConfig';
 import { logError } from './errorlog';
 import { gateOptions } from './gate';
@@ -16,7 +16,7 @@ import type { Notice } from './scheduler';
 import { vcsProvider, vcsReady } from './vcs';
 import { t } from '../shared/i18n';
 
-const FILE = join(ATAS, 'watchers.json');
+const FILE = (): string => join(atasDir(), 'watchers.json');
 const EVERY_MIN = 15;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 24 * HOUR_MS;
@@ -51,15 +51,15 @@ interface Deps {
 function read(): State {
   const empty: State = { checkedAt: null, alerts: [], notified: {}, dismissed: {}, prod: {} };
   try {
-    if (existsSync(FILE)) return { ...empty, ...(JSON.parse(readFileSync(FILE, 'utf8')) as Partial<State>) };
+    if (existsSync(FILE())) return { ...empty, ...(JSON.parse(readFileSync(FILE(), 'utf8')) as Partial<State>) };
   } catch {}
   return empty;
 }
 
 function write(s: State): void {
-  mkdirSync(ATAS, { recursive: true });
-  writeFileSync(`${FILE}.tmp`, JSON.stringify(s, null, 1));
-  renameSync(`${FILE}.tmp`, FILE);
+  mkdirSync(atasDir(), { recursive: true });
+  writeFileSync(`${FILE()}.tmp`, JSON.stringify(s, null, 1));
+  renameSync(`${FILE()}.tmp`, FILE());
 }
 
 function active(s: State): WatcherAlert[] {

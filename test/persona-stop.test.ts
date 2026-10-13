@@ -355,15 +355,15 @@ describe('the persona answering, stopped, and resumed', () => {
   });
 
   it('keeps the latch on disk, outside the configuration, so a restart finds the persona stopped', async () => {
-    const { ATAS } = await import('../src/main/env');
+    const { atasDir } = await import('../src/main/env');
     const { getConfig } = await import('../src/main/workspaceConfig');
     runtime.personaStop().stop('window');
     expect(JSON.stringify(getConfig())).not.toContain('latch');
-    expect(readLatch(join(ATAS, LATCH_FILE)).stopped).toBe(true);
-    expect(JSON.parse(readFileSync(join(ATAS, LATCH_FILE), 'utf8'))).toMatchObject({ v: 1, stopped: true, door: 'window' });
+    expect(readLatch(join(atasDir(), LATCH_FILE)).stopped).toBe(true);
+    expect(JSON.parse(readFileSync(join(atasDir(), LATCH_FILE), 'utf8'))).toMatchObject({ v: 1, stopped: true, door: 'window' });
     runtime.personaStop().resume('window');
-    expect(readLatch(join(ATAS, LATCH_FILE)).stopped).toBe(false);
-    expect(existsSync(join(ATAS, LATCH_FILE))).toBe(true);
+    expect(readLatch(join(atasDir(), LATCH_FILE)).stopped).toBe(false);
+    expect(existsSync(join(atasDir(), LATCH_FILE))).toBe(true);
   });
 });
 

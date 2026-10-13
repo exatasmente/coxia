@@ -3,7 +3,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SECRET_GLOBS, secretPath, type AgentCall } from '../../src/main/agents';
+import { secretGlobs, secretPath, type AgentCall } from '../../src/main/agents';
 import { currentJobId } from '../../src/main/activity';
 import { policyFromHooks } from '../../src/main/engine/open/policy';
 import type { ToolContext } from '../../src/main/engine/open/tools/types';
@@ -119,7 +119,7 @@ export interface Tools {
 
 export const toolsFor = (call: AgentCall): Tools => {
   const policy = policyFromHooks(call.confine?.hooks, 'fake');
-  const ctx: ToolContext = { cwd: call.cwd, roots: [call.cwd], isSecret: (p) => secretPath(p, call.cwd), secretGlobs: SECRET_GLOBS, outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off', writeRoot: call.confine?.writeRoot ?? call.confine?.root ?? null };
+  const ctx: ToolContext = { cwd: call.cwd, roots: [call.cwd], isSecret: (p) => secretPath(p, call.cwd), secretGlobs: secretGlobs(), outputMax: 30_000, env: {}, bashPrefixes: [], ripgrep: 'off', writeRoot: call.confine?.writeRoot ?? call.confine?.root ?? null };
   return {
     async write(path, content) {
       const denied = await policy.pre('Write', { file_path: path, content }, call.cwd);

@@ -10,7 +10,7 @@ import { fakeBoardHost } from './helpers/boardHost';
 const DATA = mkdtempSync(join(tmpdir(), 'cerimonias-board-host-'));
 process.env.CERIMONIAS_DATA_DIR = DATA;
 
-const { ATAS, DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { atasDir, dataRoot, workspaceId } = await import('../src/main/env');
 const { setTestFlag } = await import('../src/main/workspaces-core');
 const actions = await import('../src/main/actions');
 const { listAudit: allAudit } = await import('../src/main/auditoria');
@@ -70,8 +70,8 @@ function configure(autonomy: boolean, tweak: (c: typeof base) => void = () => un
 }
 
 beforeEach(() => {
-  setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
-  for (const f of ['board.json', 'acoes.json', 'auditoria.jsonl']) rmSync(join(ATAS, f), { force: true });
+  setTestFlag(dataRoot(), workspaceId(), false);
+  for (const f of ['board.json', 'acoes.json', 'auditoria.jsonl']) rmSync(join(atasDir(), f), { force: true });
   forgetHost();
   host = fakeBoardHost();
   setVcsRuntimeForTests(host.runtime);
@@ -492,7 +492,7 @@ describe('an issue the host lists that no card holds', () => {
     expect(issueOf(7).state).toBe('closed');
     await call('board:reopen', target());
     expect(issueOf(7).state).toBe('opened');
-    expect(existsSync(join(ATAS, 'board.json'))).toBe(false);
+    expect(existsSync(join(atasDir(), 'board.json'))).toBe(false);
   });
 
   it('takes the squad off by the label of the squad the issue carries, nothing local consulted', async () => {
@@ -569,7 +569,7 @@ describe('a workspace of test', () => {
     const id = linkedCard(['board:backlog']);
     const free = boardStore().create({ id: 'free0001', title: 'Not sent', body: '', column: 'backlog', squad: null, priority: null, labels: [], repo: 'app' });
     configure(autonomy);
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
+    setTestFlag(dataRoot(), workspaceId(), true);
     const issue = { project: PROJECT, iid: 7 };
     host.add(PROJECT, 7, {});
     const writes: [string, unknown[]][] = [
@@ -596,7 +596,7 @@ describe('a workspace of test', () => {
   it('refuses a proposal approved after the workspace became one of test', async () => {
     configure(false);
     const card = await open();
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
+    setTestFlag(dataRoot(), workspaceId(), true);
     await expect(actions.approveAction(actions.listActions()[0].id)).rejects.toThrow(REFUSED);
     expect(host.commands).toEqual([]);
     expect(boardStore().get(card.id)?.host).toBeUndefined();

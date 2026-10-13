@@ -25,7 +25,7 @@ import { type Boot, type BootOptions, boot, doc, fakeEngine, work } from './help
 
 vi.setConfig({ testTimeout: 30_000 });
 
-const { DATA_ROOT, WORKSPACE_ID } = await import('../src/main/env');
+const { dataRoot, workspaceId } = await import('../src/main/env');
 const { installLegacyConfig } = await import('./helpers/config');
 await installLegacyConfig();
 const { writeRegistry } = await import('../src/main/workspaces-core');
@@ -44,7 +44,7 @@ beforeEach(() => {
   updateConfig((c) => ({ ...c, language: 'en' }));
   dir = mkdtempSync(join(tmpdir(), 'procedures-surfaces-'));
   store = createProcedureStore(dir);
-  writeRegistry(DATA_ROOT, { current: WORKSPACE_ID, list: [{ id: WORKSPACE_ID, name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
+  writeRegistry(dataRoot(), { current: workspaceId(), list: [{ id: workspaceId(), name: 'work', createdAt: '2026-10-01T00:00:00Z', test: false }] });
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 

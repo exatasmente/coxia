@@ -8,7 +8,7 @@ import { askAgent, obj, str } from './agents';
 import { answerCeremonyMentions } from './mentions/ceremony';
 import { cycle, formatDate, formatTime, language, prompt as cp, text as cycleWord } from './cyclePrompts';
 import { joinList } from '../shared/cycles/text';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { runStore } from './runs';
 import { type RetroImprovement, proposeRetroIssues } from './retroIssues';
 import { suggestFromRetro } from './suggestionsModule';
@@ -16,7 +16,7 @@ import { getConfig, rc } from './workspaceConfig';
 import { getHistory, listHistory } from './state';
 import { t } from '../shared/i18n';
 
-const DIR = join(ATAS, 'retros');
+const DIR = (): string => join(atasDir(), 'retros');
 // A retro is named for its day; one held for a squad has the squad after the day.
 const ID = /^\d{4}-\d{2}-\d{2}(?:-[a-z0-9][a-z0-9_-]{0,47})?$/;
 const WHOLE = /^\d{4}-\d{2}-\d{2}\.json$/;
@@ -26,8 +26,8 @@ function now(): string {
 }
 
 function write(r: Retro): Retro {
-  mkdirSync(DIR, { recursive: true });
-  const file = join(DIR, `${r.id}.json`);
+  mkdirSync(DIR(), { recursive: true });
+  const file = join(DIR(), `${r.id}.json`);
   writeFileSync(`${file}.tmp`, JSON.stringify(r, null, 1));
   renameSync(`${file}.tmp`, file);
   return r;
@@ -36,7 +36,7 @@ function write(r: Retro): Retro {
 function read(id: string): Retro | null {
   if (!ID.test(id)) return null;
   try {
-    return JSON.parse(readFileSync(join(DIR, `${id}.json`), 'utf8')) as Retro;
+    return JSON.parse(readFileSync(join(DIR(), `${id}.json`), 'utf8')) as Retro;
   } catch {
     return null;
   }
@@ -48,10 +48,10 @@ export const writeRetro = write;
 
 /** The latest retro of the whole workspace, or, with a squad, the latest one held for it. */
 export function latestRetro(squad: string | null = null): Retro | null {
-  if (!existsSync(DIR)) return null;
+  if (!existsSync(DIR())) return null;
   // A retro for a squad is named "<day>-<squad>"; the whole workspace's is named for its day alone. `ID` bounds the name, not the day.
   const mine = (f: string): boolean => (squad ? f.endsWith(`-${squad}.json`) : WHOLE.test(f));
-  const last = readdirSync(DIR).filter(mine).sort().pop();
+  const last = readdirSync(DIR()).filter(mine).sort().pop();
   return last ? read(last.slice(0, -'.json'.length)) : null;
 }
 
@@ -84,7 +84,7 @@ function weekDigest(since: Date, squad: string | null = null): Record<string, un
     .filter((a) => inWeek(a.createdAt) && (!iids || iids.has(a.issue)))
     .map((a) => ({ [k('tipo')]: a.kind, issue: a.issue, [k('estado')]: a.state, release: a.release, [k('reteste')]: a.retest, [k('arquivos')]: a.files.length }));
 
-  const gatesDir = join(ATAS, 'gates');
+  const gatesDir = join(atasDir(), 'gates');
   const gates = existsSync(gatesDir)
     ? readdirSync(gatesDir)
         .filter((f) => f.endsWith('.json'))

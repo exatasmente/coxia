@@ -4,12 +4,12 @@ import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { setLanguage } from '../src/shared/i18n';
-import { DATA_ROOT } from '../src/main/env';
+import { dataRoot } from '../src/main/env';
 import { SECRETS_FILE, type CryptoPort } from '../src/main/secrets-core';
 import { secrets, setCryptoPort } from '../src/main/secrets';
 
 const VALUE = 'sk-this-is-a-test-value';
-const file = join(DATA_ROOT, SECRETS_FILE);
+const file = join(dataRoot(), SECRETS_FILE);
 
 // The same stand-in the store's own tests use: "encrypts" by reversing and tagging, so a test can tell ciphertext from plain text.
 const fakePort = (): CryptoPort => ({

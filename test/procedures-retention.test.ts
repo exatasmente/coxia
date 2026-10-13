@@ -10,7 +10,7 @@ process.env.CERIMONIAS_TRANSCRIPTS_DIR = mkdtempSync(join(tmpdir(), 'coxia-proce
 vi.mock('electron', () => ({ app: { getVersion: () => '0.0.0', whenReady: () => Promise.resolve() }, BrowserWindow: { getFocusedWindow: () => null, getAllWindows: () => [] } }));
 
 const { applyRetention, previewRetention, scan } = await import('../src/main/retention');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 const { ACTIVITIES_FILE, MEMORY_DIR, activitiesPath, emptyIndex, readIndex, writeIndex } = await import('../src/main/runner/activities');
 const { createProcedureStore, proceduresPath } = await import('../src/main/procedures/store');
 
@@ -27,14 +27,14 @@ function age(path: string, days: number): void {
 
 describe('retention and the procedures', () => {
   it('a sweep over very old records neither lists nor removes them, nor the deleted ids, nor the activities file', () => {
-    const store = createProcedureStore(ATAS);
+    const store = createProcedureStore(atasDir());
     const a = store.save({ input: content, writer, repos: ['api'] });
     const b = store.save({ input: { ...content, title: 'Build the api' }, writer, repos: ['api'] });
     if (!a.ok || !b.ok) throw new Error('not saved');
     store.remove(b.record.id);
-    writeIndex(ATAS, emptyIndex());
-    const memory = join(ATAS, MEMORY_DIR);
-    const targets = [...readdirSync(proceduresPath(ATAS)).map((n) => join(proceduresPath(ATAS), n)), activitiesPath(ATAS)];
+    writeIndex(atasDir(), emptyIndex());
+    const memory = join(atasDir(), MEMORY_DIR);
+    const targets = [...readdirSync(proceduresPath(atasDir())).map((n) => join(proceduresPath(atasDir()), n)), activitiesPath(atasDir())];
     for (const t of targets) age(t, 400);
     const before = new Map(targets.map((t) => [t, readFileSync(t, 'utf8')]));
 
@@ -49,24 +49,24 @@ describe('retention and the procedures', () => {
   });
 
   it('the activities memory and the procedures never read or write each other\'s files', () => {
-    const store = createProcedureStore(ATAS);
-    const activities = activitiesPath(ATAS);
-    writeIndex(ATAS, emptyIndex());
+    const store = createProcedureStore(atasDir());
+    const activities = activitiesPath(atasDir());
+    writeIndex(atasDir(), emptyIndex());
     const activitiesBefore = readFileSync(activities, 'utf8');
-    const procedures = filesUnder(proceduresPath(ATAS));
+    const procedures = filesUnder(proceduresPath(atasDir()));
 
     const saved = store.save({ input: { ...content, title: 'Lint the api' }, writer, repos: ['api'] });
     if (!saved.ok) throw new Error('not saved');
     expect(readFileSync(activities, 'utf8')).toBe(activitiesBefore);
 
-    const procedureFiles = filesUnder(proceduresPath(ATAS));
-    const procedureText = readFileSync(join(proceduresPath(ATAS), `${saved.record.id}.json`), 'utf8');
-    writeIndex(ATAS, { ...emptyIndex(), agents: { writer: { ref: 'app#1', stage: null, at: '2026-10-09T10:00:00.000Z' } } });
-    expect(readIndex(ATAS)?.agents.writer).toBeDefined();
-    expect(filesUnder(proceduresPath(ATAS))).toEqual(procedureFiles);
-    expect(readFileSync(join(proceduresPath(ATAS), `${saved.record.id}.json`), 'utf8')).toBe(procedureText);
+    const procedureFiles = filesUnder(proceduresPath(atasDir()));
+    const procedureText = readFileSync(join(proceduresPath(atasDir()), `${saved.record.id}.json`), 'utf8');
+    writeIndex(atasDir(), { ...emptyIndex(), agents: { writer: { ref: 'app#1', stage: null, at: '2026-10-09T10:00:00.000Z' } } });
+    expect(readIndex(atasDir())?.agents.writer).toBeDefined();
+    expect(filesUnder(proceduresPath(atasDir()))).toEqual(procedureFiles);
+    expect(readFileSync(join(proceduresPath(atasDir()), `${saved.record.id}.json`), 'utf8')).toBe(procedureText);
     expect(procedureFiles.length).toBeGreaterThan(procedures.length);
     // The two keep apart: the activities folder holds one file of its own and one folder for the procedures.
-    expect(filesUnder(join(ATAS, MEMORY_DIR))).toEqual([ACTIVITIES_FILE, 'procedures']);
+    expect(filesUnder(join(atasDir(), MEMORY_DIR))).toEqual([ACTIVITIES_FILE, 'procedures']);
   });
 });

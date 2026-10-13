@@ -3,7 +3,7 @@ import { lstatSync, readFileSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
 import { t } from '../shared/i18n';
 import { SecretError, type CryptoPort } from './secrets-core';
-import { DATA_ROOT } from './env';
+import { dataRoot } from './env';
 
 // The encryption a host without a desktop gives: one master key, 32 bytes written as 64 hex digits and a newline in a file the host names.
 // The file is checked on every operation and the key is never kept between them: whatever goes wrong goes wrong closed, and no message
@@ -18,7 +18,7 @@ const HEX_KEY = /^[0-9a-fA-F]{64}\n?$/;
 function readMasterKey(keyFile: string): Buffer | null {
   try {
     const path = resolve(keyFile);
-    const root = resolve(DATA_ROOT);
+    const root = resolve(dataRoot());
     // The key travels outside the data root on purpose: the root is copied and moved between machines, and the key must not go with it.
     if (path === root || path.startsWith(root + sep)) return null;
     const stat = lstatSync(path);

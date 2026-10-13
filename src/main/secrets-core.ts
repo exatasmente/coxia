@@ -4,7 +4,7 @@ import { expandHome } from '../shared/config/paths';
 import { ENV_NAME, SECRET_MAX_LENGTH, SECRET_REF, type SecretInfo, type SecretInput, type SecretSource, type SecretsStorageStatus } from '../shared/secrets';
 import { t } from '../shared/i18n';
 
-// The secrets store: values keyed by a secretRef, in DATA_ROOT/secrets.json (mode 0600), shared by every workspace and never exported.
+// The secrets store: values keyed by a secretRef, in <data root>/secrets.json (mode 0600), shared by every workspace and never exported.
 //   stored   encrypted with the OS keychain (Electron safeStorage). Without a keychain it is refused, unless the user accepted the insecure file.
 //   command  the value is the stdout of an executable the user already has (a key script, a password manager CLI...)
 //   env      the value is an environment variable of the app

@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { HOME, ATAS, DATA_ROOT } from '../env';
+import { HOME, atasDir, dataRoot } from '../env';
 import { runAgent, probeProviderBudget } from '../agents';
 import { forumStore, interceptPosts, threadAnchor } from '../forum';
 import { type CommandDecision, RunError, isFlowCycle } from '../../shared/runs';
@@ -217,12 +217,12 @@ export const runsModule: Module = (ctx) => {
   const openSessions = createScreenSessions({
     enabled: process.platform === 'linux',
     config: getConfig,
-    browsers: () => resolveBrowsers(getConfig().runner.sandbox, HOME, [DATA_ROOT]),
+    browsers: () => resolveBrowsers(getConfig().runner.sandbox, HOME, [dataRoot()]),
     sandboxReady: async () => (await sandbox.status(false)).available,
-    dir: join(ATAS, 'sandbox'),
+    dir: join(atasDir(), 'sandbox'),
     grants: grantsFor,
     // The profile is never put where a worktree or a project is.
-    openProfile: (agent, owner) => openProfile(ATAS, agent, owner, { avoid: rc().repos.map((x) => x.path) }),
+    openProfile: (agent, owner) => openProfile(atasDir(), agent, owner, { avoid: rc().repos.map((x) => x.path) }),
     start: (options) => startBrowser(options),
     asks: askStore,
     hub,
@@ -286,7 +286,7 @@ export const runsModule: Module = (ctx) => {
     runs: runStore(),
     forum: forumStore(),
     config: getConfig,
-    env: () => ({ repos: rc().repos, issues: rc().issues, cloneRoots: rc().cloneRoots, host: rc().vcsHost, home: HOME, dataDir: ATAS, fallbackCwd: rc().projectsRoot }),
+    env: () => ({ repos: rc().repos, issues: rc().issues, cloneRoots: rc().cloneRoots, host: rc().vcsHost, home: HOME, dataDir: atasDir(), fallbackCwd: rc().projectsRoot }),
     issues: source,
     engine: (call, commands) => runAgent(call, commands),
     publisher: createPublisher({
@@ -297,7 +297,7 @@ export const runsModule: Module = (ctx) => {
       door: realDoor,
       // The evidence a comment cites, ready to go up: read here, where the workspace's data folder is; the executable that runs the command never sees the file until the throwaway copy is written.
       evidenceUploads: (run, ids) => {
-        const dataDir = ATAS;
+        const dataDir = atasDir();
         const all = uploadsOf(dataDir, run, [...ids]);
         const present = ids.filter((id) => run.evidence?.[id]);
         return { images: all, total: present.length || ids.length };

@@ -25,7 +25,7 @@ afterEach(() => {
 import { setLanguage } from '../src/shared/i18n';
 
 const { forumModule } = await import('../src/main/forum');
-const { ATAS } = await import('../src/main/env');
+const { atasDir } = await import('../src/main/env');
 type ModuleContext = import('../src/main/module').ModuleContext;
 const { boot, doc, work } = await import('./helpers/runner');
 type Boot = Awaited<ReturnType<typeof boot>>;
@@ -45,7 +45,7 @@ function channels(): Record<string, (...args: unknown[]) => unknown> {
 
 /** The flow driven to the question the person answers, with two files stored in the data root for that run's own conversation. */
 async function answerWithFiles(): Promise<{ b: Boot; thread: string; seq: number; png: string; log: string }> {
-  const b = await boot({ dir: ATAS });
+  const b = await boot({ dir: atasDir() });
   b.engine.script('refiner', () => work('I need to know.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], question: 'Which users does this cover?' }));
   b.engine.script('planner', () => work('Plan.', { artifacts: [doc('2_PLAN.md'), doc('PROTOTYPE.md')] }));
   b.engine.script('developer', () => work('Done.', { artifacts: [doc('3_IMPLEMENTATION.md')] }));
@@ -83,11 +83,11 @@ describe('the files of the answer message the runner records', () => {
     const text = c['forum:attachment-get'](thread, seq, log) as { data: string } | null;
     expect(Buffer.from(text!.data, 'base64').toString('utf8')).toBe('line one\nline two\n');
     // Deleting that message deletes its files from disk.
-    expect(existsSync(join(ATAS, 'anexos', thread, `${png}.img`))).toBe(true);
-    expect(existsSync(join(ATAS, 'anexos', thread, `${log}.txt`))).toBe(true);
+    expect(existsSync(join(atasDir(), 'anexos', thread, `${png}.img`))).toBe(true);
+    expect(existsSync(join(atasDir(), 'anexos', thread, `${log}.txt`))).toBe(true);
     expect(c['forum:attachment-delete'](thread, seq)).toBe(true);
-    expect(existsSync(join(ATAS, 'anexos', thread, `${png}.img`))).toBe(false);
-    expect(existsSync(join(ATAS, 'anexos', thread, `${log}.txt`))).toBe(false);
+    expect(existsSync(join(atasDir(), 'anexos', thread, `${png}.img`))).toBe(false);
+    expect(existsSync(join(atasDir(), 'anexos', thread, `${log}.txt`))).toBe(false);
     // the same message is never open through another conversation's id
     expect(c['forum:attachment-delete']('g-another', seq)).toBe(false);
   });

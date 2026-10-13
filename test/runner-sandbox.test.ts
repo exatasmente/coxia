@@ -9,7 +9,7 @@ import type { Run } from '../src/shared/runs';
 import { RunnerError } from '../src/main/runner/service';
 import { listAudit } from '../src/main/auditoria';
 import { neutralSandbox } from '../src/shared/config/defaults';
-import { DATA_ROOT, WORKSPACE_ID } from '../src/main/env';
+import { dataRoot, workspaceId } from '../src/main/env';
 import { setTestFlag } from '../src/main/workspaces-core';
 import { type Boot, boot, doc, fakeCommands, fakeSandbox, keepQaEvidence, makeRepo, work } from './helpers/runner';
 
@@ -73,7 +73,7 @@ describe('a stage with a sandbox', () => {
     const sandbox = fakeSandbox();
     const b = await boot({ sandbox, configure: (c) => { shellOf(c, 'developer', 'sandbox'); c.agents.team.find((a) => a.id === 'developer')!.allowedHosts = ['app.example.com']; } });
     easy(b);
-    setTestFlag(DATA_ROOT, WORKSPACE_ID, true);
+    setTestFlag(dataRoot(), workspaceId(), true);
     try {
       let run = await b.runner.start('app#101');
       run = await reach(b, run, 'ready');
@@ -82,7 +82,7 @@ describe('a stage with a sandbox', () => {
       expect(lines).toHaveLength(1);
       expect(lines[0].params).toMatchObject({ agent: 'developer' });
     } finally {
-      setTestFlag(DATA_ROOT, WORKSPACE_ID, false);
+      setTestFlag(dataRoot(), workspaceId(), false);
     }
   });
 

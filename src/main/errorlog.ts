@@ -2,13 +2,13 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { join } from 'node:path';
 import { RENDERER_KINDS, type ErrorsSummary, type ErrorsView, type RendererReport } from '../shared/errorlog';
 import { appendEntry, buildEntry, clearLog, createLimiter, groupEntries, logFile, readEntries, redact } from './errorlog-core';
-import { DATA_ROOT, WORKSPACE_ID } from './env';
+import { dataRoot, workspaceId } from './env';
 import type { Module, ModuleContext } from './module';
 
 export const ERRORS_EVENT = 'errors:changed';
 
-const DIR = join(DATA_ROOT, 'logs');
-const SEEN = join(DIR, 'seen.json');
+const DIR = (): string => join(dataRoot(), 'logs');
+const SEEN = (): string => join(DIR(), 'seen.json');
 const EMIT_DELAY_MS = 400;
 
 let ctx: ModuleContext | null = null;
@@ -19,22 +19,22 @@ const allowRenderer = createLimiter(20, 60_000);
 
 function seenAt(): number {
   try {
-    return existsSync(SEEN) ? Number((JSON.parse(readFileSync(SEEN, 'utf8')) as { at?: unknown }).at) || 0 : 0;
+    return existsSync(SEEN()) ? Number((JSON.parse(readFileSync(SEEN(), 'utf8')) as { at?: unknown }).at) || 0 : 0;
   } catch {
     return 0;
   }
 }
 
 function markSeen(at: number): void {
-  mkdirSync(DIR, { recursive: true });
-  writeFileSync(`${SEEN}.tmp`, JSON.stringify({ at }));
-  renameSync(`${SEEN}.tmp`, SEEN);
+  mkdirSync(DIR(), { recursive: true });
+  writeFileSync(`${SEEN()}.tmp`, JSON.stringify({ at }));
+  renameSync(`${SEEN()}.tmp`, SEEN());
 }
 
 export function errorsView(): ErrorsView {
-  const entries = readEntries(DIR);
+  const entries = readEntries(DIR());
   const { groups, unseen } = groupEntries(entries, seenAt());
-  return { groups, total: entries.length, unseen, file: logFile(DIR) };
+  return { groups, total: entries.length, unseen, file: logFile(DIR()) };
 }
 
 function summary(): ErrorsSummary {
@@ -54,13 +54,13 @@ function changed(): void {
 }
 
 /**
- * Appends one error to <DATA_ROOT>/logs/errors.jsonl. Never throws and never prints (callers keep their own console output).
+ * Appends one error to <data root>/logs/errors.jsonl. Never throws and never prints (callers keep their own console output).
  * `context` is filtered to a few short keys (channel, ids, status): do not pass arguments, they would be dropped anyway.
  */
 export function logError(source: string, error: unknown, context?: Record<string, unknown>): void {
   try {
     if (!allowMain()) return;
-    appendEntry(DIR, buildEntry(source, error, context, WORKSPACE_ID));
+    appendEntry(DIR(), buildEntry(source, error, context, workspaceId()));
     changed();
   } catch {}
 }
@@ -108,7 +108,7 @@ export const errorlog: Module = (c) => {
     return { ...summary(), unseen: 0 };
   });
   c.handle('errors:clear', () => {
-    clearLog(DIR);
+    clearLog(DIR());
     markSeen(Date.now());
     changed();
     return errorsView();

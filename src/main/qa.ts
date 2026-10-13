@@ -4,13 +4,13 @@ import type { Card, QaHandoff } from '../shared/types';
 import { askAgent, obj, str } from './agents';
 import { answerCeremonyMentions } from './mentions/ceremony';
 import { cycle, formatTime, prompt as cp } from './cyclePrompts';
-import { ATAS } from './env';
+import { atasDir } from './env';
 import { issueProjectKey, issueWebUrl, rc } from './workspaceConfig';
 import { issueNotesHint } from './vcs/readPolicy';
 import { assertExternalWrite } from './workspace';
 import { t } from '../shared/i18n';
 
-const DIR = join(ATAS, 'qa');
+const DIR = (): string => join(atasDir(), 'qa');
 const IID = /^\d+$/;
 
 function now(): string {
@@ -20,7 +20,7 @@ function now(): string {
 function read(iid: string): QaHandoff | null {
   if (!IID.test(iid)) return null;
   try {
-    const q = JSON.parse(readFileSync(join(DIR, `${iid}.json`), 'utf8')) as QaHandoff;
+    const q = JSON.parse(readFileSync(join(DIR(), `${iid}.json`), 'utf8')) as QaHandoff;
     return { ...q, checklistExists: existsSync(q.checklistFile) };
   } catch {
     return null;
@@ -28,8 +28,8 @@ function read(iid: string): QaHandoff | null {
 }
 
 function write(q: QaHandoff): QaHandoff {
-  mkdirSync(DIR, { recursive: true });
-  const file = join(DIR, `${q.iid}.json`);
+  mkdirSync(DIR(), { recursive: true });
+  const file = join(DIR(), `${q.iid}.json`);
   writeFileSync(`${file}.tmp`, JSON.stringify(q, null, 1));
   renameSync(`${file}.tmp`, file);
   return { ...q, checklistExists: existsSync(q.checklistFile) };

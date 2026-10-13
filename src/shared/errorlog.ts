@@ -1,5 +1,5 @@
 import { getLanguage, t } from './i18n';
-// One line of <DATA_ROOT>/logs/errors.jsonl. Everything in it has already been through the redaction pass.
+// One line of <data root>/logs/errors.jsonl. Everything in it has already been through the redaction pass.
 export interface ErrorEntry {
   time: string;
   workspace: string;
