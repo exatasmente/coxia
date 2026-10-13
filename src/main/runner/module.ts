@@ -1,5 +1,4 @@
 import { existsSync } from 'node:fs';
-import { nativeImage } from 'electron';
 import { join } from 'node:path';
 import { HOME, ATAS, DATA_ROOT } from '../env';
 import { runAgent, probeProviderBudget } from '../agents';
@@ -47,8 +46,8 @@ import { openProfile } from '../browser/profile';
 import { resolveBrowsers } from '../browser/resolve';
 import { type ScreenSessions, createScreenSessions } from '../browser/sessions';
 import { type NativeImageLike, createFrameEncoder } from '../screen/frame';
-import { type EncoderHost, createEncoderHost } from '../screen/encoderHost';
-import { realEncoderEnv } from '../screen/encoderWindow';
+import { type EncoderEnv, type EncoderHost, createEncoderHost } from '../screen/encoderHost';
+import { HostUnavailableError, screenPort } from '../host';
 import { type HandoffService, createHandoffService } from '../screen/handoff';
 import { turnAsks } from '../turnAsks';
 import { type ScreenHub, createScreenHub } from '../screen/hub';
@@ -151,16 +150,37 @@ export function retroIssueDone(action: ReleaseAction, responses: unknown[], star
 
 /** The sandbox of the running workspace's agents, shared with the mentions answered outside a run's thread. */
 export { sandbox } from '../sandbox/workspace';
+
+// What stands in for the screen where the host has none: the hub is off there, so nothing should reach them, and if it does it is refused.
+const noImage: NativeImageLike = {
+  createFromBitmap: () => {
+    throw new HostUnavailableError('screen');
+  },
+};
+const noEncoderEnv: EncoderEnv = {
+  create: () => {
+    throw new HostUnavailableError('screen');
+  },
+  listen: () => () => undefined,
+  schedule: (ms, fn) => {
+    const timer = setTimeout(fn, ms);
+    timer.unref?.();
+    return () => clearTimeout(timer);
+  },
+};
+
 export const runsModule: Module = (ctx) => {
   sandbox.purge();
   // The agents' virtual screens (Linux only). A frame goes to the viewer that asked for it, never through `emit`, which reaches every paired browser: the one event is
   // that a screen opened or ended, with no pixels, so the run list refreshes at once.
   // The recording's encoder is one hidden window shared by every recording; it is made at the first one and closed a while after the last.
-  const encoderHost = createEncoderHost(realEncoderEnv());
+  // A host without the desktop has neither the encoder nor the window: the hub stays off, and no screen opens.
+  const screenHost = screenPort();
+  const encoderHost = createEncoderHost(screenHost?.encoderEnv() ?? noEncoderEnv);
   encoders = encoderHost;
   const hub = createScreenHub({
-    enabled: process.platform === 'linux',
-    encoder: createFrameEncoder({ nativeImage: nativeImage as unknown as NativeImageLike }),
+    enabled: process.platform === 'linux' && screenHost !== null,
+    encoder: createFrameEncoder({ nativeImage: screenHost?.nativeImage ?? noImage }),
     sink: () => encoderHost.sink(),
     // The person used the screen: a screen that closes when idle starts its clock over.
     activity: (key) => sessions?.touch(key),

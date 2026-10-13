@@ -2,12 +2,12 @@ import { execFile, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { app } from 'electron';
 import type { AppEvent } from '../shared/types';
 import { t } from '../shared/i18n';
 import { FLUSH_EVENT, type BuildInfo, type UpdateInfo } from '../shared/update';
 import { DATA_ROOT, HOME } from './env';
 import type { Module } from './module';
+import { appVersion } from './host';
 import { isPackaged } from './paths';
 import {
   announcement,
@@ -29,11 +29,14 @@ const exec = promisify(execFile);
 declare const __BUILD_COMMIT__: string | undefined;
 declare const __BUILD_DATE__: string | undefined;
 
-export const BUILD: BuildInfo = readBuild(
-  app.getVersion(),
-  typeof __BUILD_COMMIT__ === 'undefined' ? undefined : __BUILD_COMMIT__,
-  typeof __BUILD_DATE__ === 'undefined' ? undefined : __BUILD_DATE__,
-);
+// Read at the first use, not at import: the version comes from the host, which fills its port after the modules load.
+let build: BuildInfo | null = null;
+export const buildInfo = (): BuildInfo =>
+  (build ??= readBuild(
+    appVersion(),
+    typeof __BUILD_COMMIT__ === 'undefined' ? undefined : __BUILD_COMMIT__,
+    typeof __BUILD_DATE__ === 'undefined' ? undefined : __BUILD_DATE__,
+  ));
 
 const STATE = stateDir(process.env, HOME);
 const LOG = join(STATE, updateLogName);
@@ -73,7 +76,7 @@ export function trackWindow(visible: () => boolean): void {
 }
 
 function info(): UpdateInfo {
-  return { build: BUILD, packaged: isPackaged(), announce: windowVisible() ? announcement(readMarker(), BUILD) : null };
+  return { build: buildInfo(), packaged: isPackaged(), announce: windowVisible() ? announcement(readMarker(), buildInfo()) : null };
 }
 
 // A published-release update leaves its marker when it is downloaded: the install may happen at a later quit, and the first start
@@ -118,7 +121,7 @@ function clearRunInfo(): void {
 export function announceRunning(): void {
   if (!isPackaged()) return;
   try {
-    writeFileSync(RUN_FILE, JSON.stringify(runInfo(process.pid, BUILD, new Date().toISOString()), null, 1));
+    writeFileSync(RUN_FILE, JSON.stringify(runInfo(process.pid, buildInfo(), new Date().toISOString()), null, 1));
   } catch (e) {
     console.error('[update] run.json', e);
   }

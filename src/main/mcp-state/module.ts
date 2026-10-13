@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { app } from 'electron';
 import type { Module } from '../module';
 import type { McpStateView } from '../../shared/mcpState';
 import { MCP_DATA_DIR_ENV, mergeMcpFile, serverEntryText, stateServerEntry } from './entry';
 import { ATAS, HOME, WORKSPACE_ID } from '../env';
+import { appPath } from '../paths';
 import { getConfig, onConfigChange, updateConfig } from '../workspaceConfig';
 import { personaOf } from '../../shared/config/team';
 import { agentThreadId } from '../../shared/forum';
@@ -34,7 +34,7 @@ const bridge = createTerminalBridge({
 });
 
 /** Where the state server is spawned from on this install: `out/main` of the app's own folder. */
-const cliPath = (): string => join(app.getAppPath(), 'out', 'main', 'mcp-state.js');
+const cliPath = (): string => join(appPath(), 'out', 'main', 'mcp-state.js');
 
 /** A project folder the entry may be written into, as the workspace names them (roots first, then the repos). */
 function targets(): { path: string; exists: boolean }[] {

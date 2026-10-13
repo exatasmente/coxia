@@ -2119,5 +2119,8 @@
   "main.claudeSessions.badToggle": "O valor do interruptor é um booleano.",
   "main.mcpstate.unavailable": "O servidor de estado não pode ser aberto a partir desta instalação (seu arquivo construído não é um arquivo solto que o node carregue), então nenhuma entrada é oferecida.",
   "main.mcpstate.badTarget": "A pasta \"{path}\" não é pasta de projeto deste workspace.",
-  "main.mcpstate.mergeConflict": "O .mcp.json desse projeto ficou como está: ele carrega uma entrada de mesmo nome com um programa diferente, ou um texto que não é uma lista de servidores."
+  "main.mcpstate.mergeConflict": "O .mcp.json desse projeto ficou como está: ele carrega uma entrada de mesmo nome com um programa diferente, ou um texto que não é uma lista de servidores.",
+  "main.host.unavailable.restart": "este host não consegue reiniciar o app, então não troca de workspace: isso só existe no desktop",
+  "main.host.unavailable.pick": "este host não tem diálogo de arquivo: escolher um arquivo só existe no desktop",
+  "main.host.unavailable.screen": "este host não tem a tela do agente: ela só existe no desktop"
 }

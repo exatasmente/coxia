@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs';
 import { delimiter, join } from 'node:path';
-import { BrowserWindow, app, dialog } from 'electron';
+import { pickPath as pickWithHost } from './host';
+import { appPath } from './paths';
 import { expandHome, shrinkHome } from '../shared/config/paths';
 import type { LlmProvider, VcsIntegration } from '../shared/config/types';
 import { getLanguage } from '../shared/i18n';
@@ -202,7 +203,7 @@ async function testProvider(providerId: string, requestedModel?: string, rich?: 
 // ---- SDK installation -----------------------------------------------------------------------------------------------------------------
 
 function bundledVersion(): string | null {
-  return installedVersion(app.getAppPath());
+  return installedVersion(appPath());
 }
 
 function sdkStatus(): SdkStatus {
@@ -215,13 +216,8 @@ let installing: Installation | null = null;
 
 // ---- folders and files ------------------------------------------------------------------------------------------------------------------
 
-const parentWindow = (): BrowserWindow | undefined => BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
-
 async function pickPath(kind: 'dir' | 'file', title: string): Promise<FolderPick | null> {
-  const options = { title, properties: kind === 'dir' ? (['openDirectory', 'createDirectory'] as const) : (['openFile', 'showHiddenFiles'] as const) };
-  const win = parentWindow();
-  const picked = win ? await dialog.showOpenDialog(win, { ...options, properties: [...options.properties] }) : await dialog.showOpenDialog({ ...options, properties: [...options.properties] });
-  const abs = picked.canceled ? null : (picked.filePaths[0] ?? null);
+  const abs = await pickWithHost(kind === 'dir' ? { mode: 'open-dir', title } : { mode: 'open-file', title, showHidden: true });
   if (!abs) return null;
   return { path: shrinkHome(abs, HOME), isRepo: kind === 'dir' && gitDirOf(abs, fsScanDeps(HOME)) !== null };
 }

@@ -41,7 +41,7 @@ describe('without a host', () => {
 
 describe('with the port of a host filled in', () => {
   it('answers every folder from the port, packed or not', () => {
-    setPathsPort({ isPackaged: () => true, resources: () => '/opt/example/resources-base', userData: () => '/home/example/data' });
+    setPathsPort({ isPackaged: () => true, resources: () => '/opt/example/resources-base', userData: () => '/home/example/data', appPath: () => '/opt/example/app' });
     expect(isPackaged()).toBe(true);
     expect(resourcesDir()).toBe('/opt/example/resources-base/resources');
     expect(sidecarDir()).toBe('/opt/example/resources-base/sidecar');
@@ -55,7 +55,7 @@ describe('with the port of a host filled in', () => {
   });
 
   it('keeps answering while it is filled and goes back to the defaults when it is taken away', () => {
-    setPathsPort({ isPackaged: () => false, resources: () => '/opt/example/resources-base', userData: () => '/home/example/data' });
+    setPathsPort({ isPackaged: () => false, resources: () => '/opt/example/resources-base', userData: () => '/home/example/data', appPath: () => '/opt/example/app' });
     expect(isPackaged()).toBe(false);
     expect(playwrightMcpCli()).toBe(join(REPO, 'node_modules/@playwright/mcp/cli.js'));
     setPathsPort(null);

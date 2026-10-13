@@ -2119,5 +2119,8 @@
   "main.claudeSessions.badToggle": "The opt-in is a boolean.",
   "main.mcpstate.unavailable": "The state server cannot be spawned from this install (its built file is not a plain file node can load), so no entry is offered.",
   "main.mcpstate.badTarget": "The folder \"{path}\" is not a project folder of this workspace.",
-  "main.mcpstate.mergeConflict": "The .mcp.json file of that project was left as it is: it carries an entry of the same name with a different program, or text that is not a server list."
+  "main.mcpstate.mergeConflict": "The .mcp.json file of that project was left as it is: it carries an entry of the same name with a different program, or text that is not a server list.",
+  "main.host.unavailable.restart": "this host cannot start the app again, so it cannot change workspace: that is only on the desktop",
+  "main.host.unavailable.pick": "this host has no file dialog: picking a file is only on the desktop",
+  "main.host.unavailable.screen": "this host has no agent screen: it is only on the desktop"
 }
