@@ -87,7 +87,12 @@ function logRenderer(raw: unknown): void {
 
 // Autostart has no terminal: Electron's default dialog for an uncaught error would block the tray app, so these are logged and printed instead.
 /** Logs what nobody caught. Returns the way to take the handlers off again (the core's stop). */
+// Once per process: the desktop installs them before anything else runs, and the core it starts later then leaves them to it.
+let installed = false;
+
 export function installProcessHandlers(): () => void {
+  if (installed) return () => undefined;
+  installed = true;
   const uncaught = (e: Error): void => {
     if ((e as NodeJS.ErrnoException)?.code === 'EPIPE') return;
     console.error('[uncaughtException]', e);
@@ -102,6 +107,7 @@ export function installProcessHandlers(): () => void {
   return () => {
     process.off('uncaughtException', uncaught);
     process.off('unhandledRejection', unhandled);
+    installed = false;
   };
 }
 

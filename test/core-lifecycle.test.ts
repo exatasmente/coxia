@@ -159,6 +159,21 @@ describe('the desktop shell', () => {
     expect(shell).toContain('createCoxia(');
     expect(shell).toContain('core.start()');
     expect(shell).toContain('core.stop(');
-    for (const part of ['MODULES', 'startScheduler', 'registerWebAccess', 'startVoice', 'startActions', 'installProcessHandlers']) expect(shell, part).not.toContain(part);
+    for (const part of ['MODULES', 'startScheduler', 'registerWebAccess', 'startVoice', 'startActions']) expect(shell, part).not.toContain(part);
+  });
+});
+
+describe('the process handlers', () => {
+  it('are installed once per process, so the desktop installs them early and the core does not add a second pair', async () => {
+    vi.resetModules();
+    const { installProcessHandlers } = await import('../src/main/errorlog');
+    const before = process.listenerCount('uncaughtException');
+    const drop = installProcessHandlers();
+    const again = installProcessHandlers();
+    expect(process.listenerCount('uncaughtException')).toBe(before + 1);
+    again();
+    expect(process.listenerCount('uncaughtException')).toBe(before + 1);
+    drop();
+    expect(process.listenerCount('uncaughtException')).toBe(before);
   });
 });

@@ -5,7 +5,7 @@ import { detectRelease } from './actions';
 import { getSettings } from './config';
 import { createCoxia } from './core';
 import { electronPorts } from './electronPorts';
-import { logError } from './errorlog';
+import { installProcessHandlers, logError } from './errorlog';
 import { resourcesDir } from './paths';
 import { wantsQuitForUpdate } from './update-core';
 import { SHOWN_EVENT } from '../shared/update';
@@ -22,6 +22,8 @@ import { warmLoginPath } from './loginPath';
 
 // The modules load before this body runs, and none of them touches the disk on import: the core fixes the data folder when it is made, and the desktop
 // gives it the keychain, the folders and the process it owns, which the secrets, paths and host modules read at the time of use.
+// An error thrown before the core starts (making the window, the tray) still reaches the error log; the core leaves these handlers to the desktop.
+installProcessHandlers();
 
 // Mitigate blank/black repaints reported on Windows by using Electron's software-rendering path.
 if (process.platform === 'win32') app.disableHardwareAcceleration();
