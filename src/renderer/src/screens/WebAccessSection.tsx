@@ -134,8 +134,10 @@ export function WebAccessSection() {
       </div>
       {error && <div className="error">{error}</div>}
 
+      {view.addressFixed && <div className="small muted" role="status">{t('ui.webAccess.addressFixed')}</div>}
+
       <label className="check-row">
-        <input type="checkbox" checked={settings.enabled} onChange={() => void run(webAccessApi.configure({ enabled: !settings.enabled }))} />
+        <input type="checkbox" disabled={view.addressFixed === true} checked={settings.enabled} onChange={() => void run(webAccessApi.configure({ enabled: !settings.enabled }))} />
         <span>
           <span style={{ fontWeight: 600, display: 'block' }}>{t('ui.webAccess.enable.label')}</span>
           <span className="small muted">{t('ui.webAccess.enable.hint')}</span>
@@ -193,11 +195,11 @@ export function WebAccessSection() {
             <div className="web-advanced" style={{ marginTop: 8 }}>
               <label>
                 {t('ui.webAccess.advanced.host')}
-                <input className="text-input mono" value={form.host} onChange={(e) => patch({ host: e.target.value.trim() })} />
+                <input className="text-input mono" disabled={view.addressFixed === true} value={form.host} onChange={(e) => patch({ host: e.target.value.trim() })} />
               </label>
               <label>
                 {t('ui.webAccess.advanced.port')}
-                <input className="text-input mono" type="number" min={1024} max={65535} value={form.port} onChange={(e) => patch({ port: Number(e.target.value) })} />
+                <input className="text-input mono" type="number" disabled={view.addressFixed === true} min={1024} max={65535} value={form.port} onChange={(e) => patch({ port: Number(e.target.value) })} />
               </label>
               <label>
                 {t('ui.webAccess.advanced.basePath')}

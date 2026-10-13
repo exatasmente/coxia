@@ -12,7 +12,9 @@ export function isTestWorkspace(): boolean {
 
 /** The refusal for a write that leaves the machine (GitLab, pushes, spec files, card notes), or null when allowed. */
 export function externalRefusal(what: string): string | null {
-  return externalWriteRefusal(readRegistry(dataRoot()), what);
+  // The flag of the workspace this process runs, which is not the registry's current one when a process was started for another workspace.
+  const reg = readRegistry(dataRoot());
+  return externalWriteRefusal(reg && { ...reg, current: workspaceId() }, what);
 }
 
 export function assertExternalWrite(what: string): void {

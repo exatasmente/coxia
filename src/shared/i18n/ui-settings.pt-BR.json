@@ -300,6 +300,7 @@
   "ui.verify.unclaimed.title": "Comandos da lista compartilhada anterior",
   "ui.verify.unclaimed.use": "Usar aqui",
   "ui.verify.webNote": "Só a janela do app altera estes comandos: o navegador não pode escolher o que o Aplicar executa.",
+  "ui.webAccess.addressFixed": "Este processo escuta no endereço que o host dele deu, e ligar, desligar ou mover o endereço aqui não muda nada.",
   "ui.webAccess.advanced.apply": "Aplicar",
   "ui.webAccess.advanced.basePath": "Caminho",
   "ui.webAccess.advanced.discard": "Descartar",

@@ -2123,5 +2123,12 @@
   "main.mcpstate.mergeConflict": "O .mcp.json desse projeto ficou como está: ele carrega uma entrada de mesmo nome com um programa diferente, ou um texto que não é uma lista de servidores.",
   "main.host.unavailable.restart": "este host não consegue reiniciar o app, então não troca de workspace: isso só existe no desktop",
   "main.host.unavailable.pick": "este host não tem diálogo de arquivo: escolher um arquivo só existe no desktop",
-  "main.host.unavailable.screen": "este host não tem a tela do agente: ela só existe no desktop"
+  "main.host.unavailable.screen": "este host não tem a tela do agente: ela só existe no desktop",
+  "main.headless.usage": "Uso: coxia [opções]\n  --data-dir <pasta>          a pasta de dados (ou COXIA_DATA_DIR, CERIMONIAS_DATA_DIR); obrigatória\n  --master-key-file <arquivo> a chave mestra que protege os segredos guardados, 64 dígitos hexadecimais, modo 0600, fora da pasta de dados (ou COXIA_MASTER_KEY_FILE); obrigatória\n  --port <porta>              a porta da porta web (ou COXIA_PORT); obrigatória\n  --host <endereço>           o endereço da porta web (ou COXIA_HOST); padrão 127.0.0.1\n  --workspace <id>            o workspace que este processo roda (ou COXIA_WORKSPACE); padrão: o que o registro marca como atual\n  --renderer-dir <pasta>      o renderer compilado a servir (ou COXIA_RENDERER_DIR); padrão: out/renderer ao lado do pacote\nUm processo roda um workspace. SIGTERM e SIGINT o encerram.",
+  "main.headless.badOption": "{detail}",
+  "main.headless.required": "{flag} é obrigatório (ou defina {variable})",
+  "main.headless.noRenderer": "não há renderer compilado em {path} (sem index.html)",
+  "main.headless.keyFile": "o arquivo da chave mestra {path} não existe, não é um arquivo comum legível só pelo dono com 64 dígitos hexadecimais, ou está dentro da pasta de dados: sem ele nenhum segredo pode ser guardado",
+  "main.headless.startFailed": "o núcleo não subiu: {detail}",
+  "main.headless.ready": "coxia pronto: escutando em {address}, workspace {workspace}"
 }

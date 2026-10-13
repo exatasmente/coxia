@@ -19,6 +19,8 @@ export interface WebStatus {
 // What the desktop Settings screen shows ("Acesso pelo navegador").
 export interface WebView {
   settings: WebSettings;
+  // Present when a host fixed the address for this process: enabled, host and port are its, and changing them here does nothing.
+  addressFixed?: boolean;
   status: WebStatus;
   devices: Device[];
   // Expiry (ms since epoch) of the pairing code in play; the code itself is shown once, when generated.

@@ -30,7 +30,7 @@ import { stopUpdates } from './updates';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { cancelSpeech, planSpeech, speakSegment, startVoice, stopVoice, transcribe, voicesFor } from './voice';
-import { broadcast, pushNotice, registerWebAccess, stopWebAccess, syncWebAccess } from './webAccess';
+import { broadcast, pushNotice, registerWebAccess, setWebOverride, stopWebAccess, syncWebAccess } from './webAccess';
 import { getConfig } from './workspaceConfig';
 
 // The core as a value: everything the app does that is not the window, the tray or the runtime, started and stopped by whoever owns the process.
@@ -49,6 +49,10 @@ export interface Window {
 export interface CoxiaOptions {
   /** The data folder of this process; CERIMONIAS_DATA_DIR, or the standard folder, when absent. */
   dataDir?: string;
+  /** The workspace this process runs; the registry's current one when absent. It must exist, and the registry's current one is left as it is. */
+  workspace?: string;
+  /** The address of the web door for this process alone: it listens there, enabled, over the saved settings, and nothing is written to them. */
+  web?: { host: string; port: number };
   /** The encryption behind stored secrets (the keychain, or the master key file of a server). Absent: no secret is stored. */
   secrets?: CryptoPort;
   paths?: PathsPort;
@@ -150,7 +154,8 @@ function handlers(emit: (ev: AppEvent) => void): void {
  * A second `start` after a `stop` is refused: the modules keep their registrations and listeners for the life of the process, so a new run of the core is a new process.
  */
 export function createCoxia(options: CoxiaOptions = {}): Coxia {
-  bootEnv(options.dataDir === undefined ? {} : { dataDir: options.dataDir });
+  bootEnv({ ...(options.dataDir === undefined ? {} : { dataDir: options.dataDir }), ...(options.workspace === undefined ? {} : { workspace: options.workspace }) });
+  setWebOverride(options.web ?? null);
   if (options.secrets) setCryptoPort(options.secrets);
   if (options.paths) setPathsPort(options.paths);
   if (options.host) setHostPort(options.host);

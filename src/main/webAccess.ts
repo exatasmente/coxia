@@ -13,6 +13,18 @@ let auth: Auth | null = null;
 let current: { app: WebApp; key: string } | null = null;
 let state: Listening = { listening: false, address: null, message: 'Desligado.' };
 let rendererDir = '';
+// The address a host gave this process alone (one process per workspace cannot share the saved port). It wins over the saved settings and is never saved.
+let override: { host: string; port: number } | null = null;
+
+export function setWebOverride(next: { host: string; port: number } | null): void {
+  override = next;
+}
+
+// The saved web settings with this process's own address over them: enabled, because asking for an address is asking for the door.
+const webSettings = (): WebSettings => {
+  const saved = getSettings().web;
+  return override ? { ...saved, enabled: true, host: override.host, port: override.port } : saved;
+};
 
 const theAuth = (): Auth => (auth ??= createAuth(join(dataRoot(), 'web-sessions.json')));
 
@@ -20,7 +32,7 @@ let push: PushService | null = null;
 
 // The VAPID subject is the public address, never a person's email; a local test address falls back to a fixed https placeholder.
 function vapidSubject(): string {
-  const url = getSettings().web.publicUrl;
+  const url = webSettings().publicUrl;
   return url.startsWith('https://') ? url : 'https://localhost/';
 }
 
@@ -35,7 +47,7 @@ const thePush = (): PushService =>
 
 /** Sends a desktop Notice to the paired phones too; the desktop "notifications" setting is checked by the service. */
 export function pushNotice(n: PushNotice): void {
-  if (!getSettings().web.enabled) return;
+  if (!webSettings().enabled) return;
   try {
     thePush().notify(n);
   } catch (e) {
@@ -43,14 +55,18 @@ export function pushNotice(n: PushNotice): void {
   }
 }
 
+/** Where the door listens now, for a host that reports it (the headless entry's ready line) and fails when it could not bind. */
+export const webListening = (): Listening & { basePath: string } => ({ ...state, basePath: webSettings().basePath });
+
 export function broadcast(ev: AppEvent): void {
   current?.app.broadcast(ev);
 }
 
 function view(): WebView {
-  const settings = getSettings().web;
+  const settings = webSettings();
   return {
     settings,
+    ...(override ? { addressFixed: true } : {}),
     status: { enabled: settings.enabled, ...state, clients: current?.app.clientCount() ?? 0, devices: theAuth().list().length },
     devices: theAuth().list(),
     pairingExpiresAt: theAuth().pairingPending()?.expiresAt ?? null,
@@ -68,12 +84,12 @@ export async function stopWebAccess(): Promise<void> {
 
 /** Starts, restarts or stops the server so it matches the saved settings. */
 export async function syncWebAccess(): Promise<void> {
-  const w = getSettings().web;
+  const w = webSettings();
   const key = JSON.stringify([w.enabled, w.host, w.port, w.basePath]);
   if (current?.key === key) return;
   await stopWebAccess();
   if (!w.enabled) return;
-  const app = createWebApp({ settings: () => getSettings().web, rendererDir, auth: theAuth(), invoke, hasChannel, onDeviceGone: (id) => push?.removeDevice(id) });
+  const app = createWebApp({ settings: webSettings, rendererDir, auth: theAuth(), invoke, hasChannel, onDeviceGone: (id) => push?.removeDevice(id) });
   state = await startListening(app, w);
   if (state.listening) current = { app, key };
   else await app.close();
@@ -83,7 +99,9 @@ export function registerWebAccess(dir: string): void {
   rendererDir = dir;
   handle('web:view', () => view());
   handle('web:configure', async (patch: Partial<WebSettings>) => {
-    const { enabled, host, port, basePath, publicUrl, trustedProxy, allowExternalEffects } = { ...getSettings().web, ...patch };
+    // With an address fixed for this process the saved enabled/host/port stay as they are (other processes and the desktop read them) and the rest is saved as usual.
+    const saved = getSettings().web;
+    const { enabled, host, port, basePath, publicUrl, trustedProxy, allowExternalEffects } = { ...saved, ...patch, ...(override ? { enabled: saved.enabled, host: saved.host, port: saved.port } : {}) };
     saveWebSettings({ enabled, host, port, basePath, publicUrl, trustedProxy, allowExternalEffects });
     await syncWebAccess();
     return view();

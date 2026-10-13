@@ -11,6 +11,8 @@ import { webRefusal } from './webPolicy';
 import { IDEMPOTENCY_KEY, isQueueable } from '../shared/outbox';
 import { CONTRACT_HEADER, CONTRACT_VERSION, type ErrorCode, contractMismatch, errorCodeOf } from '../shared/contract';
 import { t } from '../shared/i18n';
+import { workspaceId } from './env';
+import { appVersion } from './host';
 
 const COOKIE = 'cer_session';
 const MAX_BODY = 15 * 1024 * 1024;
@@ -361,6 +363,13 @@ export function createWebApp(deps: WebDeps): WebApp {
           rel = decodeURIComponent(url.pathname.slice(base.length));
         } catch {
           throw new HttpError(400, t('main.web.badPath'));
+        }
+        if (rel === 'healthz' && (req.method === 'GET' || req.method === 'HEAD')) {
+          // For a service manager and the update check: unauthenticated, so only that the process answers, its version and the workspace id. No name, no path.
+          const body = JSON.stringify({ ok: true, version: appVersion(), workspace: workspaceId() });
+          res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(body) });
+          res.end(req.method === 'HEAD' ? undefined : body);
+          return;
         }
         if (rel.startsWith('api/')) await api(req, res, rel);
         else serveStatic(req, res, rel);
