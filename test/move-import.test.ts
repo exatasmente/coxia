@@ -182,6 +182,27 @@ describe('what it refuses, and leaves untouched', () => {
     expect(existsSync(join(fresh.dataDir, 'workspaces', 'principal', 'runs', 'r-open01-aaaa.json'))).toBe(true);
   });
 
+  it('replaces a placeholder a core already ran in, but not one that holds a real file', () => {
+    const src = makeSource();
+    const info = { id: 'principal', name: 'Principal', createdAt: '2026-02-02T00:00:00.000Z', test: false };
+    const placeholder = (extra: string) => {
+      const t = target();
+      writeFileSync(join(t.dataDir, 'workspaces.json'), JSON.stringify({ current: 'principal', list: [info] }));
+      const dir = join(t.dataDir, 'workspaces', 'principal');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'config.json'), '{"setupComplete":false}');
+      for (const f of ['owner.json', 'owner.lock', 'admin.sock']) writeFileSync(join(dir, f), '');
+      writeFileSync(join(dir, extra), 'x');
+      return t;
+    };
+    const ran = placeholder('owner.json.tmp');
+    importBundle({ bundle: bundleOf(src, ran.key), dataDir: ran.dataDir, keyFile: ran.keyFile, reposRoot: ran.reposRoot });
+    expect(existsSync(join(ran.dataDir, 'workspaces', 'principal', 'runs', 'r-open01-aaaa.json'))).toBe(true);
+
+    const used = placeholder('notes.md');
+    expect(run(() => importBundle({ bundle: bundleOf(src, used.key), dataDir: used.dataDir, keyFile: used.keyFile, reposRoot: used.reposRoot })).code).toBe('conflict');
+  });
+
   it('keeps the workspaces and the current one that were already registered', () => {
     const src = makeSource();
     const dst = target();
