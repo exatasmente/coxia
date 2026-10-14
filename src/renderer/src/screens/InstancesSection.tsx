@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { DEFAULT_REMOTE_DATA_DIR, LOCAL_INSTANCE, type InstanceDef, type InstanceTest, type InstancesView } from '../../../shared/instances';
+import { DEFAULT_REMOTE_DATA_DIR, LOCAL_INSTANCE, type InstanceDef, type InstanceTest, type InstanceVia, type InstancesView } from '../../../shared/instances';
 import { emptySecretDraft, secretInputFrom } from '../../../shared/wizard';
 import { errorText } from '../api';
 import { useT } from '../i18n';
@@ -11,6 +11,8 @@ import '../instances.css';
 
 const TARGET_EXAMPLE = 'coxia@example.com'; // i18n-ignore: example address
 
+const EMPTY_FORM = { name: '', sshTarget: '', remoteDataDir: '', workspace: '', via: 'server' as InstanceVia };
+
 // Settings › Instances: the core on this computer, or an instance on a server reached through SSH. The choice takes a relaunch, like the workspace's. The window of a paired browser has none.
 export function InstancesSection() {
   const t = useT();
@@ -20,7 +22,7 @@ export function InstancesSection() {
   const [restarting, setRestarting] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, InstanceTest>>({});
   const [busy, setBusy] = useState(false);
-  const [form, setForm] = useState({ name: '', sshTarget: '', remoteDataDir: '', workspace: '' });
+  const [form, setForm] = useState<{ name: string; sshTarget: string; remoteDataDir: string; workspace: string; via: InstanceVia }>(EMPTY_FORM);
   const [key, setKey] = useState(emptySecretDraft());
 
   useEffect(() => {
@@ -66,7 +68,7 @@ export function InstancesSection() {
       if ('problem' in r) throw new Error(t(secretProblemKey(r.problem)));
       const { ref: _ref, ...source } = r.input;
       setView(await instancesApi.add({ ...form, key: source }));
-      setForm({ name: '', sshTarget: '', remoteDataDir: '', workspace: '' });
+      setForm(EMPTY_FORM);
       setKey(emptySecretDraft());
     });
 
@@ -116,6 +118,12 @@ export function InstancesSection() {
         <div className="wz-label">{t('ui.settings.instances.add')}</div>
         <Field label={t('ui.settings.instances.name')} htmlFor="inst-name"><input id="inst-name" className="text-input" maxLength={60} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></Field>
         <Field label={t('ui.settings.instances.target')} htmlFor="inst-target"><input id="inst-target" className="text-input mono" spellCheck={false} placeholder={TARGET_EXAMPLE} value={form.sshTarget} onChange={(e) => setForm({ ...form, sshTarget: e.target.value })} /></Field>
+        <Field label={t('ui.settings.instances.via')} htmlFor="inst-via">
+          <select id="inst-via" className="text-input" value={form.via} onChange={(e) => setForm({ ...form, via: e.target.value as InstanceVia })}>
+            <option value="server">{t('ui.settings.instances.via.server')}</option>
+            <option value="socket">{t('ui.settings.instances.via.socket')}</option>
+          </select>
+        </Field>
         <Field label={t('ui.settings.instances.dataDir')} htmlFor="inst-dir"><input id="inst-dir" className="text-input mono" spellCheck={false} placeholder={DEFAULT_REMOTE_DATA_DIR} value={form.remoteDataDir} onChange={(e) => setForm({ ...form, remoteDataDir: e.target.value })} /></Field>
         <Field label={t('ui.settings.instances.workspace')} htmlFor="inst-ws"><input id="inst-ws" className="text-input mono" spellCheck={false} value={form.workspace} onChange={(e) => setForm({ ...form, workspace: e.target.value })} /></Field>
         <SecretFields noun={t('ui.settings.instances.key')} draft={key} onChange={setKey} storage={view?.storage ?? { secure: false, backend: null, insecureAccepted: false, canStore: false }} onAcceptInsecure={() => void run(async () => { const storage = await instancesApi.acceptInsecure(); setView((v) => (v ? { ...v, storage } : v)); })} />
