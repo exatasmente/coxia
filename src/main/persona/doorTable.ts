@@ -298,7 +298,7 @@ export const EXCLUDED: Readonly<Record<string, ExclusionReason>> = Object.fromEn
   ...group('effects', ['effects:request', 'effects:settle']),
   ...group('autonomy', ['autonomy:grant', 'autonomy:incident', 'autonomy:mark-reverted', 'autonomy:revoke', 'autonomy:status']),
   // Who owns the workspace and handing it over (#209): the person's, from the window or the admin door; the persona neither hands the workspace over nor takes it.
-  ...group('machine', ['ownership:claim', 'ownership:release', 'ownership:status']),
+  ...group('machine', ['ownership:claim', 'ownership:move-out', 'ownership:release', 'ownership:status']),
   ...group('update', ['update:busy', 'update:check', 'update:flushed', 'update:info', 'update:install', 'update:run', 'update:seen', 'update:settings-save', 'update:status']),
   ...group('voice', ['voice:cancel', 'voice:check', 'voice:enable', 'voice:install', 'voice:install-cancel', 'voice:list', 'voice:plan', 'voice:segment', 'voice:status', 'voice:test', 'voice:transcribe', 'voice:uninstall']),
   ...group('wizard', [

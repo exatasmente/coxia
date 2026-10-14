@@ -102,7 +102,7 @@ export const CHANNELS = [
   // autonomy
   'autonomy:grant', 'autonomy:incident', 'autonomy:mark-reverted', 'autonomy:revoke', 'autonomy:status',
   // ownership
-  'ownership:claim', 'ownership:release', 'ownership:status',
+  'ownership:claim', 'ownership:move-out', 'ownership:release', 'ownership:status',
   // persona
   'persona:clear', 'persona:conclude', 'persona:delete', 'persona:discard', 'persona:finish', 'persona:live-read', 'persona:resume', 'persona:review', 'persona:round', 'persona:save', 'persona:saveDraft', 'persona:state', 'persona:stop',
   // plugins

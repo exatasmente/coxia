@@ -165,6 +165,11 @@ function ownershipHandlers(o: Ownership): void {
   handle('ownership:status', () => o.status());
   handle('ownership:release', (to: unknown, deadlineMs?: unknown) => o.release(String(to ?? ''), { by: viaOf(), ...(typeof deadlineMs === 'number' ? { deadlineMs } : {}) }));
   handle('ownership:claim', () => o.claim({ admin: true, by: viaOf() }));
+  // The workspace moves to another machine (#309): this instance stops for good and the lease says where it went. Desktop and admin door only (webPolicy DESKTOP_ONLY).
+  handle('ownership:move-out', (input?: unknown) => {
+    const to = input && typeof input === 'object' ? (input as { to?: unknown }).to : undefined;
+    return o.moveOut(typeof to === 'string' ? to : '', { by: viaOf() });
+  });
 }
 
 /**

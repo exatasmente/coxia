@@ -2199,5 +2199,8 @@
   "main.effects.expiredOutput": "Set aside: nobody answered in time.",
   "main.effects.destroyAdminOnly": "Destroying something is approved on the computer, or on an admin device with its passkey.",
   "main.effects.notifyDestroyTitle": "A client asks to destroy a server",
-  "main.effects.notifySpendTitle": "A client asks to spend money"
+  "main.effects.notifySpendTitle": "A client asks to spend money",
+  "main.ownership.badMoveTarget": "a move needs a description of the target, at most {max} characters",
+  "main.ownership.movedOutElsewhere": "this workspace was already moved to {to}: bring it back with ownership:claim before moving it to another target",
+  "main.ownership.moveBackAdminOnly": "taking the workspace back is the person's, at the window or the admin door: a paired browser never does it"
 }

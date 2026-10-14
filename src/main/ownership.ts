@@ -40,6 +40,8 @@ export interface Lease {
   handingOver?: { to: string; at: string; until: string };
   /** Set by an instance that took the workspace from `from` in a handover: the old owner lets go when `confirmedAt` is set, and takes it back after `confirmBy` if it never is. */
   claim?: { from: string; at: string; confirmBy: string; confirmedAt: string | null };
+  /** The owner moved the workspace to another machine (`to` is a free description of it) and became a client for good: no timer takes it back, and a restart of this instance reads this and stays a client. Only a move-back clears it. */
+  movedOut?: { to: string; at: string };
 }
 
 export interface OwnershipStatus {
@@ -53,7 +55,12 @@ export interface OwnershipStatus {
   expired: boolean;
   /** The instance the owner is handing over to; null when no handover is open. */
   handingOver: string | null;
+  /** Where the workspace was moved to, and when; null while it was not moved out. */
+  movedOut: { to: string; at: string } | null;
 }
+
+/** The longest description of a move's target the lease keeps. */
+export const MOVE_TO_MAX = 200;
 
 /** A failure of the ownership rules; `code` is of the closed list of the contract. */
 export class OwnershipError extends Error {
@@ -102,7 +109,9 @@ export interface Ownership {
   require(): void;
   /** The owner stops its work and marks the lease as handed to `to`; it keeps the lease until `to` confirms. */
   release(to: string, options?: { deadlineMs?: number; by?: string }): Promise<OwnershipStatus>;
-  /** A client takes the lease: from an owner that marked it for this instance, or, with `admin`, from an owner whose lease expired. */
+  /** The owner stops its work and becomes a client for good, with the lease marked as moved out to `to`; idempotent for the same `to`. */
+  moveOut(to: string, options?: { deadlineMs?: number; by?: string }): Promise<OwnershipStatus>;
+  /** A client takes the lease: from an owner that marked it for this instance, or, with `admin`, from an owner whose lease expired; with `admin`, also this instance's own moved-out lease (the move back). */
   claim(options: { admin: boolean; by?: string }): Promise<OwnershipStatus>;
   /** Clears the timer; an owner's lease is removed so the next start takes it at once. */
   stop(): void;
@@ -209,7 +218,8 @@ export function createOwnership(options: OwnershipOptions): Ownership {
   }
 
   const fresh = (extra: Partial<Lease> = {}, startedAt = iso(at())): Lease => ({ instanceId, host, pid, startedAt, renewedAt: iso(at()), expiresAt: iso(at() + ttl), ...extra });
-  const expired = (lease: Lease): boolean => Date.parse(lease.expiresAt) <= at();
+  // A moved-out lease is not renewed by anyone and never lapses: the workspace lives elsewhere, and only the move back brings it here.
+  const expired = (lease: Lease): boolean => !lease.movedOut && Date.parse(lease.expiresAt) <= at();
   const who = (lease: Lease): string => `${lease.host} (${lease.instanceId.slice(0, 8)}, pid ${lease.pid})`;
 
   function audit(op: string, fields: Record<string, string>, ok = true, result = '', by = 'ownership'): void {
@@ -229,6 +239,7 @@ export function createOwnership(options: OwnershipOptions): Ownership {
       role: state === 'owner' ? 'owner' : 'client',
       expired: lease ? expired(lease) : false,
       handingOver: lease?.handingOver?.to ?? null,
+      movedOut: lease?.movedOut ?? null,
     };
   }
 
@@ -312,6 +323,11 @@ export function createOwnership(options: OwnershipOptions): Ownership {
       if (stopped) return status();
       locked(() => {
         const lease = read();
+        // Moved out: this instance stays a client across restarts, whatever the pid and the clock say.
+        if (lease?.movedOut && lease.instanceId === instanceId) {
+          state = 'client';
+          return;
+        }
         // A process of this instance that restarts takes its own lease again, whatever was left in it; the lease of a live process of the same folder is not its to take.
         const restart = lease !== null && lease.instanceId === instanceId && (lease.pid === pid || expired(lease) || (lease.host === host && !alive(lease.pid)));
         if (!lease || restart) {
@@ -351,13 +367,50 @@ export function createOwnership(options: OwnershipOptions): Ownership {
       audit('release', { to }, true, '', o.by);
       return status();
     },
-    async claim(o) {
-      let previous: Lease | null = null;
-      let kind = 'free' as 'handover' | 'takeover' | 'free';
+    async moveOut(to, o = {}) {
+      if (typeof to !== 'string' || !to.trim() || to.length > MOVE_TO_MAX) throw new OwnershipError('invalid-input', t('main.ownership.badMoveTarget', { max: MOVE_TO_MAX }));
+      const held = read();
+      if (held?.movedOut && held.instanceId === instanceId) {
+        if (held.movedOut.to === to) return status();
+        throw new OwnershipError('conflict', t('main.ownership.movedOutElsewhere', { to: held.movedOut.to }));
+      }
+      if (state !== 'owner') throw notOwner();
+      // As for a handover: the work stops first and the lease is marked after, so nothing of this instance is still running when the other machine starts.
+      state = 'handing';
+      pausing = hooks.pause(o.deadlineMs ?? HANDOVER_PAUSE_MS);
+      try {
+        await pausing;
+      } catch (e) {
+        pausing = null;
+        state = 'owner';
+        hooks.resume();
+        audit('move-out', { to }, false, e instanceof Error ? e.message : String(e), o.by);
+        throw e;
+      }
+      pausing = null;
       locked(() => {
         const lease = read();
-        if (lease && mine(lease)) throw new OwnershipError('conflict', t('main.ownership.alreadyOwner'));
-        if (lease && lease.handingOver?.to === self && Date.parse(lease.handingOver.until) > at() && !expired(lease)) kind = 'handover';
+        if (!lease || !mine(lease)) throw notOwner();
+        const { handingOver: _gone, claim: _claim, ...own } = lease;
+        write({ ...own, renewedAt: iso(at()), expiresAt: iso(at() + ttl), movedOut: { to, at: iso(at()) } });
+      });
+      // A client for good: no timer takes the workspace back.
+      state = 'client';
+      unbeat();
+      audit('move-out', { to }, true, '', o.by);
+      return status();
+    },
+    async claim(o) {
+      let previous: Lease | null = null;
+      let kind = 'free' as 'handover' | 'takeover' | 'free' | 'move-back';
+      locked(() => {
+        const lease = read();
+        if (lease?.movedOut && lease.instanceId === instanceId) {
+          // Taking the workspace back is the person's, at the window or the admin door; a paired browser never does it, a passkey device included.
+          if (!o.admin || o.by === 'paired' || o.by === 'persona') throw new OwnershipError('forbidden', t('main.ownership.moveBackAdminOnly'));
+          kind = 'move-back';
+        } else if (lease && mine(lease)) throw new OwnershipError('conflict', t('main.ownership.alreadyOwner'));
+        else if (lease && lease.handingOver?.to === self && Date.parse(lease.handingOver.until) > at() && !expired(lease)) kind = 'handover';
         else if (lease && expired(lease)) {
           // The owner is gone: only an admin takes the workspace (a paired device has passed the passkey at the web door before it gets here).
           if (!o.admin) throw new OwnershipError('forbidden', t('main.ownership.adminOnly', { owner: who(lease) }));
@@ -367,7 +420,8 @@ export function createOwnership(options: OwnershipOptions): Ownership {
         write(fresh(kind === 'handover' && lease ? { claim: { from: holder(lease), at: iso(at()), confirmBy: iso(at() + confirmWindow), confirmedAt: null } } : {}));
       });
       const from = previous ? holder(previous as Lease) : '';
-      audit(kind === 'takeover' ? 'takeover' : 'claim', { from, ...(previous ? { fromHost: (previous as Lease).host, expiredAt: (previous as Lease).expiresAt } : {}) }, true, '', o.by);
+      const moved = (previous as Lease | null)?.movedOut;
+      audit(kind === 'takeover' ? 'takeover' : kind === 'move-back' ? 'move-back' : 'claim', { from, ...(moved ? { movedTo: moved.to, movedAt: moved.at } : previous ? { fromHost: (previous as Lease).host, expiredAt: (previous as Lease).expiresAt } : {}) }, true, '', o.by);
 
       let healthy = false;
       try {
@@ -383,7 +437,8 @@ export function createOwnership(options: OwnershipOptions): Ownership {
           if (kind === 'handover' && previous) {
             const { handingOver: _gone, claim: _claim, ...old } = previous;
             write({ ...old, renewedAt: iso(at()), expiresAt: iso(at() + ttl) });
-          } else rmSync(leaseFile, { force: true });
+          } else if (kind === 'move-back' && previous) write(previous);
+          else rmSync(leaseFile, { force: true });
         });
         audit('claim-failed', { from }, false, t('main.ownership.unhealthy'), o.by);
         throw new OwnershipError('conflict', t('main.ownership.unhealthy'));
