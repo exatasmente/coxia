@@ -152,6 +152,19 @@ export async function createWorktree(w: WorktreeRequest): Promise<Worktree> {
 }
 
 /**
+ * Puts a run's existing branch back in a worktree at `dest` (no new branch), for a run whose folder is gone: the workspace moved to another machine, or somebody deleted it.
+ * False, and nothing changed, when the folder is there, the branch is not in the clone, or git refuses (the branch is checked out elsewhere).
+ */
+export async function reattachWorktree(clone: string, dest: string, branch: string): Promise<boolean> {
+  const ref = checkRef(branch);
+  if (existsSync(dest) || !(await ok(clone, ['show-ref', '--verify', '--quiet', `refs/heads/${ref}`]))) return false;
+  // A registration of the folder that is gone would make `worktree add` refuse the branch as checked out.
+  await git(clone, ['worktree', 'prune'], { fail: false });
+  mkdirSync(dirname(dest), { recursive: true });
+  return (await git(clone, [...SAFE, 'worktree', 'add', dest, ref], { fail: false })).code === 0;
+}
+
+/**
  * The identity a repository names for itself in its own `.git/config`. Only that file is read: the person's global and system configuration (which
  * may be another job's address), the environment and what git would guess from the machine are not an identity the app commits as. Nothing is ever
  * written to a git config.

@@ -78,7 +78,7 @@ Um workspace do desktop pode passar a viver num servidor (a ferramenta de provis
 
 Sucesso: saída 0 e uma linha `{"imported":"<id>","repos":[{"id":"app","path":"<R>/app"}]}`. O **mesmo pacote** de novo sai 0 com `"alreadyImported":true` e não escreve nada, mesmo que o workspace tenha mudado desde então (o registro é uma marca do pacote em `<D>/imports/<id>.json`). Outro pacote do mesmo workspace, ou um workspace de mesmo id que já tem trabalho, é `conflict`; o workspace vazio que um `--init` deixou com o mesmo id é substituído. Erro: saída 1 e `<código>: <mensagem>` em stderr.
 
-Fora do escopo (ficam como estavam no pacote): o caminho da árvore de trabalho de cada execução aberta e qualquer outra configuração que nomeie uma pasta da máquina antiga.
+Uma execução aberta cujo worktree não existe aqui, mas cujo branch está no clone, recebe o worktree de volta quando o dono retoma o trabalho (mesmo nome de pasta, na pasta de worktrees desta máquina); sem o branch continua `worktree-gone`. Fora do escopo (fica como estava no pacote): qualquer outra configuração que nomeie uma pasta da máquina antiga.
 
 ### O endereço web é do processo
 
@@ -190,7 +190,7 @@ A workspace on the desktop can come to live on a server (the provisioning tool, 
 
 Success: exit 0 and one line `{"imported":"<id>","repos":[{"id":"app","path":"<R>/app"}]}`. The **same bundle** again exits 0 with `"alreadyImported":true` and writes nothing, even if the workspace changed since (the record is a mark of the bundle in `<D>/imports/<id>.json`). Another bundle of the same workspace, or a workspace of the same id that already has work in it, is `conflict`; the empty workspace an `--init` left under the same id is replaced. An error exits 1 with `<code>: <message>` on stderr.
 
-Out of scope (left as the bundle had them): the worktree path of each open run and any other configuration that names a folder of the old machine.
+An open run whose worktree is not here but whose branch is in the clone gets its worktree back when the owner resumes its work (same folder name, under this machine's worktrees folder); without the branch it stays `worktree-gone`. Out of scope (left as the bundle had them): any other configuration that names a folder of the old machine.
 
 ### The web address belongs to the process
 

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CONTRACT_VERSION } from '../src/shared/contract';
+import { reattachWorktree } from '../src/main/runner/git';
 import { exportBundle } from '../src/main/moveBundle';
 import { ImportError, importBundle } from '../src/main/moveImport';
 import { SECRET_VALUES, git, keyHex, makeSource, storeFor, type Source } from './helpers/move';
@@ -92,11 +93,16 @@ describe('export, then import, on two machines with different keys', () => {
     expect(run(() => importBundle({ bundle: again, dataDir: dst.dataDir, keyFile: dst.keyFile, reposRoot: dst.reposRoot })).code).toBe('conflict');
   });
 
-  it('carries the run branch: the bundle of the repository fetches into a clone of the remote', () => {
+  it('carries the run branch: the bundle of the repository fetches into a clone of the remote', async () => {
     const clone = join(sandbox(), 'clone');
     execFileSync('git', ['clone', '-q', src.origin, clone], { stdio: 'ignore' });
     git(clone, 'fetch', '-q', join(bundle, 'git', 'app.bundle'), 'refs/heads/*:refs/heads/*');
     expect(git(clone, 'log', '--format=%s', '-1', src.branch)).toBe('work in progress');
+    // And the run resumes there: its branch is checked out again in a worktree of the new clone, and a branch the clone lacks is not.
+    const dest = join(sandbox(), 'worktrees', 'app', 'wt');
+    expect(await reattachWorktree(clone, dest, src.branch)).toBe(true);
+    expect(git(dest, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe(src.branch);
+    expect(await reattachWorktree(clone, join(sandbox(), 'other'), 'cycle/not-there')).toBe(false);
   });
 });
 

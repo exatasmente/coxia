@@ -829,6 +829,40 @@ describe('after the app is reopened', () => {
   });
 });
 
+describe('a run whose worktree folder is gone', () => {
+  // The folder is lost as when a workspace moves to another machine, or is deleted by hand; `drop` also removes the branch from the clone.
+  async function interrupted(drop: boolean) {
+    const first = await boot();
+    first.engine.script('refiner', () => never());
+    const run = await first.runner.start('app#101');
+    await vi.waitFor(() => expect(first.engine.calls).toHaveLength(1));
+    git(first.repo.clone, 'worktree', 'remove', '--force', run.worktree);
+    if (drop) git(first.repo.clone, 'branch', '-D', run.branch);
+    const engine = fakeEngine();
+    engine.script('refiner', () => work('Spec.', { artifacts: [doc('1_SPEC.md'), doc('REQUIREMENTS.md')], handoff: 'Plan it.' }));
+    const second = await boot({ repo: first.repo, dir: first.dir, engine, issues: first.issues });
+    second.runner.resume();
+    await second.settle();
+    return { first, second, run };
+  }
+
+  it('is reattached on its branch at resume, and the stage then finds it', async () => {
+    const { second, run } = await interrupted(false);
+    const after = second.runner.get(run.id)!;
+    expect(existsSync(after.worktree)).toBe(true);
+    expect(git(after.worktree, 'rev-parse', '--abbrev-ref', 'HEAD')).toBe(run.branch);
+    expect(after).toMatchObject({ status: 'gate', stage: 'gate1' });
+  });
+
+  it('still fails with worktree-gone when the clone has no such branch', async () => {
+    const { second, run } = await interrupted(true);
+    const after = second.runner.get(run.id)!;
+    expect(existsSync(after.worktree)).toBe(false);
+    expect(after.status).not.toBe('gate');
+    expect(after.error).toMatchObject({ code: 'stage-failed', detail: expect.stringContaining('worktree') });
+  });
+});
+
 describe('runs the app starts by itself', () => {
   const triggered = (n: number[]) => {
     const issues = fakeIssues();
