@@ -154,6 +154,12 @@
   "ui.retention.wipeNow": "Delete now",
   "ui.retention.wouldDelete_one": "{count} file would be deleted",
   "ui.retention.wouldDelete_other": "{count} files would be deleted",
+  "ui.settings.adminDoor.closed": "Closed: {reason}",
+  "ui.settings.adminDoor.hint": "Opens a Unix socket in the workspace's folder so a tool on this machine (such as the CLI that moves the workspace to a server) can call Coxia with this window's rights. Whoever can connect is your user: there is no password. Off by default; it takes effect at once.",
+  "ui.settings.adminDoor.listening": "Listening on {path}",
+  "ui.settings.adminDoor.off": "Off",
+  "ui.settings.adminDoor.on": "On",
+  "ui.settings.adminDoor.title": "Local admin door",
   "ui.settings.autonomy.asking": "Asks for your yes every time.",
   "ui.settings.autonomy.grant": "Grant autonomy",
   "ui.settings.autonomy.granted": "Autonomy granted (grant {id}, limit: {limit})",
@@ -423,11 +429,5 @@
   "ui.workspaces.test.hint.off-sdd": "Nothing leaves the machine from here: no writes to {vcsName}, to the activity documents or to card notes.",
   "ui.workspaces.test.label": "Test workspace",
   "ui.workspaces.title": "Workspaces",
-  "ui.workspaces.use": "Use this one",
-  "ui.settings.adminDoor.title": "Local admin door",
-  "ui.settings.adminDoor.hint": "Opens a Unix socket in the workspace's folder so a tool on this machine (such as the CLI that moves the workspace to a server) can call Coxia with this window's rights. Whoever can connect is your user: there is no password. Off by default; it takes effect at once.",
-  "ui.settings.adminDoor.on": "On",
-  "ui.settings.adminDoor.off": "Off",
-  "ui.settings.adminDoor.listening": "Listening on {path}",
-  "ui.settings.adminDoor.closed": "Closed: {reason}"
+  "ui.workspaces.use": "Use this one"
 }

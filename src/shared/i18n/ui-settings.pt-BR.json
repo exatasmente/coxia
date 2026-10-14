@@ -154,6 +154,12 @@
   "ui.retention.wipeNow": "Apagar agora",
   "ui.retention.wouldDelete_one": "{count} arquivo seria apagado",
   "ui.retention.wouldDelete_other": "{count} arquivos seriam apagados",
+  "ui.settings.adminDoor.closed": "Fechada: {reason}",
+  "ui.settings.adminDoor.hint": "Abre um soquete Unix na pasta do workspace para uma ferramenta desta máquina (como a CLI que muda o workspace para um servidor) chamar o Coxia com os direitos desta janela. Quem consegue conectar é o seu usuário: não há senha. Desligada por padrão; vale na hora.",
+  "ui.settings.adminDoor.listening": "Escutando em {path}",
+  "ui.settings.adminDoor.off": "Desligada",
+  "ui.settings.adminDoor.on": "Ligada",
+  "ui.settings.adminDoor.title": "Porta de administração local",
   "ui.settings.autonomy.asking": "Pede o seu sim toda vez.",
   "ui.settings.autonomy.grant": "Conceder autonomia",
   "ui.settings.autonomy.granted": "Autonomia concedida (concessão {id}, limite: {limit})",
@@ -423,11 +429,5 @@
   "ui.workspaces.test.hint.off-sdd": "Nada sai da máquina daqui: sem escrita no {vcsName}, nos documentos da atividade nem nas notas de cartão.",
   "ui.workspaces.test.label": "Workspace de testes",
   "ui.workspaces.title": "Workspaces",
-  "ui.workspaces.use": "Usar este",
-  "ui.settings.adminDoor.title": "Porta de administração local",
-  "ui.settings.adminDoor.hint": "Abre um soquete Unix na pasta do workspace para uma ferramenta desta máquina (como a CLI que muda o workspace para um servidor) chamar o Coxia com os direitos desta janela. Quem consegue conectar é o seu usuário: não há senha. Desligada por padrão; vale na hora.",
-  "ui.settings.adminDoor.on": "Ligada",
-  "ui.settings.adminDoor.off": "Desligada",
-  "ui.settings.adminDoor.listening": "Escutando em {path}",
-  "ui.settings.adminDoor.closed": "Fechada: {reason}"
+  "ui.workspaces.use": "Usar este"
 }
