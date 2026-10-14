@@ -97,6 +97,8 @@ export const CHANNELS = [
   'memory:list', 'memory:read', 'memory:remove', 'memory:remove-folder', 'memory:review', 'memory:save',
   // minutes
   'minutes:day', 'minutes:day-teams', 'minutes:delete', 'minutes:delete-preview', 'minutes:restore', 'minutes:trash', 'minutes:version-teams',
+  // move
+  'move:export',
   // passkey
   'passkey:assert', 'passkey:assert-options', 'passkey:enroll-allow', 'passkey:list', 'passkey:register', 'passkey:register-options', 'passkey:remove',
   // accounts

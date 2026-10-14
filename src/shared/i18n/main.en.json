@@ -2203,5 +2203,12 @@
   "main.ownership.badMoveTarget": "a move needs a description of the target, at most {max} characters",
   "main.ownership.movedOutElsewhere": "this workspace was already moved to {to}: bring it back with ownership:claim before moving it to another target",
   "main.ownership.moveBackAdminOnly": "taking the workspace back is the person's, at the window or the admin door: a paired browser never does it",
-  "main.admin.windowOnly": "switching the admin door on or off is for the computer's window: neither the door itself nor a paired browser does it"
+  "main.admin.windowOnly": "switching the admin door on or off is for the computer's window: neither the door itself nor a paired browser does it",
+  "main.move.notMovedOut": "the workspace was not moved out: step down with ownership:move-out before exporting it",
+  "main.move.badKey": "the target key must be 64 hex digits",
+  "main.move.badOut": "the output folder must be an absolute path",
+  "main.move.outExists": "{path} already exists: the bundle is written to a new folder",
+  "main.move.badRepoId": "the repository id \"{id}\" cannot name a file in the bundle",
+  "main.move.gitFailed": "git failed for repository {id}: {detail}",
+  "main.move.noWorkspace": "workspace {id} is not in the registry"
 }

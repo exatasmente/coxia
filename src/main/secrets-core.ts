@@ -58,7 +58,7 @@ interface FileShape {
   entries: Record<string, Entry>;
 }
 
-const WARNING = 'Do not share or commit this file. Stored values are encrypted with the OS keychain; any value marked "plain" is readable by anyone who can read this file (mode 0600 only).'; // i18n-ignore: written into the secrets file for whoever opens it
+export const WARNING = 'Do not share or commit this file. Stored values are encrypted with the OS keychain; any value marked "plain" is readable by anyone who can read this file (mode 0600 only).'; // i18n-ignore: written into the secrets file for whoever opens it
 
 const emptyFile = (): FileShape => ({ version: 1, warning: WARNING, insecure: { accepted: false, acceptedAt: null }, entries: {} });
 

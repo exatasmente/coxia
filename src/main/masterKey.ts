@@ -36,30 +36,34 @@ const refused = (): never => {
   throw new SecretError('unavailable', t('main.secrets.keyFile'));
 };
 
+/** Encrypts under a key given as bytes, in the layout the port writes: IV, tag, ciphertext. A move re-encrypts stored secrets for another machine's key with it. */
+export function gcmEncrypt(key: Buffer, text: string): Buffer {
+  if (key.length !== KEY_BYTES) throw new SecretError('invalid', t('main.secrets.keyFile'));
+  const iv = randomBytes(GCM_IV);
+  const cipher = createCipheriv('aes-256-gcm', key, iv);
+  const body = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
+  return Buffer.concat([iv, cipher.getAuthTag(), body]);
+}
+
+/** The reverse of `gcmEncrypt`; null when the data is short or the key does not match the one that encrypted it (the GCM check fails, as for a tampered value). */
+export function gcmDecrypt(key: Buffer, data: Buffer): string | null {
+  if (data.length < GCM_IV + GCM_TAG) return null;
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', key, data.subarray(0, GCM_IV));
+    decipher.setAuthTag(data.subarray(GCM_IV, GCM_IV + GCM_TAG));
+    return Buffer.concat([decipher.update(data.subarray(GCM_IV + GCM_TAG)), decipher.final()]).toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
 /** The crypto port backed by the master key in `keyFile`. Nothing here creates that file: a missing file is a closed refusal. */
 export function masterKeyPort(keyFile: string): CryptoPort {
   const key = (): Buffer => readMasterKey(keyFile) ?? refused();
   return {
     available: () => readMasterKey(keyFile) !== null,
-    encrypt(text) {
-      const k = key();
-      const iv = randomBytes(GCM_IV);
-      const cipher = createCipheriv('aes-256-gcm', k, iv);
-      const body = Buffer.concat([cipher.update(text, 'utf8'), cipher.final()]);
-      return Buffer.concat([iv, cipher.getAuthTag(), body]);
-    },
-    decrypt(data) {
-      const k = key();
-      if (data.length < GCM_IV + GCM_TAG) return refused();
-      try {
-        const decipher = createDecipheriv('aes-256-gcm', k, data.subarray(0, GCM_IV));
-        decipher.setAuthTag(data.subarray(GCM_IV, GCM_IV + GCM_TAG));
-        return Buffer.concat([decipher.update(data.subarray(GCM_IV + GCM_TAG)), decipher.final()]).toString('utf8');
-      } catch {
-        // A key that does not match the one that encrypted the value fails the GCM check; a tampered value does too.
-        return refused();
-      }
-    },
+    encrypt: (text) => gcmEncrypt(key(), text),
+    decrypt: (data) => gcmDecrypt(key(), data) ?? refused(),
     backend: () => null,
     unavailableReason: () => t('main.secrets.keyFile'),
   };
