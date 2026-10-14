@@ -290,7 +290,7 @@ export const EXCLUDED: Readonly<Record<string, ExclusionReason>> = Object.fromEn
   // The discussions screen a button opened by project and number: its read is the screen's (the persona reads threads through VcsRead), and the line it leaves records the person's
   // tap, which the persona must never be able to write for them.
   ...group('window', ['feedback:discussions:open', 'feedback:discussions:opened']),
-  ...group('machine', ['agents:scan', 'agents:propose', 'agents:summarize', 'agents:can-summarize', 'mcpstate:get', 'mcpstate:set-enabled', 'mcpstate:set-act', 'mcpstate:write-entry', 'vcs:probe', 'sandbox:probe']),
+  ...group('machine', ['agents:scan', 'agents:propose', 'agents:summarize', 'agents:can-summarize', 'mcpstate:get', 'mcpstate:set-enabled', 'mcpstate:set-act', 'mcpstate:write-entry', 'vcs:probe', 'sandbox:probe', 'move:export', 'adminDoor:get', 'adminDoor:set']),
   // The machine's Claude Code sessions (#280): only the person sends to them, answers their permission requests, stops or starts one.
   ...group('machine', ['claudeSessions:enabled', 'claudeSessions:set-enabled', 'claudeSessions:list', 'claudeSessions:read', 'claudeSessions:follow', 'claudeSessions:folders', 'claudeSessions:send', 'claudeSessions:asks', 'claudeSessions:answer', 'claudeSessions:stop', 'claudeSessions:end', 'claudeSessions:start']),
   ...group('budget', ['budget:get', 'budget:ledger', 'budget:set']),
@@ -298,7 +298,7 @@ export const EXCLUDED: Readonly<Record<string, ExclusionReason>> = Object.fromEn
   ...group('effects', ['effects:request', 'effects:settle']),
   ...group('autonomy', ['autonomy:grant', 'autonomy:incident', 'autonomy:mark-reverted', 'autonomy:revoke', 'autonomy:status']),
   // Who owns the workspace and handing it over (#209): the person's, from the window or the admin door; the persona neither hands the workspace over nor takes it.
-  ...group('machine', ['ownership:claim', 'ownership:release', 'ownership:status']),
+  ...group('machine', ['ownership:claim', 'ownership:move-out', 'ownership:release', 'ownership:status']),
   ...group('update', ['update:busy', 'update:check', 'update:flushed', 'update:info', 'update:install', 'update:run', 'update:seen', 'update:settings-save', 'update:status']),
   ...group('voice', ['voice:cancel', 'voice:check', 'voice:enable', 'voice:install', 'voice:install-cancel', 'voice:list', 'voice:plan', 'voice:segment', 'voice:status', 'voice:test', 'voice:transcribe', 'voice:uninstall']),
   ...group('wizard', [

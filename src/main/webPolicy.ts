@@ -13,7 +13,7 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // person's on the computer (spec rule 10). Answering a request is open here only for what a call from a conversation opened (the requests of a run's own
 // events are refused whatever the channel says); blocking an announced write is actions:skip, which only takes away.
 // Freeing a release branch held by another worktree (actions:freeBranch) switches that folder's checkout on this machine, so it stays here too.
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited', 'plugins:set-enabled', 'plugins:settings', 'plugins:set-setting', 'plugins:set-secret', 'plugins:revoke', 'plugins:revoke-write', 'actions:freeBranch', 'accounts:assert']);
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited', 'plugins:set-enabled', 'plugins:settings', 'plugins:set-setting', 'plugins:set-secret', 'plugins:revoke', 'plugins:revoke-write', 'actions:freeBranch', 'accounts:assert', 'ownership:move-out', 'move:export', 'adminDoor:get', 'adminDoor:set']);
 
 // The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
@@ -136,7 +136,8 @@ const BUDGET_WRITE = /^budget:(?!(get|ledger)$)/;
 // default cannot close it by accident. test/contract.test.ts pins it.
 export const CONTRACT_CHANNELS = new Set([HELLO_CHANNEL]);
 
-// Who owns the workspace (#209): a paired browser reads `ownership:status` (the phone shows who owns it); handing over or taking over is an admin act: the computer,
+// Moving the workspace to another machine (#309): `ownership:move-out` is in DESKTOP_ONLY, so no paired browser calls it, an admin device included; taking the workspace back is
+// `ownership:claim`, which refuses a paired browser inside the lease. Who owns the workspace (#209): a paired browser reads `ownership:status` (the phone shows who owns it); handing over or taking over is an admin act: the computer,
 // the admin door, or a passkey device that is asked for it at that moment. A pattern with the one read as an exception, so a channel added under `ownership:` later starts closed.
 const OWNERSHIP_ADMIN = /^ownership:(?!status$)/;
 

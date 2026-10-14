@@ -23,6 +23,8 @@ export const DESKTOP_CHANNELS = ['clipboard:copy', 'jobs:notify'] as const;
 export const CHANNELS = [
   // actions
   'actions:approve', 'actions:conflict', 'actions:detect', 'actions:freeBranch', 'actions:list', 'actions:preview', 'actions:skip',
+  // adminDoor
+  'adminDoor:get', 'adminDoor:set',
   // agent
   'agent:activity:get', 'agent:prepare', 'agent:reply',
   // agentAssist
@@ -95,6 +97,8 @@ export const CHANNELS = [
   'memory:list', 'memory:read', 'memory:remove', 'memory:remove-folder', 'memory:review', 'memory:save',
   // minutes
   'minutes:day', 'minutes:day-teams', 'minutes:delete', 'minutes:delete-preview', 'minutes:restore', 'minutes:trash', 'minutes:version-teams',
+  // move
+  'move:export',
   // passkey
   'passkey:assert', 'passkey:assert-options', 'passkey:enroll-allow', 'passkey:list', 'passkey:register', 'passkey:register-options', 'passkey:remove',
   // accounts
@@ -102,7 +106,7 @@ export const CHANNELS = [
   // autonomy
   'autonomy:grant', 'autonomy:incident', 'autonomy:mark-reverted', 'autonomy:revoke', 'autonomy:status',
   // ownership
-  'ownership:claim', 'ownership:release', 'ownership:status',
+  'ownership:claim', 'ownership:move-out', 'ownership:release', 'ownership:status',
   // persona
   'persona:clear', 'persona:conclude', 'persona:delete', 'persona:discard', 'persona:finish', 'persona:live-read', 'persona:resume', 'persona:review', 'persona:round', 'persona:save', 'persona:saveDraft', 'persona:state', 'persona:stop',
   // plugins

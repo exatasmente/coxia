@@ -19,6 +19,7 @@ import { PluginsSection } from './PluginsSection';
 import { PushSection } from './PushSection';
 import { PasskeySection } from './PasskeySection';
 import { WebAccessSection } from './WebAccessSection';
+import { AdminDoorSection } from './AdminDoorSection';
 import { UpdateSection } from './UpdateSection';
 import { DocsSection } from './DocsSection';
 import { ConfigWorkspacesSection } from './ConfigWorkspacesSection';
@@ -393,6 +394,7 @@ export function SettingsScreen({ go }: { go: (s: Screen) => void }) {
         <PushSection />
         <PasskeySection />
         <WebAccessSection />
+        <AdminDoorSection />
       </div>
     </div>
   );

@@ -37,6 +37,8 @@ export const MIGRATED_ID = 'testes';
 export const FRESH_ID = 'principal';
 
 const ID = /^[a-z0-9][a-z0-9-]{0,47}$/;
+/** What may name a workspace; the import of a move checks the bundle's id against it. */
+export const WORKSPACE_ID = ID;
 const NAME_MAX = 60;
 
 export interface Deps {
