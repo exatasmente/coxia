@@ -2170,6 +2170,7 @@
   "main.instances.badName": "Dê ao servidor um nome de até 60 caracteres.",
   "main.instances.badTarget": "O endereço SSH deve ser como usuario@host ou usuario@host:porta.",
   "main.instances.badDataDir": "A pasta de dados no servidor deve ser um caminho absoluto, sem \":\" nem caracteres de controle.",
+  "main.instances.badVia": "O modo de chegar à instância deve ser coxia-server ou o soquete encaminhado.",
   "main.instances.badWorkspace": "O id do workspace só pode ter letras minúsculas, dígitos e hífens.",
   "main.instances.nameTaken": "Já existe um servidor chamado {name}.",
   "main.instances.unknown": "Nenhum servidor tem o id {id}.",

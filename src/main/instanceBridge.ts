@@ -1,15 +1,17 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { type Socket, connect } from 'node:net';
+import { Duplex } from 'node:stream';
 import { ADMIN_LINE_MAX } from '../shared/adminDoor';
 import { CONTRACT_VERSION, ContractError, type ErrorCode, isErrorCode } from '../shared/contract';
 import { t } from '../shared/i18n';
 import { type InstanceDef, INSTANCE_EVENT, type InstanceStatus, type LinkState, parseSshTarget } from '../shared/instances';
 import type { AppEvent } from '../shared/types';
 import { decodeWire, encodeWire } from '../shared/wire';
-import { type KeyStore, type SshCommands, SYSTEM_SSH, knownHostsPath, makeSocketDir, sshArgs, writeKeyFile } from './instances-core';
+import { type KeyStore, type SshCommands, SYSTEM_SSH, knownHostsPath, makeSocketDir, sshArgs, sshBridgeArgs, writeKeyFile } from './instances-core';
 
-// The desktop as a client of a remote instance (#211). An `ssh -N -L` child forwards a local Unix socket to the admin socket of the instance's workspace; over it the desktop
+// The desktop as a client of a remote instance (#211). Either an `ssh -N -L` child forwards a local Unix socket to the admin socket of the instance's workspace (`socket`), or the
+// ssh child runs `coxia-server bridge <workspace>` and its stdin/stdout are the socket (`server`: the admin socket belongs to the service user, so only the bridge can open it). Over it the desktop
 // speaks the admin protocol (src/shared/adminDoor.ts) with the window's rights, which is the admin door's trust model: whoever reaches the socket is the user the core runs as.
 // A call in flight when the link drops fails with `connection-lost` and is never sent again: the person decides whether to repeat what may or may not have run.
 
@@ -42,21 +44,26 @@ export async function openLink(o: LinkOptions): Promise<Link> {
   if (!target) throw new ContractError('invalid-input', t('main.instances.badTarget'));
   const timeout = o.timeoutMs ?? 20_000;
   const key = writeKeyFile(o.keys.resolve(o.def.keyRef));
-  const sock = makeSocketDir();
+  const server = o.def.via === 'server';
+  const sock = server ? null : makeSocketDir();
   let child: ChildProcess | null = null;
-  let socket: Socket | null = null;
+  let socket: Duplex | null = null;
   const cleanup = (): void => {
     key.remove();
-    sock.remove();
+    sock?.remove();
   };
   const killAll = (): void => {
     socket?.destroy();
+    child?.stdin?.destroy();
     child?.kill('SIGTERM');
     cleanup();
   };
   try {
     const cmds = o.commands ?? SYSTEM_SSH;
-    const proc = spawn(cmds.ssh, sshArgs(o.def, target, { knownHosts: knownHostsPath(o.root), keyFile: key.path, localSocket: sock.path }), { stdio: ['ignore', 'ignore', 'pipe'] });
+    const common = { knownHosts: knownHostsPath(o.root), keyFile: key.path };
+    const proc = server
+      ? spawn(cmds.ssh, sshBridgeArgs(o.def, target, common), { stdio: ['pipe', 'pipe', 'pipe'] })
+      : spawn(cmds.ssh, sshArgs(o.def, target, { ...common, localSocket: (sock as { path: string }).path }), { stdio: ['ignore', 'ignore', 'pipe'] });
     child = proc;
     let stderr = '';
     proc.stderr?.setEncoding('utf8');
@@ -70,18 +77,19 @@ export async function openLink(o: LinkOptions): Promise<Link> {
     exited.catch(() => undefined);
     const deadline = Date.now() + timeout;
     // The forwarding exists once ssh has authenticated and listens: from then on it no longer needs the key.
-    await Promise.race([
+    // With the bridge there is no socket file to wait for: the hello answer below is the proof, and the key goes then.
+    if (!server) await Promise.race([
       exited,
       (async () => {
-        while (!existsSync(sock.path)) {
+        while (!existsSync((sock as { path: string }).path)) {
           if (Date.now() > deadline) throw new ContractError('internal', t('main.instances.timeout'));
           await new Promise((r) => setTimeout(r, 40));
         }
       })(),
     ]);
-    key.remove();
+    if (!server) key.remove();
 
-    const s = connect(sock.path);
+    const s: Duplex = server ? Duplex.from({ readable: proc.stdout as never, writable: proc.stdin as never }) : connect((sock as { path: string }).path);
     socket = s;
     s.setEncoding('utf8');
     const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
@@ -104,7 +112,9 @@ export async function openLink(o: LinkOptions): Promise<Link> {
     };
     s.on('error', () => undefined);
     s.on('close', end);
-    proc.once('exit', end);
+    proc.stdin?.on('error', () => undefined);
+    // The bridge's output may still be in the pipe when the process exits: its own close comes after.
+    proc.once(server ? 'close' : 'exit', end);
     s.on('data', (chunk: string) => {
       buf += chunk;
       if (buf.length > ADMIN_LINE_MAX + 1024) return void s.destroy();
@@ -136,12 +146,15 @@ export async function openLink(o: LinkOptions): Promise<Link> {
         }
       }
     });
-    await new Promise<void>((resolve, reject) => {
-      s.once('connect', resolve);
-      s.once('error', reject);
-    });
+    if (!server) {
+      await new Promise<void>((resolve, reject) => {
+        s.once('connect', resolve);
+        s.once('error', reject);
+      });
+    }
     const hello = await new Promise<Record<string, unknown>>((resolve, reject) => {
       const timer = setTimeout(() => reject(new ContractError('internal', t('main.instances.noDoor', { detail: tail(stderr) }))), timeout);
+      if (server) exited.catch(reject);
       closed.then(() => reject(new ContractError('internal', t('main.instances.noDoor', { detail: tail(stderr) }))));
       greeting = (l) => {
         clearTimeout(timer);
@@ -149,6 +162,7 @@ export async function openLink(o: LinkOptions): Promise<Link> {
       };
       s.write(`${JSON.stringify({ hello: CONTRACT_VERSION })}\n`);
     });
+    key.remove();
     const answer = hello.hello as { workspace?: unknown } | undefined;
     if (!answer) {
       const e = (hello.error ?? {}) as { code?: unknown; message?: unknown };
@@ -158,6 +172,7 @@ export async function openLink(o: LinkOptions): Promise<Link> {
       workspace: String(answer.workspace ?? ''),
       closed,
       close: () => {
+        proc.stdin?.end();
         s.destroy();
         end();
       },

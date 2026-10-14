@@ -11,6 +11,9 @@ export const INSTANCE_EVENT = 'instance:state';
 /** Where the data of a server's instance is, when the person does not say. */
 export const DEFAULT_REMOTE_DATA_DIR = '/var/lib/coxia/data';
 
+/** How the desktop reaches the instance: `server` runs `coxia-server bridge <workspace>` over SSH (the admin socket belongs to the service user, not to the SSH user); `socket` forwards the admin socket itself, for a core run by the SSH user. */
+export type InstanceVia = 'server' | 'socket';
+
 /** One instance of the person's list. The SSH key is never here: only the name of the secret that holds it. */
 export interface InstanceDef {
   id: string;
@@ -22,6 +25,7 @@ export interface InstanceDef {
   workspace: string;
   /** The ref, in this computer's secrets store, of the private key. */
   keyRef: string;
+  via: InstanceVia;
 }
 
 export interface InstancesFile {
@@ -36,6 +40,8 @@ export interface InstanceInput {
   sshTarget: string;
   remoteDataDir?: string;
   workspace: string;
+  /** Defaults to `server`. */
+  via?: InstanceVia;
   key: Omit<SecretInput, 'ref'>;
 }
 

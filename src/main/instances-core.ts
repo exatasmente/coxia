@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ContractError } from '../shared/contract';
 import { t } from '../shared/i18n';
-import { DEFAULT_REMOTE_DATA_DIR, type InstanceDef, type InstanceInput, type InstancesFile, LOCAL_INSTANCE, type SshTarget, parseSshTarget } from '../shared/instances';
+import { DEFAULT_REMOTE_DATA_DIR, type InstanceDef, type InstanceInput, type InstancesFile, type InstanceVia, LOCAL_INSTANCE, type SshTarget, parseSshTarget } from '../shared/instances';
 import type { SecretInfo, SecretInput } from '../shared/secrets';
 import { slugify } from './workspaces-core';
 
@@ -31,15 +31,18 @@ export interface KeyStore {
 const WORKSPACE = /^[a-z0-9][a-z0-9-]{0,47}$/;
 const bad = (key: string, vars?: Record<string, string>): ContractError => new ContractError('invalid-input', t(key, vars));
 
-const isDef = (x: unknown): x is InstanceDef => {
+const isDef = (x: unknown): boolean => {
   const o = x as Record<string, unknown> | null;
   return !!o && ['id', 'name', 'sshTarget', 'remoteDataDir', 'workspace', 'keyRef'].every((k) => typeof o[k] === 'string');
 };
 
+// An entry saved before the field existed forwarded the socket, and keeps doing so.
+const viaOf = (v: unknown): InstanceVia => (v === 'server' ? 'server' : 'socket');
+
 export function readInstances(root: string): InstancesFile {
   try {
     const raw = JSON.parse(readFileSync(join(root, INSTANCES_FILE), 'utf8')) as Partial<InstancesFile>;
-    const list = Array.isArray(raw.list) ? raw.list.filter(isDef) : [];
+    const list = Array.isArray(raw.list) ? raw.list.filter(isDef).map((d) => ({ ...(d as InstanceDef), via: viaOf((d as { via?: unknown }).via) })) : [];
     return { current: typeof raw.current === 'string' && (raw.current === LOCAL_INSTANCE || list.some((i) => i.id === raw.current)) ? raw.current : LOCAL_INSTANCE, list };
   } catch {
     return { current: LOCAL_INSTANCE, list: [] };
@@ -64,6 +67,9 @@ export function addInstance(root: string, input: InstanceInput, keys: KeyStore):
   // The path is the remote half of a forwarding spec, where ':' separates the parts.
   if (!dataDir.startsWith('/') || /[:\u0000-\u001f]/.test(dataDir)) throw bad('main.instances.badDataDir');
   if (!WORKSPACE.test(String(input.workspace ?? ''))) throw bad('main.instances.badWorkspace');
+  const rawVia = (input as { via?: unknown }).via;
+  if (rawVia !== undefined && rawVia !== 'server' && rawVia !== 'socket') throw bad('main.instances.badVia');
+  const via: InstanceVia = rawVia ?? 'server';
   const file = readInstances(root);
   if (file.list.some((i) => i.name.toLowerCase() === name.toLowerCase())) throw bad('main.instances.nameTaken', { name });
   const base = slugify(name);
@@ -72,7 +78,7 @@ export function addInstance(root: string, input: InstanceInput, keys: KeyStore):
   const keyRef = keyRefOf(id);
   // The key goes into the secrets store first: an instance never exists without it.
   keys.set({ ...(input.key as object), ref: keyRef } as SecretInput);
-  const def: InstanceDef = { id, name, sshTarget: input.sshTarget.trim(), remoteDataDir: dataDir.replace(/\/+$/, '') || '/', workspace: input.workspace, keyRef };
+  const def: InstanceDef = { id, name, sshTarget: input.sshTarget.trim(), remoteDataDir: dataDir.replace(/\/+$/, '') || '/', workspace: input.workspace, keyRef, via };
   writeInstances(root, { ...file, list: [...file.list, def] });
   return def;
 }
@@ -140,24 +146,45 @@ export function makeSocketDir(): { dir: string; path: string; remove(): void } {
   return { dir, path: join(dir, 'a.sock'), remove: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
-/** The options of the ssh child: strict host key, only the key given, no user configuration, no prompt, and a dead link noticed within a minute. */
+const hardening = (o: { knownHosts: string }): string[] => [
+  '-F', '/dev/null',
+  '-o', 'BatchMode=yes',
+  '-o', 'StrictHostKeyChecking=yes',
+  '-o', `UserKnownHostsFile=${o.knownHosts}`,
+  '-o', 'GlobalKnownHostsFile=/dev/null',
+  '-o', 'IdentitiesOnly=yes',
+];
+const keyAndPort = (o: { keyFile: string }, target: SshTarget): string[] => [
+  '-o', 'ServerAliveInterval=15',
+  '-o', 'ServerAliveCountMax=3',
+  '-o', 'ConnectTimeout=15',
+  '-i', o.keyFile,
+  '-p', String(target.port),
+];
+
+/** The options of the ssh child that forwards the admin socket (`socket`): strict host key, only the key given, no user configuration, no prompt, and a dead link noticed within a minute. */
 export function sshArgs(def: InstanceDef, target: SshTarget, o: { knownHosts: string; keyFile: string; localSocket: string }): string[] {
   return [
-    '-N', '-T', '-F', '/dev/null',
-    '-o', 'BatchMode=yes',
-    '-o', 'StrictHostKeyChecking=yes',
-    '-o', `UserKnownHostsFile=${o.knownHosts}`,
-    '-o', 'GlobalKnownHostsFile=/dev/null',
-    '-o', 'IdentitiesOnly=yes',
+    '-N', '-T',
+    ...hardening(o),
     '-o', 'ExitOnForwardFailure=yes',
     '-o', 'StreamLocalBindUnlink=yes',
-    '-o', 'ServerAliveInterval=15',
-    '-o', 'ServerAliveCountMax=3',
-    '-o', 'ConnectTimeout=15',
-    '-i', o.keyFile,
-    '-p', String(target.port),
+    ...keyAndPort(o, target),
     '-L', `${o.localSocket}:${remoteSocketPath(def)}`,
     `${target.user}@${target.host}`,
+  ];
+}
+
+/** The same hardening for `server`: no forward, a remote command whose stdin and stdout carry the protocol. ssh joins the argv with spaces for the remote shell, so the workspace regex (checked when an entry is added) is what keeps it one word. */
+export function sshBridgeArgs(def: InstanceDef, target: SshTarget, o: { knownHosts: string; keyFile: string }): string[] {
+  // A hand-edited file must not smuggle shell syntax into the remote command.
+  if (!WORKSPACE.test(def.workspace)) throw bad('main.instances.badWorkspace');
+  return [
+    '-T',
+    ...hardening(o),
+    ...keyAndPort(o, target),
+    `${target.user}@${target.host}`,
+    'coxia-server', 'bridge', def.workspace,
   ];
 }
 
