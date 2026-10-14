@@ -47,6 +47,7 @@ import { JobsDock } from './JobsDock';
 import { PersonaIndicator } from './screens/persona/PersonaIndicator';
 import { UpdatePrompt } from './UpdatePrompt';
 import { UpdateToast } from './UpdateToast';
+import { InstanceBanner } from './InstanceBanner';
 import { useReportUpdateBusy } from './updateApi';
 import { useJobsSnapshot } from './useJobs';
 import { type DeepBack, HOME, OVERVIEW, type OverviewSection, framedScreen, homeView, personaIn, snoozeWizard, wizardSnoozed } from './home';
@@ -332,6 +333,7 @@ export function App() {
       )}
       <JobsDock screen={screen} go={go} />
       <UpdateToast />
+      <InstanceBanner />
       <UpdatePrompt hidden={screen.name === 'settings'} />
       <SchedulerAsk />
     </>

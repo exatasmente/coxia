@@ -5,6 +5,7 @@ import { ADMIN_LINE_MAX, ADMIN_SOCKET_NAME, ADMIN_WRITE_MAX, type AdminLine } fr
 import { ContractError, wireErrorOf } from '../shared/contract';
 import { t } from '../shared/i18n';
 import type { AppEvent } from '../shared/types';
+import { decodeWire, encodeWire } from '../shared/wire';
 import { SOCKET_PATH_MAX } from './mcp-state/bridge';
 import { hello, invokeAdmin } from './rpc';
 
@@ -66,7 +67,8 @@ export function createAdminDoor(dir: string, workspace: () => string): AdminDoor
 
   async function call(socket: Socket, id: number, channel: string, args: unknown[]): Promise<void> {
     try {
-      send(socket, { id, ok: true, value: (await invokeAdmin(channel, args)) ?? null });
+      // Binary values (a recording) cross as { $bytes }, the wire encoding of the HTTP door; a value without the marker is untouched.
+      send(socket, { id, ok: true, value: encodeWire((await invokeAdmin(channel, args)) ?? null) });
     } catch (e) {
       send(socket, { id, ok: false, error: wireErrorOf(e) });
     }
@@ -94,7 +96,7 @@ export function createAdminDoor(dir: string, workspace: () => string): AdminDoor
       // Without a usable id there is nothing to answer by; the connection is the only thing left to refuse.
       return refuse(socket, new ContractError('invalid-input', t('main.admin.badRequest')));
     }
-    void call(socket, obj.id, obj.channel, (obj.args as unknown[] | undefined) ?? []);
+    void call(socket, obj.id, obj.channel, (decodeWire(obj.args) as unknown[] | undefined) ?? []);
   }
 
   function accept(socket: Socket): void {
@@ -164,7 +166,8 @@ export function createAdminDoor(dir: string, workspace: () => string): AdminDoor
       }
     },
     emit(ev) {
-      for (const socket of greeted) send(socket, { event: ev });
+      const wire = encodeWire(ev) as AppEvent;
+      for (const socket of greeted) send(socket, { event: wire });
     },
     state,
   };
