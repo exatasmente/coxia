@@ -65,10 +65,15 @@ function json<T>(file: string, bundle: string): T {
   }
 }
 
-// A workspace that nothing was ever done in: only the configuration a first start writes, and a setup nobody finished. An installer's `--init` leaves one under the id the move wants.
+// What a core that merely ran leaves in its workspace folder and that holds no user data: the ownership lease (and its temp file) and the admin socket. A supervisor that created
+// and started a fresh install, or a core that was killed, leaves them behind. The sandbox and browser folders are not here: only use creates them, so they mean the workspace was used.
+const RUNTIME_ONLY = new Set(['owner.json', 'owner.json.tmp', 'owner.lock']);
+const runtimeOnly = (name: string): boolean => RUNTIME_ONLY.has(name) || name.endsWith('.sock');
+
+// A workspace that nothing was ever done in: only the configuration a first start writes (and what merely running a core leaves), and a setup nobody finished. An installer's `--init` leaves one under the id the move wants.
 function pristine(dir: string): boolean {
   try {
-    if (readdirSync(dir).some((n) => n !== 'config.json')) return false;
+    if (readdirSync(dir).some((n) => n !== 'config.json' && !runtimeOnly(n))) return false;
     return (JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8')) as { setupComplete?: unknown }).setupComplete !== true;
   } catch {
     return false;
