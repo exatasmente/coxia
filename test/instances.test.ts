@@ -58,7 +58,7 @@ async function remote(extra: { fail?: boolean } = {}) {
   mkdirSync(root);
   const log = join(sandbox, 'ssh.log');
   writeFileSync(log, '');
-  const def = { id: 'vps', name: 'VPS', sshTarget: 'coxia@example.com:2222', remoteDataDir: '/srv/coxia', workspace, keyRef: 'instance.vps.ssh-key' };
+  const def = { id: 'vps', name: 'VPS', sshTarget: 'coxia@example.com:2222', remoteDataDir: '/srv/coxia', workspace, keyRef: 'instance.vps.ssh-key', via: 'socket' as const };
   const remoteSock = `/srv/coxia/workspaces/${workspace}/admin.sock`;
   Object.assign(process.env, { FAKE_SSH_LOG: log, FAKE_SSH_REAL: real, FAKE_SSH_REMOTE: remoteSock, FAKE_HOST_KEY: HOST_KEY });
   if (extra.fail) process.env.FAKE_SSH_FAIL = '1';
@@ -120,6 +120,18 @@ describe('the list of instances', () => {
     expect(m.core2.selectInstance(m.root, 'local').current).toBe('local');
   });
 
+  it('reads an entry saved without `via` as socket and a new one as server', async () => {
+    const m = await remote();
+    const { writeFileSync: w } = await import('node:fs');
+    w(join(m.root, 'instances.json'), JSON.stringify({ current: 'old', list: [{ id: 'old', name: 'Old', sshTarget: 'coxia@example.com', remoteDataDir: '/srv/coxia', workspace: 'main', keyRef: 'instance.old.ssh-key' }] }));
+    expect(m.core2.readInstances(m.root).list[0]).toMatchObject({ id: 'old', via: 'socket' });
+    const added = m.core2.addInstance(m.root, { name: 'New', sshTarget: 'coxia@example.com', workspace: 'main', key: { source: 'env', name: 'K' } } as never, keyStore());
+    expect(added.via).toBe('server');
+    expect(m.core2.readInstances(m.root).list.map((i) => i.via)).toEqual(['socket', 'server']);
+    expect(m.core2.addInstance(m.root, { name: 'Fwd', sshTarget: 'coxia@example.com', workspace: 'main', via: 'socket', key: { source: 'env', name: 'K' } } as never, keyStore()).via).toBe('socket');
+    expect(() => m.core2.addInstance(m.root, { name: 'Odd', sshTarget: 'coxia@example.com', workspace: 'main', via: 'carrier-pigeon', key: { source: 'env', name: 'K' } } as never, keyStore())).toThrow(/coxia-server/);
+  });
+
   it('puts the line breaks and the final newline back into a key pasted on one line', async () => {
     const m = await remote();
     const out = m.core2.normalizeKey(`-----BEGIN OPENSSH PRIVATE KEY-----${PEM_BODY}-----END OPENSSH PRIVATE KEY-----`);
@@ -135,6 +147,74 @@ describe('the list of instances', () => {
     expect(args).toContain(`/l.sock:/srv/coxia/workspaces/${m.workspace}/admin.sock`);
     expect(args.at(-1)).toBe('coxia@example.com');
     expect(args[args.indexOf('-p') + 1]).toBe('2222');
+  });
+});
+
+describe('the link through coxia-server bridge', () => {
+  const viaServer = <D extends object>(m: { def: D }) => ({ ...m.def, via: 'server' as const });
+
+  it('asks for the bridge as the remote command, with no forward and no -N', async () => {
+    const m = await remote();
+    const args = m.core2.sshBridgeArgs(viaServer(m), { user: 'admin', host: 'example.com', port: 2222 }, { knownHosts: '/k', keyFile: '/key' });
+    expect(args).toEqual([
+      '-T', '-F', '/dev/null',
+      '-o', 'BatchMode=yes',
+      '-o', 'StrictHostKeyChecking=yes',
+      '-o', 'UserKnownHostsFile=/k',
+      '-o', 'GlobalKnownHostsFile=/dev/null',
+      '-o', 'IdentitiesOnly=yes',
+      '-o', 'ServerAliveInterval=15',
+      '-o', 'ServerAliveCountMax=3',
+      '-o', 'ConnectTimeout=15',
+      '-i', '/key',
+      '-p', '2222',
+      'admin@example.com',
+      'coxia-server', 'bridge', m.workspace,
+    ]);
+    expect(() => m.core2.sshBridgeArgs({ ...m.def, via: 'server' as const, workspace: 'x; rm -rf ~' }, { user: 'a', host: 'example.com', port: 22 }, { knownHosts: '/k', keyFile: '/key' })).toThrow(/workspace id/);
+  });
+
+  it('keeps the exact argv of the forward for the socket mode', async () => {
+    const m = await remote();
+    const args = m.core2.sshArgs(m.def, { user: 'coxia', host: 'example.com', port: 22 }, { knownHosts: '/k', keyFile: '/key', localSocket: '/l.sock' });
+    expect(args.slice(0, 2)).toEqual(['-N', '-T']);
+    expect(args.slice(-3)).toEqual(['-L', `/l.sock:/srv/coxia/workspaces/${m.workspace}/admin.sock`, 'coxia@example.com']);
+  });
+
+  it('says hello, answers a call, and removes the key file once the hello is answered', async () => {
+    const m = await remote();
+    const link = await m.bridge.openLink({ def: viaServer(m), root: m.root, keys: m.keys, commands: m.commands });
+    cleanup.push(() => link.close());
+    expect(link.workspace).toBe(m.workspace);
+    expect(((await link.call('ownership:status', [])) as { role: string }).role).toBe('owner');
+    const [run] = m.spawned();
+    expect(run?.args.slice(-3)).toEqual(['coxia-server', 'bridge', m.workspace]);
+    expect(run?.args).not.toContain('-L');
+    expect(run?.keyMode).toBe('600');
+    expect(existsSync(run?.args[(run?.args.indexOf('-i') ?? 0) + 1] as string)).toBe(false);
+    link.close();
+    await link.closed;
+  });
+
+  it('is a lost link when the ssh child exits, and fails a call in flight', async () => {
+    const m = await remote();
+    let release: () => void = () => undefined;
+    m.rpc.handle('test:slow', () => new Promise<string>((r) => (release = () => r('done'))));
+    const link = await m.bridge.openLink({ def: viaServer(m), root: m.root, keys: m.keys, commands: m.commands });
+    cleanup.push(() => link.close());
+    const inFlight = link.call('test:slow', []);
+    await new Promise((r) => setTimeout(r, 100));
+    process.kill(m.spawned()[0]?.pid as number, 'SIGKILL');
+    await expect(inFlight).rejects.toMatchObject({ code: 'connection-lost' });
+    await link.closed;
+    await expect(link.call('ownership:status', [])).rejects.toMatchObject({ code: 'connection-lost' });
+    release();
+  });
+
+  it('says why ssh failed and leaves no key file behind', async () => {
+    const m = await remote({ fail: true });
+    await expect(m.bridge.openLink({ def: viaServer(m), root: m.root, keys: m.keys, commands: m.commands })).rejects.toThrow(/Permission denied/);
+    expect(existsSync(m.spawned()[0]?.args[(m.spawned()[0]?.args.indexOf('-i') ?? 0) + 1] as string)).toBe(false);
   });
 });
 
@@ -274,7 +354,7 @@ describe('the channels of the instances', () => {
   it('asks the person to trust an unknown host, refuses another key, and then connects', async () => {
     const m = await remote();
     const { ch } = await make(m);
-    const added = ch.add({ name: 'VPS', sshTarget: 'coxia@example.com:2222', remoteDataDir: '/srv/coxia', workspace: m.workspace, key: { source: 'env', name: 'K' } } as never);
+    const added = ch.add({ name: 'VPS', sshTarget: 'coxia@example.com:2222', remoteDataDir: '/srv/coxia', workspace: m.workspace, via: 'socket', key: { source: 'env', name: 'K' } } as never);
     const id = added.list[0]?.id as string;
     const first = await ch.test(id);
     expect(first).toMatchObject({ ok: false, code: 'host-unknown' });
@@ -291,7 +371,7 @@ describe('the channels of the instances', () => {
   it('relaunches for another instance and not for the one in use, and will not remove the one in use', async () => {
     const m = await remote();
     const { ch, restart } = await make(m);
-    const id = ch.add({ name: 'VPS', sshTarget: 'coxia@example.com', workspace: 'main', key: { source: 'env', name: 'K' } } as never).list[0]?.id as string;
+    const id = ch.add({ name: 'VPS', sshTarget: 'coxia@example.com', workspace: 'main', via: 'socket', key: { source: 'env', name: 'K' } } as never).list[0]?.id as string;
     expect(ch.select('local')).toEqual({ restarting: false });
     expect(ch.select(id)).toEqual({ restarting: true });
     await until(() => restart.mock.calls.length === 1);

@@ -9,15 +9,26 @@ const env = process.env;
 
 if (program === 'ssh') {
   const opt = (flag) => args[args.indexOf(flag) + 1];
-  const forward = opt('-L');
+  const forward = args.includes('-L') ? opt('-L') : undefined;
   const keyFile = opt('-i');
-  const local = forward.slice(0, forward.indexOf(':'));
-  const remote = forward.slice(forward.indexOf(':') + 1);
+  // Without -L the command is `coxia-server bridge <workspace>`: the far end's stdin and stdout are the admin socket, as the real bridge makes them.
+  const bridge = forward === undefined;
+  const local = bridge ? '' : forward.slice(0, forward.indexOf(':'));
+  const remote = bridge ? '' : forward.slice(forward.indexOf(':') + 1);
   appendFileSync(env.FAKE_SSH_LOG, `${JSON.stringify({ pid: process.pid, args, local, remote, keyMode: (statSync(keyFile).mode & 0o777).toString(8), keyHad: readFileSync(keyFile, 'utf8').slice(0, 11) })}\n`);
   if (env.FAKE_SSH_FAIL) {
     process.stderr.write('Permission denied (publickey).\n');
     process.exit(255);
   }
+  if (bridge) {
+    const far = connect(env.FAKE_SSH_REAL);
+    far.on('error', () => process.exit(255));
+    far.on('close', () => process.exit(0));
+    process.stdin.pipe(far);
+    far.pipe(process.stdout);
+    process.stdin.on('end', () => far.end());
+    process.on('SIGTERM', () => process.exit(0));
+  } else {
   createServer((client) => {
     if (remote !== env.FAKE_SSH_REMOTE) return void client.destroy();
     const far = connect(env.FAKE_SSH_REAL);
@@ -28,6 +39,7 @@ if (program === 'ssh') {
   }).listen(local);
   process.on('SIGTERM', () => process.exit(0));
   setInterval(() => undefined, 1000);
+  }
 } else if (program === 'keyscan') {
   const port = args[args.indexOf('-p') + 1];
   const host = args[args.length - 1];
