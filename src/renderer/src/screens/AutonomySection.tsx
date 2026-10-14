@@ -18,6 +18,7 @@ const KIND_LABEL: Record<EffectKind, string> = {
   email: 'ui.settings.autonomy.kind.email',
   dns: 'ui.settings.autonomy.kind.dns',
   spend: 'ui.settings.autonomy.kind.spend',
+  destroy: 'ui.settings.autonomy.kind.destroy',
   'budget-raise': 'ui.settings.autonomy.kind.budgetRaise',
   'permission-raise': 'ui.settings.autonomy.kind.permissionRaise',
 };

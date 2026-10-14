@@ -13,7 +13,7 @@ export type WebAccess = 'allow' | 'deny' | 'external';
 // person's on the computer (spec rule 10). Answering a request is open here only for what a call from a conversation opened (the requests of a run's own
 // events are refused whatever the channel says); blocking an announced write is actions:skip, which only takes away.
 // Freeing a release branch held by another worktree (actions:freeBranch) switches that folder's checkout on this machine, so it stays here too.
-export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'instances:accept-insecure', 'instances:add', 'instances:list', 'instances:remove', 'instances:select', 'instances:test', 'instances:trust', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited', 'plugins:set-enabled', 'plugins:settings', 'plugins:set-setting', 'plugins:set-secret', 'plugins:revoke', 'plugins:revoke-write', 'actions:freeBranch']);
+export const DESKTOP_ONLY = new Set(['claude:continue', 'clipboard:copy', 'instances:accept-insecure', 'instances:add', 'instances:list', 'instances:remove', 'instances:select', 'instances:test', 'instances:trust', 'autostart:set', 'retention:apply', 'jobs:notify', 'conflicts:verify-set', 'workspace:test', 'workspace:delete', 'update:info', 'update:run', 'update:seen', 'update:flushed', 'update:status', 'update:check', 'update:settings-save', 'update:install', 'update:busy', 'vcs:probe', 'sandbox:probe', 'suggestions:suggest', 'suggestions:reject', 'suggestions:edited', 'plugins:set-enabled', 'plugins:settings', 'plugins:set-setting', 'plugins:set-secret', 'plugins:revoke', 'plugins:revoke-write', 'actions:freeBranch', 'accounts:assert', 'ownership:move-out', 'move:export', 'adminDoor:get', 'adminDoor:set']);
 
 // The voice setup installs software, deletes files and starts processes: only the window. voice:status is a read and stays open.
 const VOICE_ADMIN = /^voice:(check|install|install-cancel|test|uninstall|enable)$/;
@@ -136,7 +136,8 @@ const BUDGET_WRITE = /^budget:(?!(get|ledger)$)/;
 // default cannot close it by accident. test/contract.test.ts pins it.
 export const CONTRACT_CHANNELS = new Set([HELLO_CHANNEL]);
 
-// Who owns the workspace (#209): a paired browser reads `ownership:status` (the phone shows who owns it); handing over or taking over is an admin act: the computer,
+// Moving the workspace to another machine (#309): `ownership:move-out` is in DESKTOP_ONLY, so no paired browser calls it, an admin device included; taking the workspace back is
+// `ownership:claim`, which refuses a paired browser inside the lease. Who owns the workspace (#209): a paired browser reads `ownership:status` (the phone shows who owns it); handing over or taking over is an admin act: the computer,
 // the admin door, or a passkey device that is asked for it at that moment. A pattern with the one read as an exception, so a channel added under `ownership:` later starts closed.
 const OWNERSHIP_ADMIN = /^ownership:(?!status$)/;
 
@@ -150,6 +151,11 @@ const AUTONOMY_ADMIN = /^autonomy:(?!status$)/;
 // A pattern with the two reads as exceptions, so a channel added under `accounts:` later starts closed.
 const ACCOUNTS_ADMIN = /^accounts:(?!(list|export)$)/;
 
+// Asking before an external effect and recording its cost (#199): `effects:request` and `effects:settle` are for a client of the admin socket (coxia-provision) and the computer.
+// A paired browser never calls them, an admin device included: the person's yes to a request is `actions:approve`, and a request that no grant covers waits there. A pattern over
+// the whole prefix, so a channel added under `effects:` later starts closed. `accounts:assert` (an external client asking whether a provider is registered) is in DESKTOP_ONLY.
+const EFFECTS_REQUEST = /^effects:/;
+
 // Passkeys (#210). A paired browser whose device has registered a passkey is an admin device: the channels the rules above close to every browser open to it, except the ones
 // that act on the machine itself (below), and each sensitive one asks for the passkey at that moment (STEP_UP). The channels that register and use a passkey are open to any paired
 // browser, since a device has to be able to enroll; enrolling from a paired browser needs the computer's allowance (passkey:enroll-allow), so the pairing code alone never makes an
@@ -162,7 +168,7 @@ const PASSKEY_DESKTOP = /^passkey:(?!(register-options|register|assert-options|a
 // of conflict resolutions, the setup wizard, the voice install, the machine's Claude Code sessions, Remote Control, the state server and the agent's own screen input). They
 // stay desktop-only (or the admin socket's) for every browser. The maintainer decides if any of them opens to a passkey device later.
 const ADMIN_STILL_CLOSED = (channel: string): boolean =>
-  (DESKTOP_ONLY.has(channel) && !ADMIN_LIFTED.has(channel)) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || SCREEN_INPUT.test(channel) || MCP_STATE_ADMIN.test(channel) || CLAUDE_SESSIONS.test(channel) || REMOTE_CONTROL_ADMIN.test(channel);
+  (DESKTOP_ONLY.has(channel) && !ADMIN_LIFTED.has(channel)) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || SCREEN_INPUT.test(channel) || MCP_STATE_ADMIN.test(channel) || CLAUDE_SESSIONS.test(channel) || REMOTE_CONTROL_ADMIN.test(channel) || EFFECTS_REQUEST.test(channel);
 // Desktop-only channels that decide what the app may do, not what the machine does: a passkey device may call them (each one asks for the step-up).
 const ADMIN_LIFTED = new Set(['workspace:test', 'workspace:delete', 'plugins:set-enabled', 'plugins:settings', 'plugins:set-setting', 'plugins:set-secret', 'plugins:revoke', 'plugins:revoke-write']);
 
@@ -185,7 +191,7 @@ export const STEP_UP: ReadonlyMap<string, SensitiveKind> = new Map<string, Sensi
 /** What a paired browser may call. `admin` is true for a device with a registered passkey. */
 export function webAccess(channel: string, admin = false): WebAccess {
   if (PASSKEY_CHANNELS.has(channel)) return 'allow';
-  const closed = DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || BUDGET_WRITE.test(channel) || OWNERSHIP_ADMIN.test(channel) || AUTONOMY_ADMIN.test(channel) || ACCOUNTS_ADMIN.test(channel);
+  const closed = DESKTOP_ONLY.has(channel) || WEB_ADMIN.test(channel) || CONFIG_ADMIN.test(channel) || VOICE_ADMIN.test(channel) || WIZARD.test(channel) || DOCS.test(channel) || AGENT_ASSIST.test(channel) || SCREEN_INPUT.test(channel) || PROCEDURES_WRITE.test(channel) || BUDGET_WRITE.test(channel) || OWNERSHIP_ADMIN.test(channel) || AUTONOMY_ADMIN.test(channel) || ACCOUNTS_ADMIN.test(channel) || EFFECTS_REQUEST.test(channel);
   if (closed && !(admin && !ADMIN_STILL_CLOSED(channel))) return 'deny';
   if (PASSKEY_DESKTOP.test(channel) || MEMORY_UNLISTED.test(channel) || TURN_ASKS_UNLISTED.test(channel) || PERSONA_UNLISTED.test(channel) || MCP_STATE_ADMIN.test(channel) || CLAUDE_SESSIONS.test(channel) || REMOTE_CONTROL_ADMIN.test(channel)) return 'deny';
   if (CONTRACT_CHANNELS.has(channel) || MEMORY_CHANNELS.has(channel) || TURN_ASK_CHANNELS.has(channel) || PERSONA_CHANNELS.has(channel)) return 'allow';

@@ -15,6 +15,7 @@ import { cycleModule } from './cycle';
 import { register as diagramFix } from './diagramFix';
 import { register as efeitos } from './efeitos';
 import { effectGrantsModule } from './effectGrants';
+import { effectsRequestModule } from './effectsRequest';
 import { errorlog } from './errorlog';
 import { register as feedback } from './feedback';
 import { forumModule } from './forum';
@@ -65,6 +66,7 @@ const ALL: Module[] = [
   diagramFix,
   efeitos,
   effectGrantsModule,
+  effectsRequestModule,
   errorlog,
   feedback,
   forumModule,

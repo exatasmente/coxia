@@ -23,6 +23,8 @@ export const DESKTOP_CHANNELS = ['clipboard:copy', 'jobs:notify', 'instances:acc
 export const CHANNELS = [
   // actions
   'actions:approve', 'actions:conflict', 'actions:detect', 'actions:freeBranch', 'actions:list', 'actions:preview', 'actions:skip',
+  // adminDoor
+  'adminDoor:get', 'adminDoor:set',
   // agent
   'agent:activity:get', 'agent:prepare', 'agent:reply',
   // agentAssist
@@ -69,6 +71,8 @@ export const CHANNELS = [
   'docs:start', 'docs:status',
   // efeitos
   'efeitos:check', 'efeitos:mark', 'efeitos:status',
+  // effects
+  'effects:request', 'effects:settle',
   // errors
   'errors:clear', 'errors:get', 'errors:seen', 'errors:summary',
   // feedback
@@ -95,14 +99,16 @@ export const CHANNELS = [
   'memory:list', 'memory:read', 'memory:remove', 'memory:remove-folder', 'memory:review', 'memory:save',
   // minutes
   'minutes:day', 'minutes:day-teams', 'minutes:delete', 'minutes:delete-preview', 'minutes:restore', 'minutes:trash', 'minutes:version-teams',
+  // move
+  'move:export',
   // passkey
   'passkey:assert', 'passkey:assert-options', 'passkey:enroll-allow', 'passkey:list', 'passkey:register', 'passkey:register-options', 'passkey:remove',
   // accounts
-  'accounts:add', 'accounts:export', 'accounts:list', 'accounts:remove', 'accounts:update',
+  'accounts:add', 'accounts:assert', 'accounts:export', 'accounts:list', 'accounts:remove', 'accounts:update',
   // autonomy
   'autonomy:grant', 'autonomy:incident', 'autonomy:mark-reverted', 'autonomy:revoke', 'autonomy:status',
   // ownership
-  'ownership:claim', 'ownership:release', 'ownership:status',
+  'ownership:claim', 'ownership:move-out', 'ownership:release', 'ownership:status',
   // persona
   'persona:clear', 'persona:conclude', 'persona:delete', 'persona:discard', 'persona:finish', 'persona:live-read', 'persona:resume', 'persona:review', 'persona:round', 'persona:save', 'persona:saveDraft', 'persona:state', 'persona:stop',
   // plugins

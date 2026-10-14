@@ -6,6 +6,7 @@ import { t } from '../shared/i18n';
 import { ACTIVITY_EVENT, ACTIVITY_GET, reasoningOn } from '../shared/activity';
 import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, freeReleaseCheckout, listActions, previewAction, skipAction, startActions } from './actions';
 import { type AdminDoor, type AdminDoorState, createAdminDoor } from './adminDoor';
+import { readAdminDoorSetting, writeAdminDoorSetting } from './adminDoorSetting';
 import { activityLog, setActivitySink, setThoughtsGate } from './activity';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { setBoardHost } from './board';
@@ -17,7 +18,9 @@ import { atasDir, bootEnv, dataRoot, workspaceId } from './env';
 import { installProcessHandlers, logError } from './errorlog';
 import { answerGate, explainGate, gateOptions, getGate, insertGateVisual, newGateRound, recordGate, startGate, visualGate } from './gate';
 import { glossary } from './glossary';
-import { type HostPort, setHostPort } from './host';
+import { type HostPort, appVersion, setHostPort } from './host';
+import { MoveError, exportBundle } from './moveBundle';
+import { homedir } from 'node:os';
 import { MODULES } from './modules';
 import { disarmAll } from './plugins/module';
 import { type PathsPort, setPathsPort } from './paths';
@@ -27,8 +30,9 @@ import { askRetro, latestRetro, prepareRetro } from './retro';
 import { type Ownership, type OwnershipStatus, OwnershipError, createOwnership, instanceIdOf, setOwnership } from './ownership';
 import { pauseRunner, startRunner, stopRunner } from './runner/module';
 import { handle, hello, viaOf } from './rpc';
+import { CONTRACT_VERSION, ContractError } from '../shared/contract';
 import { type Notice, checkStatus, registerJob, startScheduler, stopScheduler } from './scheduler';
-import { setCryptoPort } from './secrets';
+import { secrets, setCryptoPort } from './secrets';
 import type { CryptoPort } from './secrets-core';
 import { stopUpdates } from './updates';
 import { getHistory, listHistory, loadState, saveState } from './state';
@@ -64,7 +68,7 @@ export interface CoxiaOptions {
   /** The folder of the built renderer, served to paired browsers. Absent: the web door answers the RPC and no page. */
   rendererDir?: string;
   window?: Window;
-  /** Listens on the admin socket in the workspace's folder (#211), for a client on this machine: the server shell, the CLI, the SDK. Off when absent: the desktop has its window. */
+  /** Listens on the admin socket in the workspace's folder (#211), for a client on this machine: the server shell, the CLI, the SDK. A host that says so decides it (the headless entry); when absent, the setting of the data root (`admin-door.json`, off by default) does, which the person switches from the desktop window (#309). */
   adminDoor?: boolean;
 }
 
@@ -165,6 +169,30 @@ function ownershipHandlers(o: Ownership): void {
   handle('ownership:status', () => o.status());
   handle('ownership:release', (to: unknown, deadlineMs?: unknown) => o.release(String(to ?? ''), { by: viaOf(), ...(typeof deadlineMs === 'number' ? { deadlineMs } : {}) }));
   handle('ownership:claim', () => o.claim({ admin: true, by: viaOf() }));
+  // The workspace moves to another machine (#309): this instance stops for good and the lease says where it went. Desktop and admin door only (webPolicy DESKTOP_ONLY).
+  handle('ownership:move-out', (input?: unknown) => {
+    const to = input && typeof input === 'object' ? (input as { to?: unknown }).to : undefined;
+    return o.moveOut(typeof to === 'string' ? to : '', { by: viaOf() });
+  });
+}
+
+// What a workspace that stepped down hands to the machine it moves to (#309). Only on the admin door and the desktop (webPolicy DESKTOP_ONLY), and only once the workspace was moved out.
+// The call carries the target machine's key: it is used to encrypt and is in no log, no audit line and no message (moveBundle.ts scrubs it from what it throws).
+function moveHandlers(o: Ownership): void {
+  handle('move:export', (input?: unknown) => {
+    if (!o.status().movedOut) throw new ContractError('forbidden', t('main.move.notMovedOut'));
+    const given = input && typeof input === 'object' ? (input as { targetKey?: unknown; out?: unknown }) : {};
+    const record = (ok: boolean, fields: Record<string, string>, result: string): void =>
+      recordWrite({ kind: 'ownership', issue: 0, target: 'ownership move-export', via: 'ownership', fields: { workspace: workspaceId(), ...fields }, ok, code: null, result, origin: { actionId: '', kind: 'ownership', key: 'move-export', summary: null }, by: viaOf() });
+    try {
+      const manifest = exportBundle({ root: dataRoot(), workspaceDir: atasDir(), workspaceId: workspaceId(), store: secrets(), version: appVersion(), contractVersion: CONTRACT_VERSION, home: homedir() }, { targetKey: given.targetKey, out: given.out });
+      record(true, { out: String(given.out), repos: String(manifest.repos.length), secretsMoved: String(manifest.secrets.moved.length), secretsNotMoved: String(manifest.secrets.notMoved.length) }, '');
+      return manifest;
+    } catch (e) {
+      record(false, {}, e instanceof Error ? e.message : String(e));
+      throw e instanceof MoveError ? e : new MoveError('internal', e instanceof Error ? e.message : String(e));
+    }
+  });
 }
 
 /**
@@ -232,6 +260,7 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
     if (!first.expired && first.owner && first.role === 'client') console.error('[ownership]', t('main.ownership.notOwner', { owner: `${first.owner.host} (${first.owner.instanceId.slice(0, 8)}, pid ${first.owner.pid})` }));
     handlers(emit);
     ownershipHandlers(owns);
+    moveHandlers(owns);
     setActivitySink((entry) => emit({ type: 'module', name: ACTIVITY_EVENT, payload: entry }));
     // Read when a thought is made, so the switch of the workspace takes effect from the next one.
     setThoughtsGate(() => reasoningOn(getConfig()));
@@ -251,11 +280,30 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
     // A window that is only a client says so, once, with the notice every other event of the desktop uses.
     if (!owns.running() && first.owner) notify({ title: t('main.ownership.noticeTitle'), body: t('main.ownership.noticeBody', { owner: first.owner.host }), onClick: { type: 'navigate', to: 'actions' } });
     // Last, so every channel is registered when the first client connects. A door that cannot open says why and the core goes on.
-    if (options.adminDoor) {
-      admin = createAdminDoor(atasDir(), workspaceId);
-      await admin.start();
-    }
+    if (options.adminDoor ?? readAdminDoorSetting(dataRoot())) await openAdmin();
+    // Only the window switches the door: it is the one door the person's own hands are on (a paired browser and the admin door itself are refused, as is any other origin).
+    handle('adminDoor:get', () => adminView());
+    handle('adminDoor:set', async (enabled: unknown) => {
+      if (viaOf() !== 'window') throw new ContractError('forbidden', t('main.admin.windowOnly'));
+      if (typeof enabled !== 'boolean') throw new ContractError('invalid-input', t('main.admin.badRequest'));
+      writeAdminDoorSetting(dataRoot(), enabled);
+      if (enabled) await openAdmin();
+      else await closeAdmin();
+      return adminView();
+    });
   }
+
+  async function openAdmin(): Promise<void> {
+    if (admin) return;
+    admin = createAdminDoor(atasDir(), workspaceId);
+    await admin.start();
+  }
+  async function closeAdmin(): Promise<void> {
+    const door = admin;
+    admin = null;
+    await door?.stop().catch((e) => fail('[admin]', 'core:admin-door', e));
+  }
+  const adminView = (): AdminDoorState & { enabled: boolean } => ({ enabled: readAdminDoorSetting(dataRoot()), listening: false, path: '', reason: '', ...admin?.state() });
 
   function stop(stopOptions: StopOptions = {}): Promise<void> {
     stopping ??= (async () => {

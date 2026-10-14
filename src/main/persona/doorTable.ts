@@ -275,6 +275,7 @@ export const EXCLUSION_REASONS = {
   own: "the persona's own wizard, editor, clear, delete and stop: the stop is the person's control of the persona, and one the controlled party could release is not a control",
   budget: "the operating budget (#198): its limits are the person's, and the party that spends is not the one that sets what it may spend; the figures are on the Settings screen",
   autonomy: "autonomy per kind of external effect (#199): the person grants and takes it back, and an agent that could grant itself would have none of the control it stands for; the figures are on the Settings screen",
+  effects: "asking before an external effect and recording its cost (#199): a purchase or a destroy is asked by a client of the admin socket and allowed by the person or a grant; an agent that could ask for and settle its own would be its own gate",
   accounts: "the registry of external accounts (#200): the person opens an account and says which credentials it uses; an agent that could list itself a provider would have the registry's rule for nothing",
   scheduler: "the scheduler's switch: letting schedules wake the persona unattended is the person's yes, asked when the app opens",
 } as const;
@@ -289,14 +290,15 @@ export const EXCLUDED: Readonly<Record<string, ExclusionReason>> = Object.fromEn
   // The discussions screen a button opened by project and number: its read is the screen's (the persona reads threads through VcsRead), and the line it leaves records the person's
   // tap, which the persona must never be able to write for them.
   ...group('window', ['feedback:discussions:open', 'feedback:discussions:opened']),
-  ...group('machine', ['agents:scan', 'agents:propose', 'agents:summarize', 'agents:can-summarize', 'mcpstate:get', 'mcpstate:set-enabled', 'mcpstate:set-act', 'mcpstate:write-entry', 'vcs:probe', 'sandbox:probe']),
+  ...group('machine', ['agents:scan', 'agents:propose', 'agents:summarize', 'agents:can-summarize', 'mcpstate:get', 'mcpstate:set-enabled', 'mcpstate:set-act', 'mcpstate:write-entry', 'vcs:probe', 'sandbox:probe', 'move:export', 'adminDoor:get', 'adminDoor:set']),
   // The machine's Claude Code sessions (#280): only the person sends to them, answers their permission requests, stops or starts one.
   ...group('machine', ['claudeSessions:enabled', 'claudeSessions:set-enabled', 'claudeSessions:list', 'claudeSessions:read', 'claudeSessions:follow', 'claudeSessions:folders', 'claudeSessions:send', 'claudeSessions:asks', 'claudeSessions:answer', 'claudeSessions:stop', 'claudeSessions:end', 'claudeSessions:start']),
   ...group('budget', ['budget:get', 'budget:ledger', 'budget:set']),
-  ...group('accounts', ['accounts:add', 'accounts:export', 'accounts:list', 'accounts:remove', 'accounts:update']),
+  ...group('accounts', ['accounts:add', 'accounts:assert', 'accounts:export', 'accounts:list', 'accounts:remove', 'accounts:update']),
+  ...group('effects', ['effects:request', 'effects:settle']),
   ...group('autonomy', ['autonomy:grant', 'autonomy:incident', 'autonomy:mark-reverted', 'autonomy:revoke', 'autonomy:status']),
   // Who owns the workspace and handing it over (#209): the person's, from the window or the admin door; the persona neither hands the workspace over nor takes it.
-  ...group('machine', ['ownership:claim', 'ownership:release', 'ownership:status']),
+  ...group('machine', ['ownership:claim', 'ownership:move-out', 'ownership:release', 'ownership:status']),
   ...group('update', ['update:busy', 'update:check', 'update:flushed', 'update:info', 'update:install', 'update:run', 'update:seen', 'update:settings-save', 'update:status']),
   ...group('voice', ['voice:cancel', 'voice:check', 'voice:enable', 'voice:install', 'voice:install-cancel', 'voice:list', 'voice:plan', 'voice:segment', 'voice:status', 'voice:test', 'voice:transcribe', 'voice:uninstall']),
   ...group('wizard', [

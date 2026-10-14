@@ -1,7 +1,7 @@
 import { unconfinedOf } from '../../shared/unconfined';
 import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { expandHome } from '../../shared/config/paths';
 import type { AgentDef, IssueProjectConfig, SquadDef, WorkspaceConfig } from '../../shared/config/types';
 import { type ForumDraft, type ForumMessage, MAX_MENTIONS, SQUADS_CHANNEL, mentionableIds, parseMentions, runThreadId } from '../../shared/forum';
@@ -132,7 +132,7 @@ import { dropEvidence, readEvidence } from '../evidence/store';
 import { type ExecutorDeps, type StageClock, type StageEngine, type StageRun, StageError, askTarget, executeStage, keepScreenRecording, limitsOf, openStageSandbox, pickAgent, readConfinement, watchdog } from './executor';
 import { type ActivityFront, createSharedMemory, sortedFronts } from './activities';
 import { inboxOf } from './inbox';
-import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree, workBase } from './git';
+import { type Identity, WorktreeError, commitAll, commitIdentity, commitMessage, createWorktree, reattachWorktree, workBase } from './git';
 import { type CommandRunner, outcomeOf } from './commands';
 import { type BudgetProbeFn, type WaitingProvider, dueForProbe, probeStateOf } from './budget';
 import { type ChainRequest, chainCall, readChain } from './chain';
@@ -1019,6 +1019,25 @@ export function createRunner(deps: RunnerDeps): Runner {
     return run;
   }
 
+  // A run whose worktree folder is gone but whose branch the repository's clone has: the branch is checked out again where a run of this issue is made today (the same folder
+  // name, under this machine's worktrees folder), the dependency links are made as at the start, and the run records the new path. A missing branch leaves `worktree-gone`.
+  const reattaching = new Set<Promise<void>>();
+  async function reattach(run: Run): Promise<void> {
+    try {
+      const repo = deps.env().repos.find((r) => r.id === run.repo);
+      if (!repo || !existsSync(repo.path) || !run.branch) return;
+      const env = deps.env();
+      const dest = join(deps.config().runner.worktreesDir ? expandHome(deps.config().runner.worktreesDir as string, env.home) : join(env.dataDir, 'worktrees'), repo.id, basename(run.worktree));
+      if (!(await reattachWorktree(repo.path, dest, run.branch))) return;
+      const moved = moveRun(d, run.id, (r) => ({ run: { ...r, worktree: dest }, messages: [] }));
+      // i18n-ignore: a log line for developers
+      console.log(`[runner] reattached the worktree of ${run.id} at ${dest}`);
+      await ensureDependencies(exec, moved, null, repo.path);
+    } catch (e) {
+      console.error('[runner] could not reattach the worktree of', run.id, e instanceof Error ? e.message : e);
+    }
+  }
+
   // ---- the run of a release ---------------------------------------------------------------------------------------------------------
 
   async function startRelease(version: string, from: string | undefined, repoId?: string, who: Who = PERSON_WHO): Promise<Run> {
@@ -1547,7 +1566,15 @@ export function createRunner(deps: RunnerDeps): Runner {
         try {
           if (run.status === 'question' && run.question?.holder) startChain(run.id);
           if (run.status === 'working') moveRun(d, run.id, (r) => resumeAfterRestart(r, flowFor(r), now()));
-          pump(run.id);
+          // A worktree that is gone (the workspace moved to another machine, or a folder deleted by hand) is put back before the stage looks for it.
+          if (!existsSync(run.worktree)) {
+            const job: Promise<void> = reattach(run).finally(() => {
+              reattaching.delete(job);
+              pump(run.id);
+            });
+            reattaching.add(job);
+          }
+          else pump(run.id);
         } catch (e) {
           console.error('[runner] could not resume', run.id, e instanceof Error ? e.message : e);
         }
@@ -1555,7 +1582,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     },
     async idle() {
       for (let i = 0; i < 50; i++) {
-        const all = [...inflight.values(), ...mentions.values(), ...chains.values(), ...publishing.values(), ...linkWork.values(), ...(scanning ? [scanning] : []), ...(ticking ? [ticking] : [])];
+        const all = [...reattaching, ...inflight.values(), ...mentions.values(), ...chains.values(), ...publishing.values(), ...linkWork.values(), ...(scanning ? [scanning] : []), ...(ticking ? [ticking] : [])];
         if (!all.length) return;
         await Promise.allSettled(all);
       }

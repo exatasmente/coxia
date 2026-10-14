@@ -26,6 +26,13 @@ export function assertAccount(provider: string): ExternalAccount {
   return found;
 }
 
+/** The account of the registry with this id, or a `forbidden` refusal: the door of a request for an effect that names the account it acts in. */
+export function assertAccountId(id: string): ExternalAccount {
+  const found = accounts().find((a) => a.id === id);
+  if (!found) throw new ContractError('forbidden', t('main.accounts.unknownAccountId', { id: String(id).slice(0, 64) }));
+  return found;
+}
+
 export interface AccountView extends ExternalAccount {
   /** For each reference: whether it resolves right now. Never the value. */
   refs: { ref: string; resolves: boolean }[];
@@ -79,6 +86,15 @@ const notPersona = (): void => {
 export const accountsModule: Module = (ctx) => {
   ctx.handle('accounts:list', () => listAccounts());
   ctx.handle('accounts:export', () => exportAccounts());
+  // For an external client that acts in a provider (coxia-provision): the registered account of the provider, or `forbidden`. It carries the references and never their values, and
+  // nothing else of the registry, so the client does not see every account.
+  ctx.handle('accounts:assert', (input: unknown) => {
+    notPersona();
+    const provider = typeof input === 'object' && input !== null ? (input as { provider?: unknown }).provider : undefined;
+    if (typeof provider !== 'string' || !provider.trim() || provider.length > 120) throw new ContractError('invalid-input', t('main.accounts.invalid', { field: 'provider' }));
+    const a = assertAccount(provider);
+    return { id: a.id, provider: a.provider, secretRefs: [...a.secretRefs] };
+  });
   // Opening an account in the registry decides which credentials may be used against which provider, so a paired browser is asked for the passkey of kind `secret` (STEP_UP in
   // webPolicy.ts); the window and the admin socket are not, and the persona never has these channels.
   ctx.handle('accounts:add', (input: unknown) => {

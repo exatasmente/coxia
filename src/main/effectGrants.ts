@@ -81,8 +81,11 @@ function legacyGrant(kind: EffectKind): EffectGrant | null {
   return { id: `legacy-${kind}`, kind, grantedAt: null, grantedBy: 'person', via: 'config', legacy: true };
 }
 
-/** The grant that stands for a kind now, or null: it asks. */
-export const grantFor = (kind: EffectKind): EffectGrant | null => readGrants().find((g) => g.kind === kind && accountStands(g)) ?? legacyGrant(kind);
+/**
+ * The grant that stands for a kind now, or null: it asks. With `accountId`, a grant tied to another account does not cover it (an untied one covers every account).
+ */
+export const grantFor = (kind: EffectKind, accountId?: string): EffectGrant | null =>
+  readGrants().find((g) => g.kind === kind && accountStands(g) && (accountId === undefined || !g.accountId || g.accountId === accountId)) ?? legacyGrant(kind);
 
 /** A grant tied to an account stands only while that account is in the registry: removing it through a config save drops the grant's effect too. */
 function accountStands(g: EffectGrant): boolean {
@@ -137,9 +140,9 @@ export type Authorization = { ok: true; grant: EffectGrant } | { ok: false; reas
  * Whether an action of `kind` runs without asking now. No grant: it asks. A grant runs it only inside its threshold: for `spend` the amount of the action and the budget
  * (`checkSpend`), for the others the number of autonomous actions of the kind in the last hour. Anything unreadable asks.
  */
-export function authorize(kind: EffectKind, opts: { amount?: number; category?: string; now?: number } = {}): Authorization {
+export function authorize(kind: EffectKind, opts: { amount?: number; category?: string; accountId?: string; now?: number } = {}): Authorization {
   try {
-    const grant = grantFor(kind);
+    const grant = grantFor(kind, opts.accountId);
     if (!grant) return { ok: false, reason: 'no-grant' };
     const now = opts.now ?? Date.now();
     if (AMOUNT_KINDS.includes(kind)) {
@@ -162,8 +165,8 @@ export const consume = (kind: EffectKind, id: string, grant: Pick<EffectGrant, '
   bump(kind, (r) => void r.autonomous++, { id, kind, outcome: 'autonomous', at: new Date().toISOString(), grant: grant.id });
 
 /** The exit for a spend: `allowedBy` for the ledger when a grant covers it, else it asks. A spend that the budget refuses is never allowed by a grant. */
-export function authorizeSpend(req: SpendRequest, id: string): { ok: true; allowedBy: `grant:${string}` } | { ok: false; reason: 'no-grant' | 'threshold' | 'budget' } {
-  const a = authorize('spend', { amount: req.amount, category: req.category });
+export function authorizeSpend(req: SpendRequest, id: string, opts: { accountId?: string } = {}): { ok: true; allowedBy: `grant:${string}` } | { ok: false; reason: 'no-grant' | 'threshold' | 'budget' } {
+  const a = authorize('spend', { amount: req.amount, category: req.category, ...(opts.accountId === undefined ? {} : { accountId: opts.accountId }) });
   if (!a.ok) return a;
   consume('spend', id, a.grant);
   return { ok: true, allowedBy: grantRef(a.grant) as `grant:${string}` };

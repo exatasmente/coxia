@@ -26,7 +26,7 @@ O Coxia mantém **um registro** das contas externas em que age: provedor de VPS,
 
 ### Quem pode
 
-`accounts:list` e `accounts:export`: o navegador pareado lê. `accounts:add`, `accounts:update` e `accounts:remove`: janela, socket de admin e aparelho com passkey, que pede a de tipo **`secret`** (a conta decide que credencial vale para qual provedor). A persona não tem os canais.
+`accounts:list` e `accounts:export`: o navegador pareado lê. `accounts:add`, `accounts:update` e `accounts:remove`: janela, socket de admin e aparelho com passkey, que pede a de tipo **`secret`** (a conta decide que credencial vale para qual provedor). A persona não tem os canais. `accounts:assert({ provider })` é de um cliente externo (o provisionamento): só a janela e o socket de admin, e devolve `{ id, provider, secretRefs }` ou `forbidden` ([`autonomy.md`](autonomy.md)).
 
 ### O que não foi feito
 
@@ -56,7 +56,7 @@ Coxia keeps **one registry** of the external accounts it acts in: VPS provider, 
 
 ### Who may
 
-`accounts:list` and `accounts:export`: a paired browser reads. `accounts:add`, `accounts:update` and `accounts:remove`: window, admin socket and a passkey device, which asks for the **`secret`** passkey (the account decides which credential is for which provider). The persona does not have the channels.
+`accounts:list` and `accounts:export`: a paired browser reads. `accounts:add`, `accounts:update` and `accounts:remove`: window, admin socket and a passkey device, which asks for the **`secret`** passkey (the account decides which credential is for which provider). The persona does not have the channels. `accounts:assert({ provider })` is for an external client (provisioning): only the window and the admin socket, and it returns `{ id, provider, secretRefs }` or `forbidden` ([`autonomy.md`](autonomy.md)).
 
 ### What was not done
 

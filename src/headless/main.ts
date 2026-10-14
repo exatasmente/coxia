@@ -9,6 +9,7 @@ import { bootEnv, workspaceId } from '../main/env';
 import { getConfig } from '../main/workspaceConfig';
 import type { HostPort } from '../main/host';
 import { masterKeyPort } from '../main/masterKey';
+import { ImportError, importBundle } from '../main/moveImport';
 import { type SignalHandlers, installSignalHandlers } from '../main/signals';
 import { webListening } from '../main/webAccess';
 
@@ -40,12 +41,16 @@ const FLAGS = {
   'renderer-dir': { type: 'string' },
   'no-admin-door': { type: 'boolean' },
   init: { type: 'boolean' },
+  import: { type: 'string' },
+  'repos-root': { type: 'string' },
   help: { type: 'boolean' },
 } as const;
 
 interface Options {
   /** Only prepare the data folder (the workspace registry) and exit: for an installer, before anything supervises the cores. */
   init?: true;
+  /** Only put a workspace bundle (made by `move:export`) into the data folder and exit (#309); `reposRoot` is where the server cloned its repositories. */
+  import?: { bundle: string; reposRoot: string };
   dataDir: string;
   workspace?: string;
   keyFile: string;
@@ -74,6 +79,11 @@ function options(argv: string[], env: NodeJS.ProcessEnv): Options | null {
   // The data folder has no default here: a service must never fall back to the desktop's folder by forgetting a flag.
   const dataDir = resolve(need(v['data-dir'] ?? env.COXIA_DATA_DIR ?? env.CERIMONIAS_DATA_DIR, '--data-dir', 'COXIA_DATA_DIR'));
   if (v.init) return { init: true, dataDir, keyFile: '', host: '', port: 0, adminDoor: false };
+  if (v.import !== undefined) {
+    const keyFile = resolve(need(v['master-key-file'] ?? env.COXIA_MASTER_KEY_FILE, '--master-key-file', 'COXIA_MASTER_KEY_FILE'));
+    if (!v['repos-root']) throw new UsageError(t('main.headless.importUsage'));
+    return { import: { bundle: resolve(v.import), reposRoot: resolve(v['repos-root']) }, dataDir, keyFile, host: '', port: 0, adminDoor: false };
+  }
   const keyFile = resolve(need(v['master-key-file'] ?? env.COXIA_MASTER_KEY_FILE, '--master-key-file', 'COXIA_MASTER_KEY_FILE'));
   const rawPort = need(v.port ?? env.COXIA_PORT, '--port', 'COXIA_PORT');
   const port = /^\d{1,5}$/.test(rawPort) ? Number(rawPort) : NaN;
@@ -146,6 +156,17 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
     }
     // The workspace the registry runs first, one line, for the installer's log; nothing else of the data.
     out(workspaceId());
+    exit(0);
+    return null;
+  }
+
+  if (opts.import) {
+    // Never starts a server: the bundle is checked, staged and put in place, and the one line it prints is for whoever ran it.
+    try {
+      out(JSON.stringify(importBundle({ ...opts.import, dataDir: opts.dataDir, keyFile: opts.keyFile })));
+    } catch (e) {
+      return failed(e instanceof ImportError ? `${e.code}: ${e.message}` : `internal: ${e instanceof Error ? e.message : String(e)}`);
+    }
     exit(0);
     return null;
   }
