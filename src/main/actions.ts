@@ -36,8 +36,11 @@ import { hasMarkers } from './conflictHunks';
 import { verifyCommandFor } from './conflictVerify';
 import { cycle, formatTime, prompt as cp } from './cyclePrompts';
 import { atasDir } from './env';
+import { requireSensitive, isAdminDevice } from './passkeyStepUp';
+import { viaOf } from './rpc';
 import { authorize, consume, effectOf, grantFor, grantRef, noteDecision, noteProposed } from './effectGrants';
-import { type EffectGrant, effectOfCommand } from '../shared/effects';
+import { type EffectGrant, type EffectKind, effectOfCommand } from '../shared/effects';
+import { ContractError } from '../shared/contract';
 import type { Notice } from './scheduler';
 import { assertExternalWrite } from './workspace';
 import { VcsError, scrubSecrets } from './vcs/errors';
@@ -456,7 +459,7 @@ export async function previewAction(id: string): Promise<string> {
   if (isVcsAction(a)) return describe(a.command as VcsCommand);
   if (a.kind === 'sync') return cli(['sync', '--issue', String(a.issue)]);
   if (a.kind === 'qa-comment') return a.proposedBody ?? cli(['publish', '--dump', '--issue', String(a.issue)]);
-  if (a.kind === 'plugin-write') return a.output ?? '';
+  if (a.kind === 'plugin-write' || a.kind === 'effect-request') return a.output ?? '';
   if (a.kind === 'conflict-push') return a.output ?? '';
   if (a.kind === 'run-push') return a.output ?? '';
   if (a.kind === 'release-git') return previewReleaseAction(a);
@@ -602,7 +605,21 @@ function afterPropose(a: ReleaseAction): void {
 }
 
 /** The person's "sim". A grant of autonomy (#199) reaches the same body through `autoRun`, never through here: the channel passes the id and nothing else. */
-export const approveAction = (id: string): Promise<ReleaseAction> => approve(id);
+export async function approveAction(id: string): Promise<ReleaseAction> {
+  requireEffectStepUp(id);
+  return approve(id);
+}
+
+/**
+ * The person's yes to a destroy asked by an external client is the computer's, or an admin device's with the passkey of kind `infrastructure`, asked for at that moment: a paired
+ * browser that has no passkey never approves one, and the window and the admin socket are the machine itself (`requireSensitive`). Any other proposal keeps the rule it had.
+ */
+function requireEffectStepUp(id: string): void {
+  const a = read().actions.find((x) => x.id === id);
+  if (a?.kind !== 'effect-request' || a.unit?.effect !== 'destroy') return;
+  if (viaOf() === 'paired' && !isAdminDevice()) throw new ContractError('forbidden', t('main.effects.destroyAdminOnly'));
+  requireSensitive('infrastructure', 'destroy');
+}
 
 async function approve(id: string, grant?: EffectGrant): Promise<ReleaseAction> {
   assertExternalWrite(t('vcs.write.guard'));
@@ -614,6 +631,7 @@ async function approve(id: string, grant?: EffectGrant): Promise<ReleaseAction> 
   // out at its deadline, after the service checked the plugin is still on and still allowed: there is no way to send it earlier.
   if (a.kind === 'plugin-ask') throw new Error(t('main.plugins.ask.answerHere'));
   if (a.kind === 'plugin-write') throw new Error(t('main.plugins.write.atDeadline'));
+  if (a.kind === 'effect-request') assertEffectRequestOpen(a);
   // A refusal here leaves the action as it was: nothing ran.
   if (a.kind === 'conflict-push') await checkPublishable(a);
   if (a.kind === 'release-git') {
@@ -632,6 +650,9 @@ async function approve(id: string, grant?: EffectGrant): Promise<ReleaseAction> 
       output = await publishConflict(a);
     } else if (a.kind === 'run-push') {
       output = await publishRunBranch(a, grant);
+    } else if (a.kind === 'effect-request') {
+      // The yes is only recorded: the client's next `effects:request` finds it and is given its ticket. Nothing leaves the machine from here.
+      output = t('main.effects.approvedOutput');
     } else if (a.kind === 'suggest-agent') {
       // Accepting creates an ordinary agent in the team: local work, nothing leaves the machine, so no `assertExternalWrite` here.
       if (!suggestionHooks.accept) throw new Error(t('main.suggestions.noHook'));
@@ -1468,6 +1489,66 @@ export function settlePluginAsk(id: string, allowed: boolean, words: string): Re
   if (!a || a.kind !== 'plugin-ask') throw new Error(t('main.actions.missing', { id }));
   if (a.state !== 'pending') throw new Error(t('main.actions.handled'));
   return update(id, (x) => ({ ...x, state: allowed ? 'done' : 'skipped', finishedAt: new Date().toISOString(), output: [x.output, '', words].filter((l) => l !== null).join('\n') }));
+}
+
+// ---- what an external client asks before an effect ------------------------------------------------------------------------------------------
+// coxia-provision (or any client of the admin socket) asks `effects:request` before it buys or destroys something. When no grant covers the effect the request waits here, like
+// every other effect, and the person approves or refuses it in Actions. Approving does nothing outside: it lets the client's next call be given its ticket (main/effectsRequest.ts).
+
+/** What an effect request carries so the card can say it and the core can check it again when the person answers. */
+export interface EffectRequestUnit {
+  effect: EffectKind;
+  requestId: string;
+  accountId: string;
+  provider: string;
+  amount: number | null;
+  currency: string | null;
+  category: string;
+  recurrence: string;
+  target: string | null;
+  /** ISO time after which the person's yes is no longer taken. */
+  due: string;
+}
+
+/** Opens the proposal of a request, or returns the one that already waits for this request. The track record counts it as a proposal of its kind. */
+export function proposeEffectRequest(input: { requestId: string; summary: string; unit: EffectRequestUnit; notify?: { title: string; body: string } }): ReleaseAction {
+  assertExternalWrite(t('main.effects.title'));
+  const store = read();
+  const key = `effect:${input.requestId}`;
+  const open = store.actions.find((a) => a.key === key && (a.state === 'pending' || a.state === 'running'));
+  if (open) return open;
+  const u = input.unit;
+  const what = [u.provider, u.target, u.amount === null ? null : `${u.amount.toFixed(2)} ${u.currency ?? ''}/${u.recurrence}`, u.category].filter(Boolean).join(' · ');
+  const action = blank({ key, kind: 'effect-request', issue: 0, summary: input.summary, unit: { ...u }, output: what });
+  write({ ...store, actions: [action, ...store.actions] });
+  noteProposed(u.effect);
+  if (input.notify && getSettings().notifications) deps?.notify({ ...input.notify, onClick: { type: 'navigate', to: 'actions' } });
+  return action;
+}
+
+export type EffectRequestOutcome = 'pending' | 'approved' | 'refused' | 'gone';
+
+/** What the person answered to a request's proposal. A proposal that is not in the list any more reads as `gone`, which the caller treats as a refusal. */
+export function effectRequestOutcome(id: string): EffectRequestOutcome {
+  const a = read().actions.find((x) => x.id === id && x.kind === 'effect-request');
+  if (!a) return 'gone';
+  return a.state === 'done' ? 'approved' : a.state === 'skipped' ? 'refused' : 'pending';
+}
+
+/** Sets a proposal aside because nobody answered in time. It is not the person's refusal, so the track record does not count it. */
+export function withdrawEffectRequest(id: string): void {
+  const a = read().actions.find((x) => x.id === id && x.kind === 'effect-request');
+  if (!a || a.state !== 'pending') return;
+  update(id, (x) => ({ ...x, state: 'skipped', finishedAt: new Date().toISOString(), output: [x.output, '', t('main.effects.expiredOutput')].filter((l) => l !== null).join('\n') }));
+}
+
+/** A yes after the time ran out is refused, and the proposal is set aside: the client already read the expiry. */
+function assertEffectRequestOpen(a: ReleaseAction): void {
+  const due = Date.parse(String(a.unit?.due ?? ''));
+  if (Number.isFinite(due) && Date.now() > due) {
+    withdrawEffectRequest(a.id);
+    throw new Error(t('main.effects.expired'));
+  }
 }
 
 /** The write of a plugin as an action keeps it. */

@@ -5,7 +5,7 @@ import type { ActionKind, VcsCommand } from './types';
 // Pure: the disk, the audit and the channels are in main/effectGrants.ts.
 
 /** Every kind starts out asking. New kinds (a provisioning step, a message) join this list and nothing else changes. */
-export const EFFECT_KINDS = ['push', 'pull-request', 'comment', 'review', 'tracker', 'deploy', 'email', 'dns', 'spend', 'budget-raise', 'permission-raise'] as const;
+export const EFFECT_KINDS = ['push', 'pull-request', 'comment', 'review', 'tracker', 'deploy', 'email', 'dns', 'spend', 'destroy', 'budget-raise', 'permission-raise'] as const;
 export type EffectKind = (typeof EFFECT_KINDS)[number];
 export const isEffectKind = (v: unknown): v is EffectKind => typeof v === 'string' && (EFFECT_KINDS as readonly string[]).includes(v);
 
@@ -14,7 +14,7 @@ export const DEFAULT_OFFER_AFTER = 5;
 
 /** The passkey kind a grant of this effect asks for on an admin device; every kind asks for one. */
 export type EffectStepUp = 'permission' | 'budget' | 'infrastructure';
-export const stepUpOfEffect = (kind: EffectKind): EffectStepUp => (kind === 'spend' || kind === 'budget-raise' ? 'budget' : kind === 'dns' || kind === 'deploy' ? 'infrastructure' : 'permission');
+export const stepUpOfEffect = (kind: EffectKind): EffectStepUp => (kind === 'spend' || kind === 'budget-raise' ? 'budget' : kind === 'dns' || kind === 'deploy' || kind === 'destroy' ? 'infrastructure' : 'permission');
 
 /** The kinds whose threshold is an amount (in the budget's currency, per action); for the others it is a count of autonomous actions in a rolling hour. */
 export const AMOUNT_KINDS: readonly EffectKind[] = ['spend'];
@@ -50,6 +50,12 @@ export function effectOfAction(a: { kind: ActionKind; command?: VcsCommand | nul
       // A group is as far-reaching as its most far-reaching write.
       for (const k of ['pull-request', 'review', 'tracker', 'comment'] as const) if (kinds.includes(k)) return k;
       return null;
+    }
+    case 'effect-request':
+      // A request of an external client (effects:request): the kind it asks for travels in the unit.
+    {
+      const effect = a.unit?.effect;
+      return isEffectKind(effect) ? effect : null;
     }
     default:
       return null;

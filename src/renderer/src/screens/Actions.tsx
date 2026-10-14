@@ -29,6 +29,7 @@ function title(a: ReleaseAction): string {
   if (a.kind === 'conflict-push') return a.summary ?? t('ui.actions.title.conflictPush', { issue: a.issue });
   if (a.kind === 'run-push') return a.summary ?? t('vcs.action.title');
   if (a.kind === 'suggest-agent') return a.summary ?? t('ui.actions.title.suggestAgent');
+  if (a.kind === 'effect-request') return a.summary ?? t('ui.actions.title.effectRequest');
   return t('ui.actions.title.conflict', { issue: a.issue });
 }
 
@@ -40,6 +41,7 @@ function what(a: ReleaseAction): string {
   if (a.kind === 'run-push') return t('ui.actions.what.runPush');
   if (a.kind === 'release-git') return t('ui.actions.what.releaseGit');
   if (a.kind === 'suggest-agent') return t('ui.actions.what.suggestAgent');
+  if (a.kind === 'effect-request') return t(a.unit?.effect === 'destroy' ? 'ui.actions.what.effectDestroy' : 'ui.actions.what.effectSpend');
   return tv('call.explainsConflict');
 }
 
@@ -166,7 +168,7 @@ export function ActionCard({ a, go, waitsFor = [] }: { a: ReleaseAction; go: (s:
             <button type="button" className="btn btn-amber" onClick={() => go({ name: 'conflict', id: a.id })}>{a.resolve ? t('ui.actions.resolution.continue') : tv('call.openAndResolve')}</button>
           ) : (
             <>
-              {!(a.kind === 'qa-comment' && a.proposedBody) && (
+              {!(a.kind === 'qa-comment' && a.proposedBody) && a.kind !== 'effect-request' && (
                 <button type="button" className="btn" disabled={!!busy} onClick={() => start('preview', t('ui.actions.job.preview'), () => api.previewAction(a.id))}>
                   {previewing ? <span className="spinner" /> : null} {t(a.kind === 'sync' ? 'ui.actions.view.preview' : a.kind === 'gitlab' || a.kind === 'vcs' || a.kind === 'conflict-push' || a.kind === 'run-push' || a.kind === 'release-git' ? 'ui.actions.view.push' : 'ui.actions.view.comment')}
                 </button>
@@ -184,7 +186,9 @@ export function ActionCard({ a, go, waitsFor = [] }: { a: ReleaseAction; go: (s:
                           ? t('ui.actions.confirm.releaseGit')
                           : a.kind === 'gitlab' || a.kind === 'vcs'
                             ? t('ui.actions.confirm.vcs', { action: t('vcs.action.confirm') })
-                            : t('ui.actions.confirm.post')}
+                            : a.kind === 'effect-request'
+                              ? t('ui.actions.confirm.effectRequest')
+                              : t('ui.actions.confirm.post')}
                 </button>
               ) : (
                 <button type="button" className="btn btn-dark" disabled={!!busy || waitsFor.length > 0} onClick={() => setConfirming(true)}>{t('ui.actions.go')}</button>

@@ -2185,5 +2185,19 @@
   "main.accounts.exists": "Já existe uma conta {id}.",
   "main.accounts.missing": "Nenhuma conta {id} no registro.",
   "main.accounts.personaRefused": "A pessoa abre, muda e fecha contas externas: a persona não pode.",
-  "main.autonomy.unknownAccount": "Essa conta não está no registro."
+  "main.autonomy.unknownAccount": "Essa conta não está no registro.",
+  "main.accounts.unknownAccountId": "Não há conta {id} no registro de contas externas: abra a conta antes.",
+  "main.effects.title": "Um pedido de efeito externo",
+  "main.effects.invalid": "O pedido não é válido: confira {field}.",
+  "main.effects.personaRefused": "Um efeito externo é autorizado pela pessoa: a persona não pode pedir um.",
+  "main.effects.expired": "Ninguém respondeu a este pedido a tempo, então ele foi deixado de lado. Peça de novo para recomeçar.",
+  "main.effects.refused": "O pedido foi recusado.",
+  "main.effects.alreadySettled": "Este pedido já foi liquidado.",
+  "main.effects.otherArgs": "O id de pedido {id} já foi usado com outros argumentos.",
+  "main.effects.unknownTicket": "Não há um bilhete aberto assim: ele não existe ou expirou.",
+  "main.effects.approvedOutput": "Aprovado. O cliente que pediu recebe o bilhete na próxima chamada.",
+  "main.effects.expiredOutput": "Deixado de lado: ninguém respondeu a tempo.",
+  "main.effects.destroyAdminOnly": "Destruir algo se aprova no computador, ou num aparelho admin com a passkey dele.",
+  "main.effects.notifyDestroyTitle": "Um cliente pede para destruir um servidor",
+  "main.effects.notifySpendTitle": "Um cliente pede para gastar dinheiro"
 }
