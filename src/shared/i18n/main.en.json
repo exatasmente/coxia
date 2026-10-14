@@ -2185,5 +2185,19 @@
   "main.accounts.exists": "An account {id} already exists.",
   "main.accounts.missing": "No account {id} in the registry.",
   "main.accounts.personaRefused": "The person opens, changes and closes external accounts: the persona cannot.",
-  "main.autonomy.unknownAccount": "That account is not in the registry."
+  "main.autonomy.unknownAccount": "That account is not in the registry.",
+  "main.accounts.unknownAccountId": "No account {id} in the registry of external accounts: add it first.",
+  "main.effects.title": "A request for an external effect",
+  "main.effects.invalid": "The request is not valid: check {field}.",
+  "main.effects.personaRefused": "An external effect is allowed by the person: the persona cannot ask for one.",
+  "main.effects.expired": "Nobody answered this request in time, so it was set aside. Ask again to start over.",
+  "main.effects.refused": "The request was refused.",
+  "main.effects.alreadySettled": "This request was already settled.",
+  "main.effects.otherArgs": "The request id {id} was already used with other arguments.",
+  "main.effects.unknownTicket": "No open ticket like that: it is unknown or it expired.",
+  "main.effects.approvedOutput": "Approved. The client that asked is given its ticket on its next call.",
+  "main.effects.expiredOutput": "Set aside: nobody answered in time.",
+  "main.effects.destroyAdminOnly": "Destroying something is approved on the computer, or on an admin device with its passkey.",
+  "main.effects.notifyDestroyTitle": "A client asks to destroy a server",
+  "main.effects.notifySpendTitle": "A client asks to spend money"
 }

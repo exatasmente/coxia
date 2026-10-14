@@ -69,6 +69,8 @@ export const CHANNELS = [
   'docs:start', 'docs:status',
   // efeitos
   'efeitos:check', 'efeitos:mark', 'efeitos:status',
+  // effects
+  'effects:request', 'effects:settle',
   // errors
   'errors:clear', 'errors:get', 'errors:seen', 'errors:summary',
   // feedback
@@ -96,7 +98,7 @@ export const CHANNELS = [
   // passkey
   'passkey:assert', 'passkey:assert-options', 'passkey:enroll-allow', 'passkey:list', 'passkey:register', 'passkey:register-options', 'passkey:remove',
   // accounts
-  'accounts:add', 'accounts:export', 'accounts:list', 'accounts:remove', 'accounts:update',
+  'accounts:add', 'accounts:assert', 'accounts:export', 'accounts:list', 'accounts:remove', 'accounts:update',
   // autonomy
   'autonomy:grant', 'autonomy:incident', 'autonomy:mark-reverted', 'autonomy:revoke', 'autonomy:status',
   // ownership

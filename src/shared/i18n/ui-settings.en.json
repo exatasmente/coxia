@@ -162,6 +162,7 @@
   "ui.settings.autonomy.kind.budgetRaise": "Raise the budget",
   "ui.settings.autonomy.kind.comment": "Comment",
   "ui.settings.autonomy.kind.deploy": "Release or deploy",
+  "ui.settings.autonomy.kind.destroy": "Destroy a server",
   "ui.settings.autonomy.kind.dns": "Change DNS",
   "ui.settings.autonomy.kind.email": "Send an email",
   "ui.settings.autonomy.kind.permissionRaise": "Raise a permission",
