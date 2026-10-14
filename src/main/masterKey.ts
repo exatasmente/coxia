@@ -14,11 +14,11 @@ const GCM_TAG = 16;
 const KEY_BYTES = 32;
 const HEX_KEY = /^[0-9a-fA-F]{64}\n?$/;
 
-/** The key when the file passes every check, null when it does not. */
-function readMasterKey(keyFile: string): Buffer | null {
+/** The key when the file passes every check, null when it does not. `root` is the data folder it must stay out of: the process's own unless a one-shot tool (the import of a move) names it. */
+export function readMasterKey(keyFile: string, dataFolder?: string): Buffer | null {
   try {
     const path = resolve(keyFile);
-    const root = resolve(dataRoot());
+    const root = resolve(dataFolder ?? dataRoot());
     // The key travels outside the data root on purpose: the root is copied and moved between machines, and the key must not go with it.
     if (path === root || path.startsWith(root + sep)) return null;
     const stat = lstatSync(path);

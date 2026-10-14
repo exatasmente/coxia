@@ -15,9 +15,9 @@ import { readRegistry } from './workspaces-core';
 
 const KEY = /^[0-9a-fA-F]{64}$/;
 // A repository id becomes a file name in the bundle.
-const REPO_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+export const REPO_FILE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 // What the new machine makes for itself, or must never receive: the lease, the admin socket, the sandbox's copies and the browser profiles of the agents.
-const SKIP_TOP = new Set(['owner.json', 'owner.json.tmp', 'owner.lock', 'admin.sock', 'sandbox', 'browser']);
+export const SKIP_TOP = new Set(['owner.json', 'owner.json.tmp', 'owner.lock', 'admin.sock', 'sandbox', 'browser']);
 
 export class MoveError extends Error {
   constructor(
