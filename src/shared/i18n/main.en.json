@@ -2202,5 +2202,6 @@
   "main.effects.notifySpendTitle": "A client asks to spend money",
   "main.ownership.badMoveTarget": "a move needs a description of the target, at most {max} characters",
   "main.ownership.movedOutElsewhere": "this workspace was already moved to {to}: bring it back with ownership:claim before moving it to another target",
-  "main.ownership.moveBackAdminOnly": "taking the workspace back is the person's, at the window or the admin door: a paired browser never does it"
+  "main.ownership.moveBackAdminOnly": "taking the workspace back is the person's, at the window or the admin door: a paired browser never does it",
+  "main.admin.windowOnly": "switching the admin door on or off is for the computer's window: neither the door itself nor a paired browser does it"
 }

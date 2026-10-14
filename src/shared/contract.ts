@@ -23,6 +23,8 @@ export const DESKTOP_CHANNELS = ['clipboard:copy', 'jobs:notify'] as const;
 export const CHANNELS = [
   // actions
   'actions:approve', 'actions:conflict', 'actions:detect', 'actions:freeBranch', 'actions:list', 'actions:preview', 'actions:skip',
+  // adminDoor
+  'adminDoor:get', 'adminDoor:set',
   // agent
   'agent:activity:get', 'agent:prepare', 'agent:reply',
   // agentAssist

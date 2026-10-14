@@ -2202,5 +2202,6 @@
   "main.effects.notifySpendTitle": "Um cliente pede para gastar dinheiro",
   "main.ownership.badMoveTarget": "a mudança precisa de uma descrição do destino, com no máximo {max} caracteres",
   "main.ownership.movedOutElsewhere": "este workspace já foi movido para {to}: tire-o de lá com ownership:claim antes de mover para outro destino",
-  "main.ownership.moveBackAdminOnly": "trazer o workspace de volta é da pessoa, na janela ou na porta de administração: um navegador pareado não faz isso"
+  "main.ownership.moveBackAdminOnly": "trazer o workspace de volta é da pessoa, na janela ou na porta de administração: um navegador pareado não faz isso",
+  "main.admin.windowOnly": "ligar ou desligar a porta de administração é da janela do computador: nem a própria porta nem um navegador pareado fazem isso"
 }

@@ -6,6 +6,7 @@ import { t } from '../shared/i18n';
 import { ACTIVITY_EVENT, ACTIVITY_GET, reasoningOn } from '../shared/activity';
 import { approveAction, conflictApply, conflictChoose, conflictCommit, conflictDiscard, conflictFromMr, conflictPrepare, conflictPropose, conflictReopen, conflictTalk, detectRelease, freeReleaseCheckout, listActions, previewAction, skipAction, startActions } from './actions';
 import { type AdminDoor, type AdminDoorState, createAdminDoor } from './adminDoor';
+import { readAdminDoorSetting, writeAdminDoorSetting } from './adminDoorSetting';
 import { activityLog, setActivitySink, setThoughtsGate } from './activity';
 import { deepAsk, deepOptions, prepareTurn, reply, teamsText } from './agents';
 import { setBoardHost } from './board';
@@ -27,6 +28,7 @@ import { askRetro, latestRetro, prepareRetro } from './retro';
 import { type Ownership, type OwnershipStatus, OwnershipError, createOwnership, instanceIdOf, setOwnership } from './ownership';
 import { pauseRunner, startRunner, stopRunner } from './runner/module';
 import { handle, hello, viaOf } from './rpc';
+import { ContractError } from '../shared/contract';
 import { type Notice, checkStatus, registerJob, startScheduler, stopScheduler } from './scheduler';
 import { setCryptoPort } from './secrets';
 import type { CryptoPort } from './secrets-core';
@@ -64,7 +66,7 @@ export interface CoxiaOptions {
   /** The folder of the built renderer, served to paired browsers. Absent: the web door answers the RPC and no page. */
   rendererDir?: string;
   window?: Window;
-  /** Listens on the admin socket in the workspace's folder (#211), for a client on this machine: the server shell, the CLI, the SDK. Off when absent: the desktop has its window. */
+  /** Listens on the admin socket in the workspace's folder (#211), for a client on this machine: the server shell, the CLI, the SDK. A host that says so decides it (the headless entry); when absent, the setting of the data root (`admin-door.json`, off by default) does, which the person switches from the desktop window (#309). */
   adminDoor?: boolean;
 }
 
@@ -256,11 +258,30 @@ export function createCoxia(options: CoxiaOptions = {}): Coxia {
     // A window that is only a client says so, once, with the notice every other event of the desktop uses.
     if (!owns.running() && first.owner) notify({ title: t('main.ownership.noticeTitle'), body: t('main.ownership.noticeBody', { owner: first.owner.host }), onClick: { type: 'navigate', to: 'actions' } });
     // Last, so every channel is registered when the first client connects. A door that cannot open says why and the core goes on.
-    if (options.adminDoor) {
-      admin = createAdminDoor(atasDir(), workspaceId);
-      await admin.start();
-    }
+    if (options.adminDoor ?? readAdminDoorSetting(dataRoot())) await openAdmin();
+    // Only the window switches the door: it is the one door the person's own hands are on (a paired browser and the admin door itself are refused, as is any other origin).
+    handle('adminDoor:get', () => adminView());
+    handle('adminDoor:set', async (enabled: unknown) => {
+      if (viaOf() !== 'window') throw new ContractError('forbidden', t('main.admin.windowOnly'));
+      if (typeof enabled !== 'boolean') throw new ContractError('invalid-input', t('main.admin.badRequest'));
+      writeAdminDoorSetting(dataRoot(), enabled);
+      if (enabled) await openAdmin();
+      else await closeAdmin();
+      return adminView();
+    });
   }
+
+  async function openAdmin(): Promise<void> {
+    if (admin) return;
+    admin = createAdminDoor(atasDir(), workspaceId);
+    await admin.start();
+  }
+  async function closeAdmin(): Promise<void> {
+    const door = admin;
+    admin = null;
+    await door?.stop().catch((e) => fail('[admin]', 'core:admin-door', e));
+  }
+  const adminView = (): AdminDoorState & { enabled: boolean } => ({ enabled: readAdminDoorSetting(dataRoot()), listening: false, path: '', reason: '', ...admin?.state() });
 
   function stop(stopOptions: StopOptions = {}): Promise<void> {
     stopping ??= (async () => {
