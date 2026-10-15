@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { AllowedBy } from '../shared/budget';
+import { type AllowedBy, CURRENCY } from '../shared/budget';
 import { ContractError, type ErrorCode } from '../shared/contract';
 import { type CleanRequest, type EffectRequestResult, type EffectSettleResult, EffectInputError, PROPOSAL_TTL_MS, REQUEST_ID, TICKET_TTL_MS, cleanRequest, cleanSettle, ticketRequestId } from '../shared/externalEffects';
 import { t } from '../shared/i18n';
@@ -85,14 +85,21 @@ function prune(now = Date.now()): void {
 
 const hashOf = (req: CleanRequest): string => createHash('sha256').update(JSON.stringify(req)).digest('hex');
 
-function clean<T>(run: () => T): T {
+/** Runs a cleaner, wording what it refuses. A well-formed currency code the budget has no rate for says so, and where the rate is set, instead of naming the field. */
+function clean<T>(run: () => T, currencyOf: () => unknown = () => undefined): T {
   try {
     return run();
   } catch (e) {
-    if (e instanceof EffectInputError) throw new ContractError('invalid-input', t('main.effects.invalid', { field: e.field }));
+    if (e instanceof EffectInputError) {
+      const currency = e.field === 'currency' ? currencyOf() : undefined;
+      if (typeof currency === 'string' && CURRENCY.test(currency)) throw new ContractError('invalid-input', noRateText(currency));
+      throw new ContractError('invalid-input', t('main.effects.invalid', { field: e.field }));
+    }
     throw e;
   }
 }
+
+const field = (v: unknown, ...path: string[]): unknown => path.reduce<unknown>((o, k) => (o !== null && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), v);
 
 function notPersona(): void {
   // An agent never asks for its own purchase to be allowed: the persona's door has no such channel and, should a call reach the handler, it is refused here as well.
@@ -212,7 +219,7 @@ function begin(req: CleanRequest, hash: string, provider: string): EffectRequest
 
 export function requestEffect(raw: unknown): EffectRequestResult {
   notPersona();
-  const req = clean(() => cleanRequest(raw, accepts, mask));
+  const req = clean(() => cleanRequest(raw, accepts, mask), () => field(raw, 'currency'));
   const account = assertAccountId(req.accountId);
   prune();
   const hash = hashOf(req);
@@ -229,7 +236,7 @@ const cents = (n: number): number => Math.round(n * 100);
 
 export function settleEffect(raw: unknown): EffectSettleResult {
   notPersona();
-  const s = clean(() => cleanSettle(raw, accepts, mask));
+  const s = clean(() => cleanSettle(raw, accepts, mask), () => field(raw, 'actual', 'currency'));
   prune();
   const id = ticketRequestId(s.ticket);
   const rec = id ? read(id) : null;

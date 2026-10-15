@@ -3,10 +3,11 @@ import type { BudgetView } from '../../../shared/budget';
 import { BUDGET_CATEGORIES } from '../../../shared/budget';
 import { api, errorText } from '../api';
 import { useT } from '../i18n';
-import { isWeb } from '../platform';
+import { useWebAdmin } from '../webAdmin';
 
 // Settings › the operating budget: its currency, a monthly total and a limit per category, with what was spent and what is left this month. Empty means no limit. A price in
-// another currency is converted at the rate set here, and one with no rate is refused. Setting any of it is the computer's alone (webPolicy.ts), so a paired browser never shows the section.
+// another currency is converted at the rate set here, and one with no rate is refused. Setting any of it is an admin act (webPolicy.ts): the desktop shows the section, and a paired
+// browser shows it only when it has a passkey, which the save then asks for.
 
 // Literal keys, so the catalog check sees each one used.
 const CATEGORY_LABEL: Record<(typeof BUDGET_CATEGORIES)[number], string> = { model: 'ui.settings.budget.category.model', infrastructure: 'ui.settings.budget.category.infrastructure', domains: 'ui.settings.budget.category.domains' };
@@ -18,7 +19,7 @@ const money = (n: number, currency: string): string => `${n.toFixed(2)} ${curren
 
 export function BudgetSection() {
   const t = useT();
-  const web = isWeb();
+  const admin = useWebAdmin();
   const [view, setView] = useState<BudgetView | null>(null);
   const [monthly, setMonthly] = useState('');
   const [cats, setCats] = useState<Record<string, string>>({});
@@ -37,11 +38,11 @@ export function BudgetSection() {
   };
 
   useEffect(() => {
-    if (web) return;
+    if (!admin) return;
     api.invoke<BudgetView>('budget:get').then(load, (e) => setError(errorText(e)));
-  }, [web]);
+  }, [admin]);
 
-  if (web) return null;
+  if (!admin) return null;
   if (!view) return error ? <div className="error" role="alert">{error}</div> : null;
 
   const save = async () => {

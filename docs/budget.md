@@ -53,13 +53,13 @@ Seguem funcionando: a instância, as cerimônias, o acesso pela web e a administ
 
 - `budget:get`: limites, mês, gasto por categoria (estimado e conciliado à parte), o que resta, se está pausado e por quê, e os custos recorrentes com a próxima cobrança (`proposeCancel`: o app só **propõe** cancelar; cancelar é do provisionamento, depois de um "sim").
 - `budget:ledger(offset, limit)`: o livro em páginas, o mais novo primeiro.
-- `budget:set`: define os limites. Só a janela do computador e a porta de administração local; o celular pareado é recusado (`webPolicy.ts`) e a persona não muda o orçamento. A mudança é auditada como qualquer salvamento de configuração. Há um ponto marcado para a #210 pôr uma chave de acesso (passkey) na frente.
+- `budget:set`: define a moeda, as cotações e os limites. A janela do computador, a porta de administração local e um navegador pareado **com passkey** (um aparelho administrador): nele a seção aparece em Configurações e salvar pede a passkey na hora. Um navegador sem passkey não vê a seção e a chamada é recusada (`webPolicy.ts`); a persona não muda o orçamento. A mudança é auditada como qualquer salvamento de configuração.
 
 Em Configurações › Configurações e workspaces › Orçamento há os campos do total e das categorias e uma linha "gasto / resta" por categoria.
 
 ### O que não foi verificado
 
-- Nenhuma compra existe ainda: `checkSpend` e `recordSpend` foram exercitados só pelos testes.
+- Nenhuma compra de verdade foi feita ainda. Além dos testes, a moeda e as cotações foram exercitadas como caixa preta num núcleo headless: pela porta de administração (pedido, "sim", liquidação em BRL e em USD, moeda sem cotação, troca de moeda com gasto no mês) e pelo painel web de um aparelho com passkey (definir BRL com a cotação do USD, a recusa sem ela e o gasto convertido na tela).
 - O gasto de modelo foi exercitado com motores falsos; não com um provedor real nem com a API de cobrança de nenhum.
 - O mês é UTC; perto da virada, a tela do computador pode mostrar o mês anterior por algumas horas.
 
@@ -114,12 +114,12 @@ Still working: the instance, the ceremonies, web access and admin. Raising the l
 
 - `budget:get`: limits, the month, spend per category (estimated and reconciled apart), what is left, whether it is paused and why, and the recurring costs with their next charge (`proposeCancel`: the app only **proposes** cancelling; cancelling belongs to provisioning, after a "yes").
 - `budget:ledger(offset, limit)`: the ledger in pages, newest first.
-- `budget:set`: sets the limits. Only the computer's window and the local admin door; a paired phone is refused (`webPolicy.ts`) and the persona does not change the budget. The change is audited like any configuration save. A marked hook is left for #210 to put a passkey in front.
+- `budget:set`: sets the currency, the rates and the limits. The computer's window, the local admin door and a paired browser **with a passkey** (an admin device): there the section shows in Settings and saving asks for the passkey at that moment. A browser with no passkey does not see the section and the call is refused (`webPolicy.ts`); the persona does not change the budget. The change is audited like any configuration save.
 
 Settings › Configuration and workspaces › Budget has the fields for the total and the categories and a "spent / left" line per category.
 
 ### What was not verified
 
-- No purchase exists yet: `checkSpend` and `recordSpend` were exercised by the tests only.
+- No real purchase was made yet. Beyond the tests, the currency and the rates were exercised as a black box on a headless core: through the admin door (request, yes, settlement in BRL and in USD, a currency with no rate, a change of currency with spends in the month) and through the web panel of a device with a passkey (setting BRL with the USD rate, the refusal without it and the converted spend on the screen).
 - Model spend was exercised with fake engines, not with a real provider or any billing API.
 - The month is UTC; near the turn, the computer's screen may show the previous month for a few hours.

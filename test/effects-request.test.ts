@@ -421,6 +421,8 @@ describe('a price in another currency than the budget\'s', () => {
   it('is refused with no rate for it, before anyone is asked', () => {
     updateConfig((c) => ({ ...c, budget: brl }));
     expect(codeOf(() => request(spend('req-eur-1', { amount: 1, currency: 'EUR' })))).toBe('invalid-input');
+    // the words name the currency and say the rate is missing, not just the field
+    expect(() => request(spend('req-eur-1', { amount: 1, currency: 'EUR' }))).toThrow(/EUR/);
     expect(pending()).toHaveLength(0);
   });
 
