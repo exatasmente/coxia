@@ -62,6 +62,7 @@ export function validateWeb(w: WebSettings): WebSettings {
   } catch {
     throw new Error(t('main.config.web.publicUrl'));
   }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new Error(t('main.config.web.publicUrl'));
   if (url.protocol !== 'https:' && !/^(localhost|127\.0\.0\.1)$/.test(url.hostname)) throw new Error(t('main.config.web.https'));
   const cidr = /^((\d{1,3}\.){3}\d{1,3})\/(\d{1,2})$/.exec(w.trustedProxy);
   if (!cidr || cidr[1].split('.').some((o) => Number(o) > 255) || Number(cidr[3]) > 32) throw new Error(t('main.config.web.proxy'));

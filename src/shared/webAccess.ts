@@ -21,6 +21,8 @@ export interface WebView {
   settings: WebSettings;
   // Present when a host fixed the address for this process: enabled, host and port are its, and changing them here does nothing.
   addressFixed?: boolean;
+  // Present when the host also fixed the public address: `settings.publicUrl` is the server's, and changing it here does nothing.
+  publicUrlFixed?: boolean;
   status: WebStatus;
   devices: Device[];
   // Expiry (ms since epoch) of the pairing code in play; the code itself is shown once, when generated.

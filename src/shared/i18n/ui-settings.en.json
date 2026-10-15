@@ -433,6 +433,7 @@
   "ui.webAccess.pair.qrLabel": "Pairing QR code: opens the site and pairs this device right away",
   "ui.webAccess.pair.scan": "Scan with the phone camera",
   "ui.webAccess.pair.validity": "Valid for 10 minutes and works once.",
+  "ui.webAccess.publicUrlFixed": "The public address is fixed by the server for this process; changing it here does nothing.",
   "ui.webAccess.title": "Browser access",
   "ui.workspaces.badge.current": "Opens on restart",
   "ui.workspaces.badge.running": "In use",

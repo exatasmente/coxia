@@ -433,6 +433,7 @@
   "ui.webAccess.pair.qrLabel": "QR code de pareamento: abre o site já pareando este aparelho",
   "ui.webAccess.pair.scan": "Escaneie com a câmera do celular",
   "ui.webAccess.pair.validity": "Vale 10 minutos e serve uma vez.",
+  "ui.webAccess.publicUrlFixed": "O endereço público é fixado pelo servidor para este processo; mudá-lo aqui não muda nada.",
   "ui.webAccess.title": "Acesso pelo navegador",
   "ui.workspaces.badge.current": "Abre ao reiniciar",
   "ui.workspaces.badge.running": "Em uso",

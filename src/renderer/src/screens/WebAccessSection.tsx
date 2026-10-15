@@ -224,7 +224,8 @@ export function WebAccessSection() {
               </label>
               <label className="wide">
                 {t('ui.webAccess.advanced.publicUrl')}
-                <input className="text-input mono" value={form.publicUrl} onChange={(e) => patch({ publicUrl: e.target.value.trim() })} />
+                <input className="text-input mono" disabled={view.publicUrlFixed === true} value={form.publicUrl} onChange={(e) => patch({ publicUrl: e.target.value.trim() })} />
+                {view.publicUrlFixed && <span className="small muted" role="status">{t('ui.webAccess.publicUrlFixed')}</span>}
               </label>
               <div className="wide row">
                 <button type="button" className="btn" disabled={!draft} onClick={() => draft && void run(webAccessApi.configure(draft))}>{t('ui.webAccess.advanced.apply')}</button>

@@ -27,6 +27,7 @@ O pacote reúne o código do próprio app; as dependências do npm ficam fora e 
 | `--master-key-file <arquivo>` | `COXIA_MASTER_KEY_FILE` | A chave mestra dos segredos guardados. **Obrigatória.** |
 | `--port <porta>` | `COXIA_PORT` | A porta da porta web (1024 a 65535). **Obrigatória.** |
 | `--host <endereço>` | `COXIA_HOST` | O endereço (IPv4 ou `localhost`). Padrão `127.0.0.1`. |
+| `--public-url <url>` | `COXIA_PUBLIC_URL` | O endereço público **deste processo** (`https://…`, ou `http://` só em `localhost`/`127.0.0.1`). Padrão: o endereço público salvo. A bandeira vale mais que a variável; variável vazia é como ausente; bandeira vazia ou URL inválida é erro de uso (saída 1). Nunca é gravada. |
 | `--workspace <id>` | `COXIA_WORKSPACE` | O workspace que este processo roda. Padrão: o que o registro marca como atual. |
 | `--no-admin-door` | `COXIA_ADMIN_DOOR=0` | Não abre o soquete de administração. Padrão: aberto. |
 | `--init` | | Só cria o registro de workspaces da pasta de dados (com o primeiro workspace), imprime o id dele e sai com 0. Precisa só de `--data-dir`. Para o instalador, antes de o supervisor subir os núcleos. |
@@ -84,6 +85,8 @@ Uma execução aberta cujo worktree não existe aqui, mas cujo branch está no c
 
 `--host` e `--port` valem só para este processo: a porta web fica ligada nesse endereço por cima do que está salvo e **nada é gravado** em `web.json` (que é da pasta de dados, comum a todos os workspaces, e não serve a dois processos na mesma porta). Se um cliente pareado chamar `web:configure`, ligar, desligar ou mudar host e porta não faz nada: a vista devolve `addressFixed: true`, a tela de Acesso pelo navegador diz isso e desabilita esses campos. Os outros campos (caminho base, endereço público, proxy confiável, efeitos externos) são salvos como sempre, e o caminho base vale na hora. Atrás de um proxy, ajuste o endereço público nessa tela, ou no desktop.
 
+`--public-url` (ou `COXIA_PUBLIC_URL`) faz o mesmo para o endereço público: o `web.json` é comum a todos os workspaces, e cada processo atrás do proxy tem o seu endereço (por exemplo `https://b.example.com/cerimonias/`). O valor vale **só neste processo**, nunca é gravado e passa pelas mesmas regras do endereço salvo (`https`, ou `http` em `localhost`). Ele é o endereço público em todo lugar onde o processo o lê: a checagem de `Origin` da porta web (que, sem isso, recusa com 403 qualquer origem que não seja o endereço salvo ou `localhost`), as passkeys (a origem aceita e o `rpId`, que é o host dela), o link e o endereço de pareamento e o assunto do push. A linha de pronto ganha uma linha `endereço público: <url>`. O caminho da URL não é conferido com o caminho base: quem decide a relação é o proxy. Se um cliente chamar `web:configure` com `publicUrl`, o valor é descartado e o do servidor continua valendo (o salvo fica como estava, para o desktop e os outros workspaces); os outros campos são salvos como sempre. `web:view` devolve o valor efetivo em `settings.publicUrl` e `publicUrlFixed: true`, e a tela mostra o campo desabilitado com um aviso.
+
 ### Saúde
 
 `GET /healthz`, e também `GET <caminho base>/healthz` (padrão `/cerimonias/healthz`), responde sem autenticação `{"ok":true,"version":"…","workspace":"<id>"}`: só isso, sem nome nem caminho. Serve ao gerenciador de serviço e à verificação de saúde de uma atualização.
@@ -139,6 +142,7 @@ The bundle holds the app's own code; npm dependencies stay outside and are read 
 | `--master-key-file <file>` | `COXIA_MASTER_KEY_FILE` | The master key of the stored secrets. **Required.** |
 | `--port <port>` | `COXIA_PORT` | The web door's port (1024 to 65535). **Required.** |
 | `--host <address>` | `COXIA_HOST` | The address (IPv4 or `localhost`). Default `127.0.0.1`. |
+| `--public-url <url>` | `COXIA_PUBLIC_URL` | The public address of **this process** (`https://…`, or `http://` only on `localhost`/`127.0.0.1`). Default: the saved public address. The flag wins over the variable; an empty variable counts as absent; an empty flag or an invalid URL is a usage error (exit 1). Never saved. |
 | `--workspace <id>` | `COXIA_WORKSPACE` | The workspace this process runs. Default: the one the registry marks as current. |
 | `--no-admin-door` | `COXIA_ADMIN_DOOR=0` | Do not open the admin socket. Default: open. |
 | `--init` | | Only create the data folder's workspace registry (with its first workspace), print its id and exit 0. Needs only `--data-dir`. For an installer, before the supervisor starts the cores. |
@@ -195,6 +199,8 @@ An open run whose worktree is not here but whose branch is in the clone gets its
 ### The web address belongs to the process
 
 `--host` and `--port` apply to this process alone: the web door listens at that address over what is saved, and **nothing is written** to `web.json` (which lives in the data folder, shared by every workspace, and cannot serve two processes on one port). If a paired client calls `web:configure`, switching the door on or off or changing host and port does nothing: the view carries `addressFixed: true`, and the Browser access screen says so and disables those fields. The other fields (base path, public address, trusted proxy, external effects) are saved as usual, and the base path takes effect at once. Behind a proxy, set the public address on that screen, or on the desktop.
+
+`--public-url` (or `COXIA_PUBLIC_URL`) does the same for the public address: `web.json` is common to every workspace, and each process behind the proxy has its own address (for example `https://b.example.com/cerimonias/`). The value holds for **this process only**, is never written, and follows the same rules as the saved address (`https`, or `http` on `localhost`). It is the public address everywhere the process reads it: the web door's `Origin` check (which otherwise answers 403 to any origin that is not the saved address or `localhost`), the passkeys (the accepted origin and the `rpId`, which is its host), the pairing link and address, and the push subject. The ready output gains a `public address: <url>` line. The URL's path is not checked against the base path: the proxy decides how they relate. If a client calls `web:configure` with `publicUrl`, the value is dropped and the server's keeps winning (the saved one stays as it was, for the desktop and the other workspaces); the other fields are saved as usual. `web:view` returns the effective value in `settings.publicUrl` and `publicUrlFixed: true`, and the screen shows the field disabled with a note.
 
 ### Health
 

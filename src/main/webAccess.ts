@@ -8,23 +8,19 @@ import { passkeys } from './passkey';
 import { handle, handleDevice, hasChannel, invoke } from './rpc';
 import { createWebApp, startListening, type Listening, type WebApp } from './web';
 import { createAuth, type Auth } from './webAuth';
+import { effectivePublicUrl, webOverride } from './webOverride';
 import { createPush, type PushNotice, type PushService, testOriginsFromEnv } from './webPush';
 
 let auth: Auth | null = null;
 let current: { app: WebApp; key: string } | null = null;
 let state: Listening = { listening: false, address: null, message: 'Desligado.' };
 let rendererDir = '';
-// The address a host gave this process alone (one process per workspace cannot share the saved port). It wins over the saved settings and is never saved.
-let override: { host: string; port: number } | null = null;
-
-export function setWebOverride(next: { host: string; port: number } | null): void {
-  override = next;
-}
-
-// The saved web settings with this process's own address over them: enabled, because asking for an address is asking for the door.
+// The saved web settings with this process's own address over them (see webOverride.ts): enabled, because asking for an address is asking for the door.
 const webSettings = (): WebSettings => {
   const saved = getSettings().web;
-  return override ? { ...saved, enabled: true, host: override.host, port: override.port } : saved;
+  const override = webOverride();
+  if (!override) return saved;
+  return { ...saved, enabled: true, host: override.host, port: override.port, publicUrl: effectivePublicUrl(saved.publicUrl) };
 };
 
 const theAuth = (): Auth => (auth ??= createAuth(join(dataRoot(), 'web-sessions.json')));
@@ -67,7 +63,8 @@ function view(): WebView {
   const settings = webSettings();
   return {
     settings,
-    ...(override ? { addressFixed: true } : {}),
+    ...(webOverride() ? { addressFixed: true } : {}),
+    ...(webOverride()?.publicUrl ? { publicUrlFixed: true } : {}),
     status: { enabled: settings.enabled, ...state, clients: current?.app.clientCount() ?? 0, devices: theAuth().list().length },
     devices: theAuth().list(),
     pairingExpiresAt: theAuth().pairingPending()?.expiresAt ?? null,
@@ -101,8 +98,15 @@ export function registerWebAccess(dir: string): void {
   handle('web:view', () => view());
   handle('web:configure', async (patch: Partial<WebSettings>) => {
     // With an address fixed for this process the saved enabled/host/port stay as they are (other processes and the desktop read them) and the rest is saved as usual.
+    // The same for the public address when this process has its own: the patch's is dropped, the saved one stays for the other workspaces and the desktop.
     const saved = getSettings().web;
-    const { enabled, host, port, basePath, publicUrl, trustedProxy, allowExternalEffects } = { ...saved, ...patch, ...(override ? { enabled: saved.enabled, host: saved.host, port: saved.port } : {}) };
+    const override = webOverride();
+    const { enabled, host, port, basePath, publicUrl, trustedProxy, allowExternalEffects } = {
+      ...saved,
+      ...patch,
+      ...(override ? { enabled: saved.enabled, host: saved.host, port: saved.port } : {}),
+      ...(override?.publicUrl ? { publicUrl: saved.publicUrl } : {}),
+    };
     saveWebSettings({ enabled, host, port, basePath, publicUrl, trustedProxy, allowExternalEffects });
     await syncWebAccess();
     return view();
