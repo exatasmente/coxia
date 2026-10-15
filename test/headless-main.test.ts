@@ -114,6 +114,76 @@ describe('main', () => {
     expect((await get('/healthz')).status).toBe(200);
   });
 
+  it('answers for the public address it was given, without saving it, and keeps it when a client reconfigures the door', async () => {
+    const { main, rpc } = await entry();
+    const lines: string[] = [];
+    running = await main(args(['--public-url', 'https://b.example.com/cerimonias/']), {}, { exit: vi.fn(), out: (l) => lines.push(l), err: () => undefined });
+    expect(running).not.toBeNull();
+    expect(lines.some((l) => /^(public address|endereço público): https:\/\/b\.example\.com\/cerimonias\/$/.test(l))).toBe(true);
+    expect(existsSync(join(dataDir, 'web.json'))).toBe(false);
+
+    type View = { addressFixed?: boolean; publicUrlFixed?: boolean; settings: { publicUrl: string } };
+    const view = (await rpc.invoke('web:view', [])) as View;
+    expect(view.publicUrlFixed).toBe(true);
+    expect(view.settings.publicUrl).toBe('https://b.example.com/cerimonias/');
+
+    // The passkeys take the origin of that address and refuse the saved default, which is another workspace's.
+    const { passkeys } = await import('../src/main/passkey');
+    const opened = passkeys().registerOptions({ deviceId: 'desktop', origin: 'https://b.example.com', paired: false }) as { options: { rp: { id: string } } };
+    expect(opened.options.rp.id).toBe('b.example.com');
+    expect(() => passkeys().registerOptions({ deviceId: 'desktop', origin: 'https://evil.example.com', paired: false })).toThrow();
+    expect(() => passkeys().registerOptions({ deviceId: 'desktop', origin: 'http://localhost:4330', paired: false })).toThrow();
+
+    // The write guard of the door uses it too: the address's origin passes it (the answer is then about the pairing code, not the origin), another one is refused.
+    const post = (origin: string) =>
+      new Promise<number>((ok, fail) => {
+        const req = request({ host: '127.0.0.1', port, path: '/cerimonias/api/login', method: 'POST', headers: { origin, 'x-cerimonias': '1', 'content-type': 'application/json' } }, (res) => {
+          res.resume();
+          res.on('end', () => ok(res.statusCode ?? 0));
+        });
+        req.on('error', fail);
+        req.end('{"code":"x"}');
+      });
+    expect(await post('https://evil.example.com')).toBe(403);
+    expect(await post('https://b.example.com')).not.toBe(403);
+
+    // A client cannot move it: the patch's public address is dropped, the other fields are saved, and the saved address stays the shared one.
+    const after = (await rpc.invokeAdmin('web:configure', [{ publicUrl: 'https://other.example.com/', basePath: '/other/' }])) as View;
+    expect(after.settings.publicUrl).toBe('https://b.example.com/cerimonias/');
+    expect(after.publicUrlFixed).toBe(true);
+    const saved = JSON.parse(readFileSync(join(dataDir, 'web.json'), 'utf8')) as { publicUrl: string; basePath: string };
+    expect(saved).toMatchObject({ publicUrl: 'http://localhost:4330/cerimonias/', basePath: '/other/' });
+  });
+
+  it('does not report a fixed public address when none was given', async () => {
+    const { main, rpc } = await entry();
+    running = await main(args(), {}, { exit: vi.fn(), out: () => undefined, err: () => undefined });
+    const view = (await rpc.invoke('web:view', [])) as { publicUrlFixed?: boolean; settings: { publicUrl: string } };
+    expect(view.publicUrlFixed).toBeUndefined();
+    expect(view.settings.publicUrl).toBe('http://localhost:4330/cerimonias/');
+  });
+
+  it('reads the public address from COXIA_PUBLIC_URL, and takes an empty variable for none', async () => {
+    const { main, rpc } = await entry();
+    running = await main(args(), { COXIA_PUBLIC_URL: 'https://env.example.com/' }, { exit: vi.fn(), out: () => undefined, err: () => undefined });
+    expect(((await rpc.invoke('web:view', [])) as { settings: { publicUrl: string } }).settings.publicUrl).toBe('https://env.example.com/');
+    running?.signals.dispose();
+    await running?.core.stop({ deadlineMs: 1_000 });
+
+    vi.resetModules();
+    const blank = await entry();
+    port = await freePort();
+    running = await blank.main(args(), { COXIA_PUBLIC_URL: '' }, { exit: vi.fn(), out: () => undefined, err: () => undefined });
+    expect(running).not.toBeNull();
+    expect(((await blank.rpc.invoke('web:view', [])) as { publicUrlFixed?: boolean }).publicUrlFixed).toBeUndefined();
+  });
+
+  it('prefers the flag to COXIA_PUBLIC_URL', async () => {
+    const { main, rpc } = await entry();
+    running = await main(args(['--public-url', 'https://flag.example.com/']), { COXIA_PUBLIC_URL: 'https://env.example.com/' }, { exit: vi.fn(), out: () => undefined, err: () => undefined });
+    expect(((await rpc.invoke('web:view', [])) as { settings: { publicUrl: string } }).settings.publicUrl).toBe('https://flag.example.com/');
+  });
+
   it('runs the workspace it is told to and leaves the registry current one alone', async () => {
     const wc = await import('../src/main/workspaces-core');
     wc.ensureWorkspaces(dataDir);
@@ -196,6 +266,21 @@ describe('main refuses to start', () => {
       const r = await refused([...base, ...withPort, ...bad]);
       expect(r.code, bad.join(' ')).toBe(1);
     }
+  });
+
+  it('with a public address the web door would not accept, from the flag or the variable', async () => {
+    for (const bad of ['not a url', 'ftp://example.com/', 'http://example.com/', '']) {
+      vi.resetModules();
+      const flag = await refused(args(['--public-url', bad]));
+      expect(flag.code, `flag ${bad}`).toBe(1);
+      expect(flag.err, `flag ${bad}`).toMatch(/public URL|URL pública|HTTPS|https/);
+      if (bad === '') continue;
+      vi.resetModules();
+      const env = await refused(args(), { COXIA_PUBLIC_URL: bad });
+      expect(env.code, `env ${bad}`).toBe(1);
+      expect(env.err, `env ${bad}`).toMatch(/public URL|URL pública|HTTPS|https/);
+    }
+    expect(existsSync(join(dataDir, 'web.json'))).toBe(false);
   });
 
   it('for a workspace the registry does not list', async () => {

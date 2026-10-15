@@ -38,7 +38,8 @@ import { stopUpdates } from './updates';
 import { getHistory, listHistory, loadState, saveState } from './state';
 import { saveMinutes } from './store';
 import { cancelSpeech, planSpeech, speakSegment, startVoice, stopVoice, transcribe, voicesFor } from './voice';
-import { broadcast, pushNotice, registerWebAccess, setWebOverride, stopWebAccess, syncWebAccess, webListening } from './webAccess';
+import { broadcast, pushNotice, registerWebAccess, stopWebAccess, syncWebAccess, webListening } from './webAccess';
+import { setWebOverride } from './webOverride';
 import { getConfig } from './workspaceConfig';
 
 // The core as a value: everything the app does that is not the window, the tray or the runtime, started and stopped by whoever owns the process.
@@ -59,8 +60,8 @@ export interface CoxiaOptions {
   dataDir?: string;
   /** The workspace this process runs; the registry's current one when absent. It must exist, and the registry's current one is left as it is. */
   workspace?: string;
-  /** The address of the web door for this process alone: it listens there, enabled, over the saved settings, and nothing is written to them. */
-  web?: { host: string; port: number };
+  /** The address of the web door for this process alone: it listens there, enabled, over the saved settings, and nothing is written to them. `publicUrl`, when given, is the public address this process answers for (origin check, passkeys, pairing link), likewise unsaved. */
+  web?: { host: string; port: number; publicUrl?: string };
   /** The encryption behind stored secrets (the keychain, or the master key file of a server). Absent: no secret is stored. */
   secrets?: CryptoPort;
   paths?: PathsPort;

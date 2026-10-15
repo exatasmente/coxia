@@ -10,6 +10,7 @@ import { stepUpContext } from './passkeyContext';
 import { isSensitiveKind, requireSensitive, setPasskeyHooks, type SensitiveKind } from './passkeyStepUp';
 import { type Alg, PasskeyError, verifyAssertion, verifyRegistration } from './passkeyWebauthn';
 import { setWebGate, viaOf } from './rpc';
+import { effectivePublicUrl } from './webOverride';
 import { STEP_UP } from './webPolicy';
 
 // Passkeys of the admin devices (#210): the public keys per device, the single-use challenges and the short-lived assertions a sensitive call spends. The verification is in
@@ -250,7 +251,7 @@ export const passkeys = (): Passkeys =>
   (instance ??= createPasskeys({
     file: join(dataRoot(), 'passkeys.json'),
     originAllowed: (origin) => {
-      const url = getSettings().web.publicUrl;
+      const url = effectivePublicUrl(getSettings().web.publicUrl);
       try {
         return !url || new URL(url).origin === origin;
       } catch {

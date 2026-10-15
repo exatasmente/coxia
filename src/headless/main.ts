@@ -38,6 +38,7 @@ const FLAGS = {
   'master-key-file': { type: 'string' },
   host: { type: 'string' },
   port: { type: 'string' },
+  'public-url': { type: 'string' },
   'renderer-dir': { type: 'string' },
   'no-admin-door': { type: 'boolean' },
   init: { type: 'boolean' },
@@ -56,6 +57,8 @@ interface Options {
   keyFile: string;
   host: string;
   port: number;
+  /** The public address of this process alone, when it has one; the saved one otherwise. */
+  publicUrl?: string;
   rendererDir?: string;
   adminDoor: boolean;
 }
@@ -88,9 +91,11 @@ function options(argv: string[], env: NodeJS.ProcessEnv): Options | null {
   const rawPort = need(v.port ?? env.COXIA_PORT, '--port', 'COXIA_PORT');
   const port = /^\d{1,5}$/.test(rawPort) ? Number(rawPort) : NaN;
   const host = v.host ?? env.COXIA_HOST ?? '127.0.0.1';
+  // An empty variable is no variable (a service template that leaves it blank); an empty flag is a mistake and fails the validation below.
+  const publicUrl = (v['public-url'] ?? (env.COXIA_PUBLIC_URL || undefined))?.trim();
   try {
-    // The same rules the saved settings follow, so a host or port the door would refuse is refused here.
-    validateWeb({ ...NEUTRAL_WEB, host, port });
+    // The same rules the saved settings follow, so a host, port or public address the door would refuse is refused here.
+    validateWeb({ ...NEUTRAL_WEB, host, port, ...(publicUrl === undefined ? {} : { publicUrl }) });
   } catch (e) {
     throw new UsageError(e instanceof Error ? e.message : String(e));
   }
@@ -98,7 +103,7 @@ function options(argv: string[], env: NodeJS.ProcessEnv): Options | null {
   const rendererDir = v['renderer-dir'] ?? env.COXIA_RENDERER_DIR;
   // On unless it is turned off: a server's shell and CLI reach the core through it. COXIA_ADMIN_DOOR=0 is the same as the flag.
   const adminDoor = !v['no-admin-door'] && env.COXIA_ADMIN_DOOR !== '0';
-  return { dataDir, keyFile, host, port, adminDoor, ...(workspace ? { workspace } : {}), ...(rendererDir ? { rendererDir: resolve(rendererDir) } : {}) };
+  return { dataDir, keyFile, host, port, adminDoor, ...(publicUrl === undefined ? {} : { publicUrl }), ...(workspace ? { workspace } : {}), ...(rendererDir ? { rendererDir: resolve(rendererDir) } : {}) };
 }
 
 function packageVersion(): string {
@@ -179,7 +184,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
     core = createCoxia({
       dataDir: opts.dataDir,
       ...(opts.workspace ? { workspace: opts.workspace } : {}),
-      web: { host: opts.host, port: opts.port },
+      web: { host: opts.host, port: opts.port, ...(opts.publicUrl === undefined ? {} : { publicUrl: opts.publicUrl }) },
       adminDoor: opts.adminDoor,
       secrets,
       host,
@@ -192,6 +197,8 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env,
     if (!door.listening) throw new Error(door.message);
     const signals = installSignalHandlers(core, { exit });
     out(t('main.headless.ready', { address: `${door.address}${door.basePath}`, workspace: workspaceId() }));
+    // Only when this process has its own public address: the line that shows which one the origin check and the pairing link use.
+    if (opts.publicUrl !== undefined) out(t('main.headless.publicUrl', { url: opts.publicUrl }));
     // A client says who owns the workspace: the line a service's log shows when the second instance of a workspace refuses to run it.
     const own = core.ownership();
     if (own && own.role === 'client' && own.owner) {
