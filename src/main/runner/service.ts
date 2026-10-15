@@ -2065,6 +2065,32 @@ export function createRunner(deps: RunnerDeps): Runner {
 
   // ---- runs the app starts by itself ------------------------------------------------------------------------------------------------
 
+  /**
+   * The open issues that ask for a run by themselves: the trigger label's, assigned to the person, and, for each squad with members and `autoStart`, its labels'
+   * (assigned to the person; with `mine-and-unassigned`, also the ones nobody is assigned to). One entry per issue, oldest first. A read that fails leaves its
+   * issues out of this pass and does not hold back the others; the first failure comes back with them, for the sweep to tell.
+   */
+  async function triggeredIssues(config: WorkspaceConfig): Promise<{ issues: VcsIssue[]; failure: unknown }> {
+    const asks: Promise<VcsIssue[]>[] = [deps.issues.triggered(config.runner.triggerLabel)];
+    for (const q of squadsOf(config)) {
+      if (!q.autoStart || !membersOf(config, q.id).length) continue;
+      for (const label of q.scope.labels) {
+        asks.push(deps.issues.triggered(label));
+        if (q.autoStart === 'mine-and-unassigned') asks.push(deps.issues.unassigned(label));
+      }
+    }
+    const byIid = new Map<number, VcsIssue>();
+    let failure: unknown = null;
+    for (const read of await Promise.allSettled(asks)) {
+      if (read.status === 'rejected') {
+        failure ??= read.reason;
+        continue;
+      }
+      for (const i of read.value) if (!byIid.has(i.iid)) byIid.set(i.iid, i);
+    }
+    return { issues: [...byIid.values()].sort((a, b) => a.iid - b.iid), failure };
+  }
+
   async function scanIssues(): Promise<Run[]> {
     const config = deps.config();
     if (!config.runner.enabled || !isFlowCycle(config.devCycle.stages) || !deps.issues.ready()) return [];
@@ -2072,7 +2098,7 @@ export function createRunner(deps: RunnerDeps): Runner {
     if (budget.size || deps.spend?.hold()) return [];
     const room = config.runner.maxConcurrentRuns - deps.runs.list().filter((r) => r.status === 'working').length;
     if (room <= 0) return [];
-    const found = (await deps.issues.triggered(config.runner.triggerLabel)).sort((a, b) => a.iid - b.iid);
+    const { issues: found, failure } = await triggeredIssues(config);
     // An issue that ever had a run is not started again by itself: a cancelled or finished run with the label still on would otherwise come back.
     const known = new Set(deps.runs.list().map((r) => r.issue.ref));
     const started: Run[] = [];
@@ -2088,6 +2114,8 @@ export function createRunner(deps: RunnerDeps): Runner {
         console.error('[runner] could not start', ref, e instanceof Error ? e.message : e);
       }
     }
+    // The issues that could be read were started; the sweep still tells why the others were not.
+    if (failure !== null) throw failure;
     return started;
   }
 

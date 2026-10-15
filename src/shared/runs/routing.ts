@@ -1,7 +1,8 @@
 import type { SquadDef } from '../config/types';
 import type { RoutingWhy, ScopeRule } from './types';
 
-// Which squad an issue belongs to, by the scope of the squads: the repository first, then the labels, then the folders of the files the issue mentions.
+// Which squad an issue belongs to, by the scope of the squads: the labels first (a label is what the person or a squad put on the issue on purpose), then the
+// repository, then the folders of the files the issue mentions.
 // Each rule narrows the squads the one before left; one squad left is the answer. When the rules leave several squads, or none claims the issue, the answer is
 // "ambiguous" and the run goes through triage (the front-door agent proposes, the person decides when that agent does not run by itself). Pure.
 
@@ -44,8 +45,8 @@ export function routeIssue(squads: SquadDef[], input: RouteInput): RouteResult {
   const labels = new Set(input.labels.map(lower));
   const files = mentionedPaths(input.text);
   const rules: [ScopeRule, (s: SquadDef) => boolean][] = [
-    ['repo', (s) => input.repo !== null && s.scope.repos.includes(input.repo)],
     ['label', (s) => s.scope.labels.some((l) => labels.has(lower(l)))],
+    ['repo', (s) => input.repo !== null && s.scope.repos.includes(input.repo)],
     ['path', (s) => s.scope.paths.some((p) => (input.repo === null || p.repo === input.repo) && files.some((f) => under(f, p.prefix)))],
   ];
   let pool = squads;

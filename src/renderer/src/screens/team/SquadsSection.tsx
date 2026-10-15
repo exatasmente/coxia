@@ -15,12 +15,17 @@ import { ChipsInput, Confirm, Labeled, Problems, SidePanel, Toggle, type Problem
 
 type Translate = ReturnType<typeof useT>;
 
+// Literal keys, so the catalog check sees each one used.
+const AUTO_START_SCOPE = { mine: 'ui.squads.scope.autoStartMine', 'mine-and-unassigned': 'ui.squads.scope.autoStartUnassigned' } as const;
+const AUTO_START_OPTION = { '': 'ui.squads.f.autoStartOff', mine: 'ui.squads.f.autoStartMine', 'mine-and-unassigned': 'ui.squads.f.autoStartUnassigned' } as const;
+
 function scopeLines(s: SquadDef, t: Translate): string[] {
   const out: string[] = [];
   if (s.scope.repos.length) out.push(t('ui.squads.scope.repos', { list: s.scope.repos.join(', ') }));
   if (s.scope.labels.length) out.push(t('ui.squads.scope.labels', { list: s.scope.labels.join(', ') }));
   if (s.scope.paths.length) out.push(t('ui.squads.scope.paths', { list: s.scope.paths.map((p) => `${p.repo}:${p.prefix}`).join(', ') }));
   if (s.scope.unclaimed) out.push(t('ui.squads.scope.unclaimed'));
+  if (s.autoStart) out.push(t(AUTO_START_SCOPE[s.autoStart]));
   return out.length ? out : [t('ui.squads.scope.none')];
 }
 
@@ -205,6 +210,11 @@ function SquadPanel({ config, initial, isNew, save, reload, openFlow, onClose }:
             </div>
           )}
           <ChipsInput label={t('ui.squads.f.labels')} hint={t('ui.squads.f.labelsHint')} addLabel={t('ui.squads.f.labelAdd')} removeLabel={(label) => t('ui.squads.f.labelRemove', { label })} values={draft.labels} onChange={(labels) => set({ labels })} add={withLabel} />
+          <label className="wz-label" htmlFor="squad-auto-start">{t('ui.squads.f.autoStart')}</label>
+          <select id="squad-auto-start" className="text-input" value={draft.autoStart} onChange={(e) => set({ autoStart: e.target.value as SquadDraft['autoStart'] })}>
+            {(['', 'mine', 'mine-and-unassigned'] as const).map((v) => <option key={v} value={v}>{t(AUTO_START_OPTION[v])}</option>)}
+          </select>
+          <p className="small muted">{t(draft.labels.length ? 'ui.squads.f.autoStartHint' : 'ui.squads.f.autoStartNoLabels')}</p>
           <PathRows config={config} paths={draft.paths} onChange={(paths) => set({ paths })} error={fieldError('paths')} />
           <label className="tm-check">
             <input type="checkbox" checked={draft.unclaimed} onChange={(e) => set({ unclaimed: e.target.checked })} />

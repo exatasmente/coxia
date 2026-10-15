@@ -800,6 +800,14 @@ export interface SquadScope {
   unclaimed: boolean;
 }
 
+/**
+ * Which open issues carrying one of a squad's labels the app starts runs on by itself (with `runner.enabled`): `mine`, the ones assigned to the person;
+ * `mine-and-unassigned`, those and the ones nobody is assigned to (a support ticket, a request from outside). Absent: the squad's labels start nothing by
+ * themselves, and only `runner.triggerLabel` does.
+ */
+export const SQUAD_AUTO_STARTS = ['mine', 'mine-and-unassigned'] as const;
+export type SquadAutoStart = (typeof SQUAD_AUTO_STARTS)[number];
+
 /** A squad: agents with a scope of their own, a flow of their own and one agent, the liaison, that speaks for them to the other squads. */
 export interface SquadDef {
   /** Lowercase letters, digits, "-" and "_". */
@@ -816,6 +824,8 @@ export interface SquadDef {
   label: string | null;
   /** The screen step approvals of the squad's members (#269); a member's own word wins, and a kind neither names follows the workspace. */
   screenPolicy?: ScreenPolicy;
+  /** The squad's labels start runs by themselves (see `SQUAD_AUTO_STARTS`). Absent: they do not. */
+  autoStart?: SquadAutoStart;
 }
 
 export interface AgentsConfig {

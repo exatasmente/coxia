@@ -1,7 +1,7 @@
 import { ID } from '../../../../shared/config/schema';
 import { addSquad, membersOf, setAgentSquad, squadOf, squadsOf, updateSquad } from '../../../../shared/config/squads';
 import { workingTeam } from '../../../../shared/config/team';
-import type { AgentDef, SquadDef, SquadPath, WorkspaceConfig } from '../../../../shared/config/types';
+import type { AgentDef, SquadAutoStart, SquadDef, SquadPath, WorkspaceConfig } from '../../../../shared/config/types';
 import type { ScreenPolicy } from '../../../../shared/config/screenPolicy';
 import { checkSquads, type SquadIssue } from '../../../../shared/runs/squadCheck';
 
@@ -24,6 +24,8 @@ export interface SquadDraft {
   labels: string[];
   paths: SquadPath[];
   unclaimed: boolean;
+  /** Which issues with the squad's labels start runs by themselves; empty: none. */
+  autoStart: SquadAutoStart | '';
   /** The ids of the agents that belong to the squad. */
   members: string[];
   /** The squad's screen step approvals; a kind it does not name follows the workspace. */
@@ -51,12 +53,13 @@ export function draftOfSquad(config: WorkspaceConfig, s: SquadDef): SquadDraft {
     labels: [...s.scope.labels],
     paths: s.scope.paths.map((p) => ({ ...p })),
     unclaimed: s.scope.unclaimed,
+    autoStart: s.autoStart ?? '',
     members: membersOf(config, s.id).map((a) => a.id),
     screenPolicy: { ...(s.screenPolicy ?? {}) },
   };
 }
 
-export const blankSquad = (): SquadDraft => ({ id: '', name: '', mission: '', label: '', autonomy: true, liaison: null, repos: [], labels: [], paths: [], unclaimed: false, members: [], screenPolicy: {} });
+export const blankSquad = (): SquadDraft => ({ id: '', name: '', mission: '', label: '', autonomy: true, liaison: null, repos: [], labels: [], paths: [], unclaimed: false, autoStart: '', members: [], screenPolicy: {} });
 
 /** A folder of a repository as the scope compares it: no leading "./" or "/", no trailing "/". */
 export const normalizePrefix = (p: string): string => p.trim().replace(/^(\.?\/)+/, '').replace(/\/+$/, '');
@@ -94,7 +97,10 @@ export function applySquad(config: WorkspaceConfig, d: SquadDraft, isNew: boolea
     scope: { repos: [...d.repos], labels: d.labels.map((l) => l.trim()).filter(Boolean), paths: d.paths.map((p) => ({ repo: p.repo, prefix: normalizePrefix(p.prefix) })), unclaimed: d.unclaimed },
   };
   const policy = Object.keys(d.screenPolicy).length ? { screenPolicy: { ...d.screenPolicy } } : {};
-  let next = isNew ? addSquad(config, { id: d.id, ...fields, ...policy, liaison: null }) : updateSquad(config, d.id, { ...fields, ...policy });
+  const start = d.autoStart ? { autoStart: d.autoStart } : {};
+  let next = isNew ? addSquad(config, { id: d.id, ...fields, ...policy, ...start, liaison: null }) : updateSquad(config, d.id, { ...fields, ...policy, ...start });
+  // Starting nothing by itself is the absence of the field.
+  if (!d.autoStart) next = { ...next, squads: squadsOf(next).map((s) => (s.id === d.id ? (({ autoStart: _gone, ...rest }) => rest)(s) : s)) };
   // Inheriting every kind is the absence of the field, not an empty object.
   if (!policy.screenPolicy) next = { ...next, squads: squadsOf(next).map((s) => (s.id === d.id ? (({ screenPolicy: _gone, ...rest }) => rest)(s) : s)) };
   const before = new Set(membersOf(next, d.id).map((a) => a.id));

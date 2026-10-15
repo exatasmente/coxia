@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 import { ID } from './schema';
 import { workingTeam } from './team';
-import type { AgentDef, DevCycleConfig, SquadDef, SquadScope, StageDef, WorkspaceConfig } from './types';
+import { SQUAD_AUTO_STARTS, type AgentDef, type DevCycleConfig, type SquadDef, type SquadScope, type StageDef, type WorkspaceConfig } from './types';
 
 // Squads: the pure reads and edits over `squads`, `AgentDef.squad` and `devCycle.flows`. Everything takes a config and returns a new one; validation is
 // the caller's (saveConfig, with the checks of runs/squadCheck.ts). A workspace with no squads is one team: every helper answers as if nothing was there.
@@ -29,6 +29,8 @@ export function newSquad(partial: Pick<SquadDef, 'id'> & Partial<Omit<SquadDef, 
     label: partial.label ?? null,
     // Absent means "the workspace's": only a squad that said something about a kind carries the policy.
     ...(partial.screenPolicy && Object.keys(partial.screenPolicy).length ? { screenPolicy: { ...partial.screenPolicy } } : {}),
+    // Absent means "the labels start nothing by themselves".
+    ...(partial.autoStart && (SQUAD_AUTO_STARTS as readonly string[]).includes(partial.autoStart) ? { autoStart: partial.autoStart } : {}),
   };
 }
 
