@@ -8,14 +8,13 @@ import { t } from '../shared/i18n';
 import { assertAccountId } from './accounts';
 import { effectRequestOutcome, proposeEffectRequest, withdrawEffectRequest } from './actions';
 import { recordWrite } from './auditoria';
-import { checkSpend, recordSpend } from './budget';
+import { checkSpend, inBudgetCurrency, noRateText, recordSpend } from './budget';
 import { authorize, authorizeSpend, consume, grantRef } from './effectGrants';
 import { atasDir } from './env';
 import { redact } from './errorlog-core';
 import type { Module } from './module';
 import { viaOf } from './rpc';
 import { assertExternalWrite } from './workspace';
-import { getConfig } from './workspaceConfig';
 
 // What an external client (coxia-provision, through the admin socket) asks before an effect and records after it: `effects:request` and `effects:settle`. The decision is the same one
 // every effect gets: the budget first (a "yes" never overrides a limit), then a grant of autonomy, then the person's yes in Actions. What it answers is a ticket, single use, kept
@@ -42,7 +41,8 @@ interface Ticketed {
 
 const dir = (): string => join(atasDir(), 'effects');
 const fileOf = (requestId: string): string => join(dir(), `${requestId}.json`);
-const currency = (): string => getConfig().budget?.currency ?? 'USD';
+/** Whether the budget takes a price in this currency: its own, or one the person set a rate for. */
+const accepts = (currency: string): boolean => inBudgetCurrency(0, currency) !== null;
 const mask = (text: string): string => redact(text);
 
 function read(requestId: string): Ticketed | null {
@@ -139,10 +139,17 @@ function refuse(rec: Ticketed, code: ErrorCode, message: string): never {
   throw new ContractError(code, message);
 }
 
+/** The amount of a spend in the budget's currency, at the rate the person set now. A rate taken away since the request was made refuses it. */
+function budgetAmount(req: CleanRequest): number {
+  const amount = inBudgetCurrency(req.amount as number, req.currency as string);
+  if (amount === null) throw new ContractError('invalid-input', noRateText(req.currency as string));
+  return amount;
+}
+
 /** The budget's verdict for a spend, with its coded error; a destroy has no amount to judge. */
 function checkBudget(req: CleanRequest): void {
   if (req.kind !== 'spend') return;
-  const c = checkSpend({ category: req.category, amount: req.amount as number }, { audit: true });
+  const c = checkSpend({ category: req.category, amount: budgetAmount(req) }, { audit: true });
   if (!c.ok) throw c.error;
 }
 
@@ -178,7 +185,7 @@ function begin(req: CleanRequest, hash: string, provider: string): EffectRequest
   const base: Ticketed = { version: 1, requestId: req.requestId, hash, req, provider, state: 'pending', createdAt: new Date().toISOString(), until: '' };
   const covered =
     req.kind === 'spend'
-      ? authorizeSpend({ category: req.category, amount: req.amount as number }, req.requestId, { accountId: req.accountId })
+      ? authorizeSpend({ category: req.category, amount: budgetAmount(req) }, req.requestId, { accountId: req.accountId })
       : (() => {
           const a = authorize(req.kind, { accountId: req.accountId });
           if (!a.ok) return a;
@@ -205,7 +212,7 @@ function begin(req: CleanRequest, hash: string, provider: string): EffectRequest
 
 export function requestEffect(raw: unknown): EffectRequestResult {
   notPersona();
-  const req = clean(() => cleanRequest(raw, currency(), mask));
+  const req = clean(() => cleanRequest(raw, accepts, mask));
   const account = assertAccountId(req.accountId);
   prune();
   const hash = hashOf(req);
@@ -222,12 +229,15 @@ const cents = (n: number): number => Math.round(n * 100);
 
 export function settleEffect(raw: unknown): EffectSettleResult {
   notPersona();
-  const s = clean(() => cleanSettle(raw, currency(), mask));
+  const s = clean(() => cleanSettle(raw, accepts, mask));
   prune();
   const id = ticketRequestId(s.ticket);
   const rec = id ? read(id) : null;
   if (!rec || rec.state === 'pending' || rec.state === 'refused' || !rec.ticket || !same(rec.ticket, s.ticket)) throw new ContractError('not-found', t('main.effects.unknownTicket'));
   if (rec.state === 'settled') throw new ContractError('conflict', t('main.effects.alreadySettled'));
+  // The overrun is judged in the currency the spend was asked in, so the charge must come in it too: a rate between the two would hide what was really charged. A destroy asked
+  // for no amount, so its settlement of zero may name any currency the budget takes.
+  if (rec.req.currency !== null && s.currency !== rec.req.currency) throw new ContractError('invalid-input', t('main.effects.invalid', { field: 'currency' }));
   const authorized = rec.req.amount ?? 0;
   const overrun = cents(s.amount) > cents(authorized);
   // The ticket is closed before the ledger is written: a second settle that races this one finds it settled and no spend is recorded twice. A ledger that cannot take the line reopens it.

@@ -1,7 +1,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { RECURRENCES, type AllowedBy, type LedgerEntry, type LedgerKind, type Recurrence } from '../shared/budget';
+import { CURRENCY, RECURRENCES, RATE_LIMITS, type AllowedBy, type LedgerEntry, type LedgerKind, type Recurrence } from '../shared/budget';
 import { redact } from './errorlog-core';
 
 // The ledger of the operating budget (#198): one JSON line per spend, appended and never rewritten, in the workspace's own folder. The reader skips a line it cannot
@@ -37,6 +37,8 @@ export interface SpendRecord {
   auditRef?: string;
   kind: LedgerKind;
   reconciles?: string;
+  /** The price as charged, when the spend was converted from another currency. */
+  original?: { amount: number; currency: string; rate: number };
   /** For a test. */
   at?: string;
 }
@@ -52,7 +54,12 @@ const plain = (text: string, max: number): string => redact(String(text)).replac
 export function entryOf(r: SpendRecord, now: Date = new Date()): LedgerEntry {
   if (!Number.isFinite(r.amount) || r.amount < 0) throw new Error('budget: the amount must be a number of zero or more');
   if (!CATEGORY.test(r.category)) throw new Error('budget: invalid category');
-  if (!/^[A-Z]{3}$/.test(r.currency)) throw new Error('budget: invalid currency');
+  if (!CURRENCY.test(r.currency)) throw new Error('budget: invalid currency');
+  const o = r.original;
+  if (o !== undefined) {
+    if (!Number.isFinite(o.amount) || o.amount < 0 || !CURRENCY.test(o.currency) || o.currency === r.currency) throw new Error('budget: invalid original price');
+    if (!Number.isFinite(o.rate) || o.rate < RATE_LIMITS.min || o.rate > RATE_LIMITS.max) throw new Error('budget: invalid rate');
+  }
   if (!ALLOWED.test(r.allowedBy)) throw new Error('budget: invalid origin of the spend');
   const recurrence = r.recurrence ?? 'once';
   if (!RECURRENCES.includes(recurrence)) throw new Error('budget: invalid recurrence');
@@ -72,6 +79,7 @@ export function entryOf(r: SpendRecord, now: Date = new Date()): LedgerEntry {
     ...(r.auditRef ? { auditRef: plain(r.auditRef, 80) } : {}),
     kind: r.kind,
     ...(r.reconciles ? { reconciles: plain(r.reconciles, 80) } : {}),
+    ...(o !== undefined ? { original: { amount: o.amount, currency: o.currency, rate: o.rate } } : {}),
   };
 }
 

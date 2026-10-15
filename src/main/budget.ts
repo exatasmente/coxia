@@ -1,5 +1,5 @@
 import type { BudgetConfig } from '../shared/config/types';
-import { MODEL_CATEGORY, type BudgetView, type LedgerEntry, type SpendRequest, estimateFromTokens, judge, summarize } from '../shared/budget';
+import { CURRENCY, MODEL_CATEGORY, MODEL_CURRENCY, RATE_LIMITS, type BudgetView, type LedgerEntry, type SpendRequest, convert, countedIn, estimateFromTokens, judge, monthOf, summarize } from '../shared/budget';
 import type { StageUsage } from '../shared/runs';
 import { t } from '../shared/i18n';
 import { recordWrite } from './auditoria';
@@ -45,11 +45,22 @@ export function assertSpend(req: SpendRequest, opts: { audit?: boolean; now?: nu
   if (!c.ok) throw c.error;
 }
 
-/** Adds a spend to the ledger and writes its audit line. The amount is in the budget's currency; a spend in another is refused (no conversion exists). Returns the line kept. */
+/** The words for a price in a currency the budget has no rate for. */
+export const noRateText = (currency: string): string => t('main.budget.noRate', { currency, budget: budgetOf()?.currency ?? 'USD' });
+
+/** An amount of `currency` in the budget's currency, at the rate the person set; null when there is no rate for it (the spend is refused, never taken at 1:1). */
+export const inBudgetCurrency = (amount: number, currency: string): number | null => convert(amount, currency, budgetOf())?.amount ?? null;
+
+/**
+ * Adds a spend to the ledger and writes its audit line. A spend priced in another currency than the budget's is converted at the person's rate, and the line keeps the price as
+ * charged beside it; one with no rate is refused. Returns the line kept.
+ */
 export function recordSpend(r: SpendRecord): LedgerEntry {
-  const currency = budgetOf()?.currency ?? 'USD';
-  if (r.currency !== currency) throw new Error(`budget: the ledger is in ${currency}, not ${r.currency}`);
-  const entry = entryOf(r);
+  const budget = budgetOf();
+  const own = budget?.currency ?? 'USD';
+  const converted = convert(r.amount, r.currency, budget);
+  if (!converted) throw new Error(noRateText(r.currency));
+  const entry = entryOf(r.currency === own ? r : { ...r, amount: converted.amount, currency: own, original: { amount: r.amount, currency: r.currency, rate: converted.rate } });
   // The ledger line is its own audit reference unless the caller names the audit line of the "yes" that allowed it.
   if (!entry.auditRef) entry.auditRef = entry.id;
   appendEntry(atasDir(), entry);
@@ -58,7 +69,16 @@ export function recordSpend(r: SpendRecord): LedgerEntry {
     issue: 0,
     target: `spend:${entry.category}`,
     via: 'budget',
-    fields: { category: entry.category, vendor: entry.vendor, amount: String(entry.amount), currency: entry.currency, recurrence: entry.recurrence, kind: entry.kind, allowedBy: entry.allowedBy },
+    fields: {
+      category: entry.category,
+      vendor: entry.vendor,
+      amount: String(entry.amount),
+      currency: entry.currency,
+      recurrence: entry.recurrence,
+      kind: entry.kind,
+      allowedBy: entry.allowedBy,
+      ...(entry.original ? { originalAmount: String(entry.original.amount), originalCurrency: entry.original.currency, rate: String(entry.original.rate) } : {}),
+    },
     ok: true,
     code: null,
     result: '',
@@ -87,13 +107,36 @@ export function recordModelUsage(used: StageUsage, about: { run: string; stage: 
     estimated = true;
   }
   if (amount === null || !(amount > 0)) return null;
-  return recordSpend({ category: MODEL_CATEGORY, vendor: 'model provider', amount, currency: 'USD', reason: `stage ${about.stage} of run ${about.run}`, allowedBy: 'person', kind: estimated ? 'estimated' : 'reconciled' });
+  return recordSpend({ category: MODEL_CATEGORY, vendor: 'model provider', amount, currency: MODEL_CURRENCY, reason: `stage ${about.stage} of run ${about.run}`, allowedBy: 'person', kind: estimated ? 'estimated' : 'reconciled' });
 }
 
-/** The limits as a person may set them: numbers of zero or more, or null for none. Throws a worded error for anything else. */
-function cleanLimits(input: unknown): BudgetConfig {
+/**
+ * The budget as a person may set it: the currency (the one stored when none is sent), the rates of the others, and the limits as numbers of zero or more or null for none. Throws a
+ * worded error for anything else, for a budget the model's cost could not be counted in (not in USD and no rate for it), and for a change of currency while this month already has
+ * lines in the old one (they would be summed as if they were in the new one).
+ */
+function cleanLimits(input: unknown, now = Date.now()): BudgetConfig {
   const o = (input ?? {}) as Partial<BudgetConfig>;
-  const cur = getConfig().budget?.currency ?? 'USD';
+  const stored = getConfig().budget;
+  const before = stored?.currency ?? 'USD';
+  const cur = o.currency === undefined ? before : typeof o.currency === 'string' ? o.currency.trim().toUpperCase() : '';
+  if (!CURRENCY.test(cur)) throw new Error(t('main.budget.invalidCurrency', { currency: String(o.currency) }));
+  if (cur !== before) {
+    const month = monthOf(now);
+    if (countedIn(ledger(), month).some((e) => e.currency !== cur)) throw new Error(t('main.budget.currencyInUse', { currency: before, month }));
+  }
+  const rates: Record<string, number> = {};
+  const sentRates = o.rates === undefined ? (cur === before ? (stored?.rates ?? {}) : {}) : o.rates;
+  if (sentRates === null || typeof sentRates !== 'object' || Array.isArray(sentRates)) throw new Error(t('main.budget.invalidRate', { currency: '' }));
+  for (const [k, v] of Object.entries(sentRates)) {
+    if (v === null || v === undefined) continue;
+    const code = k.trim().toUpperCase();
+    if (!CURRENCY.test(code) || code === cur) throw new Error(t('main.budget.invalidCurrency', { currency: k }));
+    if (typeof v !== 'number' || !Number.isFinite(v) || v < RATE_LIMITS.min || v > RATE_LIMITS.max) throw new Error(t('main.budget.invalidRate', { currency: code }));
+    rates[code] = v;
+  }
+  // Every stage's model calls are priced in USD: a budget in another currency that cannot convert them would refuse each one at the ledger.
+  if (cur !== MODEL_CURRENCY && rates[MODEL_CURRENCY] === undefined) throw new Error(t('main.budget.modelRate', { currency: MODEL_CURRENCY, budget: cur }));
   const num = (v: unknown, name: string): number => {
     if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 1e9) throw new Error(t('main.budget.invalid', { field: name }));
     return Math.round(v * 100) / 100;
@@ -104,7 +147,7 @@ function cleanLimits(input: unknown): BudgetConfig {
     if (v === null || v === undefined) continue;
     categories[k] = num(v, k);
   }
-  return { currency: cur, monthly, categories };
+  return { currency: cur, monthly, categories, ...(Object.keys(rates).length > 0 ? { rates } : {}) };
 }
 
 export const budgetModule: Module = (ctx) => {

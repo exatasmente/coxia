@@ -18,6 +18,11 @@ export interface BudgetConfig {
   monthly: number | null;
   /** A limit per category (`model`, `infrastructure`, `domains`, and the ones added later); a category with no entry has no limit of its own. */
   categories: Record<string, number>;
+  /**
+   * What one unit of another currency is worth in `currency`, as the person set it (`{ USD: 5.45 }` in a BRL budget). A spend priced in a currency listed here is converted
+   * at that rate before it is judged and recorded; one priced in a currency with no rate is refused. Absent: no rate, so only spends in `currency` are taken.
+   */
+  rates?: Record<string, number>;
 }
 
 /**

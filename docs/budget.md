@@ -17,13 +17,15 @@ O Coxia guarda um **orçamento de operação** que a pessoa define: um total por
 ```
 
 - `monthly` e cada categoria são números de zero ou mais; **ausente ou `null` é sem limite**. Um workspace que já existia ganha `monthly: null` e nenhuma categoria: nada muda para ele.
-- A moeda é só `USD` por ora: os provedores de modelo cobram nela e o app não converte nada.
+- `currency` é a moeda de todo limite e de todo valor (um código ISO 4217: `USD`, `BRL`, `EUR`…), escolhida em Configurações › Orçamento. Ela só muda num mês **sem gastos** ainda: as linhas do mês na moeda antiga seriam somadas como se fossem da nova.
+- `rates` (opcional) diz quanto **uma unidade de outra moeda vale** na do orçamento, como a pessoa definiu: `{ "currency": "BRL", "rates": { "USD": 5.45 } }`. Um gasto cobrado numa moeda listada é convertido por essa cotação **antes** de ser conferido e gravado. Um cobrado numa moeda sem cotação é **recusado**, nunca lido como 1:1. O app não busca cotação em lugar nenhum: ela é da pessoa.
+- O modelo é cobrado em `USD`, então um orçamento em outra moeda **precisa da cotação do `USD`**: sem ela, salvar é recusado, porque o custo de cada etapa seria recusado no livro.
 - O mês é o mês civil em UTC. Quando ele vira, o que foi gasto no anterior deixa de contar e o que estava parado segue.
 - Nenhuma credencial entra aqui, nem no livro: o que um gasto precisar para falar com o fornecedor é uma **referência de segredo**, nunca o valor.
 
 ### O livro
 
-`<pasta do workspace>/budget/ledger.jsonl`, um JSON por linha, só acrescenta (modo `0600`). Cada linha: `id`, `at`, `category`, `vendor`, `amount`, `currency`, `recurrence` (`once`, `monthly`, `yearly`), `nextChargeAt` (só recorrente), `reason`, `allowedBy`, `auditRef`, `kind` e, na linha conciliada, `reconciles` (o `id` da estimada que ela substitui).
+`<pasta do workspace>/budget/ledger.jsonl`, um JSON por linha, só acrescenta (modo `0600`). Cada linha: `id`, `at`, `category`, `vendor`, `amount`, `currency`, `recurrence` (`once`, `monthly`, `yearly`), `nextChargeAt` (só recorrente), `reason`, `allowedBy`, `auditRef`, `kind`, na linha conciliada `reconciles` (o `id` da estimada que ela substitui) e, na linha convertida de outra moeda, `original` (`amount`, `currency` e a `rate` usada: o preço como foi cobrado). `amount` e `currency` são sempre os do orçamento; a auditoria leva os dois valores e a cotação.
 
 - **`allowedBy`**: `person` (o "sim" da pessoa), `grant:<id>` (uma concessão de autonomia) ou `estimate` (uso de modelo que o app estimou sem perguntar a ninguém). A autonomia em si é outra issue; aqui só se grava o que existe.
 - **`auditRef`**: o `origin.key` da linha `spend` em `auditoria.jsonl`, ou o id da auditoria do "sim" que permitiu o gasto, quando quem chama o informa. Vendor e motivo passam pela mascaração de segredos antes de gravar.
@@ -76,13 +78,15 @@ Coxia keeps an **operating budget** the person sets: a monthly total and a limit
 ```
 
 - `monthly` and each category are numbers of zero or more; **absent or `null` means no limit**. A workspace that already existed gets `monthly: null` and no category: nothing changes for it.
-- The currency is `USD` only for now: the model providers bill in it and the app converts nothing.
+- `currency` is the currency of every limit and every figure (an ISO 4217 code: `USD`, `BRL`, `EUR`…), chosen in Settings › Budget. It changes only in a month with **no spends** yet: the month's lines in the old one would be summed as if they were in the new one.
+- `rates` (optional) says what **one unit of another currency is worth** in the budget's, as the person set it: `{ "currency": "BRL", "rates": { "USD": 5.45 } }`. A spend charged in a listed currency is converted at that rate **before** it is checked and recorded. One charged in a currency with no rate is **refused**, never read as 1:1. The app fetches no rate from anywhere: the rate is the person's.
+- The model is priced in `USD`, so a budget in another currency **needs the `USD` rate**: without it, saving is refused, because every stage's cost would be refused at the ledger.
 - The month is the calendar month in UTC. When it turns, what was spent in the previous one stops counting and what was held goes on.
 - No credential goes here or in the ledger: whatever a spend needs to talk to a vendor is a **secret reference**, never the value.
 
 ### The ledger
 
-`<workspace folder>/budget/ledger.jsonl`, one JSON per line, append-only (mode `0600`). Each line: `id`, `at`, `category`, `vendor`, `amount`, `currency`, `recurrence` (`once`, `monthly`, `yearly`), `nextChargeAt` (recurring only), `reason`, `allowedBy`, `auditRef`, `kind` and, on a reconciled line, `reconciles` (the `id` of the estimated line it replaces).
+`<workspace folder>/budget/ledger.jsonl`, one JSON per line, append-only (mode `0600`). Each line: `id`, `at`, `category`, `vendor`, `amount`, `currency`, `recurrence` (`once`, `monthly`, `yearly`), `nextChargeAt` (recurring only), `reason`, `allowedBy`, `auditRef`, `kind`, on a reconciled line `reconciles` (the `id` of the estimated line it replaces) and, on a line converted from another currency, `original` (`amount`, `currency` and the `rate` used: the price as it was charged). `amount` and `currency` are always the budget's; the audit carries both figures and the rate.
 
 - **`allowedBy`**: `person` (the person's "yes"), `grant:<id>` (an autonomy grant) or `estimate` (model use the app estimated without asking anyone). Autonomy itself is another issue; this only records what exists.
 - **`auditRef`**: the `origin.key` of the `spend` line in `auditoria.jsonl`, or the audit id of the "yes" that allowed the spend when the caller gives it. Vendor and reason go through the secret masking before they are written.

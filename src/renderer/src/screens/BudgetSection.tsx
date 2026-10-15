@@ -5,8 +5,8 @@ import { api, errorText } from '../api';
 import { useT } from '../i18n';
 import { isWeb } from '../platform';
 
-// Settings › the operating budget: a monthly total and a limit per category, with what was spent and what is left this month. Empty means no limit. Setting a limit is the
-// computer's alone (webPolicy.ts), so a paired browser never shows the section.
+// Settings › the operating budget: its currency, a monthly total and a limit per category, with what was spent and what is left this month. Empty means no limit. A price in
+// another currency is converted at the rate set here, and one with no rate is refused. Setting any of it is the computer's alone (webPolicy.ts), so a paired browser never shows the section.
 
 // Literal keys, so the catalog check sees each one used.
 const CATEGORY_LABEL: Record<(typeof BUDGET_CATEGORIES)[number], string> = { model: 'ui.settings.budget.category.model', infrastructure: 'ui.settings.budget.category.infrastructure', domains: 'ui.settings.budget.category.domains' };
@@ -22,6 +22,8 @@ export function BudgetSection() {
   const [view, setView] = useState<BudgetView | null>(null);
   const [monthly, setMonthly] = useState('');
   const [cats, setCats] = useState<Record<string, string>>({});
+  const [currency, setCurrency] = useState('');
+  const [rates, setRates] = useState<{ code: string; rate: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,8 @@ export function BudgetSection() {
     setView(v);
     setMonthly(toText(v.monthly));
     setCats(Object.fromEntries(v.categories.map((c) => [c.category, toText(c.limit)])));
+    setCurrency(v.currency);
+    setRates(Object.entries(v.rates).map(([code, rate]) => ({ code, rate: String(rate) })));
   };
 
   useEffect(() => {
@@ -50,7 +54,9 @@ export function BudgetSection() {
         const n = toLimit(v);
         if (n !== null) categories[k] = n;
       }
-      load(await api.invoke<BudgetView>('budget:set', { monthly: toLimit(monthly), categories }));
+      const byCode: Record<string, number> = {};
+      for (const r of rates) if (r.code.trim() !== '' && r.rate.trim() !== '') byCode[r.code.trim().toUpperCase()] = Number(r.rate);
+      load(await api.invoke<BudgetView>('budget:set', { currency: currency.trim().toUpperCase(), rates: byCode, monthly: toLimit(monthly), categories }));
       setSaved(true);
     } catch (e) {
       setError(errorText(e));
@@ -59,6 +65,13 @@ export function BudgetSection() {
     }
   };
 
+  const touch = (): void => setSaved(false);
+  const setRate = (i: number, patch: Partial<{ code: string; rate: string }>): void => {
+    touch();
+    setRates(rates.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  };
+  const own = currency.trim().toUpperCase() || view.currency;
+
   const labelOf = (c: string): string => (c in CATEGORY_LABEL ? t(CATEGORY_LABEL[c as keyof typeof CATEGORY_LABEL]) : c);
 
   return (
@@ -66,6 +79,30 @@ export function BudgetSection() {
       <div>
         <h3 id="budget-title" className="wz-sub">{t('ui.settings.budget.title')}</h3>
         <p className="small muted" style={{ marginTop: 4 }}>{t('ui.settings.budget.hint')}</p>
+      </div>
+      <div className="settings-row">
+        <label htmlFor="budget-currency" style={{ fontWeight: 600 }}>{t('ui.settings.budget.currency')}</label>
+        <div className="row" style={{ gap: 8 }}>
+          <input id="budget-currency" className="text-input" style={{ maxWidth: 80 }} maxLength={3} autoComplete="off" spellCheck={false} value={currency} onChange={(e) => { touch(); setCurrency(e.target.value.toUpperCase()); }} />
+          <span className="small muted">{t('ui.settings.budget.currencyHint')}</span>
+        </div>
+      </div>
+      <div className="settings-row">
+        <span style={{ fontWeight: 600 }}>{t('ui.settings.budget.rates')}</span>
+        <div>
+          <p className="small muted" style={{ margin: '0 0 6px' }}>{t('ui.settings.budget.ratesHint', { currency: own })}</p>
+          {rates.map((r, i) => (
+            <div className="row" style={{ gap: 8, marginBottom: 6 }} key={i}>
+              <span className="small muted">1</span>
+              <input aria-label={t('ui.settings.budget.rateCode')} className="text-input" style={{ maxWidth: 70 }} maxLength={3} autoComplete="off" spellCheck={false} value={r.code} onChange={(e) => setRate(i, { code: e.target.value.toUpperCase() })} />
+              <span className="small muted">=</span>
+              <input aria-label={t('ui.settings.budget.rateValue', { code: r.code || '?', currency: own })} type="number" min={0} step="any" className="text-input" style={{ maxWidth: 110 }} value={r.rate} onChange={(e) => setRate(i, { rate: e.target.value })} />
+              <span className="small muted">{own}</span>
+              <button type="button" className="btn" onClick={() => { touch(); setRates(rates.filter((_, j) => j !== i)); }}>{t('ui.settings.budget.rateRemove')}</button>
+            </div>
+          ))}
+          <button type="button" className="btn" onClick={() => { touch(); setRates([...rates, { code: '', rate: '' }]); }}>{t('ui.settings.budget.rateAdd')}</button>
+        </div>
       </div>
       {view.paused && <div className="error" role="status">{t(view.pausedBy?.scope === 'month' ? 'ui.settings.budget.pausedMonth' : 'ui.settings.budget.pausedCategory', { category: view.pausedBy?.category ?? '' })}</div>}
       <div className="settings-row">
