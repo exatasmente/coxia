@@ -291,6 +291,30 @@ describe('a stage that goes wrong', () => {
     expect(run.stages.find((s) => s.stage === 'gate1')?.usage).toBeUndefined();
   });
 
+  it('keeps the use of a stage that failed after tokens went out when the provider reported no cost, and lets the run file be saved', async () => {
+    const b = await boot();
+    easy(b);
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      b.engine.script('refiner', (call) => {
+        // an OpenAI-compatible server that sends token counts and no price, then refuses the next call
+        call.onUsage?.({ promptTokens: 400, completionTokens: 40, cachedTokens: 0 });
+        throw new Error('provider answered 403');
+      });
+      const run = await b.runner.start('app#101');
+      await b.settle();
+      const saved = b.runner.get(run.id)!;
+      expect(saved.status).toBe('failed');
+      const usage = saved.stages[0].usage;
+      expect(usage).toEqual({ promptTokens: 400, completionTokens: 40, cachedTokens: 0, calls: 1, costUsd: null });
+      // the key is absent, not present and undefined: the run file check refuses the latter
+      expect(usage).not.toHaveProperty('costEstimated');
+      expect(logged.mock.calls.filter((c) => String(c[0]).includes('could not record usage'))).toEqual([]);
+    } finally {
+      logged.mockRestore();
+    }
+  });
+
   it('keeps what a stage whose cost was only an estimate used, marked as an estimate over its attempts', async () => {
     const b = await boot({ timeoutMs: 60 });
     easy(b);
