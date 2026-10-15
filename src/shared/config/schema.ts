@@ -640,9 +640,10 @@ export const CONFIG_SCHEMA: JsonSchema = {
         enabled: boolean('The Claude Code sessions screen and its channels exist. Off: no screen, and every channel refuses.'),
       }),
       budget: object('The operating budget: what the app may spend in a month and per category, checked before anything that costs money runs. An operating limit, not a guarantee: a card limit or the provider\'s own cap is outside the app. No credential is ever here.', {
-        currency: enumOf('The currency of every amount. Only USD today: the model providers bill in it and the app converts nothing.', ['USD']),
+        currency: string('The currency of every amount, as an ISO 4217 code (USD, BRL, EUR...). A price in another is converted at its rate in `rates`, or refused.', { pattern: '^[A-Z]{3}$' }),
         monthly: { type: ['number', 'null'], description: 'The most the instance may spend in a calendar month (UTC), across categories. Null: no limit.', minimum: 0, maximum: 1e9 },
         categories: { type: 'object', description: 'A limit per category (model, infrastructure, domains and the ones added later), by name. A category with no entry has no limit of its own.', additionalProperties: { type: 'number', minimum: 0, maximum: 1e9 }, maxProperties: 30 } as JsonSchema,
+        rates: { type: 'object', description: 'What one unit of another currency is worth in `currency`, by its ISO 4217 code, as the person set it. A spend priced in a currency with no rate here is refused; the model is priced in USD, so a budget in another currency needs the USD rate.', additionalProperties: { type: 'number', minimum: 1e-6, maximum: 1e6 }, maxProperties: 40 } as JsonSchema,
       }),
       effects: object('When the app offers autonomy for a kind of external effect (a push, a pull request, a comment ...): after N proposals of the kind approved in a row with none reverted. The grant itself is the person\'s and is never here.', {
         offerAfter: { type: 'integer', description: 'N for every kind with no entry of its own.', minimum: 1, maximum: 1000 } as JsonSchema,

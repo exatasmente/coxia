@@ -44,7 +44,11 @@ export function ConfigWorkspacesSection({ go }: { go: (s: Screen) => void }) {
     <section className="wz-stack" aria-labelledby="cfg-ws-title">
       <h2 id="cfg-ws-title" className="wz-section-title" style={{ fontSize: 18, fontWeight: 600 }}>{t('settings.configWorkspaces.title')}</h2>
       {web ? (
-        <Notice tone="info">{t('wizard.settings.webNote')}</Notice>
+        <>
+          <Notice tone="info">{t('wizard.settings.webNote')}</Notice>
+          {/* An admin device (one with a passkey) sets the budget from here too; the section hides itself from any other browser. */}
+          <BudgetSection />
+        </>
       ) : (
         <>
           <div className="panel wz-settings" aria-labelledby="cfg-wizard">

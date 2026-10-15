@@ -1,7 +1,8 @@
 import type { BudgetConfig } from './config/types';
 
 // The operating budget (#198), pure: what a ledger line is, how a month is summed and how a spend is judged against the limits. Nothing here reads the disk or the
-// config, so the main process, the renderer and a test all use the same arithmetic. The amounts are in `BudgetConfig.currency`; a line of another currency is refused at the door.
+// config, so the main process, the renderer and a test all use the same arithmetic. The amounts are in `BudgetConfig.currency`; a spend priced in another is converted at the rate
+// the person set for it (`BudgetConfig.rates`) before it reaches the ledger, and one with no rate is refused at the door.
 
 /** The categories the app knows by name; a category added later is just another key of `BudgetConfig.categories`. */
 export const BUDGET_CATEGORIES = ['model', 'infrastructure', 'domains'] as const;
@@ -40,6 +41,8 @@ export interface LedgerEntry {
   kind: LedgerKind;
   /** On a reconciled line: the id of the estimated line it replaces, so the two are never summed together. */
   reconciles?: string;
+  /** On a line converted from another currency: the price as it was charged and the rate it was converted at. `amount` and `currency` are the budget's. */
+  original?: { amount: number; currency: string; rate: number };
 }
 
 /** A spend the instance asks to make. `amount` zero asks only whether there is anything left (the start of a model stage). */
@@ -77,6 +80,8 @@ export interface RecurringView {
 
 export interface BudgetView {
   currency: string;
+  /** The rates the person set, by currency: what one unit of each is worth in `currency`. */
+  rates: Record<string, number>;
   /** `YYYY-MM`, UTC. */
   month: string;
   monthly: number | null;
@@ -112,6 +117,26 @@ function sum(entries: readonly LedgerEntry[]): Amounts {
   const estimated = round(entries.filter((e) => e.kind === 'estimated').reduce((n, e) => n + e.amount, 0));
   const reconciled = round(entries.filter((e) => e.kind === 'reconciled').reduce((n, e) => n + e.amount, 0));
   return { total: round(estimated + reconciled), estimated, reconciled };
+}
+
+export const CURRENCY = /^[A-Z]{3}$/;
+
+/** The currency every model call is priced in, by every provider the app knows. A budget in another needs a rate for it. */
+export const MODEL_CURRENCY = 'USD';
+
+/** The most and least a rate may be: wide enough for any pair of currencies, narrow enough to catch a slip of the decimal point. */
+export const RATE_LIMITS = { min: 1e-6, max: 1e6 } as const;
+
+/**
+ * An amount of `currency` in the budget's currency: the same amount at rate 1 when they are the same, the rate the person set otherwise, null when there is none (the spend is
+ * refused, never taken at 1:1). Rounded to the hundredth of a cent, as the ledger sums.
+ */
+export function convert(amount: number, currency: string, budget: BudgetConfig | undefined): { amount: number; rate: number } | null {
+  const own = budget?.currency ?? 'USD';
+  if (currency === own) return { amount, rate: 1 };
+  const rate = budget?.rates?.[currency];
+  if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return null;
+  return { amount: round(amount * rate), rate };
 }
 
 /** The limit of a category, null when it has none (a missing budget has none at all). */
@@ -167,6 +192,7 @@ export function summarize(entries: readonly LedgerEntry[], budget: BudgetConfig 
   }));
   return {
     currency: budget?.currency ?? 'USD',
+    rates: { ...(budget?.rates ?? {}) },
     month,
     monthly,
     spent,

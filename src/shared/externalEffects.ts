@@ -1,4 +1,4 @@
-import { RECURRENCES, type AllowedBy, type Recurrence } from './budget';
+import { CURRENCY, RECURRENCES, type AllowedBy, type Recurrence } from './budget';
 import type { EffectKind } from './effects';
 
 // What an external client (coxia-provision, through the local admin socket) says to ask before an effect and to record what it cost: `effects:request`, `effects:settle` and
@@ -88,10 +88,11 @@ export function amountOf(v: unknown, field: string): number {
 }
 
 /**
- * A request as the core keeps it. `budgetCurrency` is the currency of the workspace's ledger: an amount in another is refused, since no conversion exists. `mask` hides what looks
+ * A request as the core keeps it, in the currency it is priced in. `accepts` says whether the workspace's budget can take a price in a currency (its own, or one it has a rate
+ * for); a price in another is refused, never taken at 1:1. `mask` hides what looks
  * like a credential in the free text, so the person is never shown one and the ledger never keeps one.
  */
-export function cleanRequest(input: unknown, budgetCurrency: string, mask: (text: string) => string = (x) => x): CleanRequest {
+export function cleanRequest(input: unknown, accepts: (currency: string) => boolean, mask: (text: string) => string = (x) => x): CleanRequest {
   if (!isObject(input)) throw new EffectInputError('args');
   const requestId = input.requestId;
   if (typeof requestId !== 'string' || !REQUEST_ID.test(requestId)) throw new EffectInputError('requestId');
@@ -108,8 +109,8 @@ export function cleanRequest(input: unknown, budgetCurrency: string, mask: (text
   let currency: string | null = null;
   if (kind === 'spend') {
     amount = amountOf(input.amount, 'amount');
-    if (input.currency !== budgetCurrency) throw new EffectInputError('currency');
-    currency = budgetCurrency;
+    if (typeof input.currency !== 'string' || !CURRENCY.test(input.currency) || !accepts(input.currency)) throw new EffectInputError('currency');
+    currency = input.currency;
   } else if (input.amount !== undefined || input.currency !== undefined) {
     // A destroy costs nothing to ask: what it saves or frees is not a spend.
     throw new EffectInputError('amount');
@@ -125,18 +126,20 @@ export interface CleanSettle {
   reference: string | null;
 }
 
-export function cleanSettle(input: unknown, budgetCurrency: string, mask: (text: string) => string = (x) => x): CleanSettle {
+/** A settlement as the core keeps it, in the currency it was charged in; `accepts` as for `cleanRequest`. Whether it is the currency of the request is the caller's to check. */
+export function cleanSettle(input: unknown, accepts: (currency: string) => boolean, mask: (text: string) => string = (x) => x): CleanSettle {
   if (!isObject(input)) throw new EffectInputError('args');
   const ticket = input.ticket;
   if (typeof ticket !== 'string' || ticket.length < 10 || ticket.length > 160) throw new EffectInputError('ticket');
   const actual = input.actual;
   if (!isObject(actual)) throw new EffectInputError('actual');
   const amount = amountOf(actual.amount, 'amount');
-  if (actual.currency !== budgetCurrency) throw new EffectInputError('currency');
+  if (typeof actual.currency !== 'string' || !CURRENCY.test(actual.currency) || !accepts(actual.currency)) throw new EffectInputError('currency');
+  const currency = actual.currency;
   const kind = actual.kind === undefined ? 'estimated' : actual.kind;
   if (kind !== 'estimated' && kind !== 'reconciled') throw new EffectInputError('kind');
   const reference = oneLine(actual.reference, 'reference', REQUEST_LIMITS.reference, false);
-  return { ticket, amount, currency: budgetCurrency, kind, reference: reference === null ? null : mask(reference) };
+  return { ticket, amount, currency, kind, reference: reference === null ? null : mask(reference) };
 }
 
 /** The ticket of a request: its id, a dot and a random part, so the core finds the file at once. The random part is what makes it a secret of the client. */

@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, appendFileSync, existsSync } from 'n
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { type LedgerEntry, estimateFromTokens, judge, monthOf, summarize } from '../src/shared/budget';
+import { type LedgerEntry, convert, estimateFromTokens, judge, monthOf, summarize } from '../src/shared/budget';
 import { neutralConfig } from '../src/shared/config/defaults';
 import { CHANNELS, ERROR_CODES, errorCodeOf, wireErrorOf } from '../src/shared/contract';
 import { STEP_UP, webAccess } from '../src/main/webPolicy';
@@ -272,6 +272,9 @@ describe('the phone\'s one config save', () => {
     const before = neutralConfig();
     const after = { ...before, budget: { currency: 'USD', monthly: 1e6, categories: {} } };
     expect(refusedPaths(before, after)).toContain('budget.monthly');
+    // nor the currency or a rate, which change what a price is worth against the limits
+    const priced = { ...before, budget: { currency: 'BRL', monthly: null, categories: {}, rates: { USD: 0.01 } } };
+    expect(refusedPaths(before, priced)).toEqual(expect.arrayContaining(['budget.currency', 'budget.rates']));
   });
 });
 
@@ -296,3 +299,94 @@ describe('what is held at the limit, and what is not', () => {
   });
 });
 
+
+describe('a budget in another currency', () => {
+  type Handler = (...args: unknown[]) => unknown;
+  const mount = () => {
+    const handlers = new Map<string, Handler>();
+    budgetModule({ handle: (c, fn) => void handlers.set(c, fn as Handler), notify: () => undefined, emit: () => undefined, job: () => undefined });
+    return (c: string, ...a: unknown[]) => handlers.get(c)?.(...a);
+  };
+  const brl = { currency: 'BRL', monthly: 600, categories: { infrastructure: 200 }, rates: { USD: 5.45 } };
+  beforeEach(() => {
+    rmSync(join(atasDir(), 'budget', 'ledger.jsonl'), { force: true });
+    updateConfig((c) => ({ ...c, budget: budget(null) }));
+  });
+
+  it('converts at the rate the person set, takes its own currency at 1, and has no 1:1 fallback', () => {
+    expect(convert(10, 'USD', brl)).toEqual({ amount: 54.5, rate: 5.45 });
+    expect(convert(70.99, 'BRL', brl)).toEqual({ amount: 70.99, rate: 1 });
+    expect(convert(1, 'EUR', brl)).toBeNull();
+    expect(convert(1, 'EUR', budget(null))).toBeNull();
+    expect(convert(1, 'EUR', { ...brl, rates: { EUR: 0 } })).toBeNull();
+  });
+
+  it('records a spend priced in another currency in the budget\'s, keeping the price as charged and the rate, in the ledger and the audit', () => {
+    updateConfig((c) => ({ ...c, budget: brl }));
+    const e = recordSpend({ category: 'domains', vendor: 'registrar', amount: 10, currency: 'USD', reason: 'a name', allowedBy: 'person', kind: 'reconciled' });
+    expect(e).toMatchObject({ amount: 54.5, currency: 'BRL', original: { amount: 10, currency: 'USD', rate: 5.45 } });
+    expect(readLedger(atasDir())[0]).toMatchObject({ amount: 54.5, currency: 'BRL', original: { amount: 10, currency: 'USD' } });
+    expect(listAudit().find((a) => a.kind === 'spend' && a.origin.key === e.id)?.fields).toMatchObject({ amount: '54.5', currency: 'BRL', originalAmount: '10', originalCurrency: 'USD', rate: '5.45' });
+    const own = recordSpend({ category: 'infrastructure', vendor: 'host', amount: 70.99, currency: 'BRL', reason: 'a server', allowedBy: 'person', kind: 'reconciled' });
+    expect(own.original).toBeUndefined();
+    expect(budgetView().spent.total).toBe(125.49);
+    expect(budgetView().rates).toEqual({ USD: 5.45 });
+  });
+
+  it('refuses a spend in a currency with no rate, saying which one and how to set it', () => {
+    updateConfig((c) => ({ ...c, budget: brl }));
+    expect(() => recordSpend({ category: 'domains', vendor: 'r', amount: 1, currency: 'EUR', reason: 'x', allowedBy: 'person', kind: 'estimated' })).toThrow(/EUR/);
+    expect(readLedger(atasDir())).toHaveLength(0);
+  });
+
+  it('counts the model\'s USD cost against the limits of a BRL budget', () => {
+    updateConfig((c) => ({ ...c, budget: { ...brl, categories: { model: 10 } } }));
+    const base = { promptTokens: 1000, completionTokens: 100, cachedTokens: 0, calls: 1 };
+    expect(recordModelUsage({ ...base, costUsd: 2, costEstimated: false }, { run: 'r-1', stage: 'build' })).toMatchObject({ amount: 10.9, currency: 'BRL', original: { amount: 2, currency: 'USD' } });
+    expect(modelHeld()).toBe(true);
+  });
+
+  it('judges a converted amount against the limits in the budget\'s currency', () => {
+    updateConfig((c) => ({ ...c, budget: brl }));
+    recordSpend({ category: 'infrastructure', vendor: 'host', amount: 30, currency: 'USD', reason: 'a server', allowedBy: 'person', kind: 'reconciled' });
+    const c = checkSpend({ category: 'infrastructure', amount: 50 });
+    expect(c.ok).toBe(false);
+    if (!c.ok) expect(c.error.detail).toMatchObject({ scope: 'category', limit: 200, spent: 163.5 });
+  });
+
+  it('set takes the currency and the rates, upper-cased, and keeps the rates when only the limits are sent', () => {
+    const call = mount();
+    expect(call('budget:set', { currency: 'brl', rates: { usd: 5.45 }, monthly: 600, categories: {} })).toMatchObject({ currency: 'BRL', rates: { USD: 5.45 } });
+    expect(getConfig().budget).toEqual({ currency: 'BRL', monthly: 600, categories: {}, rates: { USD: 5.45 } });
+    call('budget:set', { monthly: 700, categories: {} });
+    expect(getConfig().budget).toMatchObject({ currency: 'BRL', monthly: 700, rates: { USD: 5.45 } });
+    expect(listAudit().some((a) => a.kind === 'config' && Object.keys(a.fields).some((k) => k.startsWith('budget.'))) ).toBe(true);
+  });
+
+  it('set refuses a budget the model cost cannot be counted in, a bad code, a bad rate and a rate of the budget\'s own currency', () => {
+    const call = mount();
+    expect(() => call('budget:set', { currency: 'BRL', monthly: null, categories: {} })).toThrow(/USD/);
+    expect(() => call('budget:set', { currency: 'reais', rates: { USD: 5 }, monthly: null, categories: {} })).toThrow();
+    expect(() => call('budget:set', { currency: 'BRL', rates: { USD: 0 }, monthly: null, categories: {} })).toThrow(/USD/);
+    expect(() => call('budget:set', { currency: 'BRL', rates: { USD: 'five' }, monthly: null, categories: {} })).toThrow();
+    expect(() => call('budget:set', { currency: 'BRL', rates: { USD: 5, BRL: 1 }, monthly: null, categories: {} })).toThrow(/BRL/);
+    expect(getConfig().budget?.currency).toBe('USD');
+  });
+
+  it('set refuses to change the currency while this month has spends in the old one, and lets it change with none', () => {
+    const call = mount();
+    recordSpend({ category: 'model', vendor: 'p', amount: 1, currency: 'USD', reason: 'x', allowedBy: 'person', kind: 'reconciled' });
+    expect(() => call('budget:set', { currency: 'BRL', rates: { USD: 5.45 }, monthly: null, categories: {} })).toThrow(/USD/);
+    expect(getConfig().budget?.currency).toBe('USD');
+    rmSync(join(atasDir(), 'budget', 'ledger.jsonl'), { force: true });
+    expect(call('budget:set', { currency: 'BRL', rates: { USD: 5.45 }, monthly: null, categories: {} })).toMatchObject({ currency: 'BRL' });
+  });
+
+  it('keeps a ledger line that names a bad original price out', () => {
+    const record = { category: 'infrastructure', vendor: 'host', amount: 5, currency: 'BRL', reason: 'r', allowedBy: 'person' as const, kind: 'reconciled' as const };
+    expect(() => entryOf({ ...record, original: { amount: 1, currency: 'BRL', rate: 5 } })).toThrow();
+    expect(() => entryOf({ ...record, original: { amount: 1, currency: 'USD', rate: 0 } })).toThrow();
+    expect(() => entryOf({ ...record, original: { amount: -1, currency: 'USD', rate: 5 } })).toThrow();
+    expect(entryOf({ ...record, original: { amount: 1, currency: 'USD', rate: 5 } }).original).toEqual({ amount: 1, currency: 'USD', rate: 5 });
+  });
+});

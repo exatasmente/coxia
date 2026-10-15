@@ -387,7 +387,60 @@ describe('what is kept on disk', () => {
   });
 
   it('cleans the shape of a request the same way on both sides', () => {
-    expect(cleanRequest({ requestId: 'abcdefgh', kind: 'destroy', accountId: ' hosting ', summary: ' a   b ' }, 'USD')).toMatchObject({ accountId: 'hosting', summary: 'a b', amount: null, category: 'infrastructure', recurrence: 'once' });
+    expect(cleanRequest({ requestId: 'abcdefgh', kind: 'destroy', accountId: ' hosting ', summary: ' a   b ' }, (c) => c === 'USD')).toMatchObject({ accountId: 'hosting', summary: 'a b', amount: null, category: 'infrastructure', recurrence: 'once' });
     expect(getConfig().budget?.currency).toBe('USD');
+  });
+});
+
+describe('a price in another currency than the budget\'s', () => {
+  const brl = { currency: 'BRL', monthly: 300, categories: {}, rates: { USD: 5.45 } };
+
+  it('is taken in the currency the budget has a rate for, judged converted, and settled into the ledger converted with the price as charged', async () => {
+    updateConfig((c) => ({ ...c, budget: brl }));
+    const { proposalId, state } = request(spend('req-brl-1', { amount: 70.99, currency: 'BRL' }));
+    expect(state).toBe('pending');
+    expect(pending()[0].unit).toMatchObject({ amount: 70.99, currency: 'BRL' });
+    await actions.approveAction(proposalId as string);
+    const { ticket } = request(spend('req-brl-1', { amount: 70.99, currency: 'BRL' }));
+    expect(settle(ticket as string, { amount: 70.99, currency: 'BRL', kind: 'reconciled' })).toMatchObject({ overrun: false });
+    const { ticket: t2, proposalId: p2 } = request(spend('req-usd-1', { amount: 10, currency: 'USD' }));
+    expect(t2).toBeUndefined();
+    await actions.approveAction(p2 as string);
+    const { ticket: t3 } = request(spend('req-usd-1', { amount: 10, currency: 'USD' }));
+    const out = settle(t3 as string, { amount: 10, currency: 'USD' });
+    expect(ledger().find((e) => e.id === out.entryId)).toMatchObject({ amount: 54.5, currency: 'BRL', original: { amount: 10, currency: 'USD', rate: 5.45 } });
+  });
+
+  it('is refused by the limit once converted', () => {
+    updateConfig((c) => ({ ...c, budget: brl }));
+    // 60 USD at 5.45 is 327 BRL, over the 300 of the month
+    expect(codeOf(() => request(spend('req-usd-big', { amount: 60, currency: 'USD' })))).toBe('budget-exceeded');
+    expect(request(spend('req-usd-fits', { amount: 50, currency: 'USD' })).state).toBe('pending');
+  });
+
+  it('is refused with no rate for it, before anyone is asked', () => {
+    updateConfig((c) => ({ ...c, budget: brl }));
+    expect(codeOf(() => request(spend('req-eur-1', { amount: 1, currency: 'EUR' })))).toBe('invalid-input');
+    // the words name the currency and say the rate is missing, not just the field
+    expect(() => request(spend('req-eur-1', { amount: 1, currency: 'EUR' }))).toThrow(/EUR/);
+    expect(pending()).toHaveLength(0);
+  });
+
+  it('must be settled in the currency it was asked in', async () => {
+    updateConfig((c) => ({ ...c, budget: brl }));
+    const { proposalId } = request(spend('req-mix-1', { amount: 10, currency: 'USD' }));
+    await actions.approveAction(proposalId as string);
+    const { ticket } = request(spend('req-mix-1', { amount: 10, currency: 'USD' }));
+    expect(codeOf(() => settle(ticket as string, { amount: 54.5, currency: 'BRL' }))).toBe('invalid-input');
+    expect(ledger()).toHaveLength(0);
+    expect(settle(ticket as string, { amount: 10, currency: 'USD' })).toMatchObject({ overrun: false });
+  });
+
+  it('is refused when the rate was taken away between the request and the yes', async () => {
+    updateConfig((c) => ({ ...c, budget: brl }));
+    const { proposalId } = request(spend('req-gone-1', { amount: 10, currency: 'USD' }));
+    await actions.approveAction(proposalId as string);
+    updateConfig((c) => ({ ...c, budget: { currency: 'BRL', monthly: 300, categories: {} } }));
+    expect(codeOf(() => request(spend('req-gone-1', { amount: 10, currency: 'USD' })))).toBe('invalid-input');
   });
 });
