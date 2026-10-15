@@ -2,7 +2,7 @@
 import type { JsonSchema } from './jsonSchema';
 import { STEP_KINDS } from '../browser';
 import { VERIFY_COMMAND_MAX } from '../verifyCommands';
-import { ACTIVITIES, AGENT_KINDS, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, REMOTE_CONTROL_MODES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
+import { ACTIVITIES, AGENT_KINDS, SQUAD_AUTO_STARTS, EFFORT_SETTINGS, MAX_POOL_ENTRIES, POOL_MODES, SCORED_ACTIVITIES, AGENT_PERMISSIONS, AGENT_SHELLS, AGENT_TRACKERS, SANDBOX_NETWORKS, CARD_FIELDS, CEREMONY_IDS, CLI_PREFERENCES, EVIDENCE_PLACEMENTS, PROMPT_ROLES, REMOTE_CONTROL_MODES, STAGE_SOURCES, USER_ARTICLES, CONFIG_SCHEMA_VERSION, CARD_SCOPES, ENGINES, LANGUAGES, LLM_ROLES, PROVIDER_KINDS, STAGE_KINDS, STAGE_TYPES, STRUCTURED_MODES, THEMES, VCS_KINDS, VOICE_ENGINES, WAIT_KINDS } from './types';
 
 // The JSON Schema of WorkspaceConfig (schema 36). It is both what `config:schema` hands to editors and what import validates against.
 // Only the fields that cannot be guessed are required; everything else falls back to the neutral default (defaults.ts).
@@ -331,6 +331,7 @@ const squad = object(
     autonomy: boolean('A squad-wide switch: off makes every member wait for the person (each agent\'s own switch applies when it is on).'),
     label: nullableString('A label the issue gets on the tracker when a run starts in the squad; null: none.'),
     screenPolicy: screenPolicy('The squad\'s screen step approvals; a member\'s own word wins, and the squad\'s wins over the workspace\'s.'),
+    autoStart: enumOf('Which open issues carrying one of the squad\'s labels start a run by themselves, with the runner on: "mine" (assigned to the person) or "mine-and-unassigned" (those and the ones nobody is assigned to). Absent: the labels start nothing; only runner.triggerLabel does.', SQUAD_AUTO_STARTS),
   },
   ['id', 'name'],
 );

@@ -82,7 +82,8 @@ describe('an issue whose repository is one squad\'s', () => {
     b.issues.add(issue(104, { labels: ['mobile'] }));
     const run = await b.runner.start('app#104');
     await b.settle();
-    expect(b.runner.get(run.id)).toMatchObject({ squad: 'b', routedBy: 'repo', repo: 'web' });
+    // the label is what routes it now (it comes before the repository); the repository is the one squad b owns
+    expect(b.runner.get(run.id)).toMatchObject({ squad: 'b', routedBy: 'label', repo: 'web' });
   });
 });
 

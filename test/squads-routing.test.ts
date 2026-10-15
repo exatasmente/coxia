@@ -1,4 +1,4 @@
-// Which squad an issue belongs to, by scope: the repository first, then the labels, then the folders of the files the issue mentions. One squad left is the
+// Which squad an issue belongs to, by scope: the labels first, then the repository, then the folders of the files the issue mentions. One squad left is the
 // answer; several, or none, is a triage. Pure.
 import { describe, expect, it } from 'vitest';
 import { newSquad } from '../src/shared/config/squads';
@@ -31,6 +31,19 @@ describe('routing an issue to a squad', () => {
     const mono = [squad('a', { repos: ['app'], paths: [{ repo: 'app', prefix: 'services/billing' }] }), squad('b', { repos: ['app'], paths: [{ repo: 'app', prefix: 'services/search/' }] })];
     expect(routeIssue(mono, issue({ text: 'The bug is in services/search/index.ts.' }))).toEqual({ kind: 'matched', squad: 'b', rule: 'path' });
     expect(routeIssue(mono, issue({ text: 'See a/services/billing/x.ts in the diff' }))).toEqual({ kind: 'matched', squad: 'a', rule: 'path' });
+  });
+
+  it('a label wins over the repository: the support squad takes its issue even in the repository the development squad owns', () => {
+    const squads = [squad('dev', { repos: ['app'] }), squad('support', { labels: ['area:support'] })];
+    expect(routeIssue(squads, issue({ labels: ['Area:Support'] }))).toEqual({ kind: 'matched', squad: 'support', rule: 'label' });
+    // without the label the repository decides, as before
+    expect(routeIssue(squads, issue())).toEqual({ kind: 'matched', squad: 'dev', rule: 'repo' });
+    // two squads' labels on one issue is a triage, whatever the repository
+    const two = [...squads, squad('sales', { labels: ['area:sales'] })];
+    expect(routeIssue(two, issue({ labels: ['area:support', 'area:sales'] }))).toEqual({ kind: 'ambiguous', why: 'several', candidates: ['support', 'sales'] });
+    // two squads with the same label: the repository narrows them
+    const same = [squad('dev', { repos: ['app'], labels: ['bug'] }), squad('web', { repos: ['web'], labels: ['bug'] })];
+    expect(routeIssue(same, issue({ repo: 'web', labels: ['bug'] }))).toEqual({ kind: 'matched', squad: 'web', rule: 'repo' });
   });
 
   it('a rule that says nothing about the issue does not narrow: the label decides when no repository is owned', () => {

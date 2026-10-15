@@ -315,7 +315,7 @@ export const ROUTING_WHY = ['several', 'none'] as const;
 export type RoutingWhy = (typeof ROUTING_WHY)[number];
 
 /** The rules of a squad's scope, in the order they narrow the squads. */
-export const SCOPE_RULES = ['repo', 'label', 'path', 'unclaimed'] as const;
+export const SCOPE_RULES = ['label', 'repo', 'path', 'unclaimed'] as const;
 export type ScopeRule = (typeof SCOPE_RULES)[number];
 
 /** How a run came to be in its squad: by the scope rules (and which one), by the front door's proposal, by the person, or because another squad asked for it. */
