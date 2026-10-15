@@ -61,6 +61,17 @@ describe('the use of a stage', () => {
     expect(parseRun(JSON.parse(JSON.stringify(run))).ok).toBe(true);
   });
 
+  it('never leaves the provenance as a key holding undefined, which the run file check refuses, and the store saves a stage whose provider reported no cost', () => {
+    const noCost = addReport(emptyUsage(), { promptTokens: 400, completionTokens: 40, cachedTokens: 0 });
+    expect(noCost).not.toHaveProperty('costEstimated');
+    expect(mergeUsage(noCost, noCost)).not.toHaveProperty('costEstimated');
+    expect(mergeUsage(undefined, noCost)).not.toHaveProperty('costEstimated');
+    const c = applyTemplate(neutralConfig(), agentFlowEngineering);
+    const run = startRun({ id: 'r-abc-0003', issue: { ref: 'app#1', iid: 1, title: 'T', url: null }, repo: 'app', branch: 'cycle/1-t', worktree: '/w', cycleFolder: 'docs/cycles/1-t', cycleId: 'agent-flow' }, flowOf(c), AT).run;
+    // checked as the store checks it: the object in memory, not what survived a JSON round trip
+    expect(parseRun(recordUsage(run, run.stage, noCost, AT).run)).toMatchObject({ ok: true });
+  });
+
   it('reads a run written with no provenance as charged, and one written with the estimate as estimated', () => {
     const c = applyTemplate(neutralConfig(), agentFlowEngineering);
     const run = startRun({ id: 'r-abc-0002', issue: { ref: 'app#1', iid: 1, title: 'T', url: null }, repo: 'app', branch: 'cycle/1-t', worktree: '/w', cycleFolder: 'docs/cycles/1-t', cycleId: 'agent-flow' }, flowOf(c), AT).run;

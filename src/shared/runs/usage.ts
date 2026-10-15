@@ -32,6 +32,10 @@ const provenance = (a: boolean | undefined, hasA: boolean, b: boolean | undefine
   return charged ? false : true;
 };
 
+// The flag is left out of the record when it says nothing: the run file check refuses a key that is present and undefined, and a stage whose provider
+// reported no cost (or that failed before any) reaches it that way.
+const flag = (costEstimated: boolean | undefined): { costEstimated?: boolean } => (costEstimated === undefined ? {} : { costEstimated });
+
 /** The total with one more report added. A report with no tokens (the SDK's final cost) adds its cost but is not a call. */
 export function addReport(total: StageUsage, r: UsageReport): StageUsage {
   const tokens = count(r.promptTokens) + count(r.completionTokens);
@@ -47,7 +51,7 @@ export function addReport(total: StageUsage, r: UsageReport): StageUsage {
     calls: total.calls + (tokens > 0 ? 1 : 0),
     costUsd,
     // A report with no cost does not change what the stage's total means.
-    costEstimated: cost === null ? total.costEstimated : provenance(total.costEstimated, total.costUsd !== null, r.costEstimated, true),
+    ...flag(cost === null ? total.costEstimated : provenance(total.costEstimated, total.costUsd !== null, r.costEstimated, true)),
   };
 }
 
@@ -56,7 +60,7 @@ export function mergeUsage(a: StageUsage | undefined, b: StageUsage): StageUsage
   if (!a) return { ...b };
   const costUsd = a.costUsd === null && b.costUsd === null ? null : (a.costUsd ?? 0) + (b.costUsd ?? 0);
   const subscriptionCalls = (a.subscriptionCalls ?? 0) + (b.subscriptionCalls ?? 0);
-  return { promptTokens: a.promptTokens + b.promptTokens, completionTokens: a.completionTokens + b.completionTokens, cachedTokens: a.cachedTokens + b.cachedTokens, calls: a.calls + b.calls, costUsd, costEstimated: provenance(a.costEstimated, a.costUsd !== null, b.costEstimated, b.costUsd !== null), ...(subscriptionCalls > 0 ? { subscriptionCalls } : {}) };
+  return { promptTokens: a.promptTokens + b.promptTokens, completionTokens: a.completionTokens + b.completionTokens, cachedTokens: a.cachedTokens + b.cachedTokens, calls: a.calls + b.calls, costUsd, ...flag(provenance(a.costEstimated, a.costUsd !== null, b.costEstimated, b.costUsd !== null)), ...(subscriptionCalls > 0 ? { subscriptionCalls } : {}) };
 }
 
 export const hasUsage = (u: StageUsage | undefined): u is StageUsage => !!u && (u.calls > 0 || u.promptTokens + u.completionTokens > 0 || u.costUsd !== null);
