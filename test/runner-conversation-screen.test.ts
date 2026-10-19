@@ -80,7 +80,9 @@ describe('the screen of an agent a stage calls', () => {
     const plain = await converse(agent('qa'));
     expect(plain.calls[0].screen).toBeUndefined();
     expect(plain.calls[0].system).not.toContain('browser');
-    expect(plain.calls[0].abort).toBe(plain.deps.abort);
+    // The turn hears the conversation's own abort, which the run's abort ends.
+    expect(plain.calls[0].abort).not.toBe(plain.deps.abort);
+    expect(plain.calls[0].abort?.signal.aborted).toBe(false);
     expect(screens.starts).toHaveLength(0);
     // And so does a build with no screens at all, whatever the agent is set to.
     const none = await converse(agent('qa', { screen: true }), { screens: null });

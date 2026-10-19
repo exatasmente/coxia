@@ -23,6 +23,7 @@ import type { MemoryPort } from '../memory/port';
 import type { ProceduresPort } from '../procedures/port';
 import { prompt as cp } from '../cyclePrompts';
 import { fence } from './prompt';
+import { type CallStops, callStops } from '../mentions/stop';
 
 // A conversation between two agents of the team, started by a stage that is working: the caller asks about a point, the called agent answers, and the two go
 // back and forth inside a limit of rounds. The called agent starts as a reader and, when the point needs it, uses its own permissions in the team (commands per
@@ -86,6 +87,8 @@ export interface ConversationDeps {
   pause?: () => () => void;
   /** The abort of the run: it ends the conversation with everything else. */
   abort: AbortController;
+  /** Where the conversation registers so the person's Stop can find it (tests). Default: the process's own. */
+  stops?: CallStops;
   /** The chain of calls that brought the run here (the caller first): the cycle is refused against it. */
   chain: string[];
   /** Where the conversation happens: the run's own thread, or a new thread of the forum linked to the run. */
@@ -100,7 +103,7 @@ export interface ConversationDeps {
 export interface ConversationResult {
   thread: string;
   rounds: number;
-  reason: 'ended' | 'rounds';
+  reason: 'ended' | 'rounds' | 'stalled' | 'stopped';
   /** The head of the branch after the conversation committed the called agent's work; null when nothing was committed. */
   head?: string | null;
   /** Every command the called agent ran in its session, in order (the refused ones left out, as a stage's are). */
@@ -113,7 +116,14 @@ export interface ConversationExchange {
   fromCaller(): Promise<string | null>;
   /** Every answer of the called agent, as it comes: the caller's stage hands it to its agent as a message. */
   answered(text: string): void;
+  /** The next message of the caller if it is already there, without waiting: a turn that asked for nothing only goes on when the caller has said more. */
+  pendingFromCaller?(): string | null;
+  /** True when the caller is itself waiting for the conversation to end (it is inside its call): the called agent's question can then never be answered, so it comes back at once. */
+  callerWaiting?(): boolean;
 }
+
+/** The time a conversation may go with no sign of progress: half the stage's idle limit, so it ends before the stage would expire, never under 30 seconds. */
+export const stallLimitMs = (config: WorkspaceConfig): number => Math.max(30_000, Math.floor(config.runner.stageIdleMs / 2));
 
 const clipped = (text: string, max = 2000): string => (text.length > max ? `${text.slice(0, max)}…` : text);
 
@@ -126,7 +136,57 @@ function conversationCommitMessage(caller: string, called: string): string {
  * Runs one conversation. The caller's first message opens it; the called agent answers and, by calling its `AskConversation` tool, asks for the next message of
  * the caller. The conversation is the record of itself: every message is a post of the agent that said it, in the conversation's thread.
  */
-export async function runConversation(deps: ConversationDeps, ex: ConversationExchange): Promise<ConversationResult> {
+export async function runConversation(input: ConversationDeps, ex: ConversationExchange): Promise<ConversationResult> {
+  // The conversation's own abort: the run's abort, the person's Stop and the stall limit all end it, and only the first of them is the run's.
+  const local = new AbortController();
+  const onRunAbort = (): void => local.abort();
+  input.abort.signal.addEventListener('abort', onRunAbort, { once: true });
+  if (input.abort.signal.aborted) local.abort();
+  let stalled = false;
+  let paused = 0;
+  let armed = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const limit = stallLimitMs(input.config());
+  // Any sign of life re-arms the limit; waiting for the caller is not one.
+  const progress = (): void => {
+    if (timer) clearTimeout(timer);
+    timer = null;
+    if (!armed || paused > 0 || local.signal.aborted) return;
+    timer = setTimeout(() => {
+      stalled = true;
+      local.abort();
+    }, limit);
+  };
+  const pauseStall = (): (() => void) => {
+    paused++;
+    progress();
+    let given = false;
+    return () => {
+      if (given) return;
+      given = true;
+      paused--;
+      progress();
+    };
+  };
+  const inputPause = input.pause;
+  const deps: ConversationDeps = {
+    ...input,
+    abort: local,
+    pause: () => {
+      const release = pauseStall();
+      const other = inputPause?.();
+      return () => {
+        release();
+        other?.();
+      };
+    },
+  };
+  // Resolves when the conversation is cut (stall, Stop or the run's abort): a turn whose engine ignores the abort is let go of, so the caller is never held by it.
+  const cut = new Promise<null>((resolve) => {
+    if (local.signal.aborted) resolve(null);
+    else local.signal.addEventListener('abort', () => resolve(null), { once: true });
+  });
+  const cutBy = (): 'stalled' | 'stopped' | null => (stalled ? 'stalled' : local.signal.aborted && !input.abort.signal.aborted ? 'stopped' : null);
   const cap = deps.config().runner.conversations.roundsPerConversation;
   const stage = deps.stage.id;
   const runThread = runThreadId(deps.run.id);
@@ -150,7 +210,10 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
   }
 
   const writes = deps.called.permission === 'worktree';
-  const clock: ConversationClock = { beat: () => undefined, pause: () => () => undefined, allowed: new Set() };
+  // A command of the called agent is a sign of life; one waiting for the person stands the limit still.
+  const clock: ConversationClock = { beat: progress, pause: () => deps.pause!(), allowed: new Set() };
+  // The person's Stop finds the conversation under the run's thread and the called agent (and under its own thread when it has one).
+  const unregister = [...new Set([runThread, thread])].map((th) => (input.stops ?? callStops).register(th, deps.called.id, local));
   let session: SandboxSession | null = null;
   let reason: ConversationResult['reason'] = 'ended';
   let rounds = 0;
@@ -181,12 +244,22 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
     let closed = false;
     const nextFromCaller = async (): Promise<string | null> => {
       if (closed) return null;
-      const said = await ex.fromCaller();
+      // Racing the cut lets the conversation go when nobody will ever send the message (the caller waits inside its call).
+      const said = await Promise.race([ex.fromCaller(), cut]);
       if (said === null) closed = true;
+      else progress();
+      return said;
+    };
+    const pendingFromCaller = (): string | null => {
+      if (closed) return null;
+      const said = ex.pendingFromCaller?.() ?? null;
+      if (said !== null) progress();
       return said;
     };
     const first = await nextFromCaller();
     if (first !== null) {
+      armed = true;
+      progress();
       say({ kind: 'post', author: { type: 'agent', id: deps.caller.id }, text: clipped(first), stage, public: false });
       const parent = currentActivity();
       node = parent ? parent.child({ type: 'call', label: first }, deps.called.id) : beginActivity(deps.called.id, undefined, { node: { type: 'call', label: first } });
@@ -217,30 +290,46 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
           held = { screen, abort: stop };
         }
       }
+      // The message each turn reads, and the session the next turn continues (the history is not repeated as if it were new).
+      let message = first;
+      let continued: { session: string; engine: NonNullable<Awaited<ReturnType<StageEngine>>['engine']> } | undefined;
+      const io: TurnIo = { next: nextFromCaller, pending: pendingFromCaller, waiting: () => ex.callerWaiting?.() ?? false, progress };
       for (;;) {
         if (deps.abort.signal.aborted) unanswered = true;
-        if (deps.abort.signal.aborted || screenGone) break;
+        if (deps.abort.signal.aborted || screenGone || cutBy()) break;
         if (rounds >= cap) {
           reason = 'rounds';
           say({ kind: 'system', author: { type: 'app' }, code: 'runner.conversation.rounds', params: { caller: deps.caller.id, called: deps.called.id, cap }, stage });
           break;
         }
         rounds++;
-        // A turn the screen's closing cut short ends the conversation, not the run.
-        const turn = await turnOf(deps, thread, session, clock, nextFromCaller, say, held, node.lend()).catch((e: unknown) => {
-          if (screenGone) return null;
+        // A turn the screen's closing cut short ends the conversation, not the run; one the stall limit or Stop cut is let go of.
+        const attempt = turnOf(deps, thread, session, clock, io, say, held, node.lend(), message, continued).catch((e: unknown) => {
+          if (screenGone || cutBy() || deps.abort.signal.aborted) return null;
           throw e;
         });
-        if (turn === null) {
+        const turn = await Promise.race([attempt, cut.then(() => null)]);
+        if (turn === null || turn.text === null) {
           // The caller ending the conversation (`closed`) is a normal end; any other turn with nothing to show is a called agent that did not answer.
           if (!closed) unanswered = true;
           break;
         }
-        ex.answered(turn);
+        ex.answered(turn.text);
         // The excerpt is the text the conversation shows for this round; a round's own end is ignored on the lent node.
-        node.answer(turn);
+        node.answer(turn.text);
         if (closed || screenGone) break;
+        // A turn that asked for nothing ends the conversation, unless the caller has already said more.
+        const more = pendingFromCaller();
+        if (more === null) break;
+        say({ kind: 'post', author: { type: 'agent', id: deps.caller.id }, text: clipped(more), stage, public: false });
+        message = more;
+        continued = turn.session;
       }
+      const cutReason = cutBy();
+      if (cutReason) {
+        reason = cutReason;
+        unanswered = true;
+      } else if (input.abort.signal.aborted) unanswered = true;
     }
   } catch (e) {
     failure = e instanceof Error ? e.message : String(e);
@@ -251,6 +340,10 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
       else node.status(unanswered ? 'failed' : 'finished');
     }
     // The screen is let go, not closed: it stays open and counting down for the next call of the agent in this thread.
+    armed = false;
+    progress();
+    for (const off of unregister) off();
+    input.abort.signal.removeEventListener('abort', onRunAbort);
     unhook();
     screen?.release();
     await session?.close().catch(() => undefined);
@@ -261,6 +354,8 @@ export async function runConversation(deps: ConversationDeps, ex: ConversationEx
   if (deps.commit && deps.called.permission === 'worktree') {
     head = await deps.commit(conversationCommitMessage(deps.caller.id, deps.called.id)).catch(() => null);
   }
+  if (reason === 'stalled') say({ kind: 'system', author: { type: 'app' }, code: 'runner.conversation.stalled', params: { caller: deps.caller.id, called: deps.called.id, minutes: Math.max(1, Math.round(limit / 60_000)) }, stage });
+  if (reason === 'stopped') say({ kind: 'system', author: { type: 'app' }, code: 'runner.conversation.stopped', params: { caller: deps.caller.id, called: deps.called.id }, stage });
   deps.forum.append(thread, { kind: 'system', author: { type: 'app' }, code: 'runner.conversation.ended', params: { caller: deps.caller.id, called: deps.called.id, why: t(`main.runner.conversation.reason.${reason}`) }, stage });
   return { thread, rounds, reason, head, log: session?.log.filter((e) => !e.refused) };
 }
@@ -271,20 +366,30 @@ interface HeldScreen {
   abort: AbortController;
 }
 
+/** How a turn reaches the caller: waiting for its next message, taking one already there, knowing it waits for us, and the sign of life. */
+interface TurnIo {
+  next: () => Promise<string | null>;
+  pending: () => string | null;
+  waiting: () => boolean;
+  progress: () => void;
+}
+
 /**
- * One turn of the called agent: it reads the caller's message and answers; calling its tool asks for the next message of the caller, and the text of the call is
- * posted in the thread as its message. A turn with no answer at all ends the conversation.
+ * One turn of the called agent: it reads the caller's message (in its prompt) and answers; calling its tool asks for the next message of the caller, and the text
+ * of the call is posted in the thread as its message. A turn with no answer at all ends the conversation. It hands back the session the next turn continues.
  */
 async function turnOf(
   deps: ConversationDeps,
   thread: string,
   session: SandboxSession | null,
   clock: ConversationClock,
-  nextFromCaller: () => Promise<string | null>,
+  io: TurnIo,
   say: (m: Parameters<ForumStore['append']>[1]) => void,
-  held?: HeldScreen,
-  activity?: RunActivity,
-): Promise<string | null> {
+  held: HeldScreen | undefined,
+  activity: RunActivity | undefined,
+  message: string,
+  continued?: { session: string; engine: NonNullable<Awaited<ReturnType<StageEngine>>['engine']> },
+): Promise<{ text: string | null; session?: { session: string; engine: NonNullable<Awaited<ReturnType<StageEngine>>['engine']> } }> {
   // The messages the called agent says through the tool, and what it answers as its final text.
   const spoken: string[] = [];
   let ended = false;
@@ -294,7 +399,11 @@ async function turnOf(
     askConversation: async (_to, text) => {
       spoken.push(text);
       say({ kind: 'post', author: { type: 'agent', id: deps.called.id }, text: clipped(text), stage: deps.stage.id, public: false });
-      const said = await nextFromCaller();
+      io.progress();
+      let said = io.pending();
+      // The caller that waits for the end of the conversation cannot answer: the called agent is told at once to answer now, so the conversation never waits on itself.
+      if (said === null && io.waiting()) return t('main.runner.conversation.callerWaiting');
+      said ??= await io.next();
       if (said === null) {
         ended = true;
         return t('main.runner.conversation.otherEnded');
@@ -326,9 +435,16 @@ async function turnOf(
   // The memory of the thread the conversation happens in: the run's own thread, or the new one linked to it. A called agent keeps notes like any agent of a conversation.
   const shared = (await deps.memoryPort?.open({ surface: 'called', agent: deps.called, conversation: thread, writes: true, tools: true, ref: deps.run.issue.ref, repo: deps.run.repo, runId: deps.run.id, issue: deps.run.issue.iid, note: (code, params) => say({ kind: 'system', author: { type: 'app' }, code, params, stage: deps.stage.id }) })) ?? null;
   const listed = [procedures?.list.text ? cp('runner.section.procedures', { text: fence(procedures.list.text) }) : '', shared?.list.text ? cp('runner.section.sharedIndex', { text: fence(shared.list.text) }) : ''].filter(Boolean).join('\n\n');
+  const messageText = t('main.runner.conversation.message', { caller: deps.caller.name, text: fence(message) });
   const call: AgentCall = {
     agent: deps.called,
-    prompt: [writes ? t('main.runner.conversation.systemWrite', { called: deps.called.name, caller: deps.caller.name }) : t('main.runner.conversation.system', { called: deps.called.name, caller: deps.caller.name }), listed].filter(Boolean).join('\n\n'),
+    // The caller's message is part of what the called agent reads. A turn that continues the session gets only the message: the rest is already in it.
+    prompt: continued
+      ? messageText
+      : [writes ? t('main.runner.conversation.systemWrite', { called: deps.called.name, caller: deps.caller.name }) : t('main.runner.conversation.system', { called: deps.called.name, caller: deps.caller.name }), listed, messageText].filter(Boolean).join('\n\n'),
+    // `conversation` mode: the answer ends the node like any call; the default mode would leave it "started" and open a second start in the same node.
+    ...(continued ? { resume: { session: continued.session, engine: continued.engine, mode: 'conversation' as const } } : {}),
+    beat: io.progress,
     schema: { type: 'object', properties: { texto: { type: 'string' } }, required: ['texto'], additionalProperties: false },
     system: [
       t('main.runner.conversation.role', { called: deps.called.name }),
@@ -379,10 +495,10 @@ async function turnOf(
   }
   procedures?.finish('done');
   shared?.finish();
-  if (ended) return null;
+  if (ended) return { text: null };
   const text = typeof (r.data as { texto?: unknown })?.texto === 'string' ? (r.data as { texto: string }).texto.trim() : '';
   // What the agent said through the tool is already posted; the final text is its closing word, if any.
   if (text && spoken[spoken.length - 1] !== text) say({ kind: 'post', author: { type: 'agent', id: deps.called.id }, text: clipped(text), stage: deps.stage.id, public: false });
   void clock;
-  return text || spoken[spoken.length - 1] || null;
+  return { text: text || spoken[spoken.length - 1] || null, ...(r.sessionId && r.engine ? { session: { session: r.sessionId, engine: r.engine } } : {}) };
 }

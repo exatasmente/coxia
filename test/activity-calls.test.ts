@@ -207,7 +207,7 @@ describe('a call from a stage (path C)', () => {
         }
         const r = await conversation.runConversation(
           { run: run(home), stage: { id: 'implement' } as never, caller: agent(OWNER), called: agent(LEAD), forum, config: () => c, engine: agents.runAgent, commands: [], abort: new AbortController(), chain: [OWNER], place: 'run', title: 'talk' },
-          { fromCaller: async () => (opened === 1 ? (said.shift() ?? topic) : null), answered: () => undefined },
+          { fromCaller: async () => (opened === 1 ? (said.shift() ?? topic) : null), answered: () => undefined, pendingFromCaller: () => said.shift() ?? null },
         );
         return `opened ${r.rounds}`;
       },
@@ -242,7 +242,8 @@ describe('a call from a stage (path C)', () => {
 
   it('keeps one node for several rounds and an excerpt for each round that answered', async () => {
     script = (n) => (n === 1 ? callStep(LEAD, 'Walk me through it') : n === 2 ? said('first round') : n === 3 ? said('second round') : final('stage done'));
-    const { entries } = await stage(['Walk me through it'], { rounds: 2 });
+    // a turn that asks for nothing ends the conversation, so the second round needs a message of the caller already waiting
+    const { entries } = await stage(['Walk me through it', 'and then?'], { rounds: 2 });
     const callee = idsOf(entries)[1];
     const own = entries.filter((e) => e.runId === callee);
     expect(own.filter((e) => e.kind === 'status').map((e) => e.state)).toEqual(['started', 'finished']);
