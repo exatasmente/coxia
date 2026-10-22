@@ -4,7 +4,7 @@ Português (Brasil) | [English](README.md)
 
 **Chegue à daily já preparado e saia com os encaminhamentos feitos.** O Coxia é um app de desktop (com companheiro no celular) que conduz o desenvolvedor pelos rituais recorrentes do time, por voz ou por texto: um agente de IA por atividade aberta lê o repositório, as specs e a documentação que você indicar antes de falar, ajuda a destravar o que está parado e entrega a ata. Nada muda fora da sua máquina sem o seu "sim" explícito.
 
-> **Status: 0.11.0 (beta).** O autor usa todo dia, mas partes só foram verificadas contra servidores de teste (veja [O que foi verificado](#o-que-foi-verificado)). Espere arestas e leia as notas honestas abaixo. A mesma documentação, publicada como site: [exatasmente.github.io/coxia](https://exatasmente.github.io/coxia/pt-br/).
+> **Status: 1.0.0 (beta).** O autor usa todo dia, mas partes só foram verificadas contra servidores de teste (veja [O que foi verificado](#o-que-foi-verificado)). Espere arestas e leia as notas honestas abaixo. A mesma documentação, publicada como site: [exatasmente.github.io/coxia](https://exatasmente.github.io/coxia/pt-br/).
 
 <!-- Cada captura sai do próprio aplicativo, sobre um workspace de dados fictícios semeado por scripts/seed-docs-workspace.mjs e escrito por scripts/captures/ (veja docs/images/README.md). -->
 

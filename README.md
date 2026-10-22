@@ -4,7 +4,7 @@
 
 **Walk into stand-up already prepared, and leave with the follow-ups done.** Coxia is a desktop app (with a phone companion) that gets a developer through the recurring rituals of a team, by voice or by text: one AI agent per open task reads the repository, the specs and the documentation you point it at before it says a word, helps you unblock the thing you are stuck on, and hands you the minutes. It never changes anything outside your machine without your explicit yes.
 
-> **Status: 0.11.0 (beta).** It is used daily by its author, but parts are verified only against test servers (see [What is verified](#what-is-verified)). Expect rough edges and read the honest notes below. The same documentation, published as a site: [exatasmente.github.io/coxia](https://exatasmente.github.io/coxia/).
+> **Status: 1.0.0 (beta).** It is used daily by its author, but parts are verified only against test servers (see [What is verified](#what-is-verified)). Expect rough edges and read the honest notes below. The same documentation, published as a site: [exatasmente.github.io/coxia](https://exatasmente.github.io/coxia/).
 
 <!-- Every shot comes from the app itself, over a workspace of fictional data seeded by scripts/seed-docs-workspace.mjs and written by scripts/captures/ (see docs/images/README.md). -->
 
