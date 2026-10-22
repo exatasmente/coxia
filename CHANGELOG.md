@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Dependencies updated: the Claude Agent SDK (0.3.296). The setup wizard follows the SDK's version range.
+
 ## [1.0.0-beta.1] - 2026-10-19
 
 ### Added
